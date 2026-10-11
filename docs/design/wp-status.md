@@ -1,6 +1,6 @@
 # Work package status (walking skeleton)
 
-Generated from git history and the lead's overrides: 2026-10-12 06:30 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
+Generated from git history and the lead's overrides: 2026-10-12 07:05 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
 
 Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Python skill (SKILL.md and the Python code are untouched): transcript importer -> database -> query API -> web list page and detail page, started by the standard CLI.
 
@@ -19,9 +19,9 @@ Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Pyt
 | WP-33 | Transcript entries, index, window, locate | committed (checks ran: see commit) | 1ee78d0 | 2026-10-12 04:28 |  |
 | WP-30 | Query layer A: sessions, agents, events, tool calls | committed (checks ran: see commit) | de76878 | 2026-10-12 04:36 |  |
 | WP-34 | Transcript importer | committed (checks ran: see commit) | 62e480d | 2026-10-12 05:35 | KNOWN LIMITATION: usage applied after the cursor commit can be lost if the process is killed in between (CR-WP-34-1 accepted for the skeleton; follow-up: usage row kind in the WP-32 writer). readEntryText signature differs from the registry (CR-WP-34-3). |
-| WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | implementing |  |  |  |
-| WP-31 | Query layer B: overview, work items, alerts, errors | committed (checks ran: see commit) | 6de2418 | 2026-10-12 05:01 | stretch: only if time remains |
-| WP-36 | Stream: hub, hydration, SSE | committed (checks ran: see commit) | ba4097d | 2026-10-12 05:19 | stretch: only if time remains (stream); if skipped WP-47 is built against a fake stream, not integrated |
+| WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | committed (checks ran: see commit) | 10041cb | 2026-10-12 06:58 |  |
+| WP-31 | Query layer B: overview, work items, alerts, errors | committed (checks ran: see commit) | 6de2418 | 2026-10-12 05:01 | stretch item, committed |
+| WP-36 | Stream: hub, hydration, SSE | committed (checks ran: see commit) | ba4097d | 2026-10-12 05:19 | stream hub + SSE (server side) committed; the web client is not wired to it |
 | WP-44 | Web scaffold | committed (checks ran: see commit) | 695e4d6 | 2026-10-12 02:32 |  |
 | WP-45 | Pure lib port | committed (checks ran: see commit) | e3677ad | 2026-10-12 02:26 |  |
 | WP-46 | Data layer | committed (checks ran: see commit) | 397b4ec | 2026-10-12 02:56 |  |
@@ -30,7 +30,8 @@ Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Pyt
 | WP-50 | Sessions explorer and list components | committed (checks ran: see commit) | c9f6cd7 | 2026-10-12 03:48 |  |
 | WP-51 | Transcript viewer and text primitives | committed (checks ran: see commit) | 7d83148 | 2026-10-12 03:38 |  |
 | WP-52 | Session detail page | committed (checks ran: see commit) | 33cbe51 | 2026-10-12 04:00 |  |
-| LF-2 | Walking-skeleton smoke test: fixture -> import -> list page -> detail page | waiting for WP-35 |  |  |  |
+| LF-5 | Walking-skeleton smoke at API level: fixture -> import -> list -> detail (harness) | implementing (API-level smoke harness) |  |  |  |
+| LF-2 | Walking-skeleton smoke in the browser: list page, detail page | waiting for LF-5 (browser spec) |  |  |  |
 | WP-01 | Monorepo scaffold and gates | committed (foundation, before the scope change) | 46bead4 | 2026-10-11 19:22 |  |
 | WP-02 | Shared contracts: ids, time, files, runtime config sections, CLI results, control protocol | committed (foundation, before the scope change) | 5ac95a4 | 2026-10-11 19:59 |  |
 | WP-03 | Shared API and panel contracts | committed (foundation, before the scope change) | 8676f34 | 2026-10-11 21:25 |  |
@@ -48,6 +49,8 @@ Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Pyt
 | WP-23 | Tooling tests, JSON Schema generator, inactive CI | committed (foundation, before the scope change) | 9a19c22 | 2026-10-11 21:57 |  |
 | WP-24 | Golden generator (Python oracle) | committed (foundation, before the scope change) | 15c4c86 | 2026-10-11 20:04 |  |
 | LF-1 |  | committed (foundation, before the scope change) | 2e3ea85 | 2026-10-12 00:41 |  |
+| LF-3 | Integration coherence fixes from the clean-checkout gate | committed (foundation, before the scope change) | 3968fa8 | 2026-10-12 06:53 |  |
+| LF-4 | Control channel: ingest-replay for a missing segment | committed (foundation, before the scope change) | 2e4a724 | 2026-10-12 06:55 |  |
 | WP-20 | Isolation setup and lifecycle isolation tests | DEFERRED |  |  | isolation-suite setup and lifecycle isolation tests: release gate, not needed by the skeleton |
 | WP-21 | Launcher | DEFERRED |  |  | launcher scripts/mcs.mjs: the skeleton starts from the cli package entry |
 | WP-22 | Instances, doctor, diagnostics | DEFERRED |  |  | instances/doctor/diagnostics commands: not needed by the skeleton |
