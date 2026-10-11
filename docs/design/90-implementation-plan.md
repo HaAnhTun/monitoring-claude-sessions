@@ -309,7 +309,7 @@ Phase 2, W2.1, L; impl sonnet medium; verify sonnet high; 05 S1 (files)
   `packages/cli/src/{main,hook}.ts`, `packages/web/src/main.tsx`, `scripts/{lib,clean,typecheck,check-deps,build-stamp,ci,smoke,dev,set-version}.mjs`,
   `tests/tsconfig.json`; `<skill>/.gitignore` (append 05 2.9 lines only). Not A.28 (withdrawn), A.39 (WP-08), A.41 (WP-23).
   Lead decision 2026-10-11 (CR-WP-01-1): WP-01 also creates `packages/web/index.html` (minimal; WP-44 overwrites it), `packages/{server,cli}/tsconfig.json`,
-  `tests/tooling/vitest-projects.test.ts` and `packages/web/e2e/placeholder.ts` (WP-56 deletes it). Lead decision (CR-WP-01-2): `scripts/ci.mjs` falls back to the npm CLI bundled with the running node when `npm_execpath` is unset, so `node scripts/ci.mjs --offline` works as written in the gates.
+  `tests/tooling/vitest-projects.test.ts`, `tests/tooling/set-version.test.ts` (regression test for `scripts/set-version.mjs`), `packages/testkit/src/index.test.ts` (WP-06 inherits it) and `packages/web/e2e/placeholder.ts` (WP-56 deletes it). Lead decision (CR-WP-01-2): `scripts/ci.mjs` falls back to the npm CLI bundled with the running node when `npm_execpath` is unset, so `node scripts/ci.mjs --offline` works as written in the gates.
 - Blocks: creates the files marked "WP-01" in plan section 4.2 with all their empty blocks. `pkg:` every A.1 script plus `test:tooling`.
 - Produces: npm scripts of 98 section 13 (baseline), condition `@mcs/source`, `computeStamps`, `staleness`, `STAMP_SCHEMA_VERSION` (05 3.3.3),
   smoke exit 77 convention. Consumes: nothing.
@@ -391,6 +391,7 @@ Phase 2, W2.3, L; impl sonnet high; verify opus xhigh; 03 S3, 06 PP0
   98 1.1-1.6, section 3, section 4, section 7.1, C10, C17, C26, C36, C51, C52; 99 I-04, I-10, I-21, I-30, I-35, I-37.
 - Creates: `packages/shared/src/api/{ids,time,errors,filters,cursor,entities,health,legacy-health,stream,export,routes,panels}.ts`;
   tests `packages/shared/src/api/{routes,filters,cursor,panels,entities}.test.ts`.
+  Lead decisions 2026-10-11 (WP-03 verifier round 2): (1) CR-WP-03-6 accepted: `matchesEventFilter(filter, event, options?)` with `options = { nowMs, projectIdOf, workItemIdsOf }`, fail-closed when a resolver is missing, and `foldQuery(q)` exported from `shared/api/filters.ts` (design 03 5.4, 04 4.4.4 and registry 1.2 are patched by the lead before WP-47). (2) The shared type for the matching keys is named `EventMatchFilter`; the web alias `EventFilter` (= the whole `listEvents` query type) stays in `web/src/data/endpoints.ts`. (3) `it.skipIf` in `legacy-health.test.ts` when `src/backend/cli.py` is absent is accepted (the title states the reason; the legacy file always exists in this repository). (4) CR-WP-03-7: `IngestHealthSchema` strictness is done by a lead-scheduled follow-up WP-04b (`schemas/ingest.ts` z.strictObject all the way down); WP-03 only adds the nested-extra-key assertion after WP-04b is committed.
 - Blocks: `shared/src/index.ts` WP-03; creates `api/routes.ts` with block WP-29.
 - Produces: `ErrorCode`, `ErrorEnvelope`, `Page`, cursor codec, filter model (`fromQuery`, `toQuery`, `matchesEventFilter`), `EVENT_KINDS`,
   `LIFECYCLE_STATES`, `BOARD_STATES`, `LegacyState`, `SessionSummary`, `SessionDetail`, `AgentNode`, `ActivityEvent`, `ToolCallItem`,
