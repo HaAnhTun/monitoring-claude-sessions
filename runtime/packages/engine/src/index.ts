@@ -277,6 +277,8 @@ export { testHook } from './runtime/test-hooks.ts';
 // @wp-end WP-22
 
 // @wp-begin WP-25
+export { DISABLE_ALL_HOOKS_SETTINGS, claudeArgsWithoutHooks } from './external/launch-claude.ts';
+export type { ClaudeLaunch } from './external/launch-claude.ts';
 // @wp-end WP-25
 
 // @wp-begin WP-28
