@@ -3,7 +3,9 @@
 Status: Phase 1 design, written 2026-10-11 for the V3 migration (branch `feat/v3-node-runtime`). Owner of this document: the
 data/API designer. ADRs 0020-0029 belong to it. Revision 2 (2026-10-11) applies the critic review of
 `99-requirements-matrix.md` in place: I-07 (attempts tables), I-30 (legacy health key set), I-31 (no dev origins), I-37 (probe route),
-and aligns with I-01, I-02, I-03, I-08, I-10, I-12, I-14, I-15, I-16, I-19, I-20, I-21, I-22, I-32, I-33, I-35 (section 15). Revision 3 adopts `98-contract-registry.md` names: I-08 (completion lookup, errors, schema), I-19 (async audit references), I-21 (`ChildKindStats`), N-08 (`event` entity), and aligns with N-01, N-09, N-10, I-15 (C09) and the N-13 rows C20, C45, C51, C52, C53. Inputs: `docs/design/00-foundations.md` (D1-D15), the owner's brief MEGA-PROMT-V3
+and aligns with I-01, I-02, I-03, I-08, I-10, I-12, I-14, I-15, I-16, I-19, I-20, I-21, I-22, I-32, I-33, I-35 (section 15). Revision 3 adopts `98-contract-registry.md` names: I-08 (completion lookup, errors, schema), I-19 (async audit references), I-21 (`ChildKindStats`), N-08 (`event` entity), and aligns with N-01, N-09, N-10, I-15 (C09) and the N-13 rows C20, C45, C51, C52, C53. Reconciliation pass (phase 1b residuals) aligns
+the remaining text with N-03 (config section modules), N-07, N-08/C59 (entity table of 3.5), I-12 (`mcs db rebuild` exists), I-15
+(sweeper and scheduler shapes), C08, C18, C19, C35 (id regexes from `@mcs/shared/protocol`) and C39. Inputs: `docs/design/00-foundations.md` (D1-D15), the owner's brief MEGA-PROMT-V3
 (sections 7, 8.1-8.8, 8.10, 10, 11, 12), `docs/research/*`, and the sibling designs written in parallel: `01-instances-config-ops.md`
 (workspace, CLI, backups, upgrades, control channel), `02-ingestion-lifecycle.md` (hooks, importer, tokens, lifecycle; it delegates
 table names, DDL and indexes to this document), `04-ui.md` (UI; its section 13 lists the contracts it assumed),
@@ -463,7 +465,7 @@ CREATE INDEX idx_tool_calls_session ON tool_calls(session_id, started_at DESC);
 CREATE INDEX idx_tool_calls_name    ON tool_calls(name, started_at DESC);
 CREATE INDEX idx_tool_calls_open    ON tool_calls(session_id, started_at) WHERE ended_at IS NULL AND batch_at IS NULL;
 
--- One timeline for hook envelopes (02 `hook_event`) and transcript entries (02 `transcript_entry`).
+-- One timeline for hook envelopes and transcript entries (the single 02 entity `event`, from either source; N-08/C59).
 -- Rows that describe the same logical event from both sources share a natural key and are merged (sources bitmask).
 CREATE TABLE events (
   id                 INTEGER PRIMARY KEY,
@@ -806,8 +808,8 @@ Mapping of the logical entities of `[02 4.1]` (that document owns their semantic
 
 | 02 entity | Table | Column notes |
 |---|---|---|
-| `hook_event` | `events` rows with `sources & 1` | `event_uid`, `hook_event` (= envelope `event`), `received_at`, `content_hash`, `spool_segment`, `spool_offset`, `flags` (envelope flags), `detail` (= sanitized envelope `data`), `prompt_id`, `tool_use_id`; D-2/D-3 duplicates are not inserted (counted in `ingest_health.counters_json`), so `duplicate_of` is not needed |
-| `transcript_entry` | `events` rows with `sources & 2` | `record_uuid` (= `entry_key`: record uuid, or `f<file_id>:<byte_offset>` for records without one), `file_id`, `byte_offset`, `byte_length`, `line_no`, `record_type`, `subtype`, `entry_kind` (= 02 entry `kind`), `ts`, `message_id`, `tool_use_id`, `tool_name`, `summary`, `text_len`, `flags`; 02's `is_error` = `kind 'tool.failure'` + `severity 2` |
+| `event` (hook source) | `events` rows with `sources & 1` | `event_uid`, `hook_event` (= envelope `event`), `received_at`, `content_hash`, `spool_segment`, `spool_offset`, `flags` (envelope flags), `detail` (= sanitized envelope `data`), `prompt_id`, `tool_use_id`; D-2/D-3 duplicates are not inserted (counted in `ingest_health.counters_json`), so `duplicate_of` is not needed |
+| `event` (transcript source) | `events` rows with `sources & 2` | `record_uuid` (= `entry_key`: record uuid, or `f<file_id>:<byte_offset>` for records without one), `file_id`, `byte_offset`, `byte_length`, `line_no`, `record_type`, `subtype`, `entry_kind` (= 02 entry `kind`), `ts`, `message_id`, `tool_use_id`, `tool_name`, `summary`, `text_len`, `flags`; 02's `is_error` = `kind 'tool.failure'` + `severity 2` |
 | (both sources, same logical event) | one `events` row | merged through `natural_key` (3.6); `sources` = 3 |
 | `entry_occurrence` | `entry_occurrences` | |
 | `session` | `sessions` | `project_dir` -> `project_id` (`projects.dir_name`); `version` -> `cc_version`; `cwd_latest` -> `cwd`; `title_ai`, `title_custom`; `continued_in`, `copied_from`; `hook_coverage` + `hook_missing_tools/turns`; `facts_json`; lifecycle view columns (`state ... next_check_at`; `ruleId` -> `state_rule`) |
@@ -1182,7 +1184,8 @@ Two classes (ADR 0028):
   backup first `[01 6.4]`. The server never deletes session data on its own.
 
 `runtime.json` section `retention` (owned by this document; composed by the config design `[01 1.6]`, `RetentionSectionSchema` with
-`.prefault({})`):
+`.prefault({})`; `[01]` slice S1 writes the module `shared/src/config/runtime/retention.ts` from this table, which stays normative,
+and registers its keys in `R_KEY_CATALOGUE` with owner 03, N-03):
 
 | Key | Default | Range | Used by |
 |---|---|---|---|
@@ -1342,8 +1345,9 @@ Recovery guidance (goes to `docs/operations.md` with `[01 5.6]`, registry C20):
   `monitor.db` aside; the next `start` creates a new DB and the importer re-imports the transcripts and spool segments still on disk;
   history no longer on disk is lost).
 - There is no `reimport` command (I-12): rebuilding from the sources still on disk is exactly "stop, back up, move `monitor.db` aside,
-  start". If `[01]` adds `mcs db rebuild --task S --yes --confirm <slug>`, it performs these steps on a stopped instance (backup first,
-  audited) and calls no DB function other than `backupDb`.
+  start". `[01 5.4]` defines `mcs db rebuild --task S --yes --confirm S` for this (refused while running; the database files are moved
+  into an audited backup, `dbCopy: 'raw'`, T-CLI-12), so the runbook is `$MCS stop` -> `$MCS db rebuild --task S --yes --confirm S` ->
+  `$MCS start`; it calls no DB function of this document (the next `start` creates a new DB through `openInstanceDb('serve')`).
 - Stale `-wal`/`-shm` after a hard kill are recovered by SQLite on the next open; only `[01 5.5]` restore removes them, with the instance
   stopped and the task mutex held.
 
@@ -1420,7 +1424,7 @@ export function onCommitted(db: InstanceDb, listener: (headSeq: number) => void)
 | Read-only | Every route is `GET` (and implicit `HEAD`) except `POST /api/v3/ingest/nudge` (DA-I11). Backups, upgrades, restores and cleanups are CLI operations `[01 5, 6.4]`; while a server runs the CLI uses the control channel for backups `[01 4.3]`. The UI is read-only (`[04]` ADR 0031). |
 | Versioning | The path carries the major version. Inside v3, changes are additive (new routes, optional params, new fields); removal or renaming needs v4. Response schemas are `z.strictObject` in `@mcs/shared` so contract tests catch undocumented fields; the stream `hello` carries `runtimeVersion` and `codeStamp` so a page built by an older runtime can ask for a reload. |
 | Format | JSON, UTF-8, `Content-Type: application/json; charset=utf-8`; the export route streams `application/x-ndjson`; the stream route `text/event-stream`. |
-| Ids | `instanceId` uuid v4; `sessionId` = Claude session id, lowercase `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` (not `z.uuid()`, which enforces RFC variant bits `[exp:X6]`); `agentId` = `'main'` or the Claude agent id `^[0-9A-Za-z_-]{3,64}$`, always with its `sessionId`; `projectId` = lowercase sanitized project folder name `^[a-z0-9][a-z0-9-]{0,254}$`; `eventId`, `toolCallId`, `workItemId`, `alertId` = positive integers stable for the life of the DB; `eventKey` / `workItemKey` = natural keys stable across a rebuild (used in exports); `toolUseId` = provider id `^[A-Za-z0-9_-]{1,128}$`. |
+| Ids | `instanceId` uuid v4; `sessionId` = Claude session id, lowercase, matched by `SID_RE` (`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`; not `z.uuid()`, which enforces RFC variant bits `[exp:X6]`); `agentId` = `'main'` or the Claude agent id matched by `AGENT_RE` (`^[0-9A-Za-z_-]{3,64}$`), always with its `sessionId`; `runId` matched by `RUN_ID_RE`; the id schemas of `shared/src/api/ids.ts` import `SID_RE`, `AGENT_RE`, `RUN_ID_RE` and `TOOL_ID_RE` from `@mcs/shared/protocol` (`[02 2.3.2]`; the patterns are quoted here for reading, there is no second literal, registry C35); `projectId` = lowercase sanitized project folder name `^[a-z0-9][a-z0-9-]{0,254}$`; `eventId`, `toolCallId`, `workItemId`, `alertId` = positive integers stable for the life of the DB; `eventKey` / `workItemKey` = natural keys stable across a rebuild (used in exports); `toolUseId` = provider id matched by `TOOL_ID_RE` (`^[A-Za-z0-9_-]{1,128}$`). |
 | Time | Output: ISO-8601 UTC with milliseconds and `Z` (`new Date(ms).toISOString()`). Input: ISO-8601 with `Z` or an offset (`z.iso.datetime({ offset: true })`), normalised to epoch ms. Durations are integer `...Ms`, sizes integer `...Bytes`. Presets (`range`) resolve with the server clock. |
 | Missing vs zero | Unknown is `null`; `0` means measured zero (DA-I9). |
 | Request id | Every response has `X-Request-Id: r-<12 base36>`; the error envelope repeats it. The logger records route id, status, duration, request id only (never query strings, bodies or search text). |
@@ -1460,6 +1464,8 @@ this catalogue):
 // packages/shared/src/api/errors.ts
 export interface ErrorEnvelope { error: { code: ErrorCode; message: string; requestId: string; details?: { path: string; issue: string }[] } }
 ```
+`ErrorCode` (the union of the codes below) is the only type of that name in `@mcs/shared`; the CLI error union of `[01 6.2]` is
+`CliErrorCode` in `@mcs/shared/errors.ts` (registry C19).
 
 | HTTP | `code` values |
 |---|---|
@@ -1581,7 +1587,7 @@ export type ToolStatus = 'pending' | 'succeeded' | 'failed' | 'denied' | 'interr
 export type Completeness = 'complete' | 'partial' | 'unavailable';
 export type TranscriptFileState = 'active' | 'missing' | 'unreadable' | 'untracked' | 'retired';
 
-export interface EvidenceItem { kind: string /* '<source>:<fact>' of [02 7.1] */; at: IsoTime | null; text: string /* rendered at response time, never content */ }
+export interface EvidenceItem { kind: string /* '<source>:<fact>' of [02 7.1] LifecycleEvidence */; at: IsoTime | null; text: string /* rendered at response time, never content */ }
 export interface StateAssessment {
   state: LifecycleState; presence: 'open' | 'ended' | 'unknown';
   waitReason: 'user' | 'permission' | 'elicitation' | 'agent_input' | 'idle_prompt' | null;
@@ -1675,7 +1681,8 @@ export interface AlertItem {
 }
 ```
 `label` fallback for agents: the stored `label` (`[02 5.1.2]` precedence), else `agentType`, else the agent id. An empty session label is
-shown as `'(no prompt)'` (legacy). `EvidenceItem.text` is rendered by the shared `renderEvidence(item, now)` of `[02 7.1]`.
+shown as `'(no prompt)'` (legacy). `EvidenceItem` is the API form (`[02]` calls it `ApiEvidenceItem` when it needs the name); the engine form is `[02 7.1]`'s
+`LifecycleEvidence` (registry C18), and `EvidenceItem.text` is rendered from it by the shared `renderEvidence(item, now)` of `[02 7.1]`.
 
 ## 6. Endpoint reference
 
@@ -2065,7 +2072,8 @@ oldest file's session; subagents included; hooks add no tokens."
 
 ### 8.3 Cost estimate (configured prices only, D15)
 
-`runtime.json` section `pricing` (owned by this document; composed by `[01 1.6]`):
+`runtime.json` section `pricing` (owned by this document; composed by `[01 1.6]`; `[01]` S1 writes `shared/src/config/runtime/pricing.ts`
+from this text, which stays normative, N-03):
 ```json
 { "pricing": { "currency": "USD", "models": [
   { "match": "<model id or glob with *>", "effectiveFrom": "2026-01-01",
@@ -2289,7 +2297,8 @@ Notes: `token_threshold` fires on lower-bound totals, which can only make it fir
 only for complete aggregates, the lower-bound rule is equivalent in safety and earlier). `db_disk` conditions are also kept in memory and
 reported through `HealthReport.db` because writing the alert row can itself fail on a full disk.
 
-`runtime.json` section `alerts`:
+`runtime.json` section `alerts` (`[01]` S1 writes `shared/src/config/runtime/alerts.ts` from this block and the defaults column of the
+rule table, which stay normative, N-03):
 ```json
 { "alerts": { "enabled": true, "sweepSeconds": 60, "rules": {
   "inactivity": { "enabled": true, "minutes": 30, "cooldownMinutes": 10 },
@@ -2347,7 +2356,8 @@ an in-process queue after commit (never in the ingest path); a bounded delivery 
 
 Division of work: this document defines the DB functions and the export format; `[01]` owns the commands, their confirmations, backup
 folders and manifests, restore and the task mutex (`[01 5.4-5.6, 6.4]`). No API route writes to disk except the temporary snapshot of an
-export inside `data/exports/` (DA-I10, DA-I11).
+export inside `data/exports/` (DA-I10, DA-I11). The folder is part of `[01 1.1]`'s workspace layout (runtime-mutable), and `mcs cleanup
+--scope stale-state` deletes `data/exports/.tmp-*` older than 10 minutes left by a crash (registry C39).
 
 ### 11.1 Export format `mcs.export/1` (JSONL, metadata by default)
 
@@ -2402,7 +2412,8 @@ backup; the command owns the dry run, `--yes` and `--confirm <slug>`. Automatic 
 ### 11.4 Background schedule (server process)
 
 `createDbScheduler(ctx: InstanceContext): { start(): void; stop(): Promise<void> }` in `packages/engine/src/maintenance/schedule.ts`.
-`[01 4.4a]`'s `createInstanceRuntime(ctx)` calls `start()` after the DB is open and the ingest service started, and `stop()` (clears
+`[01 4.4a]`'s `createInstanceRuntime(ctx)` wraps it as a `RuntimeComponent` (registry C08), calls `start()` after the DB is open and the
+ingest service started, and `stop()` (clears
 every timer, awaits a running retention batch) before the DB closes (I-15). Timers use `ctx.clock` so tests drive them with fake time.
 
 | Timer | Interval | Work |
@@ -2562,6 +2573,7 @@ out by I-10 in `[04]`.
 | `ToolFrequencyRow.failures` | `failed` (+ other statuses, `failurePct`, `maxDurationMs`) | adapt |
 | `HealthReport.alerts[]` `{ id: string, rule, severity, since, message, sessionId }` | `AlertItem` (`id: number`, `title` instead of `message`, same rule names plus `hook_gap`, `hook_failing`, no acknowledgement) | adapt |
 | `InstanceInfo` | same + `epoch`, `limits` | none |
+| `usePanel` interval `poll.<key>Ms` for git, ledger and chainLog (`[04 5.2]`) | no such keys: those three panels use `poll.overviewMs` (legacy `poll.overview_ms`); `transcriptMs` = `poll.events_ms`, `healthMs` = 5000 (6.2, registry C26, N-09) | adapt |
 | Stream `hello`/`change`/`heartbeat`/`reset`, `Last-Event-ID` precedence (S-10) | same; `hello` + `epoch, runtimeVersion, codeStamp`; heartbeat + `epoch`; reset reasons `cursor_too_old, cursor_ahead, epoch_changed, cursor_invalid`; the epoch changes with every server process | adapt reason enum |
 | `StreamChange` kinds (`task`, `config`, single-event `event/append`) | `work_item` instead of `task`; no `config` kind (config is read at start; a change needs a restart, visible through `hello`); `event/append` data is `{ items[], count, truncated }`; extra kinds `workflow`, `tool_call`, `alert`; `data` may be `null` | adapt |
 | S-3 tie-break `id` ascending | tie-break `id` in the sort direction (still a total order; the UI never re-sorts) | none |
@@ -2581,7 +2593,7 @@ out by I-10 in `[04]`.
 | export format `mcs.export/1`, meaning of `--include-content` | 11.1 |
 | C-4: `GET /api/health` compatibility | 6.2 |
 | `/api/v3/health` fields used by `status` | `HealthReport` 6.2 |
-| `runtime.json` sections `retention`, `alerts`, `pricing` owned by the data design | 3.8, 10.1, 8.3 |
+| `runtime.json` sections `retention`, `alerts`, `pricing` owned by the data design | 3.8, 10.1, 8.3 (normative key tables); `[01]` S1 writes the modules `config/runtime/{retention,alerts,pricing}.ts` from them and registers the keys with owner 03 (N-03); this document adds no file under `config/runtime/` |
 | `InstanceReader` with Api and Db readers calling the same engine functions | 12.2 |
 | this document needs from 01 | the `analytics` R section `{ usageTrend: boolean }` (default false, owned here) composed as `strictObject().prefault({})` (I-01); nothing in `server` (no `server.devOrigins`, I-31) |
 | C-4 key set `{ ok, version, pid, started, uptime, now, code_stamp, engine, instanceId, task, config_source, errors, reader }` | 6.2 `LegacyHealth`, adopted verbatim (I-30) |
@@ -2591,7 +2603,7 @@ out by I-10 in `[04]`.
 | diagnostics bundle `health` (I-21) | carries `HealthReport` (6.2) with `runtime` resources, `children`, `panels` |
 | `verify-completion`, `InstanceReader.explainCompletion` (I-08) | route `explainCompletion` and `EngineQueries.explainCompletion` (6.1, 6.3, 12); both readers throw `CompletionTargetError`, mapped by `[01 6.4]` to `USAGE` / `NOT_FOUND` |
 | `InstanceReader.errors` (`[01 6.1]`) | returns `ErrorItem[]` (6.1, `shared/src/api/health.ts`; registry C21) |
-| optional `mcs db rebuild` (I-12) | the 4.4 recovery steps; no DB function other than `backupDb` |
+| `mcs db rebuild --task S --yes --confirm S` (`[01 5.4]`, I-12) | the 4.4 recovery steps (stop, rebuild, start); no DB function of this document is called |
 
 ### 15.3 `05-tooling-testing-security.md` (ADR 0045)
 
@@ -2626,7 +2638,7 @@ out by I-10 in `[04]`.
 | spool segments `hooks-<YYYYMMDD>T<HH>Z.ndjson`, `SPOOL_SEGMENT_EXT` (2.3, 2.7, I-02) | `spool_cursors.segment` CHECK `GLOB '*.ndjson'` (3.5) |
 | `MAX_LINE_BYTES` in `shared/src/protocol/limits.ts` (1.1, I-32) | imported (3.3); no copy in `db-constants.ts` |
 | `renderEvidence(item, now)` and `viewChanged` (`lifecycle/rules.ts`), `toLegacy` (`lifecycle/legacy.ts`) (7.1, 7.9, I-33) | used by 5.5 and the view writes of 3.6 |
-| `createIngestService(ctx)`, `createLifecycleSweeper(ctx)` (4.10, I-15) | use `ctx.db`, the repositories and `withWriteTx`; nothing here changes |
+| `createIngestService(ctx)` (with `writer`, `untilIdle({ timeoutMs })` rejecting `IngestIdleTimeoutError`) and `createLifecycleSweeper(ctx, { writer })` -> `{ start, stop, tickNow }` (4.10, I-15) | use `ctx.db` (and `ctx.instanceDir`), the repositories and `withWriteTx`; nothing here changes |
 | `external.attempt` / `external.attempt_cleared` logical events of the attempts tick (`[06 3.10.7]`) | submitted to `[02]`'s writer after the attempts `withWriteTx` commits; the writer commits them in its own transaction (3.6, N-01) |
 
 ### 15.5 `06-panels-parity-platform.md`
@@ -2637,7 +2649,7 @@ out by I-10 in `[04]`.
 | source key of the chain log | `pathKey(path)`, exported by `[06 4.1]` `platform/paths.ts` next to `canonicalPath`/`samePath` |
 | panel contracts in `shared/src/api/panels.ts` (I-35) | route `panel` response schema `PanelResponseSchema` (6.1, 13) |
 | `PanelService.stats()`, `childStats()` and process resources for measurement (8.2, I-21) | `HealthReport.panels`, `HealthReport.children`, `HealthReport.runtime` resources (6.2) |
-| runbook 7.1/7.2 (I-12) | backups and restore are `[01 5.5]`; no `reimport` (4.4); health field names are 6.2's |
+| runbook 7.1/7.2 (I-12) | backups and restore are `[01 5.5]`; no `reimport`, the DB rebuild step is `$MCS stop` -> `$MCS db rebuild --task X --yes --confirm X` -> `$MCS start` (`[01 5.4]`, 4.4); health field names are 6.2's (no `configWarnings`, N-05) |
 | `createPanelService(ctx, { writer })` (I-15, N-01) | reads `ctx.queries` (session `TokenUsage` for rows); the attempts tick writes through `AttemptsRepo` inside one `withWriteTx`, then submits the 02 events to `writer` after COMMIT (3.6); candidates from `SessionsRepo.attemptCandidates`, uids from `SessionsRepo.uidsByRowIds` (N-10) |
 
 ## 16. CHALLENGES
@@ -2842,8 +2854,8 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
 | A-1 | `[02]` lifecycle | the `LifecycleView` fields and enums of `[02 7.1]` (stored as in 3.5); `facts_json` sizes within the caps (sessions 64 KiB, agents and runs 16 KiB); `viewChanged` and `renderEvidence(item, now)` exported from `engine/src/lifecycle/rules.ts`, `toLegacy()` from `lifecycle/legacy.ts` (I-33); `explainCompletion(lookup, target, now)` with `CompletionLookup`, `CompletionTarget` and `CompletionTargetError('target_invalid' | 'target_not_found')` (no `null` result), `attemptPart` 0..512, result typed as the `z.infer` of `CompletionEvidenceSchema` (6.3) (`[02 7.13]`, I-08, C16, C17); `ChangeSink.record` entity `event` for hook and transcript rows (`[02 4.6]`, N-08); board derivation `[02 7.11]` writes `work_items` with `rule` and `board_reason` |
 | A-2 | `[02]` ingestion | writes through `withWriteTx` + `createChangeSink` and the repositories of 4.5 with the statements and natural keys of 3.6; `TranscriptFilesRepo.updateCursors` for cursor moves; reconciliations through `ReconciliationsRepo`; stores the values of the normative stored-kind table of 3.6 (I-03: `[02 4.1, 4.3, 5.6]` carry the same values; no longer an assumption); writes probe rows through `HookProbesRepo` in the drain transaction |
 | A-3 | `[02]` hooks | nudge body and behaviour of `[02 2.8]` (no longer an assumption: adopted in 5.2) |
-| A-4 | `[01]` instances/ops | the composition root of `[01 4.4a]` (I-15): `InstanceContext` (`instanceId, repoDir, config, clock, db, errors, exec` plus `claudeHome, mcsHome, logger, queries`) and `createInstanceRuntime(ctx)` -> `{ start(), stop(deadlineMs), ingestUntilIdle({ timeoutMs }), health() }`, which opens the DB with `openInstanceDb('serve')`, maps errors with `DB_OPEN_EXIT_CODES`, builds `ctx.queries` with `createQueries` and all six deps (12.1, C09), starts and stops `createDbScheduler(ctx)`, and runs `backupDb` for the control op `backup`; `mcs start` uses `peekDbSchemaVersion`; `upgrade`/`db migrate` use `planDbMigrations`/`migrateDb` after their backup; `cleanup --scope data` uses `applyRetention`; `commands` strings for `InstanceInfo` (`[01 6.6]`); `outdated` per `[01 5.3]`; graceful shutdown `[01 4.5]`; the bound port is passed to the Host guard |
-| A-5 | `[01]` config | composes the sections `retention`, `alerts`, `pricing` and `analytics` (`{ usageTrend: boolean }`, default false) owned here, each `strictObject().prefault({})` (I-01); no `server.devOrigins` (I-31); legacy keys read here: `window_hours`, `include_unmatched`, `session_ids`, `poll.stale_after_ms`, `limits.text_chars`, `panels`, `ui`; `ConfigInspection` (`shared/src/cli/results.ts`, I-20) behind `GET /config` |
+| A-4 | `[01]` instances/ops | the composition root of `[01 4.4a]` (I-15): `InstanceContext` (`instanceId, repoDir, config, clock, db, errors, exec` plus `claudeHome, mcsHome, logger, queries`) and `createInstanceRuntime(ctx)` -> `{ start(), stop(deadlineMs), ingestUntilIdle({ timeoutMs }) -> { idle, waitedMs, stats }, health() }`, which opens the DB with `openInstanceDb('serve')`, maps errors with `DB_OPEN_EXIT_CODES`, builds `ctx.queries` with `createQueries` and all six deps (12.1, C09), starts and stops `createDbScheduler(ctx)` wrapped as a `RuntimeComponent` (C08), and runs `backupDb` for the control op `backup`; `mcs start` uses `peekDbSchemaVersion`; `upgrade`/`db migrate` use `planDbMigrations`/`migrateDb` after their backup; `cleanup --scope data` uses `applyRetention`; `commands` strings for `InstanceInfo` (`[01 6.6]`); `outdated` per `[01 5.3]`; graceful shutdown `[01 4.5]`; the bound port is passed to the Host guard |
+| A-5 | `[01]` config | composes the sections `retention`, `alerts`, `pricing` and `analytics` (`{ usageTrend: boolean }`, default false) owned here, each `strictObject().prefault({})` (I-01); `[01]` S1 writes the modules `config/runtime/{retention,alerts,pricing}.ts` from the normative tables of 3.8, 10.1 and 8.3 and registers the keys in `R_KEY_CATALOGUE` with owner 03 (N-03); no `server.devOrigins` (I-31); legacy keys read here: `window_hours`, `include_unmatched`, `session_ids`, `poll.stale_after_ms`, `limits.text_chars`, `panels`, `ui`; `ConfigInspection` (`shared/src/cli/results.ts`, I-20) behind `GET /config` |
 | A-6 | `[06]` panels | `PanelResponseSchema`, `AttemptState`, `ChildKind`, `ChildKindStats`, `PanelStats` exported from `shared/src/api/panels.ts` (I-35, I-21); `pathKey()` in `platform/paths.ts`; the attempts tick writes only through `AttemptsRepo` inside one `withWriteTx` and submits its 02 events to the writer after COMMIT (N-01); 06 3.10 uses the table names of 3.5 and points to 3.5/3.6 instead of a copy of the DDL (I-07, N-10) |
 | A-7 | `[01]` audit | `entriesBetween(ws, fromMs, toMs, limit): Promise<AuditRef[]>` with `AuditRef = { file, at: ISO, title, summary }` (`[01 7.1]`, I-19) over `audit/changes.md` and `decisions.md` (`## <ts> \| <title>` headers, the legacy split rule, universal newlines) for `SessionDetail.auditRefs` |
 | A-8 | `[04]` UI | adapts the rows marked "adapt" in 15.1 by importing the contracts from `@mcs/shared` (I-10) |
@@ -2897,8 +2909,12 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
   stored-kind column equal to 3.6 (I-03), `[02 4.6]` records entity `event` (N-08) and `[02 7.13]` step 1 accepts `attemptPart` 0..512
   (I-08, C17); (b) `[01]` defines
   `InstanceContext`/`createInstanceRuntime` (4.4a, passing the six `createQueries` deps), `entriesBetween` (7.1), `ConfigInspection` and
-  the `analytics` section (I-01, I-15, I-19, I-20), and types `InstanceReader.errors` as `ErrorItem[]` (6.1, N-08, C21); (c) `[04]` imports the contracts (I-10); (d) `[06]` uses the attempts names of 3.5, writes through `AttemptsRepo`, and
-  exports `pathKey`, `ChildKind`, `ChildKindStats`, `PanelStats` from the paths of A-6 (I-07, I-21, I-35). No fallback is needed: `0001`
+  the `analytics` section (I-01, I-15, I-19, I-20), and types `InstanceReader.errors` as `ErrorItem[]` (6.1, N-08, C21); it also writes
+  the `retention`/`alerts`/`pricing` modules (1.6, N-03), lists `data/exports/` (1.1, C39), names its CLI union `CliErrorCode` (6.2, C19)
+  and defines `mcs db rebuild` (5.4, I-12); (c) `[04]` imports the contracts (I-10); (d) `[06]` uses the attempts names of 3.5, writes through `AttemptsRepo`, and
+  exports `pathKey`, `ChildKind`, `ChildKindStats`, `PanelStats` from the paths of A-6 (I-07, I-21, I-35); its attempts tick submits the
+  02 events to the writer after the attempts COMMIT, with `endedAt` (3.10.3, 3.10.7, ADR 0059 without "in the same transaction"; N-01,
+  I-18). No fallback is needed: `0001`
   contains the single `events` table and the attempts tables.
 - O-5 Completion lookups by label and by attempt part scan `sessions` and `attempt_runs` (no index on `label` or on `part` across
   generations; the route is operator-triggered). UNVERIFIED time. Plan: slice S5b measures them in DA-T-API-15 at 5,000 sessions and
@@ -2925,4 +2941,4 @@ S13a/S13b) -> S13. Test file names follow `[05 4.1]` (section 19 intro).
 | S10 Alerts | 5 | S5, S6, `[02]` health | `packages/engine/src/alerts/{rules,evaluator,service}.ts`; tests `packages/engine/src/alerts/*.test.ts`, `packages/engine/test/alerts.int.test.ts` | DA-T-AL-1..5 pass |
 | S11 Export, retention, schedule | 5 | S5, S7, `[01]` S8 (the runtime starts `createDbScheduler`) | `packages/engine/src/maintenance/{export,retention,schedule}.ts`, `packages/server/src/routes/export.ts`; tests `packages/engine/src/maintenance/{retention,schedule}.test.ts`, `packages/engine/test/maintenance-{export,retention}.int.test.ts` | DA-T-E-1, 2, 4, 5 pass |
 | S12 Reader integration | 5 | S5-S11, `[01]` S13a (readers over S5 queries) and S13b (`verify-completion`, after `[02]` I-7b) | `packages/engine/src/query/index.ts` exports used by `[01]` `reader/{api-reader,db-reader}.ts`; test `packages/engine/test/readers.int.test.ts` | DA-T-CLI-1 passes |
-| S13 Privacy and isolation suite | 6 | S5-S12, testkit | `runtime/tests/security/data-privacy.test.ts`, `runtime/tests/isolation/data-*.test.ts` | DA-T-PRIV-1, 2, 4, DA-T-E-6 and the brief 4 tests of section 21 pass |
+| S13 Privacy and isolation suite | 6 | S5-S12, testkit, `[05]` S9 (`runtime/tests/isolation/_setup.ts` only; the `data-*` files are this slice's, N-07) | `runtime/tests/security/data-privacy.test.ts`, `runtime/tests/isolation/data-*.test.ts` | DA-T-PRIV-1, 2, 4, DA-T-E-6 and the brief 4 tests of section 21 pass |

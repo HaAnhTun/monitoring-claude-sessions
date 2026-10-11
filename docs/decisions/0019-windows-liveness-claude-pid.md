@@ -13,7 +13,8 @@ sessions only (unattended `-p` runs are not known to be listed). The hook proces
 
 - The handler records `claude_pid` from `CLAUDE_PID` (digits only) on every envelope.
 - The sweeper probes known pids of sessions with presence `open` every 10 s with `process.kill(pid, 0)` (ESRCH = dead, EPERM =
-  alive), emitting `external.pid` facts.
+  alive), emitting `external.pid` facts. The probe is the shared `pidAlive(pid)` of design 06 4.2
+  (`engine/src/platform/process.ts`); this design does not add a second one.
 - Trust is asymmetric: a dead pid is high-confidence evidence that the process is gone (rule S-5: `stale/process_gone` after a
   30 s grace that lets a spooled SessionEnd arrive first); an alive pid is medium-confidence (pids are reused on Windows) and only
   prevents `abandoned`.

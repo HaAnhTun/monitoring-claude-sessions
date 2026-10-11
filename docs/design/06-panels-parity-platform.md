@@ -3,6 +3,10 @@
 Status: Phase 1 design, implementation-grade. Author: panels/platform/parity designer, 2026-10-11.
 Revision 3 (2026-10-11): second critic issues N-01, N-05, N-06, N-10, I-05, I-06, I-12, I-18 and contract-registry rows C06, C11-C15,
 C28, C36, C40-C44, C47, C57 applied (`98-contract-registry.md` arbitrates names).
+Revision 4 (2026-10-11, reconciliation of the phase 1b residuals): N-03 (normative `panelOptions` key table in 3.5, module written by 01
+S1), I-36 (engine time source is 01's `Clock` `{ now() }` from `shared/src/time.ts`: 3.2, 3.5, 3.10.7, 4.9, 5.4), C18 (02's engine
+evidence type is `LifecycleEvidence`, 3.10.7), C26/N-09 (benchmark poll keys, 8.3), C39 (`data/exports/`, 7.1 item 1), N-11/C23
+(`hooks status`, 7.1 item 11), N-12 (`T-LC-16` is 01's spawn rule, PP1), G5 budget list B1-B7 (5.9, as ADR 0056 and PP10).
 Owner of this file and of ADRs 0050-0059. Inputs: `00-foundations.md` (D1-D15, open questions 2 and 6), the owner's brief
 (sections 8.1, 12, 13 Phase 6, 14), `docs/research/current-state-backend.md`, `current-state-frontend.md`, `transcript-survey.md`,
 `claude-code-hooks.md`, `stack-versions.md`, the legacy code (`src/backend/panels.py`, `proc.py`, `state.py`, `sessions.py`,
@@ -135,11 +139,13 @@ runtime/packages/server/src/routes/panels.ts         GET /api/v3/panels/:key (3.
 takes the instance context `InstanceContext` of design 01 4.4a / slice S8, declared in `packages/engine/src/runtime/context.ts`
 (`createInstanceRuntime` is in `packages/engine/src/runtime/instance-runtime.ts`; critic I-15, registry C15). Fields this design reads:
 `instanceId`, `repoDir`, `config`, `clock`, `db`, `errors`, `exec`, `claudeHome`, `mcsHome`, `logger`, `queries` (03 `createQueries`,
-session `TokenUsage` for attempts rows). `createPanelService(ctx, { writer })` (3.4) is component 4 of 01's `createInstanceRuntime(ctx)`,
-which passes `writer: ingest.writer` (02 4.10: the one `IngestWriter`, shared with this design's attempts tick). That component's
-`start()` arms a 2 s `ctx.clock` timer calling `panels.tickAttempts()` (first call at start; serialized: a firing while a tick runs is
-skipped); its `stop(deadlineMs)` clears the timer, then calls `panels.close()` (01 4.4a; critic N-01, registry C57). Nothing in design 02's
-scheduler drives attempts.
+session `TokenUsage` for attempts rows). `ctx.clock` is 01's `Clock` (`{ now(): number }`, epoch ms, `packages/shared/src/time.ts`,
+critic I-36); every time read in this design is `ctx.clock.now()`. `createPanelService(ctx, { writer })` (3.4) is component 4 of 01's
+`createInstanceRuntime(ctx)`, which passes `writer: ingest.writer` (02 4.10: the one `IngestWriter`, shared with this design's attempts
+tick). That component's `start()` calls `panels.tickAttempts()` once, then re-arms an unref'd 2000 ms `setTimeout` chain calling it
+through one serializer (a firing while a tick runs is skipped; a rejection is logged and pushed to `ctx.errors`, never thrown); its
+`stop(deadlineMs)` clears the timer, awaits a running tick (raced against the deadline), then calls `panels.close()` (01 4.4a component
+4; critic N-01, registry C57). Nothing in design 02's scheduler drives attempts.
 
 ### 3.3 Contracts (`@mcs/shared` `api/panels.ts`)
 
@@ -283,21 +289,31 @@ export interface SourceSpec<T> {
 }
 export type SourceResult<T> = { status: 'ok'; value: T } | { status: 'unavailable' | 'unsupported' | 'error'; message: string };
 export interface CacheRead<T> { value: T | null; sampledAt: number | null; status: SourceStatus; message: string | null }
-export class SourceCache<T> { constructor(spec: SourceSpec<T>, clock: () => number, errors: ErrorRing); read(): Promise<CacheRead<T>>; abort(): void }
+export class SourceCache<T> { constructor(spec: SourceSpec<T>, clock: Clock, errors: ErrorRing); read(): Promise<CacheRead<T>>; abort(): void }
+// Clock: 01 4.4a, packages/shared/src/time.ts ({ now(): number }, critic I-36)
 ```
 `read()` algorithm (entry fields: `value, sampledAt, lastStatus, lastMessage, inflight, nextTryAt`):
-1. `now = clock()`. If `value !== null` and `now - sampledAt < ttlMs`: return `{value, sampledAt, status: lastStatus === 'ok' ? 'ok' : lastStatus, message: lastMessage}`.
+1. `now = clock.now()`. If `value !== null` and `now - sampledAt < ttlMs`: return `{value, sampledAt, status: lastStatus === 'ok' ? 'ok' : lastStatus, message: lastMessage}`.
 2. If `inflight === null` and `now >= nextTryAt`: `inflight = load(signal)` wrapped so it never rejects (a rejection becomes `{status:'error', message: <Error.message clipped 200>}`).
-   On settle: `ok` -> `value = v; sampledAt = clock(); lastStatus = 'ok'; lastMessage = null`; otherwise `lastStatus = result.status;
-   lastMessage = result.message`; if `unavailable|unsupported` -> `nextTryAt = clock() + retryAfterUnavailableMs`; if `error` ->
-   `nextTryAt = clock() + min(ttlMs * 2^failures, 300000)` with `failures++` (reset to 0 on ok). Errors go to the ring once per
+   On settle: `ok` -> `value = v; sampledAt = clock.now(); lastStatus = 'ok'; lastMessage = null`; otherwise `lastStatus = result.status;
+   lastMessage = result.message`; if `unavailable|unsupported` -> `nextTryAt = clock.now() + retryAfterUnavailableMs`; if `error` ->
+   `nextTryAt = clock.now() + min(ttlMs * 2^failures, 300000)` with `failures++` (reset to 0 on ok). Errors go to the ring once per
    distinct `(source, message)` per 60 s with `where: 'panel.<source>'`. `inflight = null`.
 3. If `value !== null`: return it immediately (stale while revalidating) with `status: lastStatus`, `message: lastMessage`.
 4. Else wait `Promise.race([inflight, sleep(firstWaitMs)])`; if settled with a value return it; else `{value:null, sampledAt:null,
    status: inflight ? 'pending' : lastStatus, message: lastMessage}`.
 
-Source table (all values are code constants in `panels/constants.ts`; only `processIntervalMs` is configurable, in `runtime.json`
-`panelOptions.machineProcessIntervalMs` (design 01 naming, avoids the legacy `panels` key), integer 10000..300000, default 20000):
+Normative key table of the `runtime.json` section `panelOptions` (this design owns the keys and bounds; design 01 slice S1 writes the
+module `packages/shared/src/config/runtime/panelOptions.ts` from this table and registers both keys in `R_KEY_CATALOGUE` with owner 06;
+critic N-03; the section name is design 01's and avoids the legacy L keys `panels` and `attempts`):
+
+| Key | Type and bounds | Default | Used by |
+|---|---|---|---|
+| `panelOptions.machineProcessIntervalMs` | integer 10000..300000 | 20000 | processes source TTL (`processIntervalMs` below, 3.7.3) |
+| `panelOptions.attemptsWindowHours` | integer 1..8760 | 24 | attempts matching window and `runsToMatch` cut-off (3.10.3 step 7, 3.10.6; D6) |
+
+Source table (all values are code constants in `panels/constants.ts`; only `processIntervalMs` is configurable, through
+`panelOptions.machineProcessIntervalMs` above):
 
 | Source | ttlMs | firstWaitMs | timeoutMs | retryAfterUnavailableMs | Cost per refresh (E-ref) |
 |---|---|---|---|---|---|
@@ -597,7 +613,7 @@ names. Three rules follow from 03's shapes:
    c. Else ignore the line.
 7. Transaction: every write of steps 3-6, the source row (`saveSource`: `read_offset`, identity, generation) and matching (3.10.6, for
    rows changed in this tick plus `runsToMatch(now - attemptsWindowHours * 3600000, 500)`; `attemptsWindowHours` default 24,
-   `runtime.json panelOptions.attemptsWindowHours`, design 01) run inside ONE `withWriteTx(db, ctx, fn)` per tick (03 4.5; `fn` is
+   `runtime.json panelOptions.attemptsWindowHours`, key table in 3.5) run inside ONE `withWriteTx(db, ctx, fn)` per tick (03 4.5; `fn` is
    synchronous; the chain-log read of step 5 happens before it, asynchronously). `AttemptsRepo` reserves the `attempt/upsert` change
    and stamps `updated_seq`/`updated_at` on every changed row (3.10.2). The transaction also computes the evidence set of 3.10.7 step 3
    (reads only). No design 02 event is written inside it: after COMMIT the tick submits the events through the shared `IngestWriter`,
@@ -663,7 +679,7 @@ the shared writer (`deps.writer`, 02 4.6 / 4.10) as one batch:
 `writer.submit({ source: 'external', items: [{ kind: 'external', events, rows: [] }], bytes: 0 })` (`bytes` = input bytes, none here).
 The writer merges them in its own transaction and publishes the `session/upsert` changes after its own COMMIT (02 4.6). Events:
 `{ k: 'external.attempt', sessionId, state: 'COMPLETED' | 'FAILED' | 'UNKNOWN', evidence, rowKey: 'attempt:' + row.id, endedAt: row.ended_at, observedAt: publishAt }`
-(`sessionId` = the provider id of `row.session_id`, 3.10.2; `endedAt` is the evidence time shown, 02 `EvidenceItem.at`, critic I-18,
+(`sessionId` = the provider id of `row.session_id`, 3.10.2; `endedAt` is the evidence time shown, 02 `LifecycleEvidence.at`, critic I-18, registry C18,
 registry C41; 02 merges the event LWW into the `attempt` fact; rule S-1 maps it to `completed`/`failed`/`unknown`). When a session loses
 its evidence (config rebuild, 3.10.3 step 3), the batch carries `{ k: 'external.attempt_cleared', sessionId, observedAt: publishAt }`
 (design 02 4.3 per critic I-18: 02 7.3 merges it into the `attempt` LWW fact with value `null` at `observedAt`; rule S-1 treats `null`
@@ -673,8 +689,8 @@ as no evidence; 02's transition-table row "cleared after rebuild -> re-derived w
 02's LWW joins by stamp (`Stamp.at` first, 02 7.2), so an END-time stamp would (a) let a cleared fact (stamped `now`) beat re-published
 evidence whose END is older, and (b) let an earlier START with a later END beat the latest START, breaking the legacy rule above. S-1
 does not read the stamp time (02 7.4), so nothing else depends on it. Algorithm (`attempts/evidence.ts`):
-1. `publishAt = max(clock(), lastPublishAt + 1)`, taken once per tick after COMMIT; `lastPublishAt` is kept by the panel service and
-   initialised at service start to `max(clock(), source.updatedAt)` where `source` = `AttemptsRepo.getSource` of the configured chain
+1. `publishAt = max(ctx.clock.now(), lastPublishAt + 1)`, taken once per tick after COMMIT; `lastPublishAt` is kept by the panel service and
+   initialised at service start to `max(ctx.clock.now(), source.updatedAt)` where `source` = `AttemptsRepo.getSource` of the configured chain
    log (written in every tick's transaction with `tx.now`, so it bounds the previous ticks' stamps), so a restart or a small backward
    wall-clock step cannot produce an older stamp.
 2. `touched` = session row ids of rows inserted, changed or (re)matched in this tick, plus the `cleared` ids returned by `resetSource`
@@ -803,9 +819,7 @@ export function waitForExit(pid: number, timeoutMs: number, pollMs?: number /* 1
   `script = "$ErrorActionPreference='SilentlyContinue'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-CimInstance Win32_Process -Filter 'ProcessId=" + pid + "').CommandLine"`
   where `pid` passed `/^[1-9][0-9]{0,9}$/` (else `null` without spawning). Timeout 20 s (legacy `cli.py:58-66`), cost about 300 ms (E1
   CIM row). Result cached 5 s per pid (`Map<pid, {at, value}>`, at most 64 entries, oldest evicted); `null` results are not cached.
-  Output: stdout with one trailing `
-?
-` removed; empty -> `null`.
+  Output: stdout with one trailing `\r\n` removed; empty -> `null`.
   Linux: read `/proc/<pid>/cmdline`, NUL -> space, trailing space trimmed. macOS: `ps -o command= -p <pid>` via `execFileText` (kind `ps`, UNVERIFIED).
 - `forceKill`: Windows: `execFileText({kind:'taskkill', file: resolveExecutable('taskkill'), args: ['/PID', String(pid), '/F'], timeoutMs: 10000, maxOutputBytes: 65536, encoding: 'utf8'})`
   (01 E3: plain `process.kill` and `taskkill /F` both terminate immediately; `taskkill` keeps 01's tested path); exit code 128 (not
@@ -852,8 +866,7 @@ export class SmallFileError extends Error { code: 'E_FILE_TOO_LARGE' | 'E_FILE_B
 `ENOENT` is rethrown unchanged (callers distinguish "absent").
 
 **Shared legacy JSON files** (`task.json`, `config.json`, and any JSON the legacy engine also reads): written only through design 01's
-`writePyJsonFile(path, value)` (PyJson serializer `dumpPyJson(v, {indent: 2}) + '
-'`, ADR 0003; byte-compatible with Python
+`writePyJsonFile(path, value)` (PyJson serializer `dumpPyJson(v, {indent: 2}) + '\n'`, ADR 0003; byte-compatible with Python
 `json.dump(indent=2, ensure_ascii=False)`, INV-02, gate G8), which calls `fsx.atomicWriteFile`. `JSON.stringify` is never used for these
 files (01 1.9 E6: it differs from Python on 3,340 of 26,016 number lexemes). Node-owned JSON files (`instance.json`, `runtime.json`,
 `state.json`, backups' `manifest.json`) follow 01's per-file rules (01 1.5-1.7, 5.5), also through `writePyJsonFile` or `atomicWriteFile`.
@@ -931,7 +944,8 @@ handle is imported by polling within 1.5 s with no watch event" (S30 steps 21-25
 ### 4.9 Time and time zones
 
 - Stored time: epoch ms UTC (D10). Transcript timestamps are ISO `Z` (survey 2.5). Chain-log times are local (3.10.4).
-- Every engine module receives `clock: () => number`; durations and budgets use `performance.now()`.
+- Every engine module of this design reads time from 01's `Clock` (`ctx.clock.now()`, `packages/shared/src/time.ts`, critic I-36);
+  tests pass 05's testkit `FakeClock`, which implements it; durations and budgets use `performance.now()`.
 - Tests: Vitest `test.env.TZ = 'UTC'` in `runtime/vitest.config.ts` and a setup assertion `new Date(0).getTimezoneOffset() === 0`; the
   attempts and parity suites run a second time in CI with `TZ=Asia/Ho_Chi_Minh` (a non-UTC zone, the owner's) where the golden generator
   output is regenerated in the same zone (5.2.6). E13 proves both Python on Windows and Node honour `TZ=UTC`.
@@ -1112,7 +1126,7 @@ Per L2 scenario:
 1. Build the tree with `@mcs/testkit/legacy` into a temp dir; assert the manifest (5.3).
 2. Create a Node instance in a temp workspace with the scenario's legacy config as `config.json` (schema_version 1 added), hooks
    disabled: build design 01's `InstanceContext` (01 4.4a / slice S8, `packages/engine/src/runtime/context.ts`, critic I-15, registry
-   C15) with `claudeHome` = the tree's home, `mcsHome` = a temp folder, `clock = () => FROZEN_NOW * 1000`, and
+   C15) with `claudeHome` = the tree's home, `mcsHome` = a temp folder, `clock = new FakeClock(FROZEN_NOW * 1000)` (05 testkit, a `Clock`, I-36), and
    `rt = createInstanceRuntime(ctx)` (`packages/engine/src/runtime/instance-runtime.ts`).
 3. `await rt.start()`; `const r = await rt.ingestUntilIdle({ timeoutMs: 30000 })`; assert `r.idle === true` (01 4.4a maps 02's
    `IngestIdleTimeoutError` to `{ idle: false, stats }`; on `false` the test fails listing `r.stats`, registry C06); start the HTTP server for `ctx` on a port in `127.0.0.1:18875-18899` (05 4.5); after the comparisons `await rt.stop(5000)`.
@@ -1300,7 +1314,7 @@ recorded run (command, date, result) in the Phase 6 migration report:
 | G2 | `npm run parity:shadow` (5.6) on the owner's active task(s): 3 runs at least 1 h apart, one while a chain step runs, one after a step ended PASS or FAIL: `unexplained == 0` | 3 JSON reports |
 | G3 | lifecycle transition-table and property tests pass (lifecycle design) | CI |
 | G4 | E2E brief-14 scenario list passes on Windows with Chrome; skipped steps listed with reason | Playwright report |
-| G5 | performance budgets B1-B6 (section 8) met on this machine | benchmark JSON |
+| G5 | performance budgets B1-B7 (section 8) met on this machine | benchmark JSON |
 | G6 | two simultaneous instances: isolation tests pass; hook installer tests ran only against temp `--settings` files | CI |
 | G7 | rollback rehearsal on a copy of a real task workspace: Node start/stop, then legacy `start` works on the same workspace with unchanged `config.json`/`task.json`/audit (byte compare) in under 2 minutes | rehearsal log |
 | G8 | upgrade-from-existing: every task under the repo's tasks root opens in Node (`inspect`, `start`, `stop`) with `config.json`, `task.json`, `audit/*` byte-identical before/after | script output |
@@ -1331,7 +1345,7 @@ removing it is a separate ADR. Rollback at any time = 7.1 "Rollback".
 `runtime/packages/testkit` is specified in three places; this section only adds to the other two and never redefines them:
 - **Design 05 section 4.4** owns the core modules (`temp.ts`, `ports.ts`, `wait.ts`, `clock.ts`, `processes.ts`, `http.ts`,
   `transcript.ts` with `TranscriptBuilder`, `claude-home.ts` with `buildClaudeHome`, `hooks.ts` with `hookPayload`/`runHookHandler`,
-  `workspace.ts`, `demo.ts` host, `canary.ts`) and the rules (every user-like string starts with `FIXTURE`, `FIXTURE.md` marker in temp
+  `workspace.ts`, `demo.ts` host, `canary.ts`; `clock.ts` holds only `FakeClock`, the `Clock` interface is 01's `shared/src/time.ts`, I-36) and the rules (every user-like string starts with `FIXTURE`, `FIXTURE.md` marker in temp
   roots, no real paths, deterministic ids, never reads the real `~/.claude`).
 - **Design 04 section 11.5** owns the demo letter list (A-H) and `buildDemo`'s result contract.
 - **This design** owns: `legacy/` (byte-identical legacy trees, 5.3), `pyjson.ts`, `io.ts`, `expect.ts`, `big.ts`, `scenarios/` (the
@@ -1499,7 +1513,8 @@ function mcs { node .claude/skills/monitoring-claude-sessions/scripts/mcs.mjs @a
    SQLite DB (D2, D3). Files: `task.json`, `config.json`, `README.md`, `audit/changes.md`, `audit/decisions.md` (shared with the legacy
    engine, byte-compatible); `instance.json`, `runtime.json`, `state.json`, `run/control.token`, `data/monitor.db` (+ `-wal`, `-shm`),
    `data/spool/hooks-<YYYYMMDD>T<HH>Z.ndjson` (hook write-ahead log, 02 2.7; `.ndjson` so that the legacy `audit` does not flag it,
-   critic I-02), `data/backups/<backupId>/` (01 5.5), `logs/runtime.log` (+ `.1`..`.5`), `logs/boot.log` (+ `.1`).
+   critic I-02), `data/exports/` (temporary `.tmp-<random>.db` files of the export route, 03 11.1; removed by `cleanup --scope
+   stale-state` after 10 min, 01 1.1, registry C39), `data/backups/<backupId>/` (01 5.5), `logs/runtime.log` (+ `.1`..`.5`), `logs/boot.log` (+ `.1`).
 2. **Prerequisites** (01 5.1; 01 6.4 `doctor`). `node --version` (>= 22.22.0, 24 recommended; an older Node makes `$MCS` print
    `ERROR: Node >= 22.22.0 is required (found <v>); install the Node 24 LTS` and exit 1, `NODE_TOO_OLD`, 01 5.1); the first `$MCS` command bootstraps the
    runtime (`npm ci` + build, stamped; D6); `$MCS doctor` prints each check as `{check, ok, detail, level}`. Windows PowerShell 5.1 is
@@ -1584,7 +1599,8 @@ function mcs { node .claude/skills/monitoring-claude-sessions/scripts/mcs.mjs @a
     `$MCS backup restore --task X --id <pre-upgrade backup> --yes` when the DB schema is newer than the old runtime supports. Level 3:
     the Python-only skill (tag `pre-v3-python`); Node files in workspaces are ignored by the legacy engine.
 11. **Hooks** (01 6.3, 6.4 `hooks *`; details in `docs/hooks.md`). `$MCS hooks install --scope project-local --task X` (dry run: plan
-    and consent text) -> same with `--yes`; `$MCS hooks verify --task X`; `$MCS hooks uninstall --scope project-local --yes`;
+    and consent text) -> same with `--yes`; `$MCS hooks verify --task X`; `$MCS hooks status --task X` (installed scopes, last envelope per instance; 01 6.3, critic N-11);
+    `$MCS hooks uninstall --scope project-local --yes`;
     `$MCS hooks enable --task X` / `$MCS hooks disable --task X`. Hooks are optional; transcripts alone keep the monitor correct (D8).
 12. **Logs** (01 1.1, 1.6, 1.8; 05 S-LOG). `logs/runtime.log`, rotated to `runtime.log.1`..`.5` at 10 MiB (constants
     `LOG_ROTATE_BYTES`, `LOG_KEEP` of 05's logger, S-LOG-6 per critic I-25); `logs/boot.log` (+ `.1`) holds the detached server's
@@ -1661,7 +1677,7 @@ machine (B-cal). Benchmarks compute rates from two samples (`delta(cpuUserMicros
 |---|---|---|
 | `calibrate-children.ps1` (Windows) | port of `measure-child.ps1`/`measure-enc.ps1`/`measure-git.ps1`/`measure-docker.ps1`: 6 runs per `ChildKind` command with `ProcessStartInfo` + `TotalProcessorTime` | `results/calibration-<date>.json` `{kind: {cpuMsMedian, cpuMsMax, wallMsMedian}}` |
 | `bench-first-import.mjs --mb 70 --runs 3 --port 18900` | builds `buildBigTranscript` into a temp Claude home, starts an instance (child process, hooks off), polls `/api/v3/health` every 100 ms until `ingestion.transcripts.pendingBytes === 0` and the session's usage reports complete; samples event-loop delay and RSS | B4 JSON: wall, p99 delay, RSS peak, per run + median |
-| `bench-idle.mjs --minutes 10 --clients 0\|1\|2 --port 18901` | starts an instance on a testkit demo (`buildDemo`), runs N headless pollers that replay the UI intervals from `/api/v3/instance.poll` (machine 2 s, logs 3 s, git/ledger/chainLog 5 s, attempts 6 s, sessions 6 s, health 5 s); samples `/health` every 5 s | B1, B2, B3 JSON: `nodeCpuPct`, `childCpuPct` (spawn counts x calibration), `rss p95` |
+| `bench-idle.mjs --minutes 10 --clients 0\|1\|2 --port 18901` | starts an instance on a testkit demo (`buildDemo`), runs N headless pollers that replay the UI intervals from `/api/v3/instance.poll` (03 6.2, registry C26: `machineMs` 2 s, `logsMs` 3 s, `overviewMs` 5 s for git/ledger/chainLog, `attemptsMs` 6 s, `sessionsMs` 6 s, `healthMs` 5 s, with the default config); samples `/health` every 5 s | B1, B2, B3 JSON: `nodeCpuPct`, `childCpuPct` (spawn counts x calibration), `rss p95` |
 | `bench-api.mjs --port 18902` | 200 sequential + 200 at concurrency 4 per endpoint, idle and during a concurrent `bench-first-import` | B5 percentiles p50/p95/p99 |
 | `bench-start.mjs` | 5 x `start`/`stop` on an existing workspace | B6 |
 Each script prints one JSON document and exits 1 when a budget fails; `npm run bench` runs them in sequence (about 25 min). Benchmarks run
@@ -1698,7 +1714,8 @@ pass these three through for the `docker` kind only.
 
 - Design 01: `compilePyRegex(source, 'session_rule' | 'attempts'): CompiledPyRegex` (throws `McsError` `REGEX_UNSUPPORTED`),
   `PyMatch.groupdict()`, `applyLabelTemplate`; `runtime.json` `panelOptions.attemptsWindowHours` and `panelOptions.machineProcessIntervalMs`;
-  `writeWorkspaceFile`, `writePyJsonFile` and PyJson (1.2, 1.9, ADR 0003); `InstanceContext` in `packages/engine/src/runtime/context.ts`
+  `writeWorkspaceFile`, `writePyJsonFile` and PyJson (1.2, 1.9, ADR 0003); `Clock` in `packages/shared/src/time.ts` (4.4a, I-36); the
+  `panelOptions` schema module written by S1 from 3.5's key table (1.6, N-03); `InstanceContext` in `packages/engine/src/runtime/context.ts`
   and `createInstanceRuntime(ctx) -> { start, stop(deadlineMs), ingestUntilIdle({timeoutMs}) -> {idle, waitedMs, stats}, health() }` in
   `packages/engine/src/runtime/instance-runtime.ts` (4.4a / S8, critic I-15, registry C06/C15), whose component 4 calls
   `createPanelService(ctx, { writer: ingest.writer })` and drives `tickAttempts()` with a 2 s timer (critic N-01, registry C57); CLI
@@ -1774,7 +1791,9 @@ lands the change, nothing here changes):
 | OI-17 | Node floor 22.22.0 in 05 3.2 (repository scripts); 05 4.11.5 PD3 = N/A in Node like D3 (5.8) | 05 (critic I-05, N-05, registry C28, C43) | 05 S1 |
 
 Former OI-4 (capture engine choice) is closed by critic I-09 (CH-2). Former OI-7 (`mcs db rebuild`) is closed: 01 5.4 defines it and
-7.1 item 6 uses it (critic I-12, registry C44). No open item is owned by this design.
+7.1 item 6 uses it (critic I-12, registry C44). The `panelOptions` bounds are now stated in 3.5 (critic N-03) and equal the values
+01 1.6 already transcribes (`attemptsWindowHours` 1..8760, `machineProcessIntervalMs` 10000..300000), so 01's "until 06 states one"
+note is settled without a change of value. No open item is owned by this design.
 
 ## 13. Phase 2+ task slices (dependency order; each independently testable)
 
@@ -1784,7 +1803,7 @@ PP7 after 03 S1 and 01 S8; parity slices after the ingestion and API slices; PP1
 | Slice | Phase | Depends on | Files owned | Done when |
 |---|---|---|---|---|
 | PP0 panel contracts | 2 | 05 S1 scaffold; 03 S3 `api/time.ts`, `api/entities.ts` (same change allowed) | `shared/src/api/panels.ts` (types, zod schemas incl. `PanelResponseSchema`, `ChildKind`, `ChildKindStats`, `PanelStats`), `shared/src/api/panels.test.ts` | schema round trip for one sample per `PanelKey`; `PanelResponseSchema` rejects a mismatched `key`/`data`; 03 S3's route `panel` compiles against it |
-| PP1 platform layer | 2 | 05 S1; PP0 (`ChildKind`) | `engine/src/platform/{exec,process,fsx,host,paths,glob,pytime,watch-hint}.ts`, their unit tests next to them (incl. `platform-branching.test.ts`) and `engine/test/platform/*.int.test.ts`; 01 S4 keeps `platform/mutex.ts`, `platform/markers.ts` and `workspace/fsio.ts` (I-06, I-28, registry C13) | 3.11 exec/glob/pytime rows and 4.11 pass on Windows; Linux CI unit run green; 01's wrapper tests (T-LC-16, atomic retry) pass against `fsx` |
+| PP1 platform layer | 2 | 05 S1; PP0 (`ChildKind`) | `engine/src/platform/{exec,process,fsx,host,paths,glob,pytime,watch-hint}.ts`, their unit tests next to them (incl. `platform-branching.test.ts`) and `engine/test/platform/*.int.test.ts`; 01 S4 keeps `platform/mutex.ts`, `platform/markers.ts` and `workspace/fsio.ts` (I-06, I-28, registry C13) | 3.11 exec/glob/pytime rows and 4.11 pass on Windows; Linux CI unit run green; 01's T-LC-16 (only `exec.ts` imports `node:child_process`, `windowsHide: true` on every spawn) passes against PP1's `exec.ts` and 01's `fsio.ts` wrapper tests (atomic retry) pass against `fsx` |
 | PP2 golden generator | 2-3 | none (Python only) | `tests/legacy-parity/README.md`, `tests/legacy-parity/tools/**`, `tests/legacy-parity/golden/**` (generated, committed by the lead) (I-09) | two captures -> `--check` clean; skill tree clean (`git status`), no `__pycache__`; temp dirs removed |
 | PP3 testkit additions | 2-3 | 05 testkit core (S2/S3) | `testkit/src/{pyjson,io,expect,big}.ts`, `testkit/src/legacy/*`, `testkit/legacy/ORDER.md`, `shapes.json`, tests 6.5 | 6.5 rows pass |
 | PP4 parity skeleton | 3 | PP1, PP2, PP3, 01 S1/S2/S4/S5/S6, 05 S8 (parity layout) | `runtime/tests/parity/{reference-usage.ts,vectors.ts,legacy-trees.parity.test.ts,vectors.parity.test.ts}` | manifests equal for all L-* trees; `vectors.parity.test.ts` passes exactly these vector files: `splitlines.json`, `tail.json`, `strptime.json` (PP1), `pydumps.json` (PP3), `slug.json`, `merge_provenance.json`, `audit_entry.json`, `json_atomic.json` (01). Later vector files are added by the slice that ports the function, each as its own `runtime/tests/parity/vectors/<name>.parity.test.ts` using `vectors.ts` `runVectorFile(file, fn)`: `external_state` (PP5), `classify_state` (02 I-7), `classify_rules` (02 I-8, with 01 S3 translator), `events_of`, `clip` (03 S7) |

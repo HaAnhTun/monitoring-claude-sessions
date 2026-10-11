@@ -10,6 +10,11 @@ section module, 1.6), I-15 (4.4a adopts the owners' factory shapes: 02 4.10, 03 
 2.10), I-32 (`import.maxLineBytes` removed, 1.6), N-04 (02 1.2 bounds adopted, 1.6); aligns with N-01 (`tickAttempts` timer, 4.4a),
 N-02, N-05, N-06 (2.4), N-07 (3.5, slices), N-08, N-11 (6.3), I-06 (`forceKill` via `taskkill`, 4.2), I-08 (6.4), I-19, I-29 (4.3,
 6.4), I-36, and the registry rows C04, C11, C12, C16, C19, C21-C23, C32, C33, C39, C48, C57.
+Revision 4 (2026-10-11, reconciliation of the phase 1b residuals): `panelOptions` copied from 06's normative table (1.6, closes Open
+item 5); PyJson and regex golden tests located in `runtime/tests/parity/` (1.9, 2.8, N-07); one schema generator with the 05 scripts
+`schemas` / `schemas:check` (2.9, S16, C45); `childStats()` typed `Record<ChildKind, ChildKindStats>` (4.2, I-21, C10); test port
+ranges = 05 4.5 (4.11, C54); cross-engine tests in `tests/parity/cross-engine.parity.test.ts` (S15, N-07); every T-ISO row assigned
+to the slice of its commands (3.5, slices, N-07); `--dry-run` accepted as the explicit default on `hooks install/uninstall` (6.3, N-11).
 Inputs read: `00-foundations.md` (D1-D15), the owner's brief MEGA-PROMT-V3 sections 2, 4, 12, 13, 15, 17, 18,
 `docs/research/current-state-backend.md` (sections A-G), `claude-code-hooks.md` (sections 3, 6, 10), `stack-versions.md`,
 `ccam-*-analysis.md` (installer, retention, security), legacy `src/backend/{config,tasks,cli,__init__,proc}.py`, `SKILL.md`,
@@ -264,7 +269,7 @@ every key, no secrets, no key starting with `_`, a top-level name that is not an
 | Section (module) | Owner (normative table) | Keys, defaults and bounds (copied from the owner) |
 |---|---|---|
 | `board` (`board.ts`) | 02 7.11 | `items`: `{key: string, title: string, match: {labels?: string[], labelPrefix?: string, sessionIds?: string[], attemptParts?: string[]}}[]`, default `[]` (`04-ui.md` S-8 `tasks[]` is renamed `board.items`) |
-| `panelOptions` (`panelOptions.ts`) | 06 3.5, 3.10.3 | `attemptsWindowHours` int, default 24 (bound 1..8760 chosen here until 06 states one); `machineProcessIntervalMs` int 10000..300000, default 20000. 06 asked for `attempts.windowHours` and `panels.machine.processIntervalMs`, which collide with the L keys `attempts` and `panels` (Open item 5) |
+| `panelOptions` (`panelOptions.ts`) | 06 3.5 (normative key table), 3.10.3 | `attemptsWindowHours` int 1..8760, default 24; `machineProcessIntervalMs` int 10000..300000, default 20000 (owner `'06'`; the section name keeps both keys away from the L keys `attempts` and `panels`) |
 | `retention` (`retention.ts`) | 03 3.8 | `changesMaxAgeHours` 1..720 (24); `changesMaxRows` 2000..1000000 (20000); `ingestErrorsMaxRows` 100..100000 (1000); `resolvedAlertsDays` 1..3650 (30); `instanceReconciliationsDays` 1..3650 (90); `sessionsDays`, `eventsDays` int 1..3650 or null (null = keep) |
 | `alerts` (`alerts.ts`) | 03 10.1 | `enabled` boolean (true); `sweepSeconds` 15..600 (60); `rules.<ruleId>` for `inactivity`, `ingest_errors`, `runtime_unavailable`, `token_threshold`, `import_lag`, `db_disk`, `hook_gap`, `hook_failing`, each a strict object with the defaults of 03 10.1 and `.prefault({})`, so a partial override (`alerts.rules.inactivity.minutes`) is completed by the schema in 2.3 step 6 (the merge of 2.2 stays one level deep) |
 | `pricing` (`pricing.ts`) | 03 8.3 | `currency` string (`USD`); `models` array of `{match, effectiveFrom, inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWrite5mPerMTok, cacheWrite1hPerMTok}`, default `[]` (no prices ship, D15) |
@@ -429,7 +434,8 @@ object `{}`, empty array `[]`; arrays like objects; strings: escape `"` `\` and 
 4. Else fixed notation: `exp >= 0` -> integer part padded with zeros, then `.` + fraction or `.0`; `exp < 0` -> `0.` + `-exp-1` zeros +
    digits.
 
-Golden tests (`tests/legacy-parity/pyjson/`): `gen_pyjson_golden.py` (dev tool, run once, output committed) emits number lexemes
+Golden tests (data in `<skill>/tests/legacy-parity/pyjson/`, test in `runtime/tests/parity/pyjson.golden.test.ts`, project `parity`;
+N-07: `@mcs/*` resolves only under `runtime/`, 05 C-3): `gen_pyjson_golden.py` (dev tool, run once, output committed) emits number lexemes
 (fixed list + 20,000 random doubles from random bit patterns + 3,000 uniform floats and big integers), string escape cases (all
 U+0000-U+00FF, U+2028, astral, quotes), key-order cases (`{"b":1,"2":2,"a":3}`), duplicate keys, and `_short` cases; Node test
 `pyjson.golden.test.ts` asserts `dumpPyJson(parsePyJson(lexeme))` equals Python's output for every case, and a property test
@@ -677,7 +683,8 @@ Label template (`applyLabelTemplate`, legacy `sessions.py`): for `i = 1..groupCo
 (sequential, so text produced by group 1 containing `{2}` is substituted again, as in Python); then `{0}` with the first 40 code
 points of `group(0)`. Offsets and slices are in code points (Python), not UTF-16 units.
 
-Golden tests (`tests/legacy-parity/regex/`, project `parity`):
+Golden tests (data in `<skill>/tests/legacy-parity/regex/`, test in `runtime/tests/parity/pyregex.golden.test.ts`, project `parity`;
+N-07, 05 C-3):
 - `gen_regex_golden.py` (dev tool; Python 3.14 here; records `sys.version` and `unicodedata.unidata_version`) writes
   `regex-golden.json` `{pattern, context, inputs[], expected[]}` with Python results `null | {span:[s,e], groups:[...], groupdict:{...}}`
   (code points) and `regex-rejects.json` `{pattern, pythonError}`.
@@ -687,7 +694,8 @@ Golden tests (`tests/legacy-parity/regex/`, project `parity`):
   one plain capturing group; no backslash escapes, no flags, no lookarounds) built from the public `template/examples/chain.config.example.json`
   shapes; (c) 200 random patterns from the supported grammar (fixed seed) x 50 inputs generated from each pattern's AST plus mutations;
   (d) every row of the rejected table (Node must reject; for rows Python accepts, the test asserts the documented code).
-- `pyregex.golden.test.ts` asserts equality of span, groups and groupdict for every case; `pyregex.rejects.test.ts` asserts rejection.
+- `pyregex.golden.test.ts` asserts equality of span, groups and groupdict for every case and, in a second `describe` block of the same
+  file, rejection with the documented code for every `regex-rejects.json` row (one parity file per slice, the 05 4.2 layout).
 - Opt-in local check `MCS_GOLDEN_LIVE_CONFIG=<path to a config.json> npm run test:parity` runs the same differential on a real config
   without committing it (prints counts only), as done for V9 in E8 (31,500 comparisons, 0 differences).
 
@@ -704,7 +712,10 @@ Golden tests (`tests/legacy-parity/regex/`, project `parity`):
 Generator `runtime/scripts/gen-schemas.mjs` (imports the built `@mcs/shared`, calls `z.toJSONSchema(schema, { target: 'draft-2020-12', io })`,
 adds `$id` = `https://monitoring-claude-sessions.local/schemas/<file>` and a `description` pointing to the doc, writes
 `JSON.stringify(x, null, 2) + '\n'`). `npm run schemas` regenerates; `schemas.drift.test.ts` regenerates in memory and fails on any byte
-difference. Each config schema `description` states "Regexes use Python syntax (see docs/configuration.md, translator rules)".
+difference. It is the one generator for both schema sets (registry C45): it also writes 03's `schemas/api/**` (03 section 13 item 4).
+05 3.1 scripts: `npm run schemas` = `node scripts/gen-schemas.mjs`, `npm run schemas:check` = `node scripts/gen-schemas.mjs --check`
+(regenerates into a temp folder, byte-compares, exit 1 on drift); slice S16 adds both to `package.json`. Each config schema
+`description` states "Regexes use Python syntax (see docs/configuration.md, translator rules)".
 
 ### 2.10 Environment variables (the complete documented list)
 
@@ -806,7 +817,8 @@ projects from the scaffold: `unit`, `integration`, `isolation`, `resilience`, `p
 per guarantee, `workers: 1`.
 Files (N-07): 05 S9 owns only `runtime/tests/isolation/_setup.ts` and the project wiring; each `runtime/tests/isolation/*.test.ts` of
 05 4.8 belongs to the 01 slice that implements its rows (created by the first slice listed, extended by the later ones):
-`config-write-isolation.test.ts` (T-ISO-06, 08: S7, extended by S12, S14), `db-identity.test.ts` (T-ISO-05: S9),
+`config-write-isolation.test.ts` (T-ISO-06: S7 for its commands, extended by S11, S12, S14 for theirs; T-ISO-08: S9, which needs a
+running instance), `db-identity.test.ts` (T-ISO-05: S9),
 `lifecycle-isolation.test.ts` (T-ISO-13, 14: S9; T-ISO-15: S12), `restart-isolation.test.ts` (T-ISO-16, 17: S9),
 `ownership-isolation.test.ts` (T-ISO-18..20, 22: S9; T-ISO-21: S6 helper, S9 file; T-ISO-23: S15), `read-isolation.test.ts`
 (T-ISO-03, 04), `token-isolation.test.ts` (T-ISO-09), `search-isolation.test.ts` (T-ISO-11, 12) (all S13a),
@@ -897,7 +909,7 @@ owned by 06 slice PP1, which implements the additions this document needs (liste
 // exec.ts (06 3.6, owner 06 PP1): ChildSpec / ChildResult are authoritative; execFileText never throws, never rejects
 export function execFileText(spec: ChildSpec, signal?: AbortSignal): Promise<ChildResult>;   // { ok, code, stdout, stderr, error, truncated, durationMs }
 export function resolveExecutable(name: 'git' | 'docker' | 'powershell' | 'ps' | 'taskkill' | 'icacls' | 'node' | 'opener'): Promise<string | null>;  // 06's union (+ 'opener', C11); no 'python'
-export function childStats(): Record<ChildKind, { spawned: number; failed: number; timedOut: number; totalMs: number }>;
+export function childStats(): Record<ChildKind, ChildKindStats>;   // ChildKind, ChildKindStats declared in shared/src/api/panels.ts (06 3.6; I-21, C10)
 // specified here, implemented in the same file by 06 PP1 (shell:false, windowsHide:true, argv array; no ChildKind, no semaphore: they start our own Node or Python)
 export function spawnDetached(file: string, args: readonly string[], o: { cwd: string; env: Record<string, string>; stdoutFd: number; stderrFd: number }): ChildProcess; // detached:true, stdio ['ignore', stdoutFd, stderrFd]
 export function spawnForeground(file: string, args: readonly string[], o: { cwd: string; env: Record<string, string> }): ChildProcess;  // stdio:'inherit' (only `serve` and legacy delegation from an interactive CLI)
@@ -922,9 +934,9 @@ export function tryAcquireMutex(name: string): Promise<ProcessMutex | null>;    
 export function acquireMutex(name: string, o: { timeoutMs: number; onWait?: (waitedMs: number) => void }): Promise<ProcessMutex>; // polls every 25-50 ms (jitter); throws McsError on timeout
 export function mutexName(kind: 'task' | 'bootstrap' | 'settings', key: string): string;   // 'mcs-<kind>-' + sha256(key.toLowerCase() on win32).slice(0, 16)
 ```
-Additions this document needs from 06 PP1 (stated as requirements on 06 3.6, not as a second definition; registry C11): 06's
-`ChildKind` already has `'node'` (spawns of `process.execPath`, for example 02 3.7 `hooks verify` and test helpers), `'python'` (the 6.5
-version probe and `$V`) and `'icacls'` (the `doctor` ACL check, 6.4); 06 adds `'opener'` (`start --open`, 4.7) and
+Kinds this document needs from 06 PP1 (06 3.6 defines them; not a second definition; registry C11): 06's `ChildKind` has `'node'`
+(spawns of `process.execPath`, for example 02 3.7 `hooks verify` and test helpers), `'python'` (the 6.5 version probe and `$V`),
+`'icacls'` (the `doctor` ACL check, 6.4) and `'opener'` (`start --open`, 4.7), and 06 resolves
 `resolveExecutable('opener')` (Windows `%SystemRoot%/explorer.exe`, macOS `/usr/bin/open`, else `xdg-open` on PATH). There is no
 `ExecutableName` type and no `resolveExecutable('python')`: 6.5 probes `MCS_PYTHON`, `python`, `python3`, `py` itself and passes the
 accepted absolute path as `ChildSpec.file`. Every call site here uses `timeoutMs` and
@@ -1123,7 +1135,6 @@ stop; `ingest-until-idle.int.test.ts` (integration, real engine on a testkit wor
 the fixture is fully imported and `idle: false` within `timeoutMs + 200 ms` when a fake producer keeps appending; `context.test.ts`:
 `buildInstanceContext` maps identity, config and DB failures to the 4.1 exit names, and `ctx.queries` returns the same `instanceId` as
 `ctx.instanceId`; `instance-runtime.test.ts` also asserts (Vitest fake timers) that `tickAttempts` runs at start and every 2000 ms, never
-
 twice concurrently, and not after `stop`, and that `ingestUntilIdle` maps `IngestIdleTimeoutError` to `idle: false`.
 
 
@@ -1275,7 +1286,9 @@ Cost: the graceful path needs no PowerShell (about 60 ms, E3); the forced path c
 - Quirk (E4): a foreign process listening on `0.0.0.0:<port>` does not block our `127.0.0.1:<port>` bind; loopback clients then reach
   our server (more specific binding). Documented; no action.
 - `state.json` is written only after the bind (4.4), so a reader never sees a port that is not ours.
-- Test port ranges (design 05): real-process integration and isolation tests 18000-18499, UI E2E 18500-18599 (`04-ui.md`), Python parity 18850-18874.
+- Test port ranges (design 05 4.5 is normative; copied here): Vitest real-process tests 18000-18499 (`allocatePort()`), Playwright E2E
+  18500-18599 (`allocatePort([18500, 18599])`, 04 11.4), `npm run dev` 18760-18769, `scripts/smoke.mjs` 18800-18849 (registry C54),
+  Python/Node parity 18850-18899, manual experiments and benchmarks 18900-18999. Never 8765, 3000, 3100, 8080, 8089.
 
 ### 4.12 `init` transaction, adoption and partial-init cleanup (`ops.workspace.init`)
 Inputs: `name`, `slug?`, `description?`, `port?`, `seedConfig?` (path, `--config` on `init` only), `engine?` (default `node`).
@@ -1660,9 +1673,9 @@ export interface OpContext {
 | `db migrate` | `--task`, `--dry-run`, `--yes` | text | 5.4 | yes | integrity check | `ops.upgrade.migrateDb` |
 | `db rebuild` | `--task`, `--yes`, `--confirm SLUG` | plan / result text | running, legacy engine, move failed | yes (no DB left = nothing to move, reports it) | DB files absent from `data/`, present in the backup with matching sha256 | `ops.upgrade.rebuildDb` |
 | `ingest replay` | `--task`, `--from SEGMENT`, `--yes` | plan / result text | invalid segment name, DB or control failure | yes (dedupe by `event_uid`, 02 2.7) | cursors re-read after the reset | `ops.ingest.replay` |
-| `hooks install` | `--scope project-local\|user`, `--settings-file PATH`, `--task`, `--sync-tool-events`, `--yes`, `--json` (dry run without `--yes`) | plan / result text | invalid settings, write failed | yes | settings re-read and verified | `ops.hooks.install` -> 02 `planHooks` + apply in `engine/src/hooks/installer/` (N-11, C23) |
+| `hooks install` | `--scope project-local\|user`, `--settings-file PATH`, `--task`, `--sync-tool-events`, `--yes`, `--dry-run` (explicit spelling of the default), `--json` (dry run without `--yes`) | plan / result text | invalid settings, write failed | yes | settings re-read and verified | `ops.hooks.install` -> 02 `planHooks` + apply in `engine/src/hooks/installer/` (N-11, C23) |
 | `hooks verify` | same selectors, `--json` | report | not installed or broken | yes | handler path exists, node path exists, entries well-formed | `ops.hooks.verify` |
-| `hooks uninstall` | same + `--yes`, `--json` (dry run without `--yes`) | plan / result text | write failed | yes | entries absent after re-read | `ops.hooks.uninstall` |
+| `hooks uninstall` | same + `--yes`, `--dry-run`, `--json` (dry run without `--yes`) | plan / result text | write failed | yes | entries absent after re-read | `ops.hooks.uninstall` |
 | `hooks status` | `--task`, `--json` | installed scopes, handler log summary, last envelope per instance (02 3.1 `HooksStatusResult`) | never | yes | - | `ops.hooks.status` |
 | `hooks enable` / `hooks disable` | `--task` | text | invalid | yes | `instance.json` read back | `ops.hooks.setEnabled` |
 | `sessions list` | `--task`, `--state`, `--since`, `--limit`, `--all` | text table | reader failed | yes | - | `InstanceReader.sessions` |
@@ -1859,7 +1872,6 @@ newest decides)`.
 - Python discovery: `MCS_PYTHON`, then `python`, `python3`, `py -3`; each name is resolved to an absolute file by a PATH (x PATHEXT on
   win32) lookup in `ops/legacy.ts` (no shell; 06 has no `resolveExecutable('python')`, registry C11) and passed as `ChildSpec.file` with
   kind `'python'`; each candidate is accepted only if
-
   `<exe> -c "import sys; print('%d.%d' % sys.version_info[:2])"` prints a version >= 3.8 within 5 s (rejects the Windows Store alias
   stub). None -> `LEGACY_ENGINE_UNAVAILABLE` exit 1 with hint `mcs instances set-engine --task <slug> node`.
 - Delegation runs `spawnForeground(python, [<skill>/template/viewer.py, ...args])` and returns its exit code unchanged.
@@ -2229,14 +2241,11 @@ From `<skill>/runtime`: `npm run ci` (typecheck, lint, format check, tests, buil
    (`instance-runtime.test.ts`, `runtime-sections.contract.test.ts`, T-CLI-05) fail on any mismatch.
 4. Lead annotations of foundations (no behaviour here depends on the outcome): D7 Node floor 22.12 -> 22.22.0 (I-05); D3/D8 spool
    `data/spool/*.jsonl` -> `*.ndjson` (I-02).
-5. Cross-design names the lead decides at reconciliation (this document's proposal in brackets):
-   - design 06 asked for `runtime.json` keys `attempts.windowHours` and `panels.machine.processIntervalMs`; `attempts` and `panels` are L
-     keys, so the shared routing rule (top-level name decides the file) would send them to `config.json` [R section `panelOptions`:
-     `attemptsWindowHours`, `machineProcessIntervalMs`];
-   - design 06 assumed `compilePythonRegex(pattern, { purpose })` returning `RegExp` and error `E_REGEX_UNSUPPORTED` [`compilePyRegex(source,
-     ctx).regex` / `.exec()`, `McsError` code `REGEX_UNSUPPORTED`], `initInstance(repo, slug, options)` [`ops.workspace.init(ctx, InitInput)`],
-     "start adds runtime.json" [`runtime.json` is optional and created only by `configure`/`config migrate`];
-   - `04-ui.md` S-8 `runtime.json tasks[]` vs design 02 `board.items` [`board.items`].
+5. Cross-design names (closed in revision 4; kept for the record, numbering unchanged): 06 3.5 owns the `runtime.json` section
+   `panelOptions` (`attemptsWindowHours`, `machineProcessIntervalMs`; the names `attempts.windowHours` / `panels.machine.processIntervalMs`
+   are gone because `attempts` and `panels` are L keys); 06 calls `compilePyRegex(source, 'attempts')` and reports `REGEX_UNSUPPORTED`
+   (no `compilePythonRegex`, no `E_REGEX_UNSUPPORTED`), and creates no `runtime.json` at start (`runtime.json` is optional and created
+   only by `configure` / `config migrate`); 04 S-8 and 02 7.11 use `board.items`. Nothing is left for the lead to decide here.
 6. Owner's bounds versus legacy configs (N-04, 1.6): 02 1.2 makes `import.lookbackHours` an integer >= 1 and `import.tailWindowBytes`
    >= 1 MiB, so a legacy `config.json` with a fractional `window_hours` (e.g. 1.5) or `limits.event_window_mb` < 1 starts under `$V`
    but is refused by Node with a message naming the R key to set. 01 adopts the bounds as required; if 02 wants such configs to keep
@@ -2257,18 +2266,17 @@ Global order (critic slicing notes, 99 section 3): 05 S1 -> 01 S1 -> {01 S2, 01 
 | S3 | Python-regex translator | `packages/shared/src/pyregex/*`, `tests/parity/pyregex.golden.test.ts` (N-07), `<skill>/tests/legacy-parity/regex/*` (golden JSON, data only) | S1 | goldens and rejects (2.8) pass; V9 replica + opt-in live check |
 | S4 | Platform: mutex and markers | `packages/engine/src/platform/{mutex,markers}.ts` (exec.ts and process.ts are 06 PP1, delivered in the same step with the 4.2 additions, I-06) | S1, 06 PP1 | mutex contention test (E10 as a test), `mutexName` table test, marker table test (backslashes, case, other instance id), `listRuntimeProcesses` finds a spawned test server and not an impostor, T-LC-16 |
 | S5 | Config resolution | `packages/engine/src/config/{defaults,merge,validate-legacy,resolve,provenance,migrations}.ts` | S2, S3 | 2.x unit tests, legacy validation message goldens, C-3 merge tests, derived defaults (1.6) |
-| S6 | Workspace + audit | `packages/engine/src/workspace/{fsio,paths,init,adopt,list,repair,snapshot}.ts`, `audit/{writer,reader}.ts` (`entriesBetween`, I-19); unit rows T-ISO-01/02/07 next to their modules | S2, S4, S5, 06 PP1 `fsx.ts` | T-LC-10/11/12, T-AU-01..06, T-ISO-01/02/06/07/21, E5 retry cases as tests through `writeWorkspaceFile` |
-| S7 | Ops: config/audit commands | `packages/engine/src/ops/{config,audit}.ts`, `packages/cli/src/commands/{init,inspect,configure,decide,audit,check,discover}.ts`, `packages/cli/src/{main,render/*}.ts`, `tests/isolation/config-write-isolation.test.ts` (3.5, N-07) | S5, S6 | T-CLI-01/03/04, `config-inspection.test.ts`, T-XE-01/02 |
+| S6 | Workspace + audit | `packages/engine/src/workspace/{fsio,paths,init,adopt,list,repair,snapshot}.ts`, `audit/{writer,reader}.ts` (`entriesBetween`, I-19); unit rows T-ISO-01/02/07 next to their modules | S2, S4, S5, 06 PP1 `fsx.ts` | T-LC-10/11/12, T-AU-01..06, unit rows T-ISO-01/02/07 (T-ISO-06 rows land with the slices of their commands, T-ISO-21 with S9; 3.5, N-07), E5 retry cases as tests through `writeWorkspaceFile` |
+| S7 | Ops: config/audit commands | `packages/engine/src/ops/{config,audit}.ts`, `packages/cli/src/commands/{init,inspect,configure,decide,audit,check,discover}.ts`, `packages/cli/src/{main,render/*}.ts`, `tests/isolation/config-write-isolation.test.ts` (3.5, N-07) | S5, S6, 05 S9 (`tests/isolation/_setup.ts`) | T-CLI-01/03/04, `config-inspection.test.ts`, T-XE-01/02, T-ISO-06 rows of `init`, `configure`, `decide` |
 | S8 | Server lifecycle shell + composition root (I-15) | `packages/server/src/{main,boot,control-channel,shutdown,state-file}.ts`, `packages/engine/src/runtime/{context,instance-runtime,error-ring,state-watchdog,test-hooks}.ts` (+ the `/api/health` compat route if C-4 is accepted; owner of the route body is 03) | S4, S5, S6 (`entriesBetween` for `deps.audit`), 03 S1 (DB open), 02/03/06 factories (`createIngestService`, `createLifecycleSweeper`, `createDbScheduler`, `createQueries`, `createPanelService`) as stubs with the owners' signatures until their slices land | `instance-runtime.test.ts`, `context.test.ts`, `ingest-until-idle.int.test.ts` (with 02's service once I-4 lands; with a fake service before), T-LC-03/04/05/07/14 |
-| S9 | Ops: lifecycle | `packages/engine/src/ops/lifecycle.ts`, `probe.ts`, CLI `start stop status restart verify serve`, `tests/isolation/{db-identity,lifecycle-isolation,restart-isolation,ownership-isolation}.test.ts` (3.5, N-07) | S7, S8, 06 PP1 (`forceKill`, `commandLineOf`) | T-LC-01/02/06/08/09/13/15, T-ISO-13/14/18/19/20/22 |
+| S9 | Ops: lifecycle | `packages/engine/src/ops/lifecycle.ts`, `probe.ts`, CLI `start stop status restart verify serve`, `tests/isolation/{db-identity,lifecycle-isolation,restart-isolation,ownership-isolation}.test.ts` (3.5, N-07) | S7, S8, 06 PP1 (`forceKill`, `commandLineOf`) | T-LC-01/02/06/08/09/13/15, T-ISO-05/08/13/14/16/17/18/19/20/21/22 |
 | S10 | Launcher | `<skill>/scripts/mcs.mjs` (with its zero-dependency mutex, runtime listing and spawn copies, 5.1) | S9, 05 stamps | T-UP-01..04/10, `launcher-parity.test.ts` |
-| S11 | Instances, doctor, diagnostics | `ops/{instances,diagnostics}.ts`, CLI `instances doctor diagnostics errors version` | S9 | T-CLI-09, T-SEC-02, doctor checks |
-| S12 | Backup, upgrade, cleanup, db rebuild | `ops/{backup,upgrade,cleanup}.ts` (incl. `rebuildDb`), CLI `backup upgrade db config migrate cleanup`, `tests/isolation/upgrade-isolation.test.ts` (+ rows in the S7/S9 files, 3.5) | S9, 03 migrations/backup | T-UP-05..09, T-ISO-24..27, T-CLI-06, T-CLI-12 |
-| S13a | Data readers | `ops/data.ts`, `reader/{api-reader,db-reader}.ts`, CLI `sessions usage export`, `tests/isolation/{read-isolation,token-isolation,search-isolation}.test.ts` (3.5, N-07) | S9, 03 S5 queries | T-CLI-05 (all methods except `explainCompletion`), T-CLI-13, T-ISO-09..12 |
+| S11 | Instances, doctor, diagnostics | `ops/{instances,diagnostics}.ts`, CLI `instances doctor diagnostics errors version` | S9 | T-CLI-09, T-SEC-02, doctor checks, T-ISO-06 row of `instances repair` |
+| S12 | Backup, upgrade, cleanup, db rebuild | `ops/{backup,upgrade,cleanup}.ts` (incl. `rebuildDb`), CLI `backup upgrade db config migrate cleanup`, `tests/isolation/upgrade-isolation.test.ts` (+ rows in the S7/S9 files, 3.5) | S9, 03 migrations/backup | T-UP-05..09, T-ISO-15, T-ISO-24..27, T-ISO-06 rows of its commands, T-CLI-06, T-CLI-12 |
+| S13a | Data readers | `ops/data.ts`, `reader/{api-reader,db-reader}.ts`, CLI `sessions usage export`, `tests/isolation/{read-isolation,token-isolation,search-isolation}.test.ts` (3.5, N-07) | S9, 03 S5 queries | T-CLI-05 (all methods except `explainCompletion`), T-CLI-13, T-ISO-03/04, T-ISO-09..12 |
 | S13b | Completion evidence | `reader/*` `explainCompletion` wiring, CLI `verify-completion` | S13a, 02 I-7b (`explainCompletion`, I-08) | T-CLI-08, T-CLI-05 for `explainCompletion` |
-| S14 | Hooks and ingest CLI wrappers | `ops/{hooks,ingest}.ts`, CLI `hooks install/verify/uninstall/status/enable/disable`, `ingest replay` | S8 (control op), 02 I-9 installer in `engine/src/hooks/installer/` (N-11), 02 `planSpoolReplay` / `applySpoolReplay` (I-29) |
- T-CLI-10, T-CLI-11, hooks tests owned by 02 |
-| S15 | Legacy delegation + cross-engine | `ops/legacy.ts`, `tests/legacy-parity/cross-engine/*` | S9 | T-XE-03..07, T-ISO-23, T-CLI-07 |
-| S16 | Schemas + SKILL.md + docs | `runtime/scripts/gen-schemas.mjs`, `<skill>/schemas/*`, appendix A -> `<skill>/SKILL.md` (lead, Phase 6), operations/configuration/instance-isolation/migration doc sections | all | schema drift test, docs reviewed against the commands' `--help`, env docs test (2.10) |
+| S14 | Hooks and ingest CLI wrappers | `ops/{hooks,ingest}.ts`, CLI `hooks install/verify/uninstall/status/enable/disable`, `ingest replay` | S8 (control op), 02 I-9 installer in `engine/src/hooks/installer/` (N-11), 02 `planSpoolReplay` / `applySpoolReplay` (I-29) | T-CLI-10, T-CLI-11, T-ISO-06 rows of `hooks enable` and `ingest replay`, hooks tests owned by 02 |
+| S15 | Legacy delegation + cross-engine | `ops/legacy.ts`, `tests/parity/cross-engine.parity.test.ts` (N-07, 05 C-3: not under `<skill>/tests/legacy-parity/`, where `@mcs/*` does not resolve) | S9 | T-XE-03..07, T-ISO-23, T-CLI-07 |
+| S16 | Schemas + SKILL.md + docs | `runtime/scripts/gen-schemas.mjs` (one generator, also `schemas/api/**`; npm scripts `schemas`, `schemas:check`, C45), `<skill>/schemas/*`, appendix A -> `<skill>/SKILL.md` (lead, Phase 6), operations/configuration/instance-isolation/migration doc sections | all | schema drift test, docs reviewed against the commands' `--help`, env docs test (2.10) |
 
 Isolation suite (T-ISO-*) is wired as the scaffold's `isolation` project and is release-blocking (brief section 4).

@@ -21,6 +21,11 @@ Revision 2026-10-11b (second critic pass; `98-contract-registry.md` is the arbit
 N-03 (1.2), N-04 / C02 (1.2), C18 `LifecycleEvidence` (7.1), C24 (5.2), C48 (3.5), C49 (ADRs 0012, 0014, 0016), C56 (4.1),
 registry notes N2, N8, N13 (1.1, 2.6.1, 9.4).
 
+Revision 2026-10-11c (reconciler pass over `phase1b-residuals.json`; text only, no section moved): N-04 owner answer to 01 open item 6
+(1.2); C19 `CliErrorCode` (4.8); C36 `LegacyState` imported from `@mcs/shared` (7.1); C56 note on `AgentFacts.kind` (7.2); N-10
+`AttemptRowRef.sessionId` is the provider id mapped by 03 (7.13); N-12 missing row T-LF-54 added (7.12); 06's `pidAlive` reused by the
+sweeper and the registry poller (7.8, 7.10, ADR 0019).
+
 Read first: `00-foundations.md` (D1-D15), `docs/research/claude-code-hooks.md` (cited `HK:<section>`),
 `docs/research/transcript-survey.md` (`TS:<section>`), `docs/research/current-state-backend.md` (`CS:<section>`),
 `docs/research/ccam-source-analysis.md` (`CC:<section>`).
@@ -147,6 +152,11 @@ C02 points this column to 01 1.6, which then holds the same values; `hooks.spool
 once, 2.6.2). The section modules `shared/src/config/runtime/{spool,import,ingest,health,hooks,lifecycle,board}.ts` are written by
 01 S1 from this table, 7.8 and 7.11 and registered in `R_KEY_CATALOGUE` with owner `'02'` (N-03); this design's slices list no such
 file.
+
+Owner answer to 01 open item 6 (N-04): the bounds above stay as written (no `ceil` derivation map, no widening). A legacy `config.json`
+with a fractional `window_hours` or `limits.event_window_mb` < 1 keeps working under the legacy engine (`$V`); the Node engine refuses it
+with 01's `CONFIG_INVALID` message naming the R key to set (`import.lookbackHours` / `import.tailWindowBytes`), as 01 1.6
+`derived-defaults.test.ts` pins. Any later change to these bounds is made in this table and in 01 1.6 in the same commit.
 
 There is no `import.maxLineBytes` (I-32): the line cap is the constant `MAX_LINE_BYTES` (1.1); tests lower it only through the injected
 `readLines` option `maxLineBytes` (5.3). Test that proves it: 01's unit test parses an override file setting every key of this table
@@ -1037,7 +1047,8 @@ No file I/O happens inside the transaction (reads happen before `submit`).
 ### 4.8 Malformed input (never crash) - error codes
 
 These are `ingest_errors.code` values (uppercase, 03 `ingest_errors` CHECK); they are distinct from the HTTP `ErrorCode` union
-(lowercase, 03 5.2, used by 2.8) and from the CLI error codes (01 6.2, used by 3.1).
+(lowercase, 03 5.2, used by 2.8) and from the CLI error codes (01 6.2 union `CliErrorCode` in `@mcs/shared/errors.ts`, used by
+3.1; C19).
 
 | Code | Source | Meaning | Handling |
 |---|---|---|---|
@@ -1591,6 +1602,7 @@ export function toApiEvidence(item: LifecycleEvidence, now: number): ApiEvidence
 export function viewChanged(a: LifecycleView | null, b: LifecycleView): boolean;   // 7.8 field list; a === null -> true
 // engine/src/lifecycle/legacy.ts
 export function toLegacy(view: Pick<LifecycleView, 'state'>): LegacyState;  // 7.9 item 2 mapping
+// LegacyState = import type { LegacyState } from '@mcs/shared' (03 5.5, sh/api/entities.ts; declared once, never redeclared here; C36)
 ```
 
 #### 7.1.1 Evidence rendering (`renderEvidence`)
@@ -1686,7 +1698,8 @@ export interface SessionFacts {
 export interface TurnEndInfo { kind: 'stop' | 'stop_failure' | 'end_turn' | 'turn_duration'; promptId: string | null; error: string | null;
   backgroundTasks: number | null; pendingBackgroundAgents: number | null; pendingWorkflows: number | null }
 export interface AgentFacts {
-  v: 1; kind: 'subagent' | 'workflow_agent' | 'internal';
+  v: 1; kind: 'subagent' | 'workflow_agent' | 'internal';   // facts of non-main agents only: the `main` row (4.1) uses SessionFacts,
+                                                            // `teammate` is reserved in 03's five kinds and has no facts yet (C56)
   started: Stamp | null; stopped: Stamp | null; final: Stamp | null;        // Max: SubagentStart, SubagentStop, agent.final
   notification: LWW<'completed' | 'failed' | 'killed' | 'stopped'> | null;  // task-notification matched by spawn tool_use_id
   link: LWW<string> | null;                             // PostToolUse(Agent) / toolUseResult status: 'completed' | 'async_launched' | other
@@ -1898,7 +1911,8 @@ the file -> `transcriptMtime + activeSeconds`; agents -> `lastActivity + subagen
 `completed`, `failed`, `stale/process_gone` -> null.
 
 `LifecycleSweeper.tick()` (every `sweepIntervalMs`): (1) for sessions with a known `claudePid`, presence `open`, and
-`next_check_at <= now`: `process.kill(pid, 0)` (ESRCH -> dead, EPERM -> alive; E7: about 4 us) -> `external.pid` events;
+`next_check_at <= now`: `pidAlive(pid)` of 06 4.2 (`engine/src/platform/process.ts`: `process.kill(pid, 0)`, ESRCH -> dead,
+EPERM -> alive; E7: about 4 us; this design adds no second probe) -> `external.pid` events;
 (2) select up to 200 rows per entity type with `next_check_at <= now`; (3) submit `derive` items to the writer, which
 re-derives inside its transaction. `viewChanged(a, b)` compares `state, presence, waitReason, staleKind, endReason,
 turnOutcome, basis, confidence, ruleId`; only then is a change recorded and published. Evidence wording is rendered at read
@@ -1924,7 +1938,7 @@ time from `at` values (`renderEvidence`, 7.1.1), so time passing alone never cre
 
 | Source | Reader | Cadence | Validation and privacy | Event |
 |---|---|---|---|---|
-| Claude registry `<claudeHome>/sessions/*.json` | `registry.ts` | `registryPollMs` | glob `*.json` only (never `.key`), <= 64 KiB; `sessionId` must match `SID_RE` and be known to this instance; `status` in `busy\|idle\|waiting`; `waitingFor` clipped 64; pid liveness via `process.kill(pid, 0)` | `external.registry` when the value changes or every 60 s |
+| Claude registry `<claudeHome>/sessions/*.json` | `registry.ts` | `registryPollMs` | glob `*.json` only (never `.key`), <= 64 KiB; `sessionId` must match `SID_RE` and be known to this instance; `status` in `busy\|idle\|waiting`; `waitingFor` clipped 64; pid liveness via 06's `pidAlive(pid)` (`platform/process.ts`) | `external.registry` when the value changes or every 60 s |
 | Daemon jobs `<claudeHome>/jobs/<id>/state.json` | `jobs.ts` | `jobsPollMs` | `readdir(jobs)` one level, then only `<id>/state.json` (never walk the 6,000+ temp files, TS:6.3); match `sessionId` or `resumeSessionId` | `external.job` on change |
 | Claude Code pid (E7) | sweeper | `pidCheckIntervalMs` | pid from envelopes `claude_pid`; dead is trusted (high), alive is medium (pid reuse) | `external.pid` |
 | Attempts (06 3.10, rows in 03's `attempt_runs` / `attempt_sources`, I-07) | 06 `PanelService.tickAttempts` | on chain-log change | rows with a matched session and `end_reason = 'ended'` -> legacy `external_state`; a config rebuild retracts | `external.attempt`, `external.attempt_cleared` (4.3) |
@@ -1979,6 +1993,7 @@ with random noise (duplicates, delays up to 60 s, drops of non-terminal events),
 | T-LF-51 | legacy parity: `classifyLegacy` equals the Python `classify_state` golden outputs (CS:C.1 cases + `tests/test_state_config_tasks.py` StateTest inputs + generated boundary cases at `age = active_seconds +- 1`, `waited = grace +- 1`, `age = 59/60/61 min`) |
 | T-LF-52 | work items: fixtures for W-DECL, W-ATT (retry: attempt 1 failed, attempt 2 running -> `working`), W-LBL, unmatched excluded |
 | T-LF-53 | external: registry `.key` never opened (fs spy), unknown session ids ignored, dead pid via a spawned-and-exited child process |
+| T-LF-54 | sweeper service shape (4.10): `stop(deadlineMs)` waits for a running tick and clears the `lifecycle.sweepIntervalMs` timer; `tickNow()` re-derives only rows past `next_check_at` and submits them through the injected `writer` (`sweeper.test.ts`, slice I-8) |
 | T-LF-55 | attempts retraction: rows C1-C3 of 7.7 plus the property "clear then republish of the same evidence in one tick leaves the view unchanged and publishes no change" |
 | T-LF-56 | `renderEvidence` golden table of 7.1.1 (`rules.test.ts`), `toLegacy` table of 7.9 item 2, `viewChanged` field list (one case per field) |
 | T-LF-57 | completion evidence: the table of 7.13 (`completion.test.ts`) |
@@ -2006,9 +2021,10 @@ export interface CompletionEvidence {
   candidates: number;                        // sessions (label) or rows (attempt part) that matched the target
 }
 export interface CompletionCandidate { sessionId: string; label: string; startedAt: number | null; lastActivityAt: number | null; view: LifecycleView }
-export interface AttemptRowRef {             // projection of 03 attempt_runs (06 3.10)
+export interface AttemptRowRef {             // projection of 03 attempt_runs (06 3.10), returned by 03 AttemptsRepo.runsByPart
   id: number; part: string; startedAt: number; endedAt: number | null; endReason: 'open' | 'ended' | 'superseded';
-  state: 'COMPLETED' | 'FAILED' | 'RUNNING' | 'UNKNOWN'; evidence: string; sessionId: string | null;
+  state: 'COMPLETED' | 'FAILED' | 'RUNNING' | 'UNKNOWN'; evidence: string;
+  sessionId: string | null;                  // provider session id (sessions.session_uid); 03 maps the attempt_runs.session_id row id (N-10)
 }
 export interface CompletionLookup {
   sessionById(sessionId: string): CompletionCandidate | null;
@@ -2352,7 +2368,7 @@ reconciliation can check them; this design is complete either way because each i
 | I-7 | Lifecycle facts, merges (incl. `external.attempt_cleared`), derive tables, `renderEvidence` / `toApiEvidence` / `viewChanged` (`rules.ts`), `toLegacy` (`legacy.ts`), nextCheckAt, work items | `engine/src/lifecycle/{facts,merge,derive-*,rules,legacy,next-check,work-items}.ts` + tests | I-5 | P1-P9, T-LF-01..52, 55, 56 green (in-memory model, no DB) |
 | I-7b | Completion evidence | `engine/src/lifecycle/completion.ts`, `completion.test.ts` | I-7 | T-LF-57 CE-1..16 green with an in-memory `CompletionLookup`; CE-17 and 01 T-CLI-08 run when 03 S5/S12 and 01 S13b land |
 | I-4 | Hook path to the DB: writer (`withWriteTx`), dedupe, error codes, spool drainer, segments, retention, replay engine, nudge handling, route-file writer | `engine/src/ingest/{writer,dedupe,errors}.ts`, `engine/src/ingest/spool/{spool-drainer,segments,replay}.ts`, `engine/src/ingest/routes-file.ts` + tests | I-1, I-3, I-5, I-7, 03 S1/S2 (DB, repositories, `withWriteTx`, `createChangeSink`), 03 S4 (nudge route), 01 S8 (+I-15 instance runtime) | T-PL-02..12, T-HK-06b green (the `mcs ingest replay` command itself is 01 S14) |
-| I-8 | Transcript side and services: scheduler, discovery, classification, importer, entry text, `createIngestService`, `createLifecycleSweeper`, external pollers | `engine/src/ingest/service.ts`, `engine/src/ingest/transcripts/{discovery,classify,importer,scheduler,entry-text}.ts`, `engine/src/lifecycle/sweeper.ts`, `engine/src/external/*`, `engine/src/ingest/config-keys.test.ts` | I-4, I-6, 01 S8 (`InstanceContext`), D5 translator (01) | T-PL-01, 13, T-TR-09, 10, 12..14, 17, 18, T-LF-50, 53, 54, T-TK-09, config-keys test green |
+| I-8 | Transcript side and services: scheduler, discovery, classification, importer, entry text, `createIngestService`, `createLifecycleSweeper`, external pollers | `engine/src/ingest/service.ts`, `engine/src/ingest/transcripts/{discovery,classify,importer,scheduler,entry-text}.ts`, `engine/src/lifecycle/sweeper.ts`, `engine/src/external/*`, `engine/src/ingest/config-keys.test.ts` | I-4, I-6, 01 S8 (`InstanceContext`), D5 translator (01), 06 PP1 (`pidAlive`) | T-PL-01, 13, T-TR-09, 10, 12..14, 17, 18, T-LF-50, 53, 54, T-TK-09, config-keys test green |
 | I-9 | Installer, verifier, uninstaller, status (engine side; N-11, C23) | `engine/src/hooks/installer/{plan,apply,verify,uninstall,status,settings-io}.ts` + colocated tests, `engine/test/hooks-installer.int.test.ts`, `engine/test/fixtures/settings/*` | I-1, I-2, 01 S4 (`acquireMutex` kind `settings`), 01 S6 (audit writer), 06 PP1 (`execFileText` kind `node`) | T-IN-01..09 green; T-IN-10 (`cli/test/hooks.int.test.ts`) green once 01 S14 wires `ops.hooks.*` and `cli/src/commands/hooks/*` |
 | I-10 | Health + alert inputs | `engine/src/health/*` | I-8 | T-HE-01..07 green |
 | I-11 | Integration + E2E inputs | `engine/test/{hook-to-db,import-tokens,ingest-service}.int.test.ts` (05 4.2 names) | I-8..I-10, 03 S4/S5, 01 S8 | 9.3 scenarios green; optional real-provider run recorded |

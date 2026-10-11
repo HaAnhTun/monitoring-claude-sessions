@@ -12,6 +12,9 @@ arbiter of names, its rows C27-C36, C38, C45, C46, C54, C55 adopted): the smoke 
 reports SKIPPED, the Playwright config is 04's (A.28 withdrawn), `Clock` comes from 01's `shared/src/time.ts`, id regexes from 02's
 protocol module, the platform-branching lint rule of 06 section 4 is in A.9, T-ISO test files belong to the 01 slices, testkit exports
 `./legacy`. Experiment E24 added.
+Reconciliation, 2026-10-11 (phase 1b residuals; no section renumbered): S-ING-3 cites 02's two line caps (`ENVELOPE_MAX_BYTES`,
+`MAX_LINE_BYTES`, I-32) instead of a value of its own; S-PROC-2 and SEC-19 list 06's `ChildKind` executables (`icacls`, `python`,
+`opener`) and its `.exe`/`.com` rule (I-06); 4.2 and 7.4 use 02's `T-LF-*` ids (N-12); the scaffold `health.ts` stub is labelled (C51).
 Every file in Appendix A was built, linted, type-checked, tested and run in `scaffold-check` (section 9 has the exact outputs).
 
 Read order for an implementer: section 0 (decisions), then only the sections your slice names (section 13). Appendix A (scaffold
@@ -464,7 +467,7 @@ Playwright only.
 |---|---|
 | Unit: schema validation | `shared/src/**/*.test.ts` (shared slice) |
 | Unit: configuration merging | `engine/src/config/merge.test.ts`, `provenance.test.ts` (01 S5); Python-regex dialect `shared/src/pyregex/*.test.ts` (01 section 2.8, S3) and `runtime/tests/parity/pyregex.golden.test.ts` (01 S3) |
-| Unit: lifecycle transitions | `engine/src/lifecycle/transitions.test.ts` (02 section 7.7 table) + `properties.test.ts` (02 section 9.5) |
+| Unit: lifecycle transitions | `engine/src/lifecycle/transitions.test.ts` (02 section 7.7 table) + `properties.test.ts` (02 section 9.5); test ids `T-LF-*` (02 lifecycle model, critic N-12) |
 | Unit: token aggregation | `engine/src/tokens/aggregate.test.ts`, `worked-example.test.ts` (02 sections 6.4, 9.5) |
 | Unit: deduplication | `engine/src/ingest/dedupe.test.ts`; message-id dedupe across files in `engine/src/tokens/aggregate.test.ts` (02 section 6) |
 | Unit: transcript parsing | `engine/src/ingest/transcripts/normalize-record.test.ts` (fixture records 1-25 of transcript-survey section 8; 02 section 5) |
@@ -900,7 +903,7 @@ Trust boundaries: (1) hook stdin -> handler, (2) browser -> server, (3) transcri
 | T7 | Symlink/junction escape from transcripts root | S-FS-3 lstat walk skips links (junctions report `isSymbolicLink() === true`, E12), realpath containment | none known |
 | T8 | XSS from transcript text | S-OUT-1 React text rendering, lint bans, CSP | none known |
 | T9 | Terminal injection (OSC 52 clipboard, title, hyperlinks, bidi spoofing) via CLI output | S-OUT-2/3 sanitiser for text and JSON | none known |
-| T10 | Command injection | S-PROC-1..5 argv arrays, no shell, `.exe` only, fixed executables | none known |
+| T10 | Command injection | S-PROC-1..5 argv arrays, no shell, `.exe`/`.com` only, fixed executables | none known |
 | T11 | Secrets/prompts leak into logs/audit/DB | S-LOG allow-list logger, no `err.message` of parse errors (E12: JSON.parse messages echo input text), S-SEC canaries | none known |
 | T12 | DoS: huge bodies, slowloris, SSE exhaustion, event-loop starvation | S-NET-6 limits and timeouts, bounded queues, async chunked import | local only |
 | T13 | Supply chain (install scripts, typosquats, compromised release) | S-DEP | registry compromise of a pinned version before audit data exists |
@@ -949,7 +952,9 @@ Trust boundaries: (1) hook stdin -> handler, (2) browser -> server, (3) transcri
 2. If the ingestion design ever adds a data-carrying POST, it requires header `X-MCS-Ingest-Token` equal to the 32-byte random hex
    in `<workspace>/data/ingest.token` (created at init; POSIX mode 0600; on Windows it inherits the workspace ACL, documented), compared
    with `crypto.timingSafeEqual` after a length check; token never logged, never in API/exports/backups/diagnostics; plus S-NET-2..6.
-3. Spool lines are parsed with a size cap (handler-side truncation of large fields; server-side reject > 1 MiB per line, counted).
+3. Spool lines are size-capped on both sides with 02's constants (no second value here): the handler sanitises and clips fields and
+   writes the minimal envelope when a line exceeds `ENVELOPE_MAX_BYTES` (16 KiB, 02 section 2.2 step 11); the drain skips and counts
+   (`LINE_TOO_LONG`) a line above `MAX_LINE_BYTES` (`shared/src/protocol/limits.ts`, the one line cap of 02 section 1.1, critic I-32).
 
 **S-FS (paths)** in `packages/engine/src/security/paths.ts`:
 ```ts
@@ -983,16 +988,19 @@ export function* walkNoLinks(dir: string, opts: { maxDepth: number; maxEntries: 
 `execFileText(spec: ChildSpec, signal?: AbortSignal): Promise<ChildResult>`, never throws; `ChildKind` includes `'node'` for launcher and
 legacy-engine spawns with `file = process.execPath`, critic issue I-06). Rules 1-5 are the security rules that implementation must keep:
 1. `spawn(file, argv, { shell: false, windowsHide: true, timeout, stdio })` only; `exec`/`execSync` and `shell: true` banned by lint.
-2. `file` is an absolute path to a `.exe` on Windows (Node refuses `.cmd`/`.bat` without a shell and throws synchronously, E12, so the
+2. `file` is an absolute path to a `.exe` (or `.com`, 06 3.6 rule 2) on Windows (Node refuses `.cmd`/`.bat` without a shell and throws synchronously, E12, so the
    helper wraps `spawn` in try/catch and resolves a `ChildResult` with `ok: false`, `code: null`, `error: 'SPAWN_FAILED'`); executables used: `git`, `powershell.exe`
-   (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`), `taskkill.exe`, `docker`, `claude`, `node` (`process.execPath`).
+   (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`), `taskkill.exe` (also 01's `forceKill`, 01 4.2), `icacls.exe`, `docker`, `claude`,
+   `node` (`process.execPath`), `python` (absolute path probed by 01 6.5, never by `resolveExecutable`) and kind `opener` (`explorer.exe`,
+   `/usr/bin/open`, `xdg-open`); the kinds and their resolution are 06 section 3.6 `ChildKind`/`resolveExecutable` (critic I-06, registry C11).
 3. Environment: start from an allow-list (`PATH`, `SystemRoot`, `TEMP`, `TMP`, `HOME`, `USERPROFILE`, `LANG`) plus explicit additions;
    for `git` also `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0` (never take the index lock the user may need) and never pass `GIT_DIR`,
    `GIT_WORK_TREE`, `GIT_INDEX_FILE` (CCAM issue #323); for `claude` `--settings '{"disableAllHooks":true}'` and `MCS_HOOK_DISABLE=1`;
    every child gets `MCS_HOOK_DISABLE=1` (D8 recursion guard); kind `docker` passes `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`
    through when set (06 CH-4, accepted: they select the user's engine and are not secrets of this runtime).
 4. Untrusted strings never become an argument that starts with `-` (prefix `--` separator where the tool supports it) and never become
-   PowerShell script text: PowerShell commands are fixed strings with numeric pids validated by `^\d+$`.
+   PowerShell script text: PowerShell commands are fixed strings with numeric pids validated by `^\d+$`; the only `opener` argument is
+   `http://127.0.0.1:<port>/` built from the validated integer port (06 3.6 rule 8).
 5. Every call has a timeout (default 10 s; `powershell` CIM 20 s, legacy) and an output cap (1 MiB, then kill).
 
 **S-LOG (logging and audit)**
@@ -1092,7 +1100,7 @@ labels from first prompts are clipped (legacy behaviour, privacy note F.6.6) and
 | SEC-16 | UI renders hostile strings as text | `web/src/components/Markdown.test.tsx`, E2E hostile fixture (04) |
 | SEC-17 | lint bans raw HTML, computed href/src, eval | `tooling/lint-rules.test.ts` |
 | SEC-18 | terminal sanitiser covers C0/C1/DEL/bidi/U+2028-9 in text and JSON | `cli/src/io/terminal.test.ts`, `security/terminal-output.test.ts` (runs CLI on a hostile fixture, scans stdout bytes) |
-| SEC-19 | no shell, argv arrays, `.exe` only, try/catch around spawn | `engine/src/platform/exec.test.ts` (06 PP1), `security/subprocess.test.ts`, lint |
+| SEC-19 | no shell, argv arrays, `.exe`/`.com` only (06 3.6 rule 2), try/catch around spawn | `engine/src/platform/exec.test.ts` (06 PP1), `security/subprocess.test.ts`, lint |
 | SEC-20 | git env scrubbed (`GIT_DIR` etc. absent, `GIT_OPTIONAL_LOCKS=0`) | `subprocess.test.ts` (spawns `node -e` echo of env through the helper) |
 | SEC-21 | spawned `claude` gets `disableAllHooks` + `MCS_HOOK_DISABLE` | `subprocess.test.ts` (argv builder unit) |
 | SEC-22 | logger drops non-allow-listed fields and unsafe strings; parse errors logged by code only | `security/logger-allowlist.test.ts` |
@@ -1259,7 +1267,9 @@ Row format:
 ```
 Id scheme: `B<section>-<tag>-<n>` for brief items (`B4-ISO-1..8`, `B5-HOOK-n`, `B6-LC-n`, `B12-SEC-n`, `B14-UT-n`, `B14-IT-n`,
 `B14-E2E-1..14`, `B18-DOD-n`), `F-D<n>` for foundations decisions, `SEC-nn` for 5.6 lines. Status: `planned | implemented | verified |
-deferred (reason) | not applicable (reason)`. Evidence: command + date + exit code, or review note + reviewer. One matrix for the whole
+deferred (reason) | not applicable (reason)`. Test ids are quoted as their owners write them: `T-LC-*` are 01's process-lifecycle
+tests (01 4.16) and `T-LF-*` are 02's lifecycle-model tests (02 7.12, 9.5; critic N-12, registry C37), so a lifecycle-model row cites
+`T-LF-*`, never `T-LC-*`. Evidence: command + date + exit code, or review note + reviewer. One matrix for the whole
 migration; each design doc's "Requirements covered" list seeds the rows.
 
 ---
@@ -1360,7 +1370,8 @@ the withdrawn A.28 stub (critic N-02, I-27; 01 section 2.10 drops it).
 
 Paths are relative to the skill root. A.39 (`terminal.ts`) and A.40 (`testkit/src/index.ts`) are scaffold stubs: the full contracts are
 5.3 S-OUT and 4.4. Package `tsconfig.json` files for engine, server and cli are identical (`{"extends": "../../tsconfig.check.json",
-"include": ["src", "test"]}`). Stub sources used for the check (not part of the deliverable): `shared/src/{index,health}.ts`,
+"include": ["src", "test"]}`). Stub sources used for the check (not part of the deliverable; the real `HealthReport` module is 03's `shared/src/api/health.ts`,
+registry C51): `shared/src/{index,health}.ts`,
 `shared/src/protocol/index.ts`, `engine/src/{index.ts,db/driver.ts,platform/exec.ts,log/logger.ts}` (`db/driver.ts` was `db/sqlite.ts` until E22; the rename is the only change), `server/src/{app,index,main}.ts`,
 `cli/src/{main,hook}.ts`, `cli/src/hook/hook.ts`, `web/src/{main,App}.tsx`, `web/src/components/icons.ts`, `web/src/test/setup.ts`, one
 test per layer, `web/e2e/specs/health.spec.ts`.
