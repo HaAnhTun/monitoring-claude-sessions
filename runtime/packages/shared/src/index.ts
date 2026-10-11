@@ -13,6 +13,18 @@ export * from './cli/results.ts';
 // @wp-end WP-02
 
 // @wp-begin WP-03
+export * from './api/ids.ts';
+export * from './api/time.ts';
+export * from './api/errors.ts';
+export * from './api/cursor.ts';
+export * from './api/entities.ts';
+export * from './api/filters.ts';
+export * from './api/health.ts';
+export * from './api/legacy-health.ts';
+export * from './api/panels.ts';
+export * from './api/stream.ts';
+export * from './api/export.ts';
+export * from './api/routes.ts';
 // @wp-end WP-03
 
 // @wp-begin WP-04
