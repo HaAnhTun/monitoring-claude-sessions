@@ -222,13 +222,36 @@ describe('control ingest-replay (01 4.3)', () => {
       ok: false,
       error: 'BAD_REQUEST',
     });
-    // the runtime of this walking skeleton has no ingest service yet: nothing to reset, and no error
     expect(await control(f, { v: 1, op: 'ingest-replay', instanceId: f.id, token, fromSegment: null })).toEqual({
       v: 1,
       ok: true,
       op: 'ingest-replay',
       segments: 0,
     });
+  });
+
+  it('answers BAD_REQUEST, and keeps the connection answered, for a spool segment that is not on disk (02 2.7)', async () => {
+    const f = await fixture();
+    await start(f);
+    const token = tokenOf(f);
+    const reply = await control(f, {
+      v: 1,
+      op: 'ingest-replay',
+      instanceId: f.id,
+      token,
+      fromSegment: 'hooks-20261012T08Z.ndjson',
+    });
+    expect(reply).toEqual({ v: 1, ok: false, error: 'BAD_REQUEST' });
+    expect(await control(f, { v: 1, op: 'identify' })).toMatchObject({ ok: true, phase: 'ready' });
+  });
+
+  it('answers the segment count for a spool segment that is on disk', async () => {
+    const f = await fixture();
+    await start(f);
+    const token = tokenOf(f);
+    const spool = path.join(f.ws, 'data', 'spool');
+    mkdirSync(spool, { recursive: true });
+    writeFileSync(path.join(spool, 'hooks-20261012T08Z.ndjson'), '');
     expect(
       await control(f, {
         v: 1,
@@ -237,7 +260,7 @@ describe('control ingest-replay (01 4.3)', () => {
         token,
         fromSegment: 'hooks-20261012T08Z.ndjson',
       }),
-    ).toMatchObject({ ok: true, segments: 0 });
+    ).toEqual({ v: 1, ok: true, op: 'ingest-replay', segments: 1 });
   });
 });
 

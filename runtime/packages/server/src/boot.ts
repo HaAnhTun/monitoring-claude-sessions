@@ -29,6 +29,7 @@ import {
   readSmallFile,
   readTaskFile,
   resolveWorkspace,
+  SpoolSegmentNotFoundError,
   testHook,
   workspacePath,
   type InstanceContext,
@@ -150,6 +151,26 @@ function errorCodeOf(error: unknown): string {
     return error.code;
   }
   return 'INTERNAL';
+}
+
+/**
+ * The answer of the control op `ingest-replay` (01 4.3). A segment that is not on disk is a bad request (02 2.7); any other
+ * failure is answered `NOT_READY` and logged by its code only (a message may hold a path), so the connection is never dropped
+ * without a reply.
+ */
+export async function ingestReplayOutcome(
+  runtime: Pick<InstanceRuntime, 'ingestReplay'> | undefined,
+  fromSegment: string | null,
+  warn: (event: string, fields: Readonly<Record<string, unknown>>) => void,
+): Promise<ReplayOutcome> {
+  if (runtime === undefined) return { ok: false, error: 'NOT_READY' };
+  try {
+    return { ok: true, segments: (await runtime.ingestReplay(fromSegment)).segments };
+  } catch (error) {
+    if (error instanceof SpoolSegmentNotFoundError) return { ok: false, error: 'BAD_REQUEST' };
+    warn('ingest_replay_failed', { code: errorCodeOf(error) });
+    return { ok: false, error: 'NOT_READY' };
+  }
 }
 
 function firstLine(text: string): string {
@@ -519,11 +540,8 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
           return { ok: false, error: 'BACKUP_FAILED' };
         }
       },
-      onIngestReplay: async (fromSegment): Promise<ReplayOutcome> => {
-        const runtime = res.runtime;
-        if (runtime === undefined) return { ok: false, error: 'NOT_READY' };
-        return { ok: true, segments: (await runtime.ingestReplay(fromSegment)).segments };
-      },
+      onIngestReplay: (fromSegment): Promise<ReplayOutcome> =>
+        ingestReplayOutcome(res.runtime, fromSegment, lateLog('warn')),
       logger: { debug: lateLog('debug'), info: lateLog('info'), warn: lateLog('warn') },
       ignoreRequests: testHook('IGNORE_CONTROL', input.env) !== undefined,
     });

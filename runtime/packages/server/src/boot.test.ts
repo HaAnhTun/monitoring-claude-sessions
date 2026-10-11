@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import path from 'node:path';
 
-import { DbError } from '@mcs/engine';
+import { DbError, SpoolSegmentNotFoundError } from '@mcs/engine';
 import { McsError, RUNTIME_VERSION } from '@mcs/shared';
 import { allocatePort, assertPortClosed, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,7 @@ import {
   bindFirstFreePort,
   exitCodeOfError,
   exitNameOf,
+  ingestReplayOutcome,
   parseServeArgv,
   readBuildStamp,
   scanPorts,
@@ -298,6 +299,48 @@ describe('bindFirstFreePort (01 4.11)', () => {
     expect(result).toMatchObject({ ok: false });
     if (!result.ok) expect(result.message).toMatch(/EADDRNOTAVAIL|EINVAL/);
     expect(listen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ingestReplayOutcome (01 4.3, 02 2.7)', () => {
+  it('answers the segment count of the replay', async () => {
+    const warn = vi.fn();
+    const replay = vi.fn(() => Promise.resolve({ segments: 3 }));
+    expect(await ingestReplayOutcome({ ingestReplay: replay }, 'hooks-20261012T08Z.ndjson', warn)).toEqual({
+      ok: true,
+      segments: 3,
+    });
+    expect(replay).toHaveBeenCalledWith('hooks-20261012T08Z.ndjson');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('answers NOT_READY while the runtime does not exist yet', async () => {
+    expect(await ingestReplayOutcome(undefined, null, vi.fn())).toEqual({ ok: false, error: 'NOT_READY' });
+  });
+
+  it('answers BAD_REQUEST for a segment that is not on disk, without a warning', async () => {
+    const warn = vi.fn();
+    const runtime = { ingestReplay: () => Promise.reject(new SpoolSegmentNotFoundError('hooks-20261012T08Z.ndjson')) };
+    expect(await ingestReplayOutcome(runtime, 'hooks-20261012T08Z.ndjson', warn)).toEqual({
+      ok: false,
+      error: 'BAD_REQUEST',
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('answers NOT_READY for any other error and logs its code only, never its message', async () => {
+    const warn = vi.fn();
+    const failure = Object.assign(new Error('cannot open /secret/place/hooks.ndjson'), { code: 'WRITER_CLOSED' });
+    expect(await ingestReplayOutcome({ ingestReplay: () => Promise.reject(failure) }, null, warn)).toEqual({
+      ok: false,
+      error: 'NOT_READY',
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('ingest_replay_failed', { code: 'WRITER_CLOSED' });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret');
+    warn.mockClear();
+    await ingestReplayOutcome({ ingestReplay: () => Promise.reject(new Error('plain')) }, null, warn);
+    expect(warn).toHaveBeenCalledWith('ingest_replay_failed', { code: 'INTERNAL' });
   });
 });
 
