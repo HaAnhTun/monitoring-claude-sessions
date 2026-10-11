@@ -2543,6 +2543,8 @@ console.log(`clean: removed ${targets.length} build output paths`);
 
 ````js
 // Type-checks every project with noEmit against sources (custom condition @mcs/source), no build needed.
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { binPath, runNode } from './lib.mjs';
 
 const PROJECTS = [
@@ -2823,7 +2825,17 @@ const full = args.has('--full');
 const offline = args.has('--offline');
 const keepGoing = args.has('--keep-going');
 const strict = args.has('--strict'); // release-check: a SKIPPED gate fails
-const npmCli = process.env.npm_execpath;
+// npm_execpath is set when run through npm; otherwise fall back to the npm CLI bundled next to this node binary (lead decision CR-WP-01-2).
+function resolveNpmCli() {
+  if (process.env.npm_execpath) return process.env.npm_execpath;
+  const root = dirname(process.execPath);
+  const candidates = [
+    join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(root, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+const npmCli = resolveNpmCli();
 const SKIP_EXIT = 77; // a gate that cannot run yet (smoke before 01 S8/S9); shown as SKIPPED, never as PASS
 const SKIPPED = `SKIPPED (exit ${SKIP_EXIT})`;
 
@@ -2865,7 +2877,7 @@ if (full) {
 const results = [];
 for (const [name, script, stepArgs] of steps) {
   if (script === undefined) {
-    results.push([name, 'SKIPPED (run through npm so npm_execpath is set)', 0]);
+    results.push([name, 'SKIPPED (npm CLI not found: run through npm so npm_execpath is set)', 0]);
     continue;
   }
   const started = Date.now();

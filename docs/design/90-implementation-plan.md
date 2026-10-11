@@ -308,6 +308,8 @@ Phase 2, W2.1, L; impl sonnet medium; verify sonnet high; 05 S1 (files)
   `packages/web/e2e/tsconfig.json` (A.29), stubs `packages/{shared,engine,server,testkit}/src/index.ts`, `packages/shared/src/protocol/index.ts`,
   `packages/cli/src/{main,hook}.ts`, `packages/web/src/main.tsx`, `scripts/{lib,clean,typecheck,check-deps,build-stamp,ci,smoke,dev,set-version}.mjs`,
   `tests/tsconfig.json`; `<skill>/.gitignore` (append 05 2.9 lines only). Not A.28 (withdrawn), A.39 (WP-08), A.41 (WP-23).
+  Lead decision 2026-10-11 (CR-WP-01-1): WP-01 also creates `packages/web/index.html` (minimal; WP-44 overwrites it), `packages/{server,cli}/tsconfig.json`,
+  `tests/tooling/vitest-projects.test.ts` and `packages/web/e2e/placeholder.ts` (WP-56 deletes it). Lead decision (CR-WP-01-2): `scripts/ci.mjs` falls back to the npm CLI bundled with the running node when `npm_execpath` is unset, so `node scripts/ci.mjs --offline` works as written in the gates.
 - Blocks: creates the files marked "WP-01" in plan section 4.2 with all their empty blocks. `pkg:` every A.1 script plus `test:tooling`.
 - Produces: npm scripts of 98 section 13 (baseline), condition `@mcs/source`, `computeStamps`, `staleness`, `STAMP_SCHEMA_VERSION` (05 3.3.3),
   smoke exit 77 convention. Consumes: nothing.
@@ -1306,6 +1308,7 @@ Phase 4, W4.6, M; impl sonnet high; verify opus xhigh; 04 11.3, 04 W14 (part)
 - Creates: `packages/server/test/{api-to-web,stream-reconnect,panels.contract}.int.test.ts`, `packages/web/e2e/playwright.config.ts`
   (replaces the withdrawn A.28; no `webServer`), `packages/web/e2e/global-setup.ts`, `packages/web/e2e/specs/lifecycle.spec.ts`,
   `packages/web/e2e/specs/perf.spec.ts` (04 O-2's own name).
+  Also deletes `packages/web/e2e/placeholder.ts` (the WP-01 stub; lead decision CR-WP-01-1).
 - Blocks: creates `lifecycle.spec.ts` with blocks WP-57 (step 7) and WP-71 (steps 13-14).
 - Produces: E2E harness. Consumes: WP-19, WP-25, WP-30, WP-31, WP-33, WP-36, WP-38, WP-41, WP-48, WP-52, WP-53, WP-54, WP-06 `buildDemo`.
 - Depends: WP-19, WP-25, WP-30, WP-31, WP-33, WP-36, WP-38, WP-41, WP-48, WP-52, WP-53, WP-54.
