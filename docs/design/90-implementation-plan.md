@@ -209,41 +209,41 @@ six implementers run at once (lock contention on `run`); a wave with more WPs is
 | WP-10 | Write-path repositories and change sink | 2 | W2.5 | L | WP-09 | opus xhigh | fable | 03 S2 (part) |
 | WP-11 | Entity and operations repositories | 2 | W2.5 | L | WP-09 | sonnet high | opus xhigh | 03 S2 (part) |
 | WP-13 | Workspace and audit | 2 | W2.6 | L | WP-05, WP-07, WP-12 | opus xhigh | fable | 01 S6 |
-| WP-14 | Engine ops: workspace, config, audit | 2 | W2.7 | M | WP-12, WP-13 | sonnet high | opus xhigh | 01 S7 (ops) |
+| WP-14 | Engine ops: workspace, config, audit | 2 | W2.7 | M | WP-12, WP-13 | sonnet high | sonnet high | 01 S7 (ops) |
 | WP-16 | Composition root | 2 | W2.7 | M | WP-07, WP-08, WP-09, WP-12, WP-13 | opus xhigh | fable | 01 S8 (engine part) |
 | WP-15 | CLI kernel and config commands | 2 | W2.8 | L | WP-08, WP-14 | sonnet high | sonnet high | 01 S7 (CLI) |
-| WP-17 | Server app, meta routes, static hosting | 2 | W2.8 | M | WP-03, WP-08, WP-11, WP-16 | opus xhigh | fable | 03 S4 |
-| WP-18 | Server process shell | 2 | W2.9 | M | WP-07, WP-13, WP-17 | opus xhigh | fable | 01 S8 (server part) |
-| WP-19 | Lifecycle ops and CLI | 2 | W2.10 | M | WP-15, WP-18 | opus xhigh | fable | 01 S9 (ops, CLI) |
+| WP-17 | Server app, meta routes, static hosting | 2 | W2.8 | M | WP-03, WP-08, WP-11, WP-16 | sonnet xhigh | sonnet high | 03 S4 |
+| WP-18 | Server process shell | 2 | W2.9 | M | WP-07, WP-13, WP-17 | sonnet xhigh | sonnet high | 01 S8 (server part) |
+| WP-19 | Lifecycle ops and CLI | 2 | W2.10 | M | WP-15, WP-18 | sonnet xhigh | sonnet high | 01 S9 (ops, CLI) |
 | WP-20 | Isolation setup and lifecycle isolation tests | 2 | W2.11 | M | WP-06, WP-19 | sonnet high | opus xhigh | 05 S9 (`_setup.ts`), 01 S9 (isolation files) |
 | WP-21 | Launcher | 2 | W2.11 | M | WP-01, WP-07, WP-19 | opus xhigh | fable | 01 S10, 05 S4 |
 | WP-22 | Instances, doctor, diagnostics | 2 | W2.11 | M | WP-15, WP-19 | sonnet high | opus xhigh | 01 S11 |
-| WP-25 | Hook handler and stub | 3 | W3.1 | M | WP-04, WP-06 | opus xhigh | fable | 02 I-2 |
-| WP-26 | Ingestion primitives: tailer and normalizers | 3 | W3.1 | L | WP-03, WP-04, WP-07 | opus xhigh | fable | 02 I-3, 02 I-5 |
-| WP-30 | Query layer A: sessions, agents, events, tool calls | 3 | W3.1 | L | WP-10, WP-11, WP-17 | sonnet high | opus xhigh | 03 S5 (part) |
+| WP-25 | Hook handler and stub | 3 | W3.1 | M | WP-04, WP-06 | sonnet high | sonnet high | 02 I-2 |
+| WP-26 | Ingestion primitives: tailer and normalizers | 3 | W3.1 | L | WP-03, WP-04, WP-07 | sonnet high | sonnet high | 02 I-3, 02 I-5 |
+| WP-30 | Query layer A: sessions, agents, events, tool calls | 3 | W3.1 | L | WP-10, WP-11, WP-17 | sonnet high | sonnet high | 03 S5 (part) |
 | WP-42 | Testkit legacy builders | 3 | W3.1 | M | WP-03, WP-06, WP-24 | sonnet high | sonnet high | 06 PP3 |
-| WP-27 | Token accounting | 3 | W3.2 | M | WP-26 | opus xhigh | fable | 02 I-6 |
-| WP-28 | Lifecycle model | 3 | W3.2 | L | WP-26 | opus xhigh | fable | 02 I-7 |
+| WP-27 | Token accounting | 3 | W3.2 | M | WP-26 | sonnet high | sonnet high | 02 I-6 |
+| WP-28 | Lifecycle model | 3 | W3.2 | L | WP-26 | sonnet xhigh | sonnet high | 02 I-7 |
 | WP-31 | Query layer B: overview, work items, alerts, errors | 3 | W3.2 | M | WP-11, WP-30 | sonnet high | sonnet high | 03 S5 (part) |
-| WP-33 | Transcript entries, index, window, locate | 3 | W3.2 | M | WP-10, WP-17, WP-26 | sonnet high | opus xhigh | 03 S7 |
+| WP-33 | Transcript entries, index, window, locate | 3 | W3.2 | M | WP-10, WP-17, WP-26 | sonnet high | sonnet high | 03 S7 |
 | WP-37 | Hooks installer | 3 | W3.2 | M | WP-04, WP-07, WP-13, WP-25 | opus xhigh | fable | 02 I-9 |
 | WP-43 | Parity harness base and L1 vectors | 3 | W3.2 | M | WP-05, WP-07, WP-12, WP-13, WP-24, WP-42 | sonnet high | opus xhigh | 05 S8, 06 PP4 |
 | WP-29 | Completion evidence end to end | 3 | W3.3 | M | WP-11, WP-17, WP-28 | opus xhigh | opus xhigh | 02 I-7b, 03 S5b |
-| WP-32 | Hook path to the database | 3 | W3.3 | L | WP-10, WP-11, WP-16, WP-17, WP-25, WP-26, WP-28 | opus xhigh | fable | 02 I-4 |
-| WP-36 | Stream: hub, hydration, SSE | 3 | W3.3 | M | WP-09, WP-30, WP-31 | opus xhigh | fable | 03 S6 |
-| WP-34 | Transcript importer | 3 | W3.4 | M | WP-05, WP-26, WP-27, WP-32, WP-33 | opus xhigh | fable | 02 I-8 (part) |
+| WP-32 | Hook path to the database | 3 | W3.3 | L | WP-10, WP-11, WP-16, WP-17, WP-25, WP-26, WP-28 | sonnet high | sonnet high | 02 I-4 |
+| WP-36 | Stream: hub, hydration, SSE | 3 | W3.3 | M | WP-09, WP-30, WP-31 | sonnet high | sonnet high | 03 S6 |
+| WP-34 | Transcript importer | 3 | W3.4 | M | WP-05, WP-26, WP-27, WP-32, WP-33 | sonnet xhigh | sonnet high | 02 I-8 (part) |
 | WP-38 | Hooks and ingest CLI | 3 | W3.6 | M | WP-15, WP-18, WP-32, WP-35, WP-37 | sonnet high | opus xhigh | 01 S14 |
 | WP-40 | Attempts | 3 | W3.4 | M | WP-05, WP-07, WP-11, WP-26, WP-32, WP-43 | opus xhigh | opus xhigh | 06 PP5 |
-| WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | 3 | W3.5 | L | WP-16, WP-28, WP-32, WP-34 | opus xhigh | fable | 02 I-8 (part), 02 I-10, 03 S11 (schedule) |
+| WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | 3 | W3.5 | L | WP-16, WP-28, WP-32, WP-34 | sonnet xhigh | sonnet high | 02 I-8 (part), 02 I-10, 03 S11 (schedule) |
 | WP-41 | Panels: samplers, service, route, runtime wiring | 3 | W3.5 | L | WP-07, WP-16, WP-17, WP-40 | sonnet high | opus xhigh | 06 PP7 |
 | WP-39 | Ingestion integration and ingestion isolation rows | 3 | W3.7 | M | WP-20, WP-25, WP-30, WP-35, WP-38 | sonnet high | opus xhigh | 02 I-11 |
 | WP-44 | Web scaffold | 4 | W4.1 | M | WP-01, WP-03 | sonnet high | sonnet high | 04 W1 |
 | WP-45 | Pure lib port | 4 | W4.1 | L | WP-01 (gate after WP-44) | sonnet high | sonnet high | 04 W2 |
 | WP-55 | Scenario catalogue and testkit CLI | 4 | W4.1 | M | WP-25, WP-42 | sonnet medium | sonnet high | 06 PP6 |
-| WP-46 | Data layer | 4 | W4.2 | L | WP-02, WP-03, WP-44 | sonnet high | opus xhigh | 04 W3 |
-| WP-47 | Stream client and reconciliation | 4 | W4.3 | M | WP-46 | opus xhigh | fable | 04 W4 (stream part) |
+| WP-46 | Data layer | 4 | W4.2 | L | WP-02, WP-03, WP-44 | sonnet high | sonnet high | 04 W3 |
+| WP-47 | Stream client and reconciliation | 4 | W4.3 | M | WP-46 | sonnet high | sonnet high | 04 W4 (stream part) |
 | WP-49 | Shell, sidebar, prefs | 4 | W4.3 | L | WP-45, WP-46 | sonnet high | sonnet high | 04 W5 |
-| WP-51 | Transcript viewer and text primitives | 4 | W4.3 | L | WP-45, WP-46 | sonnet high | fable | 04 W7 (part) |
+| WP-51 | Transcript viewer and text primitives | 4 | W4.3 | L | WP-45, WP-46 | sonnet high | sonnet high | 04 W7 (part) |
 | WP-48 | Connection and freshness UI | 4 | W4.4 | M | WP-45, WP-47 | sonnet high | sonnet high | 04 W4 (shell part) |
 | WP-50 | Sessions explorer and list components | 4 | W4.4 | L | WP-47, WP-49 | sonnet high | sonnet high | 04 W6 |
 | WP-54 | Overview page | 4 | W4.4 | M | WP-46, WP-49 | sonnet high | sonnet medium | 04 W9 (part) |
@@ -1735,6 +1735,10 @@ node $K/wp-gate.mjs markers --check --root $Q && node $K/wp-gate.mjs ports --che
 
 A phase gate failure: the lead files the failure against the WP that owns the failing file, resumes that WP's implementer, re-verifies,
 re-runs the full phase gate. No phase N+1 commit lands before the gate is green (plan section 12 rule 10).
+
+## 9A. Lead decision 2026-10-12 06:00 checkpoint: scope change and time-box (walking skeleton)
+
+The owner narrowed the scope to a walking skeleton that runs alongside the Python skill (SKILL.md and the Python code stay untouched): in scope, in this order, (1) WP-14, 15, 17, 18, 19; (2) WP-25, 26, 27, 28, 32, 33, 30, 34, 35 (stream WP-31 + WP-36 only if time remains; if skipped, WP-47 is marked 'built against a fake stream, not integrated'); (3) WP-44, 45, 46, 47, 49, 50, 51, 52 plus one minimal end-to-end smoke test (LF-2: fixture -> import -> list page -> detail page). Everything else is deferred and listed with its reason in `docs/design/wp-status.md`. Models: sonnet only; implementer effort `high`, `xhigh` only for the WPs named genuinely hard (WP-17, 18, 19, 28, 34, 35); every verifier `sonnet high`; the in-scope rows of the table above and the table the executor reads (`dag.json`) are identical. Verify loop: one verify pass, fix once, re-verify only the failing checks. Checkpoint: 2026-10-12 06:00 local; no new WP is started after it.
 
 ## 10. Deviations from the design slice tables (each is a planning choice; the designs' normative content is unchanged)
 
