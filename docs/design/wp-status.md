@@ -1,34 +1,34 @@
 # Work package status (walking skeleton)
 
-Generated from git history and the lead's overrides: 2026-10-12 02:10 local. Checkpoint: **2026-10-12 06:00 local** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
+Generated from git history and the lead's overrides: 2026-10-12 03:00 local. Checkpoint: **2026-10-12 09:00 local (moved from 06:00 by the owner at 02:58)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
 
 Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Python skill (SKILL.md and the Python code are untouched): transcript importer -> database -> query API -> web list page and detail page, started by the standard CLI.
 
 | WP | title | status | commit | date | notes |
 |---|---|---|---|---|---|
-| WP-14 | Engine ops: workspace, config, audit | pending |  |  |  |
-| WP-15 | CLI kernel and config commands | pending |  |  |  |
-| WP-17 | Server app, meta routes, static hosting | pending |  |  |  |
-| WP-18 | Server process shell | pending |  |  |  |
-| WP-19 | Lifecycle ops and CLI | pending |  |  |  |
-| WP-25 | Hook handler and stub | pending |  |  |  |
-| WP-26 | Ingestion primitives: tailer and normalizers | pending |  |  |  |
-| WP-27 | Token accounting | pending |  |  |  |
-| WP-28 | Lifecycle model | pending |  |  |  |
-| WP-32 | Hook path to the database | pending |  |  |  |
-| WP-33 | Transcript entries, index, window, locate | pending |  |  |  |
-| WP-30 | Query layer A: sessions, agents, events, tool calls | pending |  |  |  |
+| WP-14 | Engine ops: workspace, config, audit | committed (checks ran: see commit) | 7ceccd4 | 2026-10-12 02:11 |  |
+| WP-15 | CLI kernel and config commands | committed (checks ran: see commit) | 53ed1a4 | 2026-10-12 02:44 |  |
+| WP-17 | Server app, meta routes, static hosting | fix round 1 (verifier FAIL: 1 major, 7 minor) |  |  |  |
+| WP-18 | Server process shell | waiting for WP-17 |  |  |  |
+| WP-19 | Lifecycle ops and CLI | waiting for WP-18 |  |  |  |
+| WP-25 | Hook handler and stub | committed (checks ran: see commit) | be8d945 | 2026-10-12 02:33 |  |
+| WP-26 | Ingestion primitives: tailer and normalizers | committed (checks ran: see commit) | d61a93c | 2026-10-12 02:39 |  |
+| WP-27 | Token accounting | committed (checks ran: see commit) | c1a0cf7 | 2026-10-12 02:55 |  |
+| WP-28 | Lifecycle model | implementing |  |  |  |
+| WP-32 | Hook path to the database | waiting for WP-17, WP-28 |  |  |  |
+| WP-33 | Transcript entries, index, window, locate | waiting for WP-17 |  |  |  |
+| WP-30 | Query layer A: sessions, agents, events, tool calls | waiting for WP-17 |  |  |  |
 | WP-34 | Transcript importer | pending |  |  |  |
 | WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | pending |  |  |  |
 | WP-31 | Query layer B: overview, work items, alerts, errors | pending |  |  | stretch: only if time remains |
 | WP-36 | Stream: hub, hydration, SSE | pending |  |  | stretch: only if time remains (stream); if skipped WP-47 is built against a fake stream, not integrated |
-| WP-44 | Web scaffold | pending |  |  |  |
-| WP-45 | Pure lib port | pending |  |  |  |
-| WP-46 | Data layer | pending |  |  |  |
-| WP-47 | Stream client and reconciliation | pending |  |  |  |
-| WP-49 | Shell, sidebar, prefs | pending |  |  |  |
+| WP-44 | Web scaffold | committed (checks ran: see commit) | 695e4d6 | 2026-10-12 02:32 |  |
+| WP-45 | Pure lib port | committed (checks ran: see commit) | e3677ad | 2026-10-12 02:26 |  |
+| WP-46 | Data layer | committed (checks ran: see commit) | 397b4ec | 2026-10-12 02:56 |  |
+| WP-47 | Stream client and reconciliation | implementing |  |  |  |
+| WP-49 | Shell, sidebar, prefs | implementing |  |  |  |
 | WP-50 | Sessions explorer and list components | pending |  |  |  |
-| WP-51 | Transcript viewer and text primitives | pending |  |  |  |
+| WP-51 | Transcript viewer and text primitives | implementing |  |  |  |
 | WP-52 | Session detail page | pending |  |  |  |
 | LF-2 | Walking-skeleton smoke test: fixture -> import -> list page -> detail page | pending |  |  |  |
 | WP-01 | Monorepo scaffold and gates | committed (foundation, before the scope change) | 46bead4 | 2026-10-11 19:22 |  |
