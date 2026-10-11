@@ -1189,6 +1189,7 @@ Phase 4, W4.3, M; impl opus xhigh; verify fable; 04 W4 (stream part)
 - Inputs: 04 5.5, section 5.6 (stream client, freshness), section 5.7; 03 9.2-9.5; ADR 0032, 0033; 99 F-11.
 - Creates: `packages/web/src/stream/{stream-client,StreamProvider,reconcile,patch-ledger,live-buffer,freshness,useFreshness}.ts(x)`,
   `packages/web/src/test/fake-event-source.ts`; tests `packages/web/src/stream/{stream-client,reconcile,patch-ledger,live-buffer,freshness}.test.ts`.
+  Lead note 2026-10-12 (scope change): the real stream (WP-31 + WP-36) may not be committed when this WP runs. Build and test the client against a fake `EventSource`/stream implementation and the shared message schemas; do not require a running server stream; report 'built against a fake stream, not integrated' in the answer. The list and detail pages (WP-50/WP-52) must work with polling/refetch and must not depend on the stream.
 - Blocks: none.
 - Produces: `createStreamClient`, `StreamProvider`, reconcile dispatch for every 03 9.2 kind, `useFreshness`. Consumes: WP-46, WP-03 stream schemas.
 - Depends: WP-46.
@@ -1253,6 +1254,7 @@ Phase 4, W4.4, L; impl sonnet high; verify sonnet high; 04 W6
 - Creates: `packages/web/src/pages/sessions/{SessionExplorerPage,SessionFilterBar,SessionTable,SessionRow}.tsx`,
   `packages/web/src/components/{FilterBar,DataTable,LoadMore,TokenLine,TokenSummary,RelativeTime}.tsx`; tests `SessionExplorerPage.test.tsx`,
   `DataTable.test.tsx`, `FilterBar.test.tsx`.
+  Lead note 2026-10-12 (scope change): the connection/freshness UI (WP-48) and the live stream are not in scope; the explorer loads through the data layer (queries) and refetches on an interval or on focus; keep a clearly marked seam where the stream invalidation attaches later.
 - Blocks: `routes.tsx` WP-50, `pages.css` WP-50, `components.css` WP-50.
 - Produces: explorer page and list components. Consumes: WP-47, WP-49.
 - Depends: WP-47, WP-49.
