@@ -1,0 +1,121 @@
+[
+ {
+  "case": "empty-object",
+  "input": {
+   "text": "{}"
+  },
+  "output": "e30K"
+ },
+ {
+  "case": "empty-array",
+  "input": {
+   "text": "[]"
+  },
+  "output": "W10K"
+ },
+ {
+  "case": "scalar-string",
+  "input": {
+   "text": "\"x\""
+  },
+  "output": "IngiCg=="
+ },
+ {
+  "case": "scalar-null",
+  "input": {
+   "text": "null"
+  },
+  "output": "bnVsbAo="
+ },
+ {
+  "case": "simple",
+  "input": {
+   "text": "{\"a\": 1, \"b\": [1, 2]}"
+  },
+  "output": "ewogICJhIjogMSwKICAiYiI6IFsKICAgIDEsCiAgICAyCiAgXQp9Cg=="
+ },
+ {
+  "case": "key-order-kept",
+  "input": {
+   "text": "{\"z\": 1, \"a\": 2, \"m\": {\"y\": 1, \"b\": 2}}"
+  },
+  "output": "ewogICJ6IjogMSwKICAiYSI6IDIsCiAgIm0iOiB7CiAgICAieSI6IDEsCiAgICAiYiI6IDIKICB9Cn0K"
+ },
+ {
+  "case": "nested-empty",
+  "input": {
+   "text": "{\"a\": [], \"b\": {}, \"c\": [[], {}]}"
+  },
+  "output": "ewogICJhIjogW10sCiAgImIiOiB7fSwKICAiYyI6IFsKICAgIFtdLAogICAge30KICBdCn0K"
+ },
+ {
+  "case": "non-ascii-raw",
+  "input": {
+   "text": "{\"t\": \"caf\\u00e9 \\u4e2d\\u6587 \\ud83d\\ude42\"}"
+  },
+  "output": "ewogICJ0IjogImNhZsOpIOS4reaWhyDwn5mCIgp9Cg=="
+ },
+ {
+  "case": "line-separators",
+  "input": {
+   "text": "{\"t\": \"\\u2028\\u2029\\u0085\"}"
+  },
+  "output": "ewogICJ0IjogIuKAqOKAqcKFIgp9Cg=="
+ },
+ {
+  "case": "control-characters",
+  "input": {
+   "text": "{\"t\": \"\\u0000\\u0001\\n\\r\\t\\u001f\\u007f\"}"
+  },
+  "output": "ewogICJ0IjogIlx1MDAwMFx1MDAwMVxuXHJcdFx1MDAxZn8iCn0K"
+ },
+ {
+  "case": "quotes-slash",
+  "input": {
+   "text": "{\"t\": \"a\\\"b\\\\c/d\"}"
+  },
+  "output": "ewogICJ0IjogImFcImJcXGMvZCIKfQo="
+ },
+ {
+  "case": "floats",
+  "input": {
+   "text": "{\"a\": 1.0, \"b\": 0.1, \"c\": 1e22, \"d\": 1E-7, \"e\": -0.0}"
+  },
+  "output": "ewogICJhIjogMS4wLAogICJiIjogMC4xLAogICJjIjogMWUrMjIsCiAgImQiOiAxZS0wNywKICAiZSI6IC0wLjAKfQo="
+ },
+ {
+  "case": "big-integer",
+  "input": {
+   "text": "{\"n\": 12345678901234567890}"
+  },
+  "output": "ewogICJuIjogMTIzNDU2Nzg5MDEyMzQ1Njc4OTAKfQo="
+ },
+ {
+  "case": "booleans-null",
+  "input": {
+   "text": "{\"a\": true, \"b\": false, \"c\": null}"
+  },
+  "output": "ewogICJhIjogdHJ1ZSwKICAiYiI6IGZhbHNlLAogICJjIjogbnVsbAp9Cg=="
+ },
+ {
+  "case": "task-json-like",
+  "input": {
+   "text": "{\"schema_version\": 1, \"id\": \"x\", \"name\": \"N\", \"description\": \"\", \"created\": \"2026-09-21T14:13:20Z\", \"repo\": \"../../../..\", \"links\": []}"
+  },
+  "output": "ewogICJzY2hlbWFfdmVyc2lvbiI6IDEsCiAgImlkIjogIngiLAogICJuYW1lIjogIk4iLAogICJkZXNjcmlwdGlvbiI6ICIiLAogICJjcmVhdGVkIjogIjIwMjYtMDktMjFUMTQ6MTM6MjBaIiwKICAicmVwbyI6ICIuLi8uLi8uLi8uLiIsCiAgImxpbmtzIjogW10KfQo="
+ },
+ {
+  "case": "config-like",
+  "input": {
+   "text": "{\"schema_version\": 1, \"title\": \"x\", \"panels\": {\"git\": false}, \"session_rules\": [{\"match\": \"STEP=([A-Z])\", \"label\": \"step {1}\"}]}"
+  },
+  "output": "ewogICJzY2hlbWFfdmVyc2lvbiI6IDEsCiAgInRpdGxlIjogIngiLAogICJwYW5lbHMiOiB7CiAgICAiZ2l0IjogZmFsc2UKICB9LAogICJzZXNzaW9uX3J1bGVzIjogWwogICAgewogICAgICAibWF0Y2giOiAiU1RFUD0oW0EtWl0pIiwKICAgICAgImxhYmVsIjogInN0ZXAgezF9IgogICAgfQogIF0KfQo="
+ },
+ {
+  "case": "deep",
+  "input": {
+   "text": "[[[[{\"a\": [[]]}]]]]"
+  },
+  "output": "WwogIFsKICAgIFsKICAgICAgWwogICAgICAgIHsKICAgICAgICAgICJhIjogWwogICAgICAgICAgICBbXQogICAgICAgICAgXQogICAgICAgIH0KICAgICAgXQogICAgXQogIF0KXQo="
+ }
+]

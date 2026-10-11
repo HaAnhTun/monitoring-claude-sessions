@@ -1,0 +1,85 @@
+[
+ 200,
+ [
+  {
+   "effort": "medium",
+   "end": 1789997600.0,
+   "exit": "0",
+   "model": "sonnet",
+   "n": "1",
+   "part": "A",
+   "sid": "00000001-0000-4000-8000-000000000001",
+   "start": 1789997001.0,
+   "state": "COMPLETED",
+   "status": "PASS",
+   "usage_total": {
+    "cc": 3000,
+    "complete": true,
+    "cr": 212000,
+    "in": 143,
+    "out": 1070,
+    "turns": 4
+   }
+  },
+  {
+   "effort": "medium",
+   "end": 1789998100.0,
+   "exit": "1",
+   "model": "sonnet",
+   "n": "1",
+   "part": "B",
+   "sid": "00000002-0000-4000-8000-000000000002",
+   "start": 1789997401.0,
+   "state": "FAILED",
+   "status": "FAIL",
+   "usage_total": {
+    "cc": 3900,
+    "complete": true,
+    "cr": 260000,
+    "in": 186,
+    "out": 1320,
+    "turns": 5
+   }
+  },
+  {
+   "effort": "low",
+   "end": null,
+   "exit": null,
+   "model": "haiku",
+   "n": "1",
+   "part": "C",
+   "sid": "00000003-0000-4000-8000-000000000003",
+   "start": 1789999781.0,
+   "state": "RUNNING",
+   "status": null,
+   "usage_total": {
+    "cc": 2200,
+    "complete": true,
+    "cr": 126000,
+    "in": 111,
+    "out": 600,
+    "turns": 3
+   }
+  },
+  {
+   "effort": "high",
+   "end": null,
+   "exit": null,
+   "model": "opus",
+   "n": "1",
+   "part": "F",
+   "sid": "00000006-0000-4000-8000-000000000006",
+   "start": 1789999701.0,
+   "state": "RUNNING",
+   "status": null,
+   "usage_total": {
+    "cc": 9800,
+    "complete": true,
+    "cr": 756000,
+    "in": 484,
+    "out": 3460,
+    "turns": 14
+   }
+  }
+ ]
+]

@@ -1,0 +1,63 @@
+[
+ 200,
+ [
+  {
+   "age": 10,
+   "name": "crlf.log",
+   "size": 271,
+   "tail": [
+    "crlf line 5",
+    "crlf line 6",
+    "crlf line 7",
+    "crlf line 8",
+    "crlf line 9",
+    "crlf line 10",
+    "crlf line 11",
+    "crlf line 12",
+    "crlf line 13",
+    "crlf line 14",
+    "crlf line 15",
+    "crlf line 16",
+    "crlf line 17",
+    "crlf line 18",
+    "crlf line 19",
+    "crlf line 20"
+   ]
+  },
+  {
+   "age": 20,
+   "name": "cr.log",
+   "size": 211,
+   "tail": [
+    "cr line 5",
+    "cr line 6",
+    "cr line 7",
+    "cr line 8",
+    "cr line 9",
+    "cr line 10",
+    "cr line 11",
+    "cr line 12",
+    "cr line 13",
+    "cr line 14",
+    "cr line 15",
+    "cr line 16",
+    "cr line 17",
+    "cr line 18",
+    "cr line 19",
+    "cr line 20"
+   ]
+  },
+  {
+   "age": 30,
+   "name": "nel.log",
+   "size": 262,
+   "tail": []
+  },
+  {
+   "age": 40,
+   "name": "ls.log",
+   "size": 383,
+   "tail": []
+  }
+ ]
+]

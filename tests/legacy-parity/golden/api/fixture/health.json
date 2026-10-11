@@ -1,0 +1,25 @@
+[
+ 200,
+ {
+  "keys": [
+   "code_stamp",
+   "config_source",
+   "errors",
+   "now",
+   "ok",
+   "pid",
+   "reader",
+   "started",
+   "task",
+   "transcripts_dir",
+   "uptime",
+   "version"
+  ],
+  "reader": {
+   "bytes_scanned": 13714,
+   "files": 7,
+   "invalid_lines": 0,
+   "unknown_records": 0
+  }
+ }
+]

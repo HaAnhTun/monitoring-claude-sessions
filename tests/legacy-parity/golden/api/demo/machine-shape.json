@@ -1,0 +1,12 @@
+[
+ 200,
+ {
+  "cpu_pct": "null",
+  "docker": "array",
+  "free_gb": "number",
+  "now": "number",
+  "procs": "array",
+  "total_gb": "number",
+  "used_pct": "number"
+ }
+]

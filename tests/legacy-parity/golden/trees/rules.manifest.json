@@ -1,0 +1,188 @@
+[
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R01/00000001-0000-4000-8000-000000000001.jsonl",
+  "sha256": "62bbccd911f24ab782751857b793fcfe1b121f244c6fa400d74c92d5bc70859f",
+  "size": 88
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R02/00000002-0000-4000-8000-000000000002.jsonl",
+  "sha256": "7d99ecad31063b1c3db86484122fcdaa8290c31a02bcbd342b38d31aa2c8c0b9",
+  "size": 75
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R03/00000003-0000-4000-8000-000000000003.jsonl",
+  "sha256": "58f9aa1124e18a5a95425c1259d0fe385d4ea3127b18ebe57b9036fe4e38e837",
+  "size": 460
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R04/00000004-0000-4000-8000-000000000004.jsonl",
+  "sha256": "ef38f9b14c6614e6d1880fa37f6d218a1928854a85e68258802e2080102d5cb7",
+  "size": 62
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R05/00000005-0000-4000-8000-000000000005.jsonl",
+  "sha256": "76949d34a4ebc6090c46879a90eb1df10e462b45a44a8ee6fec9b33b14ca582b",
+  "size": 68
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R06/00000006-0000-4000-8000-000000000006.jsonl",
+  "sha256": "cec3a39ffcd3916264bca9f4e655ec51904bb7e15eb28e138f7851eb5e51ad08",
+  "size": 78
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R07/00000007-0000-4000-8000-000000000007.jsonl",
+  "sha256": "6b9f36c237ceca292f7bdc6ffa3866164f15a80ed53ff9e2093a311282abb71a",
+  "size": 79
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R08/00000008-0000-4000-8000-000000000008.jsonl",
+  "sha256": "47e3433c23acd3cadc1f5d140d1e85ad924160bfecfeda7f9d34aed0c5694945",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R09/00000009-0000-4000-8000-000000000009.jsonl",
+  "sha256": "988df265ef15be01444b4dc77cce435f6d0c06c7ea8f712d83f87977c05f79e3",
+  "size": 68
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R10/0000000a-0000-4000-8000-00000000000a.jsonl",
+  "sha256": "9d3b12334162f60cb5726741b3a40ca8024bb64328678d8c3bb89d51c5e04f2c",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R11/0000000b-0000-4000-8000-00000000000b.jsonl",
+  "sha256": "dbf0c7ec1e695ea94140873fd99c8bb5da7281689108fe7a52e4c189ff4d85b6",
+  "size": 68
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R12/0000000c-0000-4000-8000-00000000000c.jsonl",
+  "sha256": "6b760d3f6db936277efb0afccbf8e075d5450f6948602929932bf37c6d431063",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R13/0000000d-0000-4000-8000-00000000000d.jsonl",
+  "sha256": "4a3129721b416f12085202832a1318b35666243c524c38e60cf89a74aa0b9c78",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R14/0000000e-0000-4000-8000-00000000000e.jsonl",
+  "sha256": "025a05c9d520e533f87bf4b4d9e8a08f2ce5d03827f976df3fd35970018689ed",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R15/0000000f-0000-4000-8000-00000000000f.jsonl",
+  "sha256": "ffde92e325325d04d33755236c1572a050d0cf8a5d3339df00b75562746a7f88",
+  "size": 66
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R16/00000010-0000-4000-8000-000000000010.jsonl",
+  "sha256": "26e59c8a549238645e990ab87eb6a250dbb15d9cf692344a1c7fbd2764541015",
+  "size": 65
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R17/00000011-0000-4000-8000-000000000011.jsonl",
+  "sha256": "1229591deefaad1f826f71c8fb8e11ea711d0d954b54f6f5752de8ea7b319f47",
+  "size": 200
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R18/00000012-0000-4000-8000-000000000012.jsonl",
+  "sha256": "6e051967fe5f5c43712b285eca22eec1b2f66d9bf8370457351a2a72e9e4099d",
+  "size": 1686
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R19/00000013-0000-4000-8000-000000000013.jsonl",
+  "sha256": "b5c93535151fc7330f2e54611a9d9b1905df3ffbc1133a6da64ac37d92ecb8f8",
+  "size": 192
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R20-matched/00000015-0000-4000-8000-000000000015.jsonl",
+  "sha256": "4a1dfb6684e5fd8dc5f6f61e5c1e7e1d44a442d613fc7e4a449207989353b1ca",
+  "size": 109
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R20/00000014-0000-4000-8000-000000000014.jsonl",
+  "sha256": "4a1dfb6684e5fd8dc5f6f61e5c1e7e1d44a442d613fc7e4a449207989353b1ca",
+  "size": 109
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R21/00000016-0000-4000-8000-000000000016.jsonl",
+  "sha256": "6b760d3f6db936277efb0afccbf8e075d5450f6948602929932bf37c6d431063",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R22/00000017-0000-4000-8000-000000000017.jsonl",
+  "sha256": "6b760d3f6db936277efb0afccbf8e075d5450f6948602929932bf37c6d431063",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R23/00000018-0000-4000-8000-000000000018.jsonl",
+  "sha256": "3b7f448d71b75b5e567976ab558c9784d4f9204f9033a17d3912070a0be734c9",
+  "size": 291
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R24/00000019-0000-4000-8000-000000000019.jsonl",
+  "sha256": "2c571abfcf6d040c3bd35847d309b59f6e70aa255037207430728cc9d9ce3b77",
+  "size": 104
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R25/0000001a-0000-4000-8000-00000000001a.jsonl",
+  "sha256": "6b760d3f6db936277efb0afccbf8e075d5450f6948602929932bf37c6d431063",
+  "size": 67
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R26/0000001b-0000-4000-8000-00000000001b.jsonl",
+  "sha256": "3738e8c789a08e4439aca7047fe366943593e7103d5713a7880532d3c395541e",
+  "size": 194
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R27/0000001c-0000-4000-8000-00000000001c.jsonl",
+  "sha256": "bb4f7f89b7106f21963fd04994dccebcd23eabcce60795478a9925343fc26814",
+  "size": 16508
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R28/0000001d-0000-4000-8000-00000000001d.jsonl",
+  "sha256": "7e670081a0eb39e2f32a9669c7fcf6ecc3c747865b0f0d220938991f429a9675",
+  "size": 4077
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R29/0000001e-0000-4000-8000-00000000001e.jsonl",
+  "sha256": "2c255ee7ae830b7456fbad7bc8819a969392c7630a4b95d8a9cf5cebcef76fa0",
+  "size": 69
+ },
+ {
+  "age_s": 600.0,
+  "path": "home/projects/rules-R30/0000001f-0000-4000-8000-00000000001f.jsonl",
+  "sha256": "b2360d58fce80e9beca78e60262d3825da0b052dc0163da1675b0b503d81444f",
+  "size": 104
+ }
+]

@@ -1,0 +1,3415 @@
+[
+ {
+  "case": "prompt-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": "hello",
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "hello"
+   }
+  ]
+ },
+ {
+  "case": "prompt-empty-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": "",
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "prompt-blocks",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "a",
+       "type": "text"
+      },
+      {
+       "text": "b",
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "a"
+   },
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "b"
+   }
+  ]
+ },
+ {
+  "case": "prompt-non-dict-blocks",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      "x",
+      5,
+      null,
+      {
+       "text": "ok",
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "ok"
+   }
+  ]
+ },
+ {
+  "case": "prompt-text-missing",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "prompt-text-integer",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": 5,
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "5"
+   }
+  ]
+ },
+ {
+  "case": "prompt-text-null",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": null,
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "null"
+   }
+  ]
+ },
+ {
+  "case": "prompt-unknown-block-type",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "source": {},
+       "type": "image"
+      },
+      {
+       "text": "after",
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "after"
+   }
+  ]
+ },
+ {
+  "case": "prompt-clipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": "abcdefghijklmnopqrstuvwxyz",
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 10
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "abcdefghij ... [truncated 16 chars]"
+   }
+  ]
+ },
+ {
+  "case": "prompt-clip-emoji-code-points",
+  "input": {
+   "record": {
+    "message": {
+     "content": "abcd🙂ef",
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 5
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "abcd🙂 ... [truncated 2 chars]"
+   }
+  ]
+ },
+ {
+  "case": "prompt-clip-zero",
+  "input": {
+   "record": {
+    "message": {
+     "content": "abc",
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 0
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": " ... [truncated 3 chars]"
+   }
+  ]
+ },
+ {
+  "case": "prompt-no-timestamp",
+  "input": {
+   "record": {
+    "message": {
+     "content": "x"
+    },
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "prompt-null-timestamp",
+  "input": {
+   "record": {
+    "message": {
+     "content": "x"
+    },
+    "timestamp": null,
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "prompt-empty-timestamp",
+  "input": {
+   "record": {
+    "message": {
+     "content": "x"
+    },
+    "timestamp": "",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "user-content-null",
+  "input": {
+   "record": {
+    "message": {
+     "content": null,
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "user-content-object",
+  "input": {
+   "record": {
+    "message": {
+     "content": {
+      "a": 1
+     },
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "user-content-number",
+  "input": {
+   "record": {
+    "message": {
+     "content": 5,
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "user-message-not-an-object",
+  "input": {
+   "record": {
+    "message": "x",
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "user-message-missing",
+  "input": {
+   "record": {
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "user-compact-summary",
+  "input": {
+   "record": {
+    "isCompactSummary": true,
+    "isVisibleInTranscriptOnly": true,
+    "message": {
+     "content": "This session is being continued from a previous conversation...",
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "This session is being continued from a previous conversation..."
+   }
+  ]
+ },
+ {
+  "case": "user-subagent-first-record",
+  "input": {
+   "record": {
+    "agentId": "aaa111",
+    "isSidechain": true,
+    "message": {
+     "content": "Review the module",
+     "role": "user"
+    },
+    "parentUuid": null,
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "Review the module"
+   }
+  ]
+ },
+ {
+  "case": "user-task-notification",
+  "input": {
+   "record": {
+    "message": {
+     "content": "<task-notification><task-id>t1</task-id><status>completed</status></task-notification>",
+     "role": "user"
+    },
+    "origin": {
+     "kind": "task-notification"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "<task-notification><task-id>t1</task-id><status>completed</status></task-notification>"
+   }
+  ]
+ },
+ {
+  "case": "user-interrupt",
+  "input": {
+   "record": {
+    "interruptedMessageId": "msg_x",
+    "message": {
+     "content": [
+      {
+       "text": "[Request interrupted by user]",
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "[Request interrupted by user]"
+   }
+  ]
+ },
+ {
+  "case": "user-interrupt-for-tool-use",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "[Request interrupted by user for tool use]",
+       "type": "text"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "[Request interrupted by user for tool use]"
+   }
+  ]
+ },
+ {
+  "case": "result-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "done",
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "done"
+   }
+  ]
+ },
+ {
+  "case": "result-list-of-texts",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": [
+        {
+         "text": "a",
+         "type": "text"
+        },
+        {
+         "text": "b",
+         "type": "text"
+        }
+       ],
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "a\nb"
+   }
+  ]
+ },
+ {
+  "case": "result-list-with-non-dicts",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": [
+        {
+         "text": "a",
+         "type": "text"
+        },
+        "str",
+        5,
+        null,
+        {
+         "type": "image"
+        }
+       ],
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "a\n"
+   }
+  ]
+ },
+ {
+  "case": "result-list-of-strings",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": [
+        "a",
+        "b"
+       ],
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "result-empty-list",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": [],
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "result-none",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": null,
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "result-empty-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "",
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "result-zero",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": 0,
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": ""
+   }
+  ]
+ },
+ {
+  "case": "result-integer",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": 5,
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "5"
+   }
+  ]
+ },
+ {
+  "case": "result-object",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": {
+        "k": "v"
+       },
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "{\"k\": \"v\"}"
+   }
+  ]
+ },
+ {
+  "case": "result-error-true",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "boom",
+       "is_error": true,
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": true,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "boom"
+   }
+  ]
+ },
+ {
+  "case": "result-error-false",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "fine",
+       "is_error": false,
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "fine"
+   }
+  ]
+ },
+ {
+  "case": "result-error-truthy-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "x",
+       "is_error": "yes",
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": true,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "result-error-null",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "x",
+       "is_error": null,
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "result-denial",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "The user doesn't want to proceed with this tool use.",
+       "is_error": true,
+       "permissionDecision": {
+        "decision": "reject",
+        "source": "user"
+       },
+       "toolDenialKind": "user-rejected",
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": true,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "The user doesn't want to proceed with this tool use."
+   }
+  ]
+ },
+ {
+  "case": "result-no-tool-use-id",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "x",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": null,
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "result-with-tool-use-result-object",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "x",
+       "is_error": false,
+       "tool_use_id": "t",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "sourceToolAssistantUUID": "u",
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "toolUseResult": {
+     "stdout": "x"
+    },
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "t",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "x"
+   }
+  ]
+ },
+ {
+  "case": "result-clipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "abcdefghijklmnop",
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 8
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "toolu_1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "abcdefgh ... [truncated 8 chars]"
+   }
+  ]
+ },
+ {
+  "case": "result-text-and-prompt-order",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "r1",
+       "tool_use_id": "a",
+       "type": "tool_result"
+      },
+      {
+       "text": "then text",
+       "type": "text"
+      },
+      {
+       "content": "r2",
+       "is_error": true,
+       "tool_use_id": "b",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "a",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "r1"
+   },
+   {
+    "k": "prompt",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "then text"
+   },
+   {
+    "err": true,
+    "id": "b",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "r2"
+   }
+  ]
+ },
+ {
+  "case": "say-text",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "I will run the tests.",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "I will run the tests."
+   }
+  ]
+ },
+ {
+  "case": "say-blank-skipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": " \n ",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "say-empty-skipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "say-non-string-skipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": 5,
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "say-spaces-kept",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "  padded  ",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "  padded  "
+   }
+  ]
+ },
+ {
+  "case": "say-clipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 12
+  },
+  "output": [
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "xxxxxxxxxxxx ... [truncated 18 chars]"
+   }
+  ]
+ },
+ {
+  "case": "assistant-content-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": "plain string content",
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "assistant-content-null",
+  "input": {
+   "record": {
+    "message": {
+     "content": null,
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "assistant-message-missing",
+  "input": {
+   "record": {
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "assistant-non-dict-blocks",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      "x",
+      1,
+      null,
+      {
+       "text": "ok",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "ok"
+   }
+  ]
+ },
+ {
+  "case": "assistant-unknown-block",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "data": "x",
+       "type": "redacted_thinking"
+      },
+      {
+       "id": "s",
+       "type": "server_tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "assistant-three-blocks",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": "plan",
+       "type": "thinking"
+      },
+      {
+       "text": "say",
+       "type": "text"
+      },
+      {
+       "id": "t",
+       "input": {
+        "file_path": "a.txt"
+       },
+       "name": "Read",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "think",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "plan"
+   },
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "say"
+   },
+   {
+    "id": "t",
+    "input": "{\"file_path\": \"a.txt\"}",
+    "k": "tool",
+    "name": "Read",
+    "summary": "a.txt",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-key-command",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "value of command"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"value of command\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "value of command",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-key-file_path",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "file_path": "value of file_path"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"file_path\": \"value of file_path\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "value of file_path",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-key-pattern",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "pattern": "value of pattern"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"pattern\": \"value of pattern\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "value of pattern",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-key-description",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "description": "value of description"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"description\": \"value of description\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "value of description",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-key-prompt",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "prompt": "value of prompt"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"prompt\": \"value of prompt\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "value of prompt",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-key-script",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "script": "value of script"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"script\": \"value of script\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "value of script",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-priority",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "c",
+        "description": "d",
+        "file_path": "f",
+        "pattern": "pa",
+        "prompt": "p",
+        "script": "s"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"c\", \"description\": \"d\", \"file_path\": \"f\", \"pattern\": \"pa\", \"prompt\": \"p\", \"script\": \"s\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "c",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-empty-command-falls-through",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "",
+        "file_path": "f.txt"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"\", \"file_path\": \"f.txt\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "f.txt",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-none-command-falls-through",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": null,
+        "pattern": "p"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": null, \"pattern\": \"p\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "p",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-no-known-key",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "other": "x"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"other\": \"x\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-empty-input",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {},
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-first-line-only",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "echo one\necho two"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"echo one\\necho two\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "echo one",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-leading-newline",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "\nabc"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"\\nabc\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-crlf-line",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "first\r\nsecond"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"first\\r\\nsecond\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "first\r",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-clipped-160",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc ... [truncated 10 chars]",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-emoji-at-160",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🙂tail"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🙂tail\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🙂 ... [truncated 4 chars]",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-list-repr",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": [
+         "a",
+         "b"
+        ]
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": [\"a\", \"b\"]}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "['a', 'b']",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-integer",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": 5
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": 5}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "5",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-true-repr",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": true
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": true}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "True",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-dict-repr",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": {
+         "a": 1
+        }
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": {\"a\": 1}}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "{'a': 1}",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-empty-list-falls-through",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": [],
+        "file_path": "f"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": [], \"file_path\": \"f\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "f",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-summary-non-ascii",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "echo café 🙂"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"echo café 🙂\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "echo café 🙂",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-input-not-an-object-list",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "t",
+       "input": [
+        "x"
+       ],
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "t",
+    "input": "{}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-input-missing",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "t",
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "t",
+    "input": "{}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-input-string",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "t",
+       "input": "x",
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "t",
+    "input": "{}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-name-missing",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "t",
+       "input": {
+        "command": "x"
+       },
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "t",
+    "input": "{\"command\": \"x\"}",
+    "k": "tool",
+    "name": "?",
+    "summary": "x",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-name-empty",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "t",
+       "input": {
+        "command": "x"
+       },
+       "name": "",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "t",
+    "input": "{\"command\": \"x\"}",
+    "k": "tool",
+    "name": "?",
+    "summary": "x",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-id-missing",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "input": {
+        "command": "x"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": null,
+    "input": "{\"command\": \"x\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "x",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-input-non-ascii-not-escaped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "command": "x",
+        "note": "é🙂"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"command\": \"x\", \"note\": \"é🙂\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "x",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-input-clipped-4000",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "blob": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "command": "x"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"blob\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz ... [truncated 128 chars]",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "x",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-input-key-order-sorted",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "a": 1,
+        "b": 2,
+        "command": "c"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"a\": 1, \"b\": 2, \"command\": \"c\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "c",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-agent-launch",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "description": "security review",
+        "prompt": "review the diff",
+        "run_in_background": true,
+        "subagent_type": "general"
+       },
+       "name": "Agent",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"description\": \"security review\", \"prompt\": \"review the diff\", \"run_in_background\": true, \"subagent_type\": \"general\"}",
+    "k": "tool",
+    "name": "Agent",
+    "summary": "security review",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-workflow",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "args": {},
+        "workflow": "review"
+       },
+       "name": "Workflow",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"args\": {}, \"workflow\": \"review\"}",
+    "k": "tool",
+    "name": "Workflow",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-subagent-handback",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "summary": "done"
+       },
+       "name": "SubagentHandback",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"summary\": \"done\"}",
+    "k": "tool",
+    "name": "SubagentHandback",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "tool-structured-output",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "toolu_1",
+       "input": {
+        "answer": 1
+       },
+       "name": "StructuredOutput",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "toolu_1",
+    "input": "{\"answer\": 1}",
+    "k": "tool",
+    "name": "StructuredOutput",
+    "summary": "",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "thinking-text",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": "let me think",
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "think",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "let me think"
+   }
+  ]
+ },
+ {
+  "case": "thinking-empty-skipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": "",
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "thinking-missing-skipped",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "thinking-whitespace-kept",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": " ",
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "think",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": " "
+   }
+  ]
+ },
+ {
+  "case": "thinking-integer",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": 5,
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "think",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "5"
+   }
+  ]
+ },
+ {
+  "case": "thinking-clipped-1500",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "think",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt ... [truncated 100 chars]"
+   }
+  ]
+ },
+ {
+  "case": "thinking-ignores-text-chars",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "thinking": "tttttttttttttttttttttttttttttttttttttttt",
+       "type": "thinking"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 10
+  },
+  "output": [
+   {
+    "k": "think",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "tttttttttttttttttttttttttttttttttttttttt"
+   }
+  ]
+ },
+ {
+  "case": "synthetic-api-error",
+  "input": {
+   "record": {
+    "apiErrorStatus": 529,
+    "error": "server_error",
+    "isApiErrorMessage": true,
+    "message": {
+     "content": [
+      {
+       "text": "API Error: 529 overloaded",
+       "type": "text"
+      }
+     ],
+     "id": "abc",
+     "model": "<synthetic>",
+     "role": "assistant",
+     "stop_reason": "stop_sequence",
+     "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "service_tier": null
+     }
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "API Error: 529 overloaded"
+   }
+  ]
+ },
+ {
+  "case": "aborted-mid-stream",
+  "input": {
+   "record": {
+    "isAbortedMidStream": true,
+    "message": {
+     "content": [
+      {
+       "text": "partial answ",
+       "type": "text"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "k": "say",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "partial answ"
+   }
+  ]
+ },
+ {
+  "case": "parallel-tool-first",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "id": "p1",
+       "input": {
+        "file_path": "a"
+       },
+       "name": "Read",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_x",
+     "role": "assistant"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "assistant"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "id": "p1",
+    "input": "{\"file_path\": \"a\"}",
+    "k": "tool",
+    "name": "Read",
+    "summary": "a",
+    "t": "2026-09-21T14:00:00.000Z"
+   }
+  ]
+ },
+ {
+  "case": "parallel-tool-results",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "content": "A",
+       "tool_use_id": "p1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "user"
+   },
+   "text_chars": 6000
+  },
+  "output": [
+   {
+    "err": false,
+    "id": "p1",
+    "k": "result",
+    "t": "2026-09-21T14:00:00.000Z",
+    "text": "A"
+   }
+  ]
+ },
+ {
+  "case": "turn-duration-system",
+  "input": {
+   "record": {
+    "durationMs": 1000,
+    "messageCount": 4,
+    "pendingBackgroundAgentCount": 2,
+    "pendingWorkflowCount": 1,
+    "subtype": "turn_duration",
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "system"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "compact-boundary-system",
+  "input": {
+   "record": {
+    "compactMetadata": {
+     "preTokens": 100,
+     "trigger": "auto"
+    },
+    "parentUuid": null,
+    "subtype": "compact_boundary",
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "system"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "system-with-message-content",
+  "input": {
+   "record": {
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "system"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-last-prompt",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "last-prompt"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-ai-title",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "ai-title"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-custom-title",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "custom-title"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-agent-name",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "agent-name"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-mode",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "mode"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-permission-mode",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "permission-mode"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-queue-operation",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "queue-operation"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-file-history-snapshot",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "file-history-snapshot"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-file-history-delta",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "file-history-delta"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-bridge-session",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "bridge-session"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-atis-latch",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "atis-latch"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-cost-state",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "cost-state"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-continued-in",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "continued-in"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-summary",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "summary"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-attachment",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "attachment"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-progress",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "progress"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "bookkeeping-pr-link",
+  "input": {
+   "record": {
+    "content": "x",
+    "message": {
+     "content": [
+      {
+       "text": "x",
+       "type": "text"
+      }
+     ]
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "pr-link"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "attachment-hook-success",
+  "input": {
+   "record": {
+    "attachment": {
+     "hookName": "PostToolUse",
+     "type": "hook_success"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "attachment"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "attachment-queued-command",
+  "input": {
+   "record": {
+    "attachment": {
+     "commandMode": "prompt",
+     "prompt": "later",
+     "type": "queued_command"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "attachment"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "no-type",
+  "input": {
+   "record": {
+    "message": {
+     "content": "x"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "type-null",
+  "input": {
+   "record": {
+    "message": {
+     "content": "x"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": null
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "type-unknown",
+  "input": {
+   "record": {
+    "message": {
+     "content": "x"
+    },
+    "timestamp": "2026-09-21T14:00:00.000Z",
+    "type": "brand-new-type"
+   },
+   "text_chars": 6000
+  },
+  "output": []
+ },
+ {
+  "case": "empty-record",
+  "input": {
+   "record": {},
+   "text_chars": 6000
+  },
+  "output": []
+ }
+]

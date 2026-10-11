@@ -1,0 +1,38 @@
+[
+ 200,
+ {
+  "count": 4,
+  "matches": [
+   {
+    "i": 2,
+    "k": "tool",
+    "name": "Bash",
+    "snippet": "make step0",
+    "t": "2026-09-21T14:03:21.000Z"
+   },
+   {
+    "i": 5,
+    "k": "tool",
+    "name": "Bash",
+    "snippet": "make step1",
+    "t": "2026-09-21T14:03:23.000Z"
+   },
+   {
+    "i": 8,
+    "k": "tool",
+    "name": "Bash",
+    "snippet": "make step2",
+    "t": "2026-09-21T14:03:25.000Z"
+   },
+   {
+    "i": 11,
+    "k": "tool",
+    "name": "Bash",
+    "snippet": "make step3",
+    "t": "2026-09-21T14:03:27.000Z"
+   }
+  ],
+  "partial": false,
+  "truncated": false
+ }
+]

@@ -1,0 +1,28 @@
+[
+ 200,
+ [
+  {
+   "age": 40,
+   "name": "ls.log",
+   "size": 383,
+   "tail": [
+    "ls third 5",
+    "ls first 6",
+    "ls second 6",
+    "ls third 6",
+    "ls first 7",
+    "ls second 7",
+    "ls third 7",
+    "ls first 8",
+    "ls second 8",
+    "ls third 8",
+    "ls first 9",
+    "ls second 9",
+    "ls third 9",
+    "ls first 10",
+    "ls second 10",
+    "ls third 10"
+   ]
+  }
+ ]
+]

@@ -1,0 +1,554 @@
+[
+ {
+  "case": "change-first-entry",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "change-two-entries",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    },
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json",
+       "task.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "second",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000061
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n## 2026-09-21T14:14:21Z | configure\n- Summary: second\n- Reason: owner asked\n- Files changed: config.json, task.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "second",
+    "t": "2026-09-21T14:14:21Z"
+   }
+  }
+ },
+ {
+  "case": "change-empty-reason-and-files",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [],
+      "outcome": "applied",
+      "reason": "",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: not given\n- Files changed: none\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "change-unresolved-given",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "unresolved": "follow up on the port",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: follow up on the port\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "change-multi-file-list",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "a",
+       "b",
+       "c"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: a, b, c\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "change-non-ascii",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "中",
+      "summary": "café 🙂",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: café 🙂\n- Reason: 中\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "café 🙂",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "change-newline-in-summary",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "line one\nline two",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: line one\nline two\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "line one",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "change-pipe-in-action",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "a | b",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | a | b\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "decision-first-entry",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "decision": "use the chain log",
+      "title": "configuration"
+     },
+     "fn": "record_decision",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": null,
+   "decisions.md": "# Decisions\n\n## 2026-09-21T14:13:20Z | configuration\n- Decision: use the chain log\n- Rejected alternatives: none recorded\n\n",
+   "last_change": null
+  }
+ },
+ {
+  "case": "decision-rejected-empty",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "decision": "use the chain log",
+      "rejected": "",
+      "title": "configuration"
+     },
+     "fn": "record_decision",
+     "now": 1790000000
+    }
+   ]
+  },
+  "output": {
+   "changes.md": null,
+   "decisions.md": "# Decisions\n\n## 2026-09-21T14:13:20Z | configuration\n- Decision: use the chain log\n- Rejected alternatives: none recorded\n\n",
+   "last_change": null
+  }
+ },
+ {
+  "case": "decision-rejected-given",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "decision": "chain log",
+      "rejected": "none",
+      "title": "Use attempts"
+     },
+     "fn": "record_decision",
+     "now": 1790000005
+    }
+   ]
+  },
+  "output": {
+   "changes.md": null,
+   "decisions.md": "# Decisions\n\n## 2026-09-21T14:13:25Z | Use attempts\n- Decision: chain log\n- Rejected alternatives: none\n\n",
+   "last_change": null
+  }
+ },
+ {
+  "case": "decision-two-entries",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "decision": "use the chain log",
+      "title": "configuration"
+     },
+     "fn": "record_decision",
+     "now": 1790000000
+    },
+    {
+     "args": {
+      "decision": "use the chain log",
+      "title": "second"
+     },
+     "fn": "record_decision",
+     "now": 1790003600
+    }
+   ]
+  },
+  "output": {
+   "changes.md": null,
+   "decisions.md": "# Decisions\n\n## 2026-09-21T14:13:20Z | configuration\n- Decision: use the chain log\n- Rejected alternatives: none recorded\n\n## 2026-09-21T15:13:20Z | second\n- Decision: use the chain log\n- Rejected alternatives: none recorded\n\n",
+   "last_change": null
+  }
+ },
+ {
+  "case": "both-files",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    },
+    {
+     "args": {
+      "decision": "use the chain log",
+      "title": "configuration"
+     },
+     "fn": "record_decision",
+     "now": 1790000001
+    },
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "third",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000002
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n## 2026-09-21T14:13:22Z | configure\n- Summary: third\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": "# Decisions\n\n## 2026-09-21T14:13:21Z | configuration\n- Decision: use the chain log\n- Rejected alternatives: none recorded\n\n",
+   "last_change": {
+    "summary": "third",
+    "t": "2026-09-21T14:13:22Z"
+   }
+  }
+ },
+ {
+  "case": "clock-other-day",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1767225600
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-01-01T00:00:00Z"
+   }
+  }
+ },
+ {
+  "case": "clock-fraction-truncated",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000.999
+    }
+   ]
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "existing-file-no-header-added",
+  "input": {
+   "calls": [
+    {
+     "args": {
+      "action": "configure",
+      "files": [
+       "config.json"
+      ],
+      "outcome": "applied",
+      "reason": "owner asked",
+      "summary": "window_hours: (default 8) -> 12",
+      "validation": "schema ok (strict)"
+     },
+     "fn": "audit_change",
+     "now": 1790000000
+    }
+   ],
+   "initial": {
+    "audit/changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | init-task\n- Summary: created\n\n"
+   }
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | init-task\n- Summary: created\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12\n- Reason: owner asked\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "window_hours: (default 8) -> 12",
+    "t": "2026-09-21T14:13:20Z"
+   }
+  }
+ },
+ {
+  "case": "last-change-without-calls",
+  "input": {
+   "calls": [],
+   "initial": {
+    "audit/changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | init-task\n- Summary: created task\n- Reason: r\n\n"
+   }
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | init-task\n- Summary: created task\n- Reason: r\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "created task",
+    "t": "2026-01-01T00:00:00Z"
+   }
+  }
+ },
+ {
+  "case": "last-change-no-summary-line",
+  "input": {
+   "calls": [],
+   "initial": {
+    "audit/changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | init-task\n- Reason: r\n\n"
+   }
+  },
+  "output": {
+   "changes.md": "# Changes\n\n## 2026-01-01T00:00:00Z | init-task\n- Reason: r\n\n",
+   "decisions.md": null,
+   "last_change": {
+    "summary": "2026-01-01T00:00:00Z | init-task",
+    "t": "2026-01-01T00:00:00Z"
+   }
+  }
+ },
+ {
+  "case": "last-change-empty-file",
+  "input": {
+   "calls": [],
+   "initial": {
+    "audit/changes.md": ""
+   }
+  },
+  "output": {
+   "changes.md": "",
+   "decisions.md": null,
+   "last_change": null
+  }
+ },
+ {
+  "case": "last-change-header-only",
+  "input": {
+   "calls": [],
+   "initial": {
+    "audit/changes.md": "# Changes\n\n"
+   }
+  },
+  "output": {
+   "changes.md": "# Changes\n\n",
+   "decisions.md": null,
+   "last_change": null
+  }
+ },
+ {
+  "case": "no-calls-no-files",
+  "input": {
+   "calls": []
+  },
+  "output": {
+   "changes.md": null,
+   "decisions.md": null,
+   "last_change": null
+  }
+ }
+]

@@ -1,0 +1,810 @@
+[
+ {
+  "case": "empty-object-compact",
+  "input": {
+   "indent": null,
+   "text": "{}"
+  },
+  "output": "{}"
+ },
+ {
+  "case": "empty-object-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{}"
+  },
+  "output": "{}"
+ },
+ {
+  "case": "empty-array-compact",
+  "input": {
+   "indent": null,
+   "text": "[]"
+  },
+  "output": "[]"
+ },
+ {
+  "case": "empty-array-indent2",
+  "input": {
+   "indent": 2,
+   "text": "[]"
+  },
+  "output": "[]"
+ },
+ {
+  "case": "nested-empty-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"a\": [], \"b\": {}, \"c\": [[], {}]}"
+  },
+  "output": "{\"a\": [], \"b\": {}, \"c\": [[], {}]}"
+ },
+ {
+  "case": "nested-empty-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"a\": [], \"b\": {}, \"c\": [[], {}]}"
+  },
+  "output": "{\n  \"a\": [],\n  \"b\": {},\n  \"c\": [\n    [],\n    {}\n  ]\n}"
+ },
+ {
+  "case": "null-compact",
+  "input": {
+   "indent": null,
+   "text": "null"
+  },
+  "output": "null"
+ },
+ {
+  "case": "null-indent2",
+  "input": {
+   "indent": 2,
+   "text": "null"
+  },
+  "output": "null"
+ },
+ {
+  "case": "booleans-compact",
+  "input": {
+   "indent": null,
+   "text": "[true, false, null]"
+  },
+  "output": "[true, false, null]"
+ },
+ {
+  "case": "booleans-indent2",
+  "input": {
+   "indent": 2,
+   "text": "[true, false, null]"
+  },
+  "output": "[\n  true,\n  false,\n  null\n]"
+ },
+ {
+  "case": "integer-compact",
+  "input": {
+   "indent": null,
+   "text": "42"
+  },
+  "output": "42"
+ },
+ {
+  "case": "integer-indent2",
+  "input": {
+   "indent": 2,
+   "text": "42"
+  },
+  "output": "42"
+ },
+ {
+  "case": "negative-integer-compact",
+  "input": {
+   "indent": null,
+   "text": "-7"
+  },
+  "output": "-7"
+ },
+ {
+  "case": "negative-integer-indent2",
+  "input": {
+   "indent": 2,
+   "text": "-7"
+  },
+  "output": "-7"
+ },
+ {
+  "case": "zero-compact",
+  "input": {
+   "indent": null,
+   "text": "0"
+  },
+  "output": "0"
+ },
+ {
+  "case": "zero-indent2",
+  "input": {
+   "indent": 2,
+   "text": "0"
+  },
+  "output": "0"
+ },
+ {
+  "case": "big-integer-compact",
+  "input": {
+   "indent": null,
+   "text": "12345678901234567890"
+  },
+  "output": "12345678901234567890"
+ },
+ {
+  "case": "big-integer-indent2",
+  "input": {
+   "indent": 2,
+   "text": "12345678901234567890"
+  },
+  "output": "12345678901234567890"
+ },
+ {
+  "case": "integer-above-2-53-compact",
+  "input": {
+   "indent": null,
+   "text": "9007199254740993"
+  },
+  "output": "9007199254740993"
+ },
+ {
+  "case": "integer-above-2-53-indent2",
+  "input": {
+   "indent": 2,
+   "text": "9007199254740993"
+  },
+  "output": "9007199254740993"
+ },
+ {
+  "case": "float-one-compact",
+  "input": {
+   "indent": null,
+   "text": "1.0"
+  },
+  "output": "1.0"
+ },
+ {
+  "case": "float-one-indent2",
+  "input": {
+   "indent": 2,
+   "text": "1.0"
+  },
+  "output": "1.0"
+ },
+ {
+  "case": "float-negative-zero-compact",
+  "input": {
+   "indent": null,
+   "text": "-0.0"
+  },
+  "output": "-0.0"
+ },
+ {
+  "case": "float-negative-zero-indent2",
+  "input": {
+   "indent": 2,
+   "text": "-0.0"
+  },
+  "output": "-0.0"
+ },
+ {
+  "case": "float-tenth-compact",
+  "input": {
+   "indent": null,
+   "text": "0.1"
+  },
+  "output": "0.1"
+ },
+ {
+  "case": "float-tenth-indent2",
+  "input": {
+   "indent": 2,
+   "text": "0.1"
+  },
+  "output": "0.1"
+ },
+ {
+  "case": "float-third-compact",
+  "input": {
+   "indent": null,
+   "text": "0.3333333333333333"
+  },
+  "output": "0.3333333333333333"
+ },
+ {
+  "case": "float-third-indent2",
+  "input": {
+   "indent": 2,
+   "text": "0.3333333333333333"
+  },
+  "output": "0.3333333333333333"
+ },
+ {
+  "case": "float-exponent-large-compact",
+  "input": {
+   "indent": null,
+   "text": "1e22"
+  },
+  "output": "1e+22"
+ },
+ {
+  "case": "float-exponent-large-indent2",
+  "input": {
+   "indent": 2,
+   "text": "1e22"
+  },
+  "output": "1e+22"
+ },
+ {
+  "case": "float-exponent-small-compact",
+  "input": {
+   "indent": null,
+   "text": "1E-7"
+  },
+  "output": "1e-07"
+ },
+ {
+  "case": "float-exponent-small-indent2",
+  "input": {
+   "indent": 2,
+   "text": "1E-7"
+  },
+  "output": "1e-07"
+ },
+ {
+  "case": "float-1e16-compact",
+  "input": {
+   "indent": null,
+   "text": "1e16"
+  },
+  "output": "1e+16"
+ },
+ {
+  "case": "float-1e16-indent2",
+  "input": {
+   "indent": 2,
+   "text": "1e16"
+  },
+  "output": "1e+16"
+ },
+ {
+  "case": "float-1e15-compact",
+  "input": {
+   "indent": null,
+   "text": "1e15"
+  },
+  "output": "1000000000000000.0"
+ },
+ {
+  "case": "float-1e15-indent2",
+  "input": {
+   "indent": 2,
+   "text": "1e15"
+  },
+  "output": "1000000000000000.0"
+ },
+ {
+  "case": "float-1e-5-compact",
+  "input": {
+   "indent": null,
+   "text": "0.00001"
+  },
+  "output": "1e-05"
+ },
+ {
+  "case": "float-1e-5-indent2",
+  "input": {
+   "indent": 2,
+   "text": "0.00001"
+  },
+  "output": "1e-05"
+ },
+ {
+  "case": "float-1e-4-compact",
+  "input": {
+   "indent": null,
+   "text": "0.0001"
+  },
+  "output": "0.0001"
+ },
+ {
+  "case": "float-1e-4-indent2",
+  "input": {
+   "indent": 2,
+   "text": "0.0001"
+  },
+  "output": "0.0001"
+ },
+ {
+  "case": "float-long-compact",
+  "input": {
+   "indent": null,
+   "text": "123456789012345680000.0"
+  },
+  "output": "1.2345678901234568e+20"
+ },
+ {
+  "case": "float-long-indent2",
+  "input": {
+   "indent": 2,
+   "text": "123456789012345680000.0"
+  },
+  "output": "1.2345678901234568e+20"
+ },
+ {
+  "case": "float-max-compact",
+  "input": {
+   "indent": null,
+   "text": "1.7976931348623157e308"
+  },
+  "output": "1.7976931348623157e+308"
+ },
+ {
+  "case": "float-max-indent2",
+  "input": {
+   "indent": 2,
+   "text": "1.7976931348623157e308"
+  },
+  "output": "1.7976931348623157e+308"
+ },
+ {
+  "case": "float-min-compact",
+  "input": {
+   "indent": null,
+   "text": "5e-324"
+  },
+  "output": "5e-324"
+ },
+ {
+  "case": "float-min-indent2",
+  "input": {
+   "indent": 2,
+   "text": "5e-324"
+  },
+  "output": "5e-324"
+ },
+ {
+  "case": "float-in-array-compact",
+  "input": {
+   "indent": null,
+   "text": "[1.0, 2.50, 3e0]"
+  },
+  "output": "[1.0, 2.5, 3.0]"
+ },
+ {
+  "case": "float-in-array-indent2",
+  "input": {
+   "indent": 2,
+   "text": "[1.0, 2.50, 3e0]"
+  },
+  "output": "[\n  1.0,\n  2.5,\n  3.0\n]"
+ },
+ {
+  "case": "string-plain-compact",
+  "input": {
+   "indent": null,
+   "text": "\"abc\""
+  },
+  "output": "\"abc\""
+ },
+ {
+  "case": "string-plain-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"abc\""
+  },
+  "output": "\"abc\""
+ },
+ {
+  "case": "string-empty-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\""
+  },
+  "output": "\"\""
+ },
+ {
+  "case": "string-empty-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\""
+  },
+  "output": "\"\""
+ },
+ {
+  "case": "string-quote-backslash-compact",
+  "input": {
+   "indent": null,
+   "text": "\"a\\\"b\\\\c\""
+  },
+  "output": "\"a\\\"b\\\\c\""
+ },
+ {
+  "case": "string-quote-backslash-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"a\\\"b\\\\c\""
+  },
+  "output": "\"a\\\"b\\\\c\""
+ },
+ {
+  "case": "string-slash-compact",
+  "input": {
+   "indent": null,
+   "text": "\"a/b\""
+  },
+  "output": "\"a/b\""
+ },
+ {
+  "case": "string-slash-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"a/b\""
+  },
+  "output": "\"a/b\""
+ },
+ {
+  "case": "string-controls-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\u0000\\u0001\\b\\f\\n\\r\\t\\u001f\\u007f\""
+  },
+  "output": "\"\\u0000\\u0001\\b\\f\\n\\r\\t\\u001f\\u007f\""
+ },
+ {
+  "case": "string-controls-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\u0000\\u0001\\b\\f\\n\\r\\t\\u001f\\u007f\""
+  },
+  "output": "\"\\u0000\\u0001\\b\\f\\n\\r\\t\\u001f\\u007f\""
+ },
+ {
+  "case": "string-e-acute-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\u00e9\""
+  },
+  "output": "\"\\u00e9\""
+ },
+ {
+  "case": "string-e-acute-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\u00e9\""
+  },
+  "output": "\"\\u00e9\""
+ },
+ {
+  "case": "string-raw-e-acute-compact",
+  "input": {
+   "indent": null,
+   "text": "\"é\""
+  },
+  "output": "\"\\u00e9\""
+ },
+ {
+  "case": "string-raw-e-acute-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"é\""
+  },
+  "output": "\"\\u00e9\""
+ },
+ {
+  "case": "string-bmp-cjk-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\u4e2d\\u6587\""
+  },
+  "output": "\"\\u4e2d\\u6587\""
+ },
+ {
+  "case": "string-bmp-cjk-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\u4e2d\\u6587\""
+  },
+  "output": "\"\\u4e2d\\u6587\""
+ },
+ {
+  "case": "string-astral-escaped-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\ud83d\\ude00\""
+  },
+  "output": "\"\\ud83d\\ude00\""
+ },
+ {
+  "case": "string-astral-escaped-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\ud83d\\ude00\""
+  },
+  "output": "\"\\ud83d\\ude00\""
+ },
+ {
+  "case": "string-astral-raw-compact",
+  "input": {
+   "indent": null,
+   "text": "\"🙂\""
+  },
+  "output": "\"\\ud83d\\ude42\""
+ },
+ {
+  "case": "string-astral-raw-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"🙂\""
+  },
+  "output": "\"\\ud83d\\ude42\""
+ },
+ {
+  "case": "string-line-separator-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\u2028\\u2029\\u0085\""
+  },
+  "output": "\"\\u2028\\u2029\\u0085\""
+ },
+ {
+  "case": "string-line-separator-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\u2028\\u2029\\u0085\""
+  },
+  "output": "\"\\u2028\\u2029\\u0085\""
+ },
+ {
+  "case": "string-bom-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\ufeff\""
+  },
+  "output": "\"\\ufeff\""
+ },
+ {
+  "case": "string-bom-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\ufeff\""
+  },
+  "output": "\"\\ufeff\""
+ },
+ {
+  "case": "string-del-and-nbsp-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\u007f\\u00a0\""
+  },
+  "output": "\"\\u007f\\u00a0\""
+ },
+ {
+  "case": "string-del-and-nbsp-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\u007f\\u00a0\""
+  },
+  "output": "\"\\u007f\\u00a0\""
+ },
+ {
+  "case": "string-lowercase-hex-compact",
+  "input": {
+   "indent": null,
+   "text": "\"\\u00ff\\uABCD\""
+  },
+  "output": "\"\\u00ff\\uabcd\""
+ },
+ {
+  "case": "string-lowercase-hex-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"\\u00ff\\uABCD\""
+  },
+  "output": "\"\\u00ff\\uabcd\""
+ },
+ {
+  "case": "string-combining-compact",
+  "input": {
+   "indent": null,
+   "text": "\"e\\u0301\""
+  },
+  "output": "\"e\\u0301\""
+ },
+ {
+  "case": "string-combining-indent2",
+  "input": {
+   "indent": 2,
+   "text": "\"e\\u0301\""
+  },
+  "output": "\"e\\u0301\""
+ },
+ {
+  "case": "object-insertion-order-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"b\": 1, \"a\": 2, \"c\": 3}"
+  },
+  "output": "{\"b\": 1, \"a\": 2, \"c\": 3}"
+ },
+ {
+  "case": "object-insertion-order-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"b\": 1, \"a\": 2, \"c\": 3}"
+  },
+  "output": "{\n  \"b\": 1,\n  \"a\": 2,\n  \"c\": 3\n}"
+ },
+ {
+  "case": "object-duplicate-keys-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"a\": 1, \"b\": 2, \"a\": 3}"
+  },
+  "output": "{\"a\": 3, \"b\": 2}"
+ },
+ {
+  "case": "object-duplicate-keys-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"a\": 1, \"b\": 2, \"a\": 3}"
+  },
+  "output": "{\n  \"a\": 3,\n  \"b\": 2\n}"
+ },
+ {
+  "case": "object-numeric-keys-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"10\": 1, \"2\": 2, \"1\": 3}"
+  },
+  "output": "{\"10\": 1, \"2\": 2, \"1\": 3}"
+ },
+ {
+  "case": "object-numeric-keys-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"10\": 1, \"2\": 2, \"1\": 3}"
+  },
+  "output": "{\n  \"10\": 1,\n  \"2\": 2,\n  \"1\": 3\n}"
+ },
+ {
+  "case": "object-unicode-keys-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"é\": 1, \"\\u4e2d\": 2}"
+  },
+  "output": "{\"\\u00e9\": 1, \"\\u4e2d\": 2}"
+ },
+ {
+  "case": "object-unicode-keys-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"é\": 1, \"\\u4e2d\": 2}"
+  },
+  "output": "{\n  \"\\u00e9\": 1,\n  \"\\u4e2d\": 2\n}"
+ },
+ {
+  "case": "object-empty-key-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"\": 1}"
+  },
+  "output": "{\"\": 1}"
+ },
+ {
+  "case": "object-empty-key-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"\": 1}"
+  },
+  "output": "{\n  \"\": 1\n}"
+ },
+ {
+  "case": "nested-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"a\": {\"b\": {\"c\": [1, {\"d\": null}]}}, \"e\": [[1, 2], [3]]}"
+  },
+  "output": "{\"a\": {\"b\": {\"c\": [1, {\"d\": null}]}}, \"e\": [[1, 2], [3]]}"
+ },
+ {
+  "case": "nested-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"a\": {\"b\": {\"c\": [1, {\"d\": null}]}}, \"e\": [[1, 2], [3]]}"
+  },
+  "output": "{\n  \"a\": {\n    \"b\": {\n      \"c\": [\n        1,\n        {\n          \"d\": null\n        }\n      ]\n    }\n  },\n  \"e\": [\n    [\n      1,\n      2\n    ],\n    [\n      3\n    ]\n  ]\n}"
+ },
+ {
+  "case": "array-mixed-compact",
+  "input": {
+   "indent": null,
+   "text": "[1, \"a\", null, true, 1.5, [], {}]"
+  },
+  "output": "[1, \"a\", null, true, 1.5, [], {}]"
+ },
+ {
+  "case": "array-mixed-indent2",
+  "input": {
+   "indent": 2,
+   "text": "[1, \"a\", null, true, 1.5, [], {}]"
+  },
+  "output": "[\n  1,\n  \"a\",\n  null,\n  true,\n  1.5,\n  [],\n  {}\n]"
+ },
+ {
+  "case": "deep-array-compact",
+  "input": {
+   "indent": null,
+   "text": "[[[[[[1]]]]]]"
+  },
+  "output": "[[[[[[1]]]]]]"
+ },
+ {
+  "case": "deep-array-indent2",
+  "input": {
+   "indent": 2,
+   "text": "[[[[[[1]]]]]]"
+  },
+  "output": "[\n  [\n    [\n      [\n        [\n          [\n            1\n          ]\n        ]\n      ]\n    ]\n  ]\n]"
+ },
+ {
+  "case": "config-like-compact",
+  "input": {
+   "indent": null,
+   "text": "{\"schema_version\": 1, \"title\": \"x\", \"panels\": {\"git\": false}, \"session_rules\": [{\"match\": \"STEP=([A-Z])\", \"label\": \"step {1}\"}]}"
+  },
+  "output": "{\"schema_version\": 1, \"title\": \"x\", \"panels\": {\"git\": false}, \"session_rules\": [{\"match\": \"STEP=([A-Z])\", \"label\": \"step {1}\"}]}"
+ },
+ {
+  "case": "config-like-indent2",
+  "input": {
+   "indent": 2,
+   "text": "{\"schema_version\": 1, \"title\": \"x\", \"panels\": {\"git\": false}, \"session_rules\": [{\"match\": \"STEP=([A-Z])\", \"label\": \"step {1}\"}]}"
+  },
+  "output": "{\n  \"schema_version\": 1,\n  \"title\": \"x\",\n  \"panels\": {\n    \"git\": false\n  },\n  \"session_rules\": [\n    {\n      \"match\": \"STEP=([A-Z])\",\n      \"label\": \"step {1}\"\n    }\n  ]\n}"
+ },
+ {
+  "case": "whitespace-input-compact",
+  "input": {
+   "indent": null,
+   "text": " { \"a\" : [ 1 , 2 ] } "
+  },
+  "output": "{\"a\": [1, 2]}"
+ },
+ {
+  "case": "whitespace-input-indent2",
+  "input": {
+   "indent": 2,
+   "text": " { \"a\" : [ 1 , 2 ] } "
+  },
+  "output": "{\n  \"a\": [\n    1,\n    2\n  ]\n}"
+ },
+ {
+  "case": "config-like-indent4",
+  "input": {
+   "indent": 4,
+   "text": "{\"a\": {\"b\": [1, 2]}, \"c\": []}"
+  },
+  "output": "{\n    \"a\": {\n        \"b\": [\n            1,\n            2\n        ]\n    },\n    \"c\": []\n}"
+ },
+ {
+  "case": "config-like-indent0",
+  "input": {
+   "indent": 0,
+   "text": "{\"a\": {\"b\": [1, 2]}, \"c\": []}"
+  },
+  "output": "{\n\"a\": {\n\"b\": [\n1,\n2\n]\n},\n\"c\": []\n}"
+ },
+ {
+  "case": "config-like-indent1",
+  "input": {
+   "indent": 1,
+   "text": "{\"a\": {\"b\": [1, 2]}, \"c\": []}"
+  },
+  "output": "{\n \"a\": {\n  \"b\": [\n   1,\n   2\n  ]\n },\n \"c\": []\n}"
+ }
+]

@@ -1,0 +1,40 @@
+[
+ 200,
+ {
+  "active": 120,
+  "features": {
+   "locate": true,
+   "search": true
+  },
+  "panels": {
+   "attempts": true,
+   "chain_log": true,
+   "git": false,
+   "ledger": true,
+   "logs": false,
+   "machine": true
+  },
+  "poll": {
+   "attempts_ms": 6000,
+   "events_ms": 1500,
+   "logs_ms": 3000,
+   "machine_ms": 2000,
+   "overview_ms": 5000,
+   "sessions_ms": 6000,
+   "stale_after_ms": 15000
+  },
+  "task": null,
+  "title": "Nightly build monitor",
+  "transcripts_dir": true,
+  "ui": {
+   "density": "comfortable",
+   "newest_first": true,
+   "show_prompts": false,
+   "show_thinking": false,
+   "show_tools": true,
+   "theme": "auto"
+  },
+  "version": "2.0.2",
+  "window_hours": 8
+ }
+]

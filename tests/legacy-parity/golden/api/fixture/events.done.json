@@ -1,0 +1,94 @@
+[
+ 200,
+ {
+  "base": 0,
+  "events": [
+   {
+    "i": 0,
+    "k": "prompt",
+    "t": "2026-09-21T14:03:20.000Z",
+    "text": "Please run the build job"
+   },
+   {
+    "i": 1,
+    "k": "say",
+    "t": "2026-09-21T14:03:21.000Z",
+    "text": "step 0"
+   },
+   {
+    "i": 2,
+    "id": "toolu_000",
+    "input": "{\"command\": \"make step0\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "make step0",
+    "t": "2026-09-21T14:03:21.000Z"
+   },
+   {
+    "err": false,
+    "i": 3,
+    "id": "toolu_000",
+    "k": "result",
+    "t": "2026-09-21T14:03:22.000Z",
+    "text": "done 0"
+   },
+   {
+    "i": 4,
+    "k": "say",
+    "t": "2026-09-21T14:03:23.000Z",
+    "text": "step 1"
+   },
+   {
+    "i": 5,
+    "id": "toolu_001",
+    "input": "{\"command\": \"make step1\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "make step1",
+    "t": "2026-09-21T14:03:23.000Z"
+   },
+   {
+    "err": false,
+    "i": 6,
+    "id": "toolu_001",
+    "k": "result",
+    "t": "2026-09-21T14:03:24.000Z",
+    "text": "done 1"
+   },
+   {
+    "i": 7,
+    "k": "say",
+    "t": "2026-09-21T14:03:25.000Z",
+    "text": "step 2"
+   },
+   {
+    "i": 8,
+    "id": "toolu_002",
+    "input": "{\"command\": \"make step2\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "make step2",
+    "t": "2026-09-21T14:03:25.000Z"
+   },
+   {
+    "err": false,
+    "i": 9,
+    "id": "toolu_002",
+    "k": "result",
+    "t": "2026-09-21T14:03:26.000Z",
+    "text": "done 2"
+   },
+   {
+    "i": 10,
+    "k": "say",
+    "t": "2026-09-21T14:03:29.000Z",
+    "text": "All finished."
+   }
+  ],
+  "from": 0,
+  "next": 11,
+  "partial": false,
+  "skipped_bytes": 0,
+  "total": 11
+ }
+]

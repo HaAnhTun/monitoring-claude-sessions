@@ -1,0 +1,1372 @@
+[
+ {
+  "case": "R01",
+  "input": {
+   "case": "R01",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "Run STEP=B: build the thing",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "step {1}",
+     "match": "STEP=([A-Z]):"
+    }
+   ],
+   "title": "numbered group in the label"
+  },
+  "output": {
+   "label": "step B",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R02",
+  "input": {
+   "case": "R02",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "Run STEP=C now",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{1}",
+     "match": "STEP=(?P<s>[A-Z])"
+    }
+   ],
+   "title": "named group, label uses its number"
+  },
+  "output": {
+   "label": "C",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R03",
+  "input": {
+   "case": "R03",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "START 🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂abcdefghijabcdefghijabcdefghijEND",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{0}",
+     "match": "START.*END"
+    }
+   ],
+   "title": "{0} is cut at 40 code points (emoji inside)"
+  },
+  "output": {
+   "label": "START 🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂abcd",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R04",
+  "input": {
+   "case": "R04",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "b",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{1}-{2}",
+     "match": "(a)|(b)"
+    }
+   ],
+   "title": "unmatched alternative group becomes empty text"
+  },
+  "output": {
+   "label": "-b",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R05",
+  "input": {
+   "case": "R05",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "{2} zzz",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{1}{2}",
+     "match": "^(\\S+) (\\S+)"
+    }
+   ],
+   "title": "sequential replacement artefact"
+  },
+  "output": {
+   "label": "zzzzzz",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R06",
+  "input": {
+   "case": "R06",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "start\nmiddle end",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "span",
+     "match": "start.*end"
+    }
+   ],
+   "title": "dot matches newline (DOTALL)"
+  },
+  "output": {
+   "label": "span",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R07",
+  "input": {
+   "case": "R07",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "first line\nSTEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "anchored",
+     "match": "^STEP"
+    }
+   ],
+   "title": "^ anchors at the start of the text only"
+  },
+  "output": {
+   "label": "first line STEP=1",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R08",
+  "input": {
+   "case": "R08",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "done\n",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "tail",
+     "match": "done$"
+    }
+   ],
+   "title": "$ matches before a trailing newline"
+  },
+  "output": {
+   "label": "tail",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R09",
+  "input": {
+   "case": "R09",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "foo bar",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "both",
+     "match": "\\Afoo.*bar\\Z"
+    }
+   ],
+   "title": "\\A and \\Z anchors"
+  },
+  "output": {
+   "label": "both",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R10",
+  "input": {
+   "case": "R10",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "é",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{0}",
+     "match": "\\w+"
+    }
+   ],
+   "title": "\\w matches a non-ASCII letter"
+  },
+  "output": {
+   "label": "é",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R11",
+  "input": {
+   "case": "R11",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "x٣",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "digit",
+     "match": "\\d"
+    }
+   ],
+   "title": "\\d matches an Arabic-Indic digit"
+  },
+  "output": {
+   "label": "digit",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R12",
+  "input": {
+   "case": "R12",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "STEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "ci",
+     "match": "(?i)step"
+    }
+   ],
+   "title": "leading (?i) flag"
+  },
+  "output": {
+   "label": "ci",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R13",
+  "input": {
+   "case": "R13",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "STEP=B",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{1}",
+     "match": "(?x) STEP = ([A-Z])"
+    }
+   ],
+   "title": "verbose flag (?x)"
+  },
+  "output": {
+   "label": "B",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R14",
+  "input": {
+   "case": "R14",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "STEP=Q",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{0}",
+     "match": "(?<=STEP=)[A-Z]"
+    }
+   ],
+   "title": "lookbehind"
+  },
+  "output": {
+   "label": "Q",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R15",
+  "input": {
+   "case": "R15",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "caaat",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{0}",
+     "match": "a++"
+    }
+   ],
+   "title": "possessive quantifier"
+  },
+  "output": {
+   "label": "aaa",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R16",
+  "input": {
+   "case": "R16",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "xaay",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{0}",
+     "match": "(?P<x>a)(?P=x)"
+    }
+   ],
+   "title": "named backreference"
+  },
+  "output": {
+   "label": "aa",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R17",
+  "input": {
+   "case": "R17",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "one",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "two",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "NEEDLE here",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "found",
+     "match": "NEEDLE",
+     "scope": "any"
+    }
+   ],
+   "title": "scope any finds a match in the third prompt"
+  },
+  "output": {
+   "label": "found",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R18",
+  "input": {
+   "case": "R18",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "p1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p2",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p3",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p4",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p5",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p6",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p7",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p8",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p9",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p10",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p11",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p12",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p13",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p14",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p15",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p16",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p17",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p18",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p19",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p20",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p21",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p22",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p23",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "p24",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": [
+        {
+         "text": "b1",
+         "type": "text"
+        },
+        {
+         "text": "NEEDLE",
+         "type": "text"
+        },
+        {
+         "text": "b3",
+         "type": "text"
+        }
+       ],
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "found",
+     "match": "NEEDLE",
+     "scope": "any"
+    }
+   ],
+   "title": "scope any overshoots the limit of 25 texts"
+  },
+  "output": {
+   "label": "found",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R19",
+  "input": {
+   "case": "R19",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "<system-reminder>reminder</system-reminder>",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "Run STEP=Q: the real prompt",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "step {1}",
+     "match": "STEP=([A-Z]):"
+    }
+   ],
+   "title": "harness boilerplate is skipped"
+  },
+  "output": {
+   "label": "step Q",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R20",
+  "input": {
+   "case": "R20",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "<system-reminder>reminder only</system-reminder>",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [],
+   "title": "only boilerplate and no matching rule: the first text is the unmatched fallback label"
+  },
+  "output": {
+   "label": "<system-reminder>reminder only</system-reminder>",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R20-matched",
+  "input": {
+   "case": "R20-matched",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "<system-reminder>reminder only</system-reminder>",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "fallback",
+     "match": "reminder"
+    }
+   ],
+   "title": "only boilerplate: the first text is what a rule is matched against"
+  },
+  "output": {
+   "label": "fallback",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R21",
+  "input": {
+   "case": "R21",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "STEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "first",
+     "match": "STEP"
+    },
+    {
+     "label": "second",
+     "match": "STEP="
+    }
+   ],
+   "title": "first matching rule wins"
+  },
+  "output": {
+   "label": "first",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R22",
+  "input": {
+   "case": "R22",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "STEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "match": "STEP",
+     "name": "named-rule"
+    }
+   ],
+   "title": "a rule without label uses its name"
+  },
+  "output": {
+   "label": "named-rule",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R23",
+  "input": {
+   "case": "R23",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "  line one\nline one\nline one\nsecond block 🙂 second block 🙂 second block 🙂 second block 🙂 second block 🙂 second block 🙂 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [],
+   "title": "unmatched multi-line prompt is flattened and cut at 70"
+  },
+  "output": {
+   "label": "line one line one line one second block 🙂 second block 🙂 second block ",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R24",
+  "input": {
+   "case": "R24",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": [
+        {
+         "text": "hello",
+         "type": "text"
+        }
+       ],
+       "role": "assistant"
+      },
+      "type": "assistant"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "step {1}",
+     "match": "STEP=([A-Z]):"
+    }
+   ],
+   "title": "no user text"
+  },
+  "output": {
+   "label": "(no prompt)",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R25",
+  "input": {
+   "case": "R25",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "STEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "broken",
+     "match": "("
+    },
+    {
+     "label": "ok",
+     "match": "STEP"
+    }
+   ],
+   "title": "invalid pattern is skipped at runtime"
+  },
+  "output": {
+   "label": "ok",
+   "matched": true,
+   "problems": [
+    "session_rules: invalid regex '(' (missing ), unterminated subpattern at position 0)"
+   ]
+  }
+ },
+ {
+  "case": "R26",
+  "input": {
+   "case": "R26",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": [
+        {
+         "content": "STEP=Z",
+         "tool_use_id": "t1",
+         "type": "tool_result"
+        }
+       ],
+       "role": "user"
+      },
+      "type": "user"
+     }
+    },
+    {
+     "json": {
+      "message": {
+       "content": "nothing",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "leak",
+     "match": "STEP=Z"
+    }
+   ],
+   "title": "a tool_result block is not a text candidate"
+  },
+  "output": {
+   "label": "nothing",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R27",
+  "input": {
+   "case": "R27",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "summary": "filler",
+      "type": "summary"
+     },
+     "repeat": 401
+    },
+    {
+     "json": {
+      "message": {
+       "content": "STEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "late",
+     "match": "STEP"
+    }
+   ],
+   "title": "prompt on line 402 is not seen"
+  },
+  "output": {
+   "label": "(no prompt)",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R28",
+  "input": {
+   "case": "R28",
+   "kind": "rules",
+   "lines": [
+    {
+     "raw": "{not json",
+     "repeat": 401
+    },
+    {
+     "json": {
+      "message": {
+       "content": "STEP=1",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "late",
+     "match": "STEP"
+    }
+   ],
+   "title": "invalid JSON lines consume line numbers"
+  },
+  "output": {
+   "label": "(no prompt)",
+   "matched": false,
+   "problems": []
+  }
+ },
+ {
+  "case": "R29",
+  "input": {
+   "case": "R29",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "xa] test",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "{0}",
+     "match": "[[:alpha:]]"
+    }
+   ],
+   "title": "[[:alpha:]] is a literal set"
+  },
+  "output": {
+   "label": "a]",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R30",
+  "input": {
+   "case": "R30",
+   "kind": "rules",
+   "lines": [
+    {
+     "json": {
+      "message": {
+       "content": "Follow run-build.md and execute STEP=A2 now",
+       "role": "user"
+      },
+      "type": "user"
+     }
+    }
+   ],
+   "rules": [
+    {
+     "label": "build step {1}",
+     "match": "run-build[.]md.*?STEP=([A-Z0-9]+)"
+    }
+   ],
+   "title": "example session rule of chain.config.example.json"
+  },
+  "output": {
+   "label": "build step A2",
+   "matched": true,
+   "problems": []
+  }
+ },
+ {
+  "case": "R30-attempts",
+  "input": {
+   "attempts": {
+    "end": "^(?P<time>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}) STEP (?P<part>[A-Z0-9]+) END exit=(?P<exit>[0-9]+) status=(?P<status>[A-Z ]+)",
+    "label_prefix": "build step ",
+    "start": "^(?P<time>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}) STEP (?P<part>[A-Z0-9]+) START attempt (?P<n>[0-9]+) model (?P<model>[a-z]+) effort (?P<effort>[a-z]+)",
+    "time_format": "%Y-%m-%d %H:%M:%S"
+   },
+   "case": "R30-attempts",
+   "chain_lines": [
+    "2026-09-21 13:00:00 STEP A1 START attempt 2 model sonnet effort high",
+    "2026-09-21 13:10:00 STEP A1 END exit=0 status=PASS DONE",
+    "2026-09-21 13:11:00 STEP B2 START attempt 1 model haiku effort low",
+    "2026-09-21 13:12:30 STEP B2 END exit=2 status=FAIL"
+   ],
+   "kind": "attempts",
+   "title": "example attempts patterns on sample lines"
+  },
+  "output": [
+   {
+    "effort": "high",
+    "end": 1789996200.0,
+    "exit": "0",
+    "model": "sonnet",
+    "n": "2",
+    "part": "A1",
+    "sid": null,
+    "start": 1789995600.0,
+    "state": "COMPLETED",
+    "status": "PASS DONE"
+   },
+   {
+    "effort": "low",
+    "end": 1789996350.0,
+    "exit": "2",
+    "model": "haiku",
+    "n": "1",
+    "part": "B2",
+    "sid": null,
+    "start": 1789996260.0,
+    "state": "FAILED",
+    "status": "FAIL"
+   }
+  ]
+ },
+ {
+  "case": "R31",
+  "input": {
+   "attempts": {
+    "end": "^(?P<time>\\S+ \\S+) STEP (?P<part>[A-Z]) END exit=(?P<exit>[0-9]+)",
+    "start": "^(?P<time>\\S+ \\S+) STEP (?P<part>[A-Z]) START"
+   },
+   "case": "R31",
+   "chain_lines": [
+    "2026-09-21 13:00:00 STEP A START trailing text after the pattern",
+    "noise 2026-09-21 13:05:00 STEP B START",
+    "2026-09-21 13:10:00 STEP A END exit=0"
+   ],
+   "kind": "attempts",
+   "title": "start pattern matches at position 0 only, trailing text is fine"
+  },
+  "output": [
+   {
+    "effort": "",
+    "end": 1789996200.0,
+    "exit": "0",
+    "model": "",
+    "n": "",
+    "part": "A",
+    "sid": null,
+    "start": 1789995600.0,
+    "state": "COMPLETED",
+    "status": null
+   }
+  ]
+ },
+ {
+  "case": "R32",
+  "input": {
+   "attempts": {
+    "end": "^(?P<time>\\S+ \\S+) STEP (?P<part>[A-Z]) END exit=(?P<exit>[0-9]+)",
+    "start": "^(?P<time>\\S+ \\S+) STEP (?P<part>[A-Z]) START"
+   },
+   "case": "R32",
+   "chain_lines": [
+    "2026-09-21 13:00:00 STEP A START",
+    "2026-09-21 13:10:00 STEP A END exit=0",
+    "2026-09-21 13:11:00 STEP B START",
+    "2026-09-21 13:12:00 STEP B END exit=3"
+   ],
+   "kind": "attempts",
+   "title": "end pattern without a status group"
+  },
+  "output": [
+   {
+    "effort": "",
+    "end": 1789996200.0,
+    "exit": "0",
+    "model": "",
+    "n": "",
+    "part": "A",
+    "sid": null,
+    "start": 1789995600.0,
+    "state": "COMPLETED",
+    "status": null
+   },
+   {
+    "effort": "",
+    "end": 1789996320.0,
+    "exit": "3",
+    "model": "",
+    "n": "",
+    "part": "B",
+    "sid": null,
+    "start": 1789996260.0,
+    "state": "FAILED",
+    "status": null
+   }
+  ]
+ },
+ {
+  "case": "R33",
+  "input": {
+   "attempts": {
+    "end": "^(?P<time>\\S+ \\S+) STEP (?P<part>[A-Z]) END exit=(?P<exit>[0-9]+)",
+    "start": "(?i)^(?P<time>\\S+ \\S+) step (?P<part>[A-Z]) start"
+   },
+   "case": "R33",
+   "chain_lines": [
+    "2026-09-21 13:00:00 STEP A START",
+    "2026-09-21 13:10:00 STEP A END exit=0"
+   ],
+   "kind": "attempts",
+   "title": "leading (?i) in an attempts pattern"
+  },
+  "output": [
+   {
+    "effort": "",
+    "end": 1789996200.0,
+    "exit": "0",
+    "model": "",
+    "n": "",
+    "part": "A",
+    "sid": null,
+    "start": 1789995600.0,
+    "state": "COMPLETED",
+    "status": null
+   }
+  ]
+ }
+]

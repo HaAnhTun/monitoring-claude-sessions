@@ -1,0 +1,23 @@
+[
+ 200,
+ {
+  "count": 2,
+  "matches": [
+   {
+    "i": 8,
+    "k": "tool",
+    "name": "Bash",
+    "snippet": "make step2",
+    "t": "2026-09-21T14:03:25.000Z"
+   },
+   {
+    "i": 9,
+    "k": "result",
+    "snippet": "boom",
+    "t": "2026-09-21T14:03:26.000Z"
+   }
+  ],
+  "partial": false,
+  "truncated": false
+ }
+]

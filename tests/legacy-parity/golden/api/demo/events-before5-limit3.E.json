@@ -1,0 +1,36 @@
+[
+ 200,
+ {
+  "base": 0,
+  "events": [
+   {
+    "i": 2,
+    "id": "toolu_E254",
+    "input": "{\"file_path\": \"src/main/java/com/shop/module254/Service.java\"}",
+    "k": "tool",
+    "name": "Edit",
+    "summary": "src/main/java/com/shop/module254/Service.java",
+    "t": "2026-09-21T13:32:06.000Z"
+   },
+   {
+    "err": false,
+    "i": 3,
+    "id": "toolu_E254",
+    "k": "result",
+    "t": "2026-09-21T13:32:09.000Z",
+    "text": "The file has been updated. xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "i": 4,
+    "k": "say",
+    "t": "2026-09-21T13:32:12.000Z",
+    "text": "Refactoring module 255: extracting an interface and updating call sites."
+   }
+  ],
+  "from": 2,
+  "next": 5,
+  "partial": true,
+  "skipped_bytes": 317543,
+  "total": 500
+ }
+]

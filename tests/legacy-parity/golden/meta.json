@@ -1,0 +1,37 @@
+{
+ "frozen_now": 1790000000,
+ "frozen_now_iso": "2026-09-21T14:13:20Z",
+ "generator_version": 1,
+ "legacy_code_stamp": "f7f7cef56d",
+ "legacy_version": "2.0.2",
+ "platform": "win32",
+ "port_base": 18850,
+ "python_minor": "3.14",
+ "python_version": "3.14.3",
+ "scenarios": [
+  "demo",
+  "fixture",
+  "panels",
+  "registry",
+  "rules",
+  "task-lifecycle"
+ ],
+ "tz": "UTC",
+ "uuid_pattern": "%08x-0000-4000-8000-%012x",
+ "uuid_restarts_per_scenario_at": 1,
+ "vectors": [
+  "audit_entry",
+  "classify_rules",
+  "classify_state",
+  "clip",
+  "events_of",
+  "external_state",
+  "json_atomic",
+  "merge_provenance",
+  "pydumps",
+  "slug",
+  "splitlines",
+  "strptime",
+  "tail"
+ ]
+}

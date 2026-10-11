@@ -1,0 +1,2863 @@
+[
+ {
+  "case": "age--1.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1790000001.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written -1s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age--0.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1790000000.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 0s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-0",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1790000000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 0s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-0.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 0s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-59.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999940.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 59s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-119",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999881,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 119s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-119.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999880.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 119s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-119.75",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999880.25,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 119s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-119.999",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999880.001,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 119s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-120",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999880,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 2m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-120.25",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999879.75,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 2m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-121",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999879,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 2m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-599.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 9m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-600",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-3599.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789996400.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 59m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-3600",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789996400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 60m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-86400",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789913600,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 1440m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "age-100000.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789899999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 1666m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-end_turn",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-stop_sequence",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "stop_sequence",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (stop_sequence), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-tool_use",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "tool_use",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'tool_use'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-max_tokens",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "max_tokens",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'max_tokens'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-None",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-refusal",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "refusal",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'refusal'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-pause_turn",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "pause_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'pause_turn'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-END_TURN",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "END_TURN",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'END_TURN'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "last-stop-model_context_window_exceeded",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "model_context_window_exceeded",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 10m and the last stop reason is 'model_context_window_exceeded'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-None",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 600s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-0",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1790000000,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 0s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-1",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999999,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 1s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-599.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999400.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 599s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-600",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999400,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 600s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-899",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999101,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 899s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-899.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999100.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 899s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-899.75",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999100.25,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 899s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-900",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999100,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 15m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-900.25",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999099.75,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 15m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-901",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999099,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 15m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-3599",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789996401,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 59m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-3599.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789996400.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 59m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-3600",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789996400,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 60m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-3661.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789996338.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 61m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-7200",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789992800,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 120m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited-100000",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789900000,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 1666m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-1-waited--30",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1790000030,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for -30s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-3-waited-None",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 3,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "3 tool call(s) without result for 600s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-3-waited-500",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999500,
+   "pending": 3,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "3 tool call(s) without result for 500s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-3-waited-899.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999100.5,
+   "pending": 3,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "3 tool call(s) without result for 899s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-3-waited-900",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999100,
+   "pending": 3,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "3 tool call(s) without result for 15m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-3-waited-3600",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789996400,
+   "pending": 3,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "3 tool call(s) without result for 60m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-no-timestamp-age-1000",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 2,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "2 tool call(s) without result for 16m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-no-timestamp-age-3000.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789996999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 2,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "2 tool call(s) without result for 50m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-no-timestamp-age-100000",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789900000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 2,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "2 tool call(s) without result for 1666m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-while-writing",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789998000,
+   "pending": 2,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-registry-idle-within-grace",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999970,
+   "pending": 1,
+   "registry": {
+    "status": "idle"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 30s (within the 900s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "pending-registry-idle-stalled",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789997000,
+   "pending": 1,
+   "registry": {
+    "status": "idle"
+   }
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 50m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[59]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999941
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[59.5]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999940.5
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[59.999]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999940.001
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[60]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999940
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[60.5]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999939.5
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[61]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999939
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[30, 100]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999970,
+    1789999900
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[10, 20, 30]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999990,
+    1789999980,
+    1789999970
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "3 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[-5]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1790000005
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[0]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1790000000
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-[600, 700]",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999400,
+    1789999300
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-beat-pending",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999990
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789995000,
+   "pending": 2,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-beat-registry-idle",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999990
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "idle"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "1 subagent(s) written within the last minute",
+   "transcript"
+  ]
+ },
+ {
+  "case": "agents-while-writing",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [
+    1789999990,
+    1789999980
+   ],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-busy-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "busy"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "Claude session registry reports busy",
+   "registry"
+  ]
+ },
+ {
+  "case": "registry-busy-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "busy"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "Claude session registry reports busy",
+   "registry"
+  ]
+ },
+ {
+  "case": "registry-busy-extra-keys-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "kind": "cli",
+    "pid": 1,
+    "status": "busy"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "Claude session registry reports busy",
+   "registry"
+  ]
+ },
+ {
+  "case": "registry-busy-extra-keys-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "kind": "cli",
+    "pid": 1,
+    "status": "busy"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "Claude session registry reports busy",
+   "registry"
+  ]
+ },
+ {
+  "case": "registry-idle-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "idle"
+   }
+  },
+  "output": [
+   "IDLE",
+   "Claude session registry reports idle; quiet 83m",
+   "registry"
+  ]
+ },
+ {
+  "case": "registry-idle-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "idle"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-waiting-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "waiting",
+    "waitingFor": "permission prompt"
+   }
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 83m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-waiting-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "waiting",
+    "waitingFor": "permission prompt"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-bogus-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "bogus"
+   }
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 83m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-bogus-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "bogus"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-empty-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {}
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 83m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-empty-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {}
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-none-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 83m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-none-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-status-null-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": null
+   }
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 83m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-status-null-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": null
+   }
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-status-case-quiet",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "BUSY"
+   }
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 83m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-status-case-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999995,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "BUSY"
+   }
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 5s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "registry-busy-no-records",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": false,
+   "last_stop": "end_turn",
+   "mtime": 1789995000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "busy"
+   }
+  },
+  "output": [
+   "UNKNOWN",
+   "no readable records",
+   "transcript"
+  ]
+ },
+ {
+  "case": "external-completed",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": {
+    "evidence": "chain log: exit=0 status=PASS",
+    "state": "COMPLETED"
+   },
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400.0,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "COMPLETED",
+   "chain log: exit=0 status=PASS",
+   "external"
+  ]
+ },
+ {
+  "case": "external-failed-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": {
+    "evidence": "chain log: exit=1 status=FAIL",
+    "state": "FAILED"
+   },
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1790000000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "FAILED",
+   "chain log: exit=1 status=FAIL",
+   "external"
+  ]
+ },
+ {
+  "case": "external-beats-no-records",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": {
+    "evidence": "x",
+    "state": "UNKNOWN"
+   },
+   "grace_seconds": 900,
+   "has_records": false,
+   "last_stop": "end_turn",
+   "mtime": 1789999400.0,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "x",
+   "external"
+  ]
+ },
+ {
+  "case": "external-beats-registry-busy",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": {
+    "evidence": "y",
+    "state": "COMPLETED"
+   },
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400.0,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": {
+    "status": "busy"
+   }
+  },
+  "output": [
+   "COMPLETED",
+   "y",
+   "external"
+  ]
+ },
+ {
+  "case": "external-empty-dict-is-falsy",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": {},
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400.0,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "external-none",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400.0,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 10m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "no-records-fresh",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": false,
+   "last_stop": "end_turn",
+   "mtime": 1790000000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "no readable records",
+   "transcript"
+  ]
+ },
+ {
+  "case": "no-records-old",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": false,
+   "last_stop": "end_turn",
+   "mtime": 1789900000,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999995,
+   "pending": 3,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "no readable records",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-1-age-0.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 0s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-1-age-1",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999999,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 0m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-1-age-1.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999998.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 0m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-0.5-age-0.25",
+  "input": {
+   "active_seconds": 0.5,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999999.75,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 0s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-0.5-age-0.5",
+  "input": {
+   "active_seconds": 0.5,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 0m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-0-age-0",
+  "input": {
+   "active_seconds": 0,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1790000000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 0m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-0-age--1",
+  "input": {
+   "active_seconds": 0,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1790000001,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written -1s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-3600-age-3599",
+  "input": {
+   "active_seconds": 3600,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789996401,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 3599s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-3600-age-3600",
+  "input": {
+   "active_seconds": 3600,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789996400,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 60m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-120.5-age-120.25",
+  "input": {
+   "active_seconds": 120.5,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999879.75,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "transcript written 120s ago",
+   "transcript"
+  ]
+ },
+ {
+  "case": "active-120.5-age-120.75",
+  "input": {
+   "active_seconds": 120.5,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999879.25,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 2m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-1-waited-0.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 1,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999999.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 0s (within the 1s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-1-waited-1",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 1,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999999,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 0m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-1-waited-1.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 1,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999998.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 0m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-0.5-waited-0.25",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 0.5,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999999.75,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 0s (within the 0s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-0.5-waited-0.5",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 0.5,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999999.5,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 0m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-60-waited-59",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 60,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999941,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "RUNNING",
+   "1 tool call(s) without result for 59s (within the 60s grace)",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-60-waited-60",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 60,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999940,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 1m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-60-waited-119",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 60,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999881,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 1m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-60-waited-120",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 60,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789999880,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 2m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "grace-60-waited-3599",
+  "input": {
+   "active_seconds": 120,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 60,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999400,
+   "now": 1790000000,
+   "oldest_pending_ts": 1789996401,
+   "pending": 1,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "1 tool call(s) without result for 59m: stalled, killed, waiting for permission or a very long tool",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-end_turn-59.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999940.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 0m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-end_turn-60",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999940,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 1m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-end_turn-61",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999939,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 1m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-end_turn-119.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789999880.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 1m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-end_turn-6000.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789993999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 100m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-end_turn-100000",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": "end_turn",
+   "mtime": 1789900000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "IDLE",
+   "turn ended (end_turn), quiet 1666m; the transcript cannot show whether the job is finished or waiting",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-None-59.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789999940.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 0m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-None-60",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789999940,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 1m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-None-61",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789999939,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 1m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-None-119.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789999880.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 1m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-None-6000.5",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789993999.5,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 100m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ },
+ {
+  "case": "quiet-minutes-None-100000",
+  "input": {
+   "active_seconds": 1,
+   "agent_mtimes": [],
+   "external": null,
+   "grace_seconds": 900,
+   "has_records": true,
+   "last_stop": null,
+   "mtime": 1789900000,
+   "now": 1790000000,
+   "oldest_pending_ts": 0,
+   "pending": 0,
+   "registry": null
+  },
+  "output": [
+   "UNKNOWN",
+   "quiet 1666m and the last stop reason is 'missing'",
+   "transcript"
+  ]
+ }
+]

@@ -1,0 +1,31 @@
+[
+ 200,
+ {
+  "branch": "",
+  "chain": [
+   "2026-09-21 13:30:00 STEP B START attempt 2 model sonnet effort high",
+   "2026-09-21 13:41:40 STEP B END exit=1 status=FAIL",
+   "2026-09-21 14:09:39 STEP C START attempt 1 model haiku effort low",
+   "9999-99-99 99:99:99 STEP C END exit=0 status=PASS",
+   "9999-99-99 99:99:99 STEP E START attempt 1 model x effort y",
+   "2026-09-21 14:10:50 STEP E END exit=0 status=PASS",
+   "2026-09-21 14:11:40 STEP D START attempt 1 model opus effort high",
+   "2026-09-21 14:12:30 STEP D END exit=0",
+   "2026-09-21 14:12:40 STEP Z END exit=0 status=PASS",
+   "2026-09-21 14:12:50 STEP F START attempt 1 model opus effort high"
+  ],
+  "commits": [],
+  "dirty": 0,
+  "ledger": [
+   "| Step | Status | Notes |",
+   "|---|---|---|",
+   "| A | PASS | compile and unit tests |",
+   "| B | FAIL | blocked by a missing stub |",
+   "| C | RUNNING | résumé and café |",
+   "| D | NOTE | split",
+   "| F | DONE | last row |   "
+  ],
+  "now": 1790000000.0,
+  "stop": true
+ }
+]

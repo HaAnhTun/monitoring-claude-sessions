@@ -1,0 +1,139 @@
+{
+ "commands": [
+  {
+   "argv": [
+    "init-task",
+    "--repo",
+    "<REPO>",
+    "--name",
+    "Nightly build: Steps A/B"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "created task 'nightly-build-steps-a-b' at <TMP>\\lifecycle-repo\\.claude\\monitor\\tasks\\nightly-build-steps-a-b\n"
+  },
+  {
+   "argv": [
+    "configure",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b",
+    "--set",
+    "window_hours=12",
+    "--set",
+    "panels.git=false",
+    "--reason",
+    "golden"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "{\n  \"changed\": true,\n  \"changes\": [\n    \"window_hours: (default 8) -> 12\",\n    \"panels.git: (default true) -> false\"\n  ],\n  \"unchanged\": [\n    \"schema_version\",\n    \"title\"\n  ]\n}\n"
+  },
+  {
+   "argv": [
+    "configure",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b",
+    "--unset",
+    "window_hours",
+    "--reason",
+    "golden"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "{\n  \"changed\": true,\n  \"changes\": [\n    \"window_hours: 12 -> (removed, default applies)\"\n  ],\n  \"unchanged\": [\n    \"panels\",\n    \"schema_version\",\n    \"title\"\n  ]\n}\n"
+  },
+  {
+   "argv": [
+    "configure",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b",
+    "--set",
+    "session_rules=[{\"match\":\"STEP=([A-Z])\",\"label\":\"step {1}\"}]"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "{\n  \"changed\": true,\n  \"changes\": [\n    \"session_rules: (default []) -> [{\\\"match\\\": \\\"STEP=([A-Z])\\\", \\\"label\\\": \\\"step {1}\\\"}]\"\n  ],\n  \"unchanged\": [\n    \"panels\",\n    \"schema_version\",\n    \"title\"\n  ]\n}\n"
+  },
+  {
+   "argv": [
+    "decide",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b",
+    "--title",
+    "Use attempts",
+    "--decision",
+    "chain log",
+    "--rejected",
+    "none"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "recorded decision in <TMP>\\lifecycle-repo\\.claude\\monitor\\tasks\\nightly-build-steps-a-b\\audit\\decisions.md\n"
+  },
+  {
+   "argv": [
+    "inspect",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "{\n  \"task\": {\n    \"schema_version\": 1,\n    \"id\": \"nightly-build-steps-a-b\",\n    \"name\": \"Nightly build: Steps A/B\",\n    \"description\": \"\",\n    \"created\": \"2026-09-21T14:13:20Z\",\n    \"repo\": \"../../../..\",\n    \"links\": []\n  },\n  \"dir\": \"<TMP>\\\\lifecycle-repo\\\\.claude\\\\monitor\\\\tasks\\\\nightly-build-steps-a-b\",\n  \"effective\": {\n    \"schema_version\": 1,\n    \"title\": \"Nightly build: Steps A/B\",\n    \"port\": 8765,\n    \"repo\": \"<TMP>\\\\lifecycle-repo\",\n    \"transcripts_dir\": \"auto\",\n    \"window_hours\": 8,\n    \"active_seconds\": 120,\n    \"pending_tool_grace_seconds\": 900,\n    \"include_unmatched\": false,\n    \"session_rules\": [\n      {\n        \"match\": \"STEP=([A-Z])\",\n        \"label\": \"step {1}\"\n      }\n    ],\n    \"session_ids\": [],\n    \"panels\": {\n      \"machine\": true,\n      \"git\": false,\n      \"logs\": true,\n      \"ledger\": false,\n      \"chain_log\": false,\n      \"attempts\": false\n    },\n    \"live_log_globs\": [],\n    \"chain_log\": null,\n    \"ledger\": null,\n    \"stop_file\": null,\n    \"attempts\": null,\n    \"watched_processes\": [\n      \"claude.exe\",\n      \"java.exe\",\n      \"node.exe\",\n      \"python.exe\",\n      \"docker.exe\",\n      \"com.docker.backend.exe\",\n      \"vmmemWSL\",\n      \"chrome.exe\",\n      \"Code.exe\"\n    ],\n    \"docker\": true,\n    \"ui\": {\n      \"theme\": \"auto\",\n      \"density\": \"comfortable\",\n      \"newest_first\": true,\n      \"show_tools\": true,\n      \"show_thinking\": false,\n      \"show_prompts\": false\n    },\n    \"poll\": {\n      \"events_ms\": 1500,\n      \"sessions_ms\": 6000,\n      \"machine_ms\": 2000,\n      \"logs_ms\": 3000,\n      \"overview_ms\": 5000,\n      \"attempts_ms\": 6000,\n      \"stale_after_ms\": 15000\n    },\n    \"limits\": {\n      \"event_window_mb\": 8,\n      \"max_events\": 20000,\n      \"text_chars\": 6000,\n      \"usage_scan_budget_ms\": 1500,\n      \"usage_max_mb\": 512\n    }\n  },\n  \"provenance\": {\n    \"schema_version\": \"task\",\n    \"title\": \"task\",\n    \"port\": \"default\",\n    \"repo\": \"default\",\n    \"transcripts_dir\": \"default\",\n    \"window_hours\": \"default\",\n    \"active_seconds\": \"default\",\n    \"pending_tool_grace_seconds\": \"default\",\n    \"include_unmatched\": \"default\",\n    \"session_rules\": \"task\",\n    \"session_ids\": \"default\",\n    \"panels.machine\": \"default\",\n    \"panels.git\": \"task\",\n    \"panels.logs\": \"default\",\n    \"panels.ledger\": \"default\",\n    \"panels.chain_log\": \"default\",\n    \"panels.attempts\": \"default\",\n    \"live_log_globs\": \"default\",\n    \"chain_log\": \"default\",\n    \"ledger\": \"default\",\n    \"stop_file\": \"default\",\n    \"attempts\": \"default\",\n    \"watched_processes\": \"default\",\n    \"docker\": \"default\",\n    \"ui.theme\": \"default\",\n    \"ui.density\": \"default\",\n    \"ui.newest_first\": \"default\",\n    \"ui.show_tools\": \"default\",\n    \"ui.show_thinking\": \"default\",\n    \"ui.show_prompts\": \"default\",\n    \"poll.events_ms\": \"default\",\n    \"poll.sessions_ms\": \"default\",\n    \"poll.machine_ms\": \"default\",\n    \"poll.logs_ms\": \"default\",\n    \"poll.overview_ms\": \"default\",\n    \"poll.attempts_ms\": \"default\",\n    \"poll.stale_after_ms\": \"default\",\n    \"limits.event_window_mb\": \"default\",\n    \"limits.max_events\": \"default\",\n    \"limits.text_chars\": \"default\",\n    \"limits.usage_scan_budget_ms\": \"default\",\n    \"limits.usage_max_mb\": \"default\"\n  },\n  \"runtime\": null,\n  \"last_change\": {\n    \"t\": \"2026-09-21T14:13:20Z\",\n    \"summary\": \"session_rules: (default []) -> [{\\\"match\\\": \\\"STEP=([A-Z])\\\", \\\"label\\\": \\\"step {1}\\\"}]\"\n  },\n  \"config_hash\": \"<MACHINE>\",\n  \"recent_audit\": \"## 2026-09-21T14:13:20Z | configure\\n- Summary: window_hours: (default 8) -> 12; panels.git: (default true) -> false\\n- Reason: golden\\n- Files changed: config.json\\n- Validation: schema ok (strict)\\n- Outcome: applied\\n- Unresolved: none\\n\\n## 2026-09-21T14:13:20Z | configure\\n- Summary: window_hours: 12 -> (removed, default applies)\\n- Reason: golden\\n- Files changed: config.json\\n- Validation: schema ok (strict)\\n- Outcome: applied\\n- Unresolved: none\\n\\n## 2026-09-21T14:13:20Z | configure\\n- Summary: session_rules: (default []) -> [{\\\"match\\\": \\\"STEP=([A-Z])\\\", \\\"label\\\": \\\"step {1}\\\"}]\\n- Reason: not given\\n- Files changed: config.json\\n- Validation: schema ok (strict)\\n- Outcome: applied\\n- Unresolved: none\\n\\n\",\n  \"overridden_keys\": [\n    \"panels.git\",\n    \"schema_version\",\n    \"session_rules\",\n    \"title\"\n  ],\n  \"inherited_keys\": [\n    \"active_seconds\",\n    \"attempts\",\n    \"chain_log\",\n    \"docker\",\n    \"include_unmatched\",\n    \"ledger\",\n    \"limits.event_window_mb\",\n    \"limits.max_events\",\n    \"limits.text_chars\",\n    \"limits.usage_max_mb\",\n    \"limits.usage_scan_budget_ms\",\n    \"live_log_globs\",\n    \"panels.attempts\",\n    \"panels.chain_log\",\n    \"panels.ledger\",\n    \"panels.logs\",\n    \"panels.machine\",\n    \"pending_tool_grace_seconds\",\n    \"poll.attempts_ms\",\n    \"poll.events_ms\",\n    \"poll.logs_ms\",\n    \"poll.machine_ms\",\n    \"poll.overview_ms\",\n    \"poll.sessions_ms\",\n    \"poll.stale_after_ms\",\n    \"port\",\n    \"repo\",\n    \"session_ids\",\n    \"stop_file\",\n    \"transcripts_dir\",\n    \"ui.density\",\n    \"ui.newest_first\",\n    \"ui.show_prompts\",\n    \"ui.show_thinking\",\n    \"ui.show_tools\",\n    \"ui.theme\",\n    \"watched_processes\",\n    \"window_hours\"\n  ]\n}\n"
+  },
+  {
+   "argv": [
+    "audit",
+    "--repo",
+    "<REPO>"
+   ],
+   "exit": 0,
+   "stderr": "",
+   "stdout": "[\n  {\n    \"task\": \"nightly-build-steps-a-b\",\n    \"ok\": true,\n    \"problems\": []\n  }\n]\n"
+  },
+  {
+   "argv": [
+    "configure",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b",
+    "--set",
+    "schema_version=2"
+   ],
+   "exit": 1,
+   "stderr": "ERROR: schema_version cannot be changed with configure\n",
+   "stdout": ""
+  },
+  {
+   "argv": [
+    "configure",
+    "--repo",
+    "<REPO>",
+    "--task",
+    "nightly-build-steps-a-b",
+    "--set",
+    "nope=1"
+   ],
+   "exit": 1,
+   "stderr": "ERROR: rejected, nothing written: unknown key 'nope'\n",
+   "stdout": ""
+  }
+ ],
+ "files": {
+  "README.md": "# Monitoring task: Nightly build: Steps A/B\n\n\n\n- `task.json` identity, `config.json` overrides of the shared defaults, `audit/` change and decision log.\n- Inspect: `python <skill>/template/viewer.py inspect --task nightly-build-steps-a-b`\n- Never copy transcripts here; they are read in place.\n",
+  "audit/changes.md": "# Changes\n\n## 2026-09-21T14:13:20Z | init-task\n- Summary: created task workspace 'nightly-build-steps-a-b'\n- Reason: monitoring requested for this task\n- Files changed: task.json, config.json, README.md\n- Validation: schema ok\n- Outcome: created\n- Unresolved: none\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: (default 8) -> 12; panels.git: (default true) -> false\n- Reason: golden\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: window_hours: 12 -> (removed, default applies)\n- Reason: golden\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n## 2026-09-21T14:13:20Z | configure\n- Summary: session_rules: (default []) -> [{\"match\": \"STEP=([A-Z])\", \"label\": \"step {1}\"}]\n- Reason: not given\n- Files changed: config.json\n- Validation: schema ok (strict)\n- Outcome: applied\n- Unresolved: none\n\n",
+  "audit/decisions.md": "# Decisions\n\n## 2026-09-21T14:13:20Z | Use attempts\n- Decision: chain log\n- Rejected alternatives: none\n\n",
+  "config.json": "{\n  \"schema_version\": 1,\n  \"title\": \"Nightly build: Steps A/B\",\n  \"panels\": {\n    \"git\": false\n  },\n  \"session_rules\": [\n    {\n      \"match\": \"STEP=([A-Z])\",\n      \"label\": \"step {1}\"\n    }\n  ]\n}\n",
+  "task.json": "{\n  \"schema_version\": 1,\n  \"id\": \"nightly-build-steps-a-b\",\n  \"name\": \"Nightly build: Steps A/B\",\n  \"description\": \"\",\n  \"created\": \"2026-09-21T14:13:20Z\",\n  \"repo\": \"../../../..\",\n  \"links\": []\n}\n"
+ }
+}

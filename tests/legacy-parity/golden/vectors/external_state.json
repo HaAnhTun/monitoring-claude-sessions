@@ -1,0 +1,2262 @@
+[
+ {
+  "case": "grid-e00-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=-",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=-",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=-",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=pass",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=Passed",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=ok",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=OKAY",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=COMPLETE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=COMPLETEDX",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=SUCCESS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e00-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e00-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e00-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e00-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e00-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=0) but its status 'nopass' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e00-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e00-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=0) but its status 'RUNNING' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e00-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=0) but its status 'x' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e00-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=-",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=-",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=-",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=pass",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=Passed",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=ok",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=OKAY",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=COMPLETE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=COMPLETEDX",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=SUCCESS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e01-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e01-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e01-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e01-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e01-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=0) but its status 'nopass' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e01-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e01-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=0) but its status 'RUNNING' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e01-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=0) but its status 'x' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e01-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": 0,
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e02-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e02-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e02-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=pass",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=Passed",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=ok",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=OKAY",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=COMPLETE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=COMPLETEDX",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=SUCCESS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e02-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e02-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e02-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e02-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e02-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=) but its status 'nopass' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e02-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e02-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=) but its status 'RUNNING' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e02-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=) but its status 'x' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e02-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "",
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit= status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e03-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e03-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e03-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=pass",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=Passed",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=ok",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=OKAY",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=COMPLETE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=COMPLETEDX",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=SUCCESS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e03-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e03-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e03-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e03-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e03-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status 'nopass' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e03-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e03-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status 'RUNNING' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e03-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status 'x' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "grid-e03-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": null,
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=DONE",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "grid-e04-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=PASS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=pass",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=Passed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=DONE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=ok",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=OKAY",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=COMPLETE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=COMPLETEDX",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=SUCCESS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=nopass",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=RUNNING",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=x",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e04-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "1",
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=DONE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=PASS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=pass",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=Passed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=DONE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=ok",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=OKAY",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=COMPLETE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=COMPLETEDX",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=SUCCESS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=nopass",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=RUNNING",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=x",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e05-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "00",
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=00 status=DONE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s00",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": null
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s01",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s02",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": " "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s03",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=PASS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s04",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": " pass "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=pass",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s05",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "Passed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=Passed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s06",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "DONE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=DONE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s07",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "ok"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=ok",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s08",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "OKAY"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=OKAY",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s09",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "COMPLETE"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=COMPLETE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s10",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "COMPLETEDX"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=COMPLETEDX",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s11",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "SUCCESS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=SUCCESS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s12",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "FAIL"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=FAIL",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s13",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "failed"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=failed",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s14",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "BLOCKED"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=BLOCKED",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s15",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "abort"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=abort",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s16",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "nopass"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=nopass",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s17",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "PASS (FAIL)"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=PASS (FAIL)",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s18",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "RUNNING"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=RUNNING",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s19",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "x"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=x",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "grid-e06-s20",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "x",
+    "status": "  DONE  "
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=x status=DONE",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "row-none",
+  "input": {
+   "row": null
+  },
+  "output": null
+ },
+ {
+  "case": "end-none-with-failure",
+  "input": {
+   "row": {
+    "end": null,
+    "exit": "1",
+    "status": "FAIL"
+   }
+  },
+  "output": null
+ },
+ {
+  "case": "end-none",
+  "input": {
+   "row": {
+    "end": null,
+    "exit": null,
+    "status": null
+   }
+  },
+  "output": null
+ },
+ {
+  "case": "end-missing",
+  "input": {
+   "row": {
+    "exit": "0",
+    "status": "PASS"
+   }
+  },
+  "output": null
+ },
+ {
+  "case": "end-zero-is-not-none",
+  "input": {
+   "row": {
+    "end": 0,
+    "exit": "0",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "end-empty-string-is-not-none",
+  "input": {
+   "row": {
+    "end": "",
+    "exit": "1",
+    "status": ""
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=1 status=-",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "exit-missing-status-pass",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=None status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "exit-missing-status-missing",
+  "input": {
+   "row": {
+    "end": 1790000000
+   }
+  },
+  "output": {
+   "evidence": "chain log: the run ended (exit=None) but its status '' is neither a pass nor a failure",
+   "state": "UNKNOWN"
+  }
+ },
+ {
+  "case": "empty-row",
+  "input": {
+   "row": {}
+  },
+  "output": null
+ },
+ {
+  "case": "status-number-raises",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": 5
+   }
+  },
+  "output": {
+   "raises": "TypeError"
+  }
+ },
+ {
+  "case": "status-list-raises",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": [
+     "PASS"
+    ]
+   }
+  },
+  "output": {
+   "raises": "TypeError"
+  }
+ },
+ {
+  "case": "exit-list-nonzero",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": [
+     0
+    ],
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=[0] status=PASS",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "status-non-ascii",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "PASS 🙂"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS 🙂",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "status-multiline-fail-inside",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "PASS\nFAIL later"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS\nFAIL later",
+   "state": "FAILED"
+  }
+ },
+ {
+  "case": "status-leading-newline-pass",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "status": "\nPASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS",
+   "state": "COMPLETED"
+  }
+ },
+ {
+  "case": "extra-keys-ignored",
+  "input": {
+   "row": {
+    "end": 1790000000,
+    "exit": "0",
+    "part": "A",
+    "sid": "x",
+    "state": "RUNNING",
+    "status": "PASS"
+   }
+  },
+  "output": {
+   "evidence": "chain log: exit=0 status=PASS",
+   "state": "COMPLETED"
+  }
+ }
+]

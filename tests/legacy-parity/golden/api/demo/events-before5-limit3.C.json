@@ -1,0 +1,36 @@
+[
+ 200,
+ {
+  "base": 0,
+  "events": [
+   {
+    "i": 2,
+    "id": "toolu_C00",
+    "input": "{\"command\": \"docker build -t shop-api:staging .\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "docker build -t shop-api:staging .",
+    "t": "2026-09-21T14:09:42.000Z"
+   },
+   {
+    "err": false,
+    "i": 3,
+    "id": "toolu_C00",
+    "k": "result",
+    "t": "2026-09-21T14:09:45.000Z",
+    "text": "Successfully tagged shop-api:staging"
+   },
+   {
+    "i": 4,
+    "k": "say",
+    "t": "2026-09-21T14:09:48.000Z",
+    "text": "Pushing it to the registry."
+   }
+  ],
+  "from": 2,
+  "next": 5,
+  "partial": false,
+  "skipped_bytes": 0,
+  "total": 9
+ }
+]

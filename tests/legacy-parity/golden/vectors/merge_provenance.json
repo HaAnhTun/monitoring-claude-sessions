@@ -1,0 +1,1490 @@
+[
+ {
+  "case": "empty-over",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {},
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "empty-base",
+  "input": {
+   "base": {},
+   "over": {
+    "panels": {
+     "a": 1
+    },
+    "title": "x"
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "panels": {
+     "a": 1
+    },
+    "title": "x"
+   },
+   "provenance": {
+    "panels": "task",
+    "title": "task"
+   }
+  }
+ },
+ {
+  "case": "scalar-override",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "port": 2,
+    "title": "U"
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 2,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "U",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "task",
+    "session_rules": "default",
+    "title": "task",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "panels-merge-per-key",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "panels": {
+     "b": true,
+     "c": true
+    }
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": true,
+     "c": true
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "task",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "panels-empty-dict",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "panels": {}
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "panels-null-replaces",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "panels": null
+   },
+   "source": "legacy"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": null,
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "panels-list-replaces",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "panels": [
+     1
+    ]
+   },
+   "source": "legacy"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": [
+     1
+    ],
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "panels-int-provenance-raises",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "panels": 5
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": 5,
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "raises": "TypeError"
+   }
+  }
+ },
+ {
+  "case": "ui-poll-limits-merge",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "limits": {
+     "y": 9
+    },
+    "poll": {
+     "z": 3
+    },
+    "ui": {
+     "density": "compact"
+    }
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 9
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1,
+     "z": 3
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "density": "compact",
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "task",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "list-replaced-not-merged",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "session_rules": [
+     {
+      "match": "B"
+     },
+     {
+      "match": "C"
+     }
+    ]
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "B"
+     },
+     {
+      "match": "C"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "task",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "underscore-keys-skipped",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "_comment": "x",
+    "title": "U"
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "U",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "task",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "unknown-key-added",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "brand_new": 1
+   },
+   "source": "legacy"
+  },
+  "output": {
+   "merged": {
+    "brand_new": 1,
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "brand_new": "legacy",
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "null-value-replaces",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "chain_log": "log.txt",
+    "title": null
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": "log.txt",
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": null,
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "task",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "task",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "base-lacks-merged-dict",
+  "input": {
+   "base": {
+    "title": "x"
+   },
+   "over": {
+    "panels": {
+     "a": true
+    }
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "panels": {
+     "a": true
+    },
+    "title": "x"
+   },
+   "provenance": {
+    "panels": "task",
+    "title": "default"
+   }
+  }
+ },
+ {
+  "case": "over-dict-for-scalar-key",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "title": {
+     "a": 1
+    }
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": {
+     "a": 1
+    },
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "default",
+    "session_rules": "default",
+    "title": "task",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "nested-values-copied",
+  "input": {
+   "base": {
+    "panels": {
+     "a": {
+      "deep": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "over": {
+    "panels": {
+     "a": {
+      "deep": [
+       3
+      ]
+     }
+    }
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "panels": {
+     "a": {
+      "deep": [
+       3
+      ]
+     }
+    }
+   },
+   "provenance": {
+    "panels.a": "task"
+   }
+  }
+ },
+ {
+  "case": "source-legacy",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "port": 9
+   },
+   "source": "legacy"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 9,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "legacy",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "source-odd-name",
+  "input": {
+   "base": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 1,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "over": {
+    "port": 9
+   },
+   "source": "weird source"
+  },
+  "output": {
+   "merged": {
+    "chain_log": null,
+    "limits": {
+     "y": 2
+    },
+    "panels": {
+     "a": true,
+     "b": false
+    },
+    "poll": {
+     "x": 1
+    },
+    "port": 9,
+    "session_rules": [
+     {
+      "match": "A"
+     }
+    ],
+    "title": "T",
+    "ui": {
+     "theme": "auto"
+    }
+   },
+   "provenance": {
+    "chain_log": "default",
+    "limits.y": "default",
+    "panels.a": "default",
+    "panels.b": "default",
+    "poll.x": "default",
+    "port": "weird source",
+    "session_rules": "default",
+    "title": "default",
+    "ui.theme": "default"
+   }
+  }
+ },
+ {
+  "case": "real-defaults-empty",
+  "input": {
+   "base": {
+    "active_seconds": 120,
+    "attempts": null,
+    "chain_log": null,
+    "docker": true,
+    "include_unmatched": false,
+    "ledger": null,
+    "limits": {
+     "event_window_mb": 8,
+     "max_events": 20000,
+     "text_chars": 6000,
+     "usage_max_mb": 512,
+     "usage_scan_budget_ms": 1500
+    },
+    "live_log_globs": [],
+    "panels": {
+     "attempts": false,
+     "chain_log": false,
+     "git": true,
+     "ledger": false,
+     "logs": true,
+     "machine": true
+    },
+    "pending_tool_grace_seconds": 900,
+    "poll": {
+     "attempts_ms": 6000,
+     "events_ms": 1500,
+     "logs_ms": 3000,
+     "machine_ms": 2000,
+     "overview_ms": 5000,
+     "sessions_ms": 6000,
+     "stale_after_ms": 15000
+    },
+    "port": 8765,
+    "repo": ".",
+    "schema_version": 1,
+    "session_ids": [],
+    "session_rules": [],
+    "stop_file": null,
+    "title": "Claude sessions monitor",
+    "transcripts_dir": "auto",
+    "ui": {
+     "density": "comfortable",
+     "newest_first": true,
+     "show_prompts": false,
+     "show_thinking": false,
+     "show_tools": true,
+     "theme": "auto"
+    },
+    "watched_processes": [
+     "claude.exe",
+     "java.exe",
+     "node.exe",
+     "python.exe",
+     "docker.exe",
+     "com.docker.backend.exe",
+     "vmmemWSL",
+     "chrome.exe",
+     "Code.exe"
+    ],
+    "window_hours": 8
+   },
+   "over": {},
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "active_seconds": 120,
+    "attempts": null,
+    "chain_log": null,
+    "docker": true,
+    "include_unmatched": false,
+    "ledger": null,
+    "limits": {
+     "event_window_mb": 8,
+     "max_events": 20000,
+     "text_chars": 6000,
+     "usage_max_mb": 512,
+     "usage_scan_budget_ms": 1500
+    },
+    "live_log_globs": [],
+    "panels": {
+     "attempts": false,
+     "chain_log": false,
+     "git": true,
+     "ledger": false,
+     "logs": true,
+     "machine": true
+    },
+    "pending_tool_grace_seconds": 900,
+    "poll": {
+     "attempts_ms": 6000,
+     "events_ms": 1500,
+     "logs_ms": 3000,
+     "machine_ms": 2000,
+     "overview_ms": 5000,
+     "sessions_ms": 6000,
+     "stale_after_ms": 15000
+    },
+    "port": 8765,
+    "repo": ".",
+    "schema_version": 1,
+    "session_ids": [],
+    "session_rules": [],
+    "stop_file": null,
+    "title": "Claude sessions monitor",
+    "transcripts_dir": "auto",
+    "ui": {
+     "density": "comfortable",
+     "newest_first": true,
+     "show_prompts": false,
+     "show_thinking": false,
+     "show_tools": true,
+     "theme": "auto"
+    },
+    "watched_processes": [
+     "claude.exe",
+     "java.exe",
+     "node.exe",
+     "python.exe",
+     "docker.exe",
+     "com.docker.backend.exe",
+     "vmmemWSL",
+     "chrome.exe",
+     "Code.exe"
+    ],
+    "window_hours": 8
+   },
+   "provenance": {
+    "active_seconds": "default",
+    "attempts": "default",
+    "chain_log": "default",
+    "docker": "default",
+    "include_unmatched": "default",
+    "ledger": "default",
+    "limits.event_window_mb": "default",
+    "limits.max_events": "default",
+    "limits.text_chars": "default",
+    "limits.usage_max_mb": "default",
+    "limits.usage_scan_budget_ms": "default",
+    "live_log_globs": "default",
+    "panels.attempts": "default",
+    "panels.chain_log": "default",
+    "panels.git": "default",
+    "panels.ledger": "default",
+    "panels.logs": "default",
+    "panels.machine": "default",
+    "pending_tool_grace_seconds": "default",
+    "poll.attempts_ms": "default",
+    "poll.events_ms": "default",
+    "poll.logs_ms": "default",
+    "poll.machine_ms": "default",
+    "poll.overview_ms": "default",
+    "poll.sessions_ms": "default",
+    "poll.stale_after_ms": "default",
+    "port": "default",
+    "repo": "default",
+    "schema_version": "default",
+    "session_ids": "default",
+    "session_rules": "default",
+    "stop_file": "default",
+    "title": "default",
+    "transcripts_dir": "default",
+    "ui.density": "default",
+    "ui.newest_first": "default",
+    "ui.show_prompts": "default",
+    "ui.show_thinking": "default",
+    "ui.show_tools": "default",
+    "ui.theme": "default",
+    "watched_processes": "default",
+    "window_hours": "default"
+   }
+  }
+ },
+ {
+  "case": "real-defaults-panels",
+  "input": {
+   "base": {
+    "active_seconds": 120,
+    "attempts": null,
+    "chain_log": null,
+    "docker": true,
+    "include_unmatched": false,
+    "ledger": null,
+    "limits": {
+     "event_window_mb": 8,
+     "max_events": 20000,
+     "text_chars": 6000,
+     "usage_max_mb": 512,
+     "usage_scan_budget_ms": 1500
+    },
+    "live_log_globs": [],
+    "panels": {
+     "attempts": false,
+     "chain_log": false,
+     "git": true,
+     "ledger": false,
+     "logs": true,
+     "machine": true
+    },
+    "pending_tool_grace_seconds": 900,
+    "poll": {
+     "attempts_ms": 6000,
+     "events_ms": 1500,
+     "logs_ms": 3000,
+     "machine_ms": 2000,
+     "overview_ms": 5000,
+     "sessions_ms": 6000,
+     "stale_after_ms": 15000
+    },
+    "port": 8765,
+    "repo": ".",
+    "schema_version": 1,
+    "session_ids": [],
+    "session_rules": [],
+    "stop_file": null,
+    "title": "Claude sessions monitor",
+    "transcripts_dir": "auto",
+    "ui": {
+     "density": "comfortable",
+     "newest_first": true,
+     "show_prompts": false,
+     "show_thinking": false,
+     "show_tools": true,
+     "theme": "auto"
+    },
+    "watched_processes": [
+     "claude.exe",
+     "java.exe",
+     "node.exe",
+     "python.exe",
+     "docker.exe",
+     "com.docker.backend.exe",
+     "vmmemWSL",
+     "chrome.exe",
+     "Code.exe"
+    ],
+    "window_hours": 8
+   },
+   "over": {
+    "panels": {
+     "git": false,
+     "machine": false
+    },
+    "window_hours": 12
+   },
+   "source": "task"
+  },
+  "output": {
+   "merged": {
+    "active_seconds": 120,
+    "attempts": null,
+    "chain_log": null,
+    "docker": true,
+    "include_unmatched": false,
+    "ledger": null,
+    "limits": {
+     "event_window_mb": 8,
+     "max_events": 20000,
+     "text_chars": 6000,
+     "usage_max_mb": 512,
+     "usage_scan_budget_ms": 1500
+    },
+    "live_log_globs": [],
+    "panels": {
+     "attempts": false,
+     "chain_log": false,
+     "git": false,
+     "ledger": false,
+     "logs": true,
+     "machine": false
+    },
+    "pending_tool_grace_seconds": 900,
+    "poll": {
+     "attempts_ms": 6000,
+     "events_ms": 1500,
+     "logs_ms": 3000,
+     "machine_ms": 2000,
+     "overview_ms": 5000,
+     "sessions_ms": 6000,
+     "stale_after_ms": 15000
+    },
+    "port": 8765,
+    "repo": ".",
+    "schema_version": 1,
+    "session_ids": [],
+    "session_rules": [],
+    "stop_file": null,
+    "title": "Claude sessions monitor",
+    "transcripts_dir": "auto",
+    "ui": {
+     "density": "comfortable",
+     "newest_first": true,
+     "show_prompts": false,
+     "show_thinking": false,
+     "show_tools": true,
+     "theme": "auto"
+    },
+    "watched_processes": [
+     "claude.exe",
+     "java.exe",
+     "node.exe",
+     "python.exe",
+     "docker.exe",
+     "com.docker.backend.exe",
+     "vmmemWSL",
+     "chrome.exe",
+     "Code.exe"
+    ],
+    "window_hours": 12
+   },
+   "provenance": {
+    "active_seconds": "default",
+    "attempts": "default",
+    "chain_log": "default",
+    "docker": "default",
+    "include_unmatched": "default",
+    "ledger": "default",
+    "limits.event_window_mb": "default",
+    "limits.max_events": "default",
+    "limits.text_chars": "default",
+    "limits.usage_max_mb": "default",
+    "limits.usage_scan_budget_ms": "default",
+    "live_log_globs": "default",
+    "panels.attempts": "default",
+    "panels.chain_log": "default",
+    "panels.git": "task",
+    "panels.ledger": "default",
+    "panels.logs": "default",
+    "panels.machine": "task",
+    "pending_tool_grace_seconds": "default",
+    "poll.attempts_ms": "default",
+    "poll.events_ms": "default",
+    "poll.logs_ms": "default",
+    "poll.machine_ms": "default",
+    "poll.overview_ms": "default",
+    "poll.sessions_ms": "default",
+    "poll.stale_after_ms": "default",
+    "port": "default",
+    "repo": "default",
+    "schema_version": "default",
+    "session_ids": "default",
+    "session_rules": "default",
+    "stop_file": "default",
+    "title": "default",
+    "transcripts_dir": "default",
+    "ui.density": "default",
+    "ui.newest_first": "default",
+    "ui.show_prompts": "default",
+    "ui.show_thinking": "default",
+    "ui.show_tools": "default",
+    "ui.theme": "default",
+    "watched_processes": "default",
+    "window_hours": "task"
+   }
+  }
+ }
+]

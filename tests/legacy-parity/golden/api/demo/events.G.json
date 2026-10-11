@@ -1,0 +1,57 @@
+[
+ 200,
+ {
+  "base": 0,
+  "events": [
+   {
+    "i": 0,
+    "k": "prompt",
+    "t": "2026-09-21T13:30:00.000Z",
+    "text": "Run STEP=G: sync the translation files with the translation service"
+   },
+   {
+    "i": 1,
+    "k": "say",
+    "t": "2026-09-21T13:30:02.000Z",
+    "text": "Exporting the source strings."
+   },
+   {
+    "i": 2,
+    "id": "toolu_G00",
+    "input": "{\"command\": \"npm run i18n:export\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "npm run i18n:export",
+    "t": "2026-09-21T13:30:02.000Z"
+   },
+   {
+    "err": false,
+    "i": 3,
+    "id": "toolu_G00",
+    "k": "result",
+    "t": "2026-09-21T13:30:05.000Z",
+    "text": "Exported 1204 strings"
+   },
+   {
+    "i": 4,
+    "k": "say",
+    "t": "2026-09-21T13:30:08.000Z",
+    "text": "Uploading and waiting for the service to confirm."
+   },
+   {
+    "i": 5,
+    "id": "toolu_G_pending",
+    "input": "{\"command\": \"npm run i18n:upload -- --wait\"}",
+    "k": "tool",
+    "name": "Bash",
+    "summary": "npm run i18n:upload -- --wait",
+    "t": "2026-09-21T13:30:08.000Z"
+   }
+  ],
+  "from": 0,
+  "next": 6,
+  "partial": false,
+  "skipped_bytes": 0,
+  "total": 6
+ }
+]
