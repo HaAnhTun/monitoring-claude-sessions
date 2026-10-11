@@ -16,6 +16,7 @@ export * from './cli/results.ts';
 // @wp-end WP-03
 
 // @wp-begin WP-04
+export * from './schemas/ingest.ts';
 // @wp-end WP-04
 
 // @wp-begin WP-05
