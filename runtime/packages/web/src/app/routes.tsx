@@ -50,6 +50,9 @@ export const pageRegistry: PageRegistry = {
   ),
   // @wp-end WP-50
   // @wp-begin WP-52
+  sessionDetail: lazyPage(() =>
+    import('../pages/session-detail/SessionDetailPage.tsx').then((m) => ({ default: m.SessionDetailPage })),
+  ),
   // @wp-end WP-52
   // @wp-begin WP-53
   // @wp-end WP-53
