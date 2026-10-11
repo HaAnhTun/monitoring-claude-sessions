@@ -292,6 +292,9 @@ ROUTE_MODULES.push(transcriptRoutes);
 // @wp-end WP-33
 
 // @wp-begin WP-36
+import { streamRoutes } from './stream/sse.ts';
+
+ROUTE_MODULES.push(streamRoutes);
 // @wp-end WP-36
 
 // @wp-begin WP-41
