@@ -397,6 +397,8 @@ export type {
 // @wp-end WP-29
 
 // @wp-begin WP-30
+export { NotFoundError, QueryRefusal } from './query/index.ts';
+export type { NotFoundCode, PathSessionOptions, RefusalCode } from './query/index.ts';
 // @wp-end WP-30
 
 // @wp-begin WP-31

@@ -380,6 +380,22 @@ export function createQueries(db: InstanceDb, deps: QueryDeps): Queries {
 // @wp-end WP-29
 
 // @wp-begin WP-30
+import { createAgentQueries, type AgentQueries } from './agents.ts';
+import { createEventQueries, type EventQueries } from './events.ts';
+import { createSessionQueries, type SessionQueries } from './sessions.ts';
+import { createToolCallQueries, type ToolCallQueries } from './tool-calls.ts';
+import { createTransitionQueries, type TransitionQueries } from './transitions.ts';
+
+export { NotFoundError, QueryRefusal } from './transitions.ts';
+export type { NotFoundCode, PathSessionOptions, RefusalCode } from './transitions.ts';
+
+// the part of 03 12.1 that WP-30 owns: sessions, agents, events, tool calls and transitions
+export interface EngineQueries extends SessionQueries, AgentQueries, EventQueries, ToolCallQueries, TransitionQueries {}
+registerQueryPart(createSessionQueries, ['listSessions', 'getSession', 'sessionSummaries']);
+registerQueryPart(createAgentQueries, ['sessionAgents', 'listAgents', 'agentNode', 'workflowRun']);
+registerQueryPart(createEventQueries, ['listEvents', 'getEvent', 'eventsByIdRange']);
+registerQueryPart(createToolCallQueries, ['listToolCalls', 'toolCallsByIds']);
+registerQueryPart(createTransitionQueries, ['sessionTransitions']);
 // @wp-end WP-30
 
 // @wp-begin WP-31

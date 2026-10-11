@@ -268,6 +268,12 @@ const ROUTE_MODULES: RouteModule[] = [metaRoutes, ingestRoutes];
 // @wp-end WP-29
 
 // @wp-begin WP-30
+import { agentRoutes } from './routes/agents.ts';
+import { eventRoutes } from './routes/events.ts';
+import { sessionRoutes } from './routes/sessions.ts';
+import { toolCallRoutes } from './routes/tool-calls.ts';
+
+ROUTE_MODULES.push(sessionRoutes, agentRoutes, eventRoutes, toolCallRoutes);
 // @wp-end WP-30
 
 // @wp-begin WP-31
