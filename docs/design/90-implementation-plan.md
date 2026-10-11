@@ -658,6 +658,7 @@ Phase 2, W2.8, L; impl sonnet high; verify sonnet high; 01 S7 (CLI part)
   `packages/cli/test/cli-config.int.test.ts` (T-CLI-01, 02, 04, T-SEC-04; plan-assigned name),
   `tests/parity/cli-config.parity.test.ts` (T-CLI-03 config commands, T-XE-01, 02, T-AU-01; plan-assigned name),
   `tests/isolation/config-write-isolation.test.ts` (T-ISO-06 rows for init, configure, decide).
+  Lead note 2026-10-12: the `transcriptsDir`, `probeInstance`, hooks-summary and route-file call sites of the engine ops (CR-WP-14-2/3) are wired by this WP where the CLI composes the ops; the verifier re-checks that `check` prints the resolved transcripts folder like the legacy line instead of the configured text `auto`.
 - Blocks: creates `cli/src/main.ts` with blocks WP-19, 22, 38, 61, 62, 63, 64 and `config-write-isolation.test.ts` with blocks WP-22,
   38, 39, 62.
 - Produces: `main(argv, {launcherPath, skillDir, runtimeDir})`, command registry, renderers. Consumes: WP-14, WP-08 terminal.
