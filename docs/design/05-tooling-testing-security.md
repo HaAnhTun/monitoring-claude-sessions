@@ -2543,8 +2543,6 @@ console.log(`clean: removed ${targets.length} build output paths`);
 
 ````js
 // Type-checks every project with noEmit against sources (custom condition @mcs/source), no build needed.
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { binPath, runNode } from './lib.mjs';
 
 const PROJECTS = [
@@ -2818,6 +2816,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
 ````js
 // Local CI: runs every gate in a fixed order and prints a result table. Zero dependencies.
 // Usage: npm run ci [-- --offline] [-- --keep-going]   |   npm run ci:full (adds e2e + parity)
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { binPath, runNode } from './lib.mjs';
 
 const args = new Set(process.argv.slice(2));
@@ -2825,7 +2825,7 @@ const full = args.has('--full');
 const offline = args.has('--offline');
 const keepGoing = args.has('--keep-going');
 const strict = args.has('--strict'); // release-check: a SKIPPED gate fails
-// npm_execpath is set when run through npm; otherwise fall back to the npm CLI bundled next to this node binary (lead decision CR-WP-01-2).
+// npm_execpath is set when run through npm; otherwise fall back to the npm CLI bundled next to this node binary (lead decision, CR-WP-01-2).
 function resolveNpmCli() {
   if (process.env.npm_execpath) return process.env.npm_execpath;
   const root = dirname(process.execPath);
