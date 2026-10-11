@@ -215,6 +215,39 @@ export type { AuditFile, AuditLogSink, AuditRef, EntriesOptions } from './audit/
 // @wp-end WP-13
 
 // @wp-begin WP-14
+export * as opsWorkspace from './ops/workspace.ts';
+export * as opsConfig from './ops/config.ts';
+export * as opsAudit from './ops/audit.ts';
+export { version as opsVersion } from './ops/workspace.ts';
+export type {
+  DiscoverDeps,
+  DiscoverResult,
+  DiscoveredInstance,
+  DiscoveredSession,
+  InitDeps,
+  InitInput,
+  InitOpResult,
+  OpContext,
+  ProbeSummary,
+  QuickProbe,
+  QuickProbeState,
+  TranscriptDiscovery,
+  VersionDeps,
+  VersionResult,
+} from './ops/workspace.ts';
+export type {
+  CheckDeps,
+  CheckInput,
+  CheckResult,
+  ConfigureDeps,
+  ConfigureInput,
+  ConfigureReport,
+  InspectDeps,
+  InspectReport,
+  InspectResult,
+  InspectTasksResult,
+} from './ops/config.ts';
+export type { AuditCheckInput, AuditReportItem, DecisionInput, DecisionResult } from './ops/audit.ts';
 // @wp-end WP-14
 
 // @wp-begin WP-16
