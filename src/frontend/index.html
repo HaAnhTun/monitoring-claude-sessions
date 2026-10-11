@@ -64,6 +64,22 @@
 
 <div class="layout">
   <aside id="side" class="side" aria-label="Monitor panels and sessions">
+    <nav id="sessions-nav" class="sessions" aria-labelledby="sessions-h">
+      <h2 id="sessions-h" class="sessions-h">Sessions</h2>
+      <p id="sessions-window" class="small muted"></p>
+      <div class="sess-tools">
+        <label class="visually-labelled">
+          <span class="sr-only">Filter sessions</span>
+          <input type="search" id="session-filter" data-testid="session-filter" class="input" placeholder="Filter sessions..." autocomplete="off">
+        </label>
+        <label class="check"><input type="checkbox" id="show-all" data-testid="show-all"> <span>Show unmatched sessions</span></label>
+      </div>
+      <div id="session-list" data-testid="session-list" class="session-list dim-when-stale" aria-busy="true">
+        <p class="muted loading">Loading sessions...</p>
+      </div>
+      <div id="empty-state" data-testid="empty-state" class="empty-state" hidden></div>
+    </nav>
+
     <div id="panels" class="panels">
       <section class="panel" id="panel-overview" hidden data-panel="git">
         <h2><button type="button" class="panel-toggle" aria-expanded="true" aria-controls="body-overview"><svg class="icon" aria-hidden="true" focusable="false"><use href="/static/icons.svg#i-chevron-down"/></svg><span>Overview</span></button></h2>
@@ -96,22 +112,6 @@
         <div class="panel-body dim-when-stale" id="body-logs"><p class="muted">Loading...</p></div>
       </section>
     </div>
-
-    <nav id="sessions-nav" class="sessions" aria-labelledby="sessions-h">
-      <h2 id="sessions-h" class="sessions-h">Sessions</h2>
-      <p id="sessions-window" class="small muted"></p>
-      <div class="sess-tools">
-        <label class="visually-labelled">
-          <span class="sr-only">Filter sessions</span>
-          <input type="search" id="session-filter" data-testid="session-filter" class="input" placeholder="Filter sessions..." autocomplete="off">
-        </label>
-        <label class="check"><input type="checkbox" id="show-all" data-testid="show-all"> <span>Show unmatched sessions</span></label>
-      </div>
-      <div id="session-list" data-testid="session-list" class="session-list dim-when-stale" aria-busy="true">
-        <p class="muted loading">Loading sessions...</p>
-      </div>
-      <div id="empty-state" data-testid="empty-state" class="empty-state" hidden></div>
-    </nav>
   </aside>
 
   <main id="main" class="main">

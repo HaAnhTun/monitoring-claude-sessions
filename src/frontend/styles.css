@@ -360,7 +360,6 @@ kbd { font: var(--fs-xs) var(--mono); background: var(--surface-2); border: var(
   .layout { display: flex; flex-direction: column; height: auto; }
   .side { overflow: visible; border-right: 0; border-bottom: var(--border-w) solid var(--border); }
   .side { display: flex; flex-direction: column; }
-  .sessions { order: -1; }   /* session list first */
   .main { min-height: 100vh; }
   .timeline { min-height: 60vh; max-height: 80vh; }
   .search-box .input { width: 100%; }

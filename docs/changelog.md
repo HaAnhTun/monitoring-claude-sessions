@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2 (2026-10-11)
+- **UI:** the session list is now first in the sidebar on desktop too (it was below the panels, so it needed scrolling); DOM order equals visual order, so tab order is natural on every width.
+- **Tools:** `tests/tools/demo.py` builds a made-up demo project (all five states, a workflow with subagents, a huge transcript for the partial view) and `tests/tools/screenshots.mjs` captures the UI from it with headless Chrome (Node only, no packages).
+
 ## 2.0.1 (2026-10-11)
 - **CPU:** the machine panel spawned `tasklist` on every poll (about 0.7 s of CPU per call, roughly a third of a core with one tab open); replaced by Win32 calls (about 16 ms). Git/overview results are cached 10 s instead of 4 s. Measured afterwards: no client 0.10% of one core (27 MB), one tab about 3-4% (33 MB), three tabs about 4.4%.
 - Helper processes no longer open console windows (CREATE_NO_WINDOW).

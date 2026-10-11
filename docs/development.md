@@ -11,7 +11,7 @@ A running monitor executes the skill's files from disk: `template/viewer.py serv
 ## Change loop
 1. Edit the skill (read `docs/architecture.md`; keep API changes additive, update `docs/api.md`).
 2. From this folder: `python -m unittest discover -s tests` and `node --test "tests/frontend/*.test.mjs"`.
-3. Optional browser check on synthetic data: `python tests/fixtures/make.py OUT` builds a fake `CLAUDE_CONFIG_DIR`; run `serve` with that env var and a config whose `transcripts_dir` is `OUT/projects/demo`.
+3. Optional browser check on made-up data: `python tests/tools/demo.py OUT` builds a demo project (see its docstring for the `serve` command); `node tests/tools/screenshots.mjs http://127.0.0.1:8860 OUT/shots` captures the UI (the last shot stops the viewer to show the offline state). `tests/fixtures/make.py` is the smaller builder used by the unit tests.
 4. `git add -A && git commit` in this folder.
 5. For every monitor that should pick the change up: `python template/viewer.py status --repo <project> --task <slug>` (look for `outdated`), then `restart`.
 
