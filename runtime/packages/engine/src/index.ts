@@ -143,6 +143,75 @@ export type { CompiledPatterns, LegacyKeySpec, LegacyValidateOptions } from './c
 // @wp-end WP-12
 
 // @wp-begin WP-13
+export {
+  appendWorkspaceFile,
+  assertNotLink,
+  compareAndDelete,
+  isLink,
+  isMissingFileError,
+  readJsonFile,
+  readTextTail,
+  readTextUniversal,
+  writePyJsonFile,
+  writeWorkspaceFile,
+} from './workspace/fsio.ts';
+export type { WriteOptions } from './workspace/fsio.ts';
+export {
+  TASK_MUTEX_TIMEOUT_MS,
+  WORKSPACE_DIRS,
+  WORKSPACE_JSON_FILES,
+  checkSlug,
+  resolveWorkspace,
+  slugify,
+  tasksRootOf,
+  withTaskMutex,
+  workspacePath,
+} from './workspace/paths.ts';
+export type { TaskMutexOptions, WorkspaceRef } from './workspace/paths.ts';
+export {
+  RUNTIME_MUTABLE_PATHS,
+  changedWorkspaces,
+  isRuntimeMutable,
+  snapshotWorkspace,
+  snapshotWorkspaces,
+} from './workspace/snapshot.ts';
+export type { SnapshotOptions, SnapshotsOptions } from './workspace/snapshot.ts';
+export {
+  adoptWorkspace,
+  ensureWorkspaceDir,
+  instanceFileToPy,
+  newInstanceFile,
+  readInstanceFile,
+  readTaskFile,
+  writeInstanceFile,
+} from './workspace/adopt.ts';
+export type {
+  AdoptOptions,
+  AdoptResult,
+  EngineName,
+  NewInstanceOptions,
+  ReadInstanceOptions,
+} from './workspace/adopt.ts';
+export { cleanupStaging, initWorkspace } from './workspace/init.ts';
+export type { InitOptions, InitResult } from './workspace/init.ts';
+export { listWorkspaceSlugs, listWorkspaces } from './workspace/list.ts';
+export type { WorkspaceEntry } from './workspace/list.ts';
+export { applyRepair, planRepair } from './workspace/repair.ts';
+export type { RepairOptions, RepairPlan, RepairResult, RunningCheck } from './workspace/repair.ts';
+export {
+  AUDIT_ACTIONS,
+  CHANGES_HEADER,
+  DECISIONS_HEADER,
+  appendChange,
+  appendDecision,
+  changeEntryText,
+  decisionEntryText,
+  lastChange,
+  recentAudit,
+} from './audit/writer.ts';
+export type { AuditAction, ChangeEntry } from './audit/writer.ts';
+export { AUDIT_FILES, AUDIT_READ_BYTES, auditFilePath, entriesBetween, readAuditText } from './audit/reader.ts';
+export type { AuditFile, AuditLogSink, AuditRef, EntriesOptions } from './audit/reader.ts';
 // @wp-end WP-13
 
 // @wp-begin WP-14
