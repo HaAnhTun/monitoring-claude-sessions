@@ -1,2 +1,17 @@
-// Browser entry of the web UI (scaffold stub): WP-44 replaces this file.
-export {};
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { App } from './app/App.tsx';
+import { AppProviders } from './app/AppProviders.tsx';
+import './styles/index.css';
+
+const container = document.getElementById('root');
+if (container === null) throw new Error('index.html has no #root element');
+
+createRoot(container).render(
+  <StrictMode>
+    <AppProviders>
+      <App />
+    </AppProviders>
+  </StrictMode>,
+);

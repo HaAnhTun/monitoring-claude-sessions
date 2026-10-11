@@ -1,0 +1,175 @@
+/* Shared components: buttons, badges, state blocks, skeleton. Ported from the legacy stylesheet. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  min-height: calc(30px * var(--d) + 6px);
+  background: var(--surface);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast),
+    transform var(--t-fast);
+}
+.btn:hover {
+  background: var(--surface-2);
+}
+.btn:active {
+  transform: translateY(1px);
+  background: var(--border);
+}
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn.is-loading {
+  cursor: progress;
+  opacity: 0.7;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+.btn-primary:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+}
+.btn-icon {
+  padding: var(--sp-2);
+  min-width: 28px;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+}
+.btn-group {
+  display: inline-flex;
+  gap: var(--sp-2);
+}
+
+.input {
+  background: var(--surface);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+  min-height: calc(30px * var(--d) + 6px);
+  max-width: 100%;
+}
+.input:hover {
+  border-color: var(--text-muted);
+}
+.input:disabled {
+  opacity: 0.5;
+}
+
+/* Badges: tone colours come from the .tone-* classes of tokens.css; every badge also carries an icon or a word. */
+.badge,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.7;
+  border: var(--border-w) solid currentcolor;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.badge--sm {
+  padding: 0 var(--sp-2);
+  line-height: 1.5;
+}
+
+/* Empty, error and loading states (04-ui.md section 7). */
+.state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+}
+.state--page {
+  padding: var(--sp-6);
+}
+.state--inline {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.state--error {
+  border-color: var(--failed-fg);
+}
+.state__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.state__body {
+  color: var(--text-muted);
+}
+.state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.skeleton__row {
+  height: calc(20px * var(--d) + 8px);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+.skeleton--tiles {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.skeleton--tiles .skeleton__row {
+  flex: 1 1 12em;
+  height: calc(56px * var(--d) + 8px);
+}
+.skeleton--text .skeleton__row {
+  height: 1em;
+  width: 80%;
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton__row {
+    animation: none;
+  }
+}
+
+/* @wp-begin WP-48 */
+/* @wp-end WP-48 */
+/* @wp-begin WP-50 */
+/* @wp-end WP-50 */
+/* @wp-begin WP-51 */
+/* @wp-end WP-51 */
+/* @wp-begin WP-54 */
+/* @wp-end WP-54 */

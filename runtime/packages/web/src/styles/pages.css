@@ -1,0 +1,23 @@
+/* Page-level styles; each page work package appends one marked block. */
+
+.page--placeholder h1,
+.page--not-found h1 {
+  margin-bottom: var(--sp-2);
+}
+
+/* @wp-begin WP-49 */
+/* @wp-end WP-49 */
+/* @wp-begin WP-50 */
+/* @wp-end WP-50 */
+/* @wp-begin WP-52 */
+/* @wp-end WP-52 */
+/* @wp-begin WP-53 */
+/* @wp-end WP-53 */
+/* @wp-begin WP-54 */
+/* @wp-end WP-54 */
+/* @wp-begin WP-65 */
+/* @wp-end WP-65 */
+/* @wp-begin WP-66 */
+/* @wp-end WP-66 */
+/* @wp-begin WP-67 */
+/* @wp-end WP-67 */

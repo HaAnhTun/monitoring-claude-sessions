@@ -1,0 +1,204 @@
+/* Design tokens (04-ui.md section 6.1, ADR 0035). Ported from the legacy stylesheet, plus the measured additions:
+   --control-border, --waiting-fg/bg, --bp-*, --row-cv-size, --focus-ring. Components use tokens only. */
+
+:root {
+  color-scheme: light dark;
+
+  /* spacing scale (multiplied by the density factor) */
+  --d: 1;
+  --sp-1: calc(2px * var(--d));
+  --sp-2: calc(4px * var(--d));
+  --sp-3: calc(8px * var(--d));
+  --sp-4: calc(12px * var(--d));
+  --sp-5: calc(16px * var(--d));
+  --sp-6: calc(24px * var(--d));
+
+  /* type scale */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1rem;
+  --fs-xl: 1.25rem;
+  --lh: 1.5;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --border-w: 1px;
+  --t-fast: 120ms ease;
+  --t-med: 200ms ease;
+  --side-w: 380px;
+
+  /* documentation tokens: media queries use the literal values */
+  --bp-narrow: 899px;
+  --bp-wide: 1280px;
+  --row-cv-size: 72px;
+  --focus-ring: 2px solid var(--focus);
+}
+:root[data-density='compact'] {
+  --d: 0.65;
+  --lh: 1.35;
+}
+
+/* ---- colour tokens: light ---- */
+:root,
+:root[data-theme='light'] {
+  --bg: #f6f6f8;
+  --surface: #ffffff;
+  --surface-2: #eeeef2;
+  --border: #d6d6de;
+  --border-strong: #a9a9b6;
+  --control-border: #858594;
+  --text: #1b1b21;
+  --text-muted: #55555f;
+  --accent: #1d4ed8;
+  --accent-contrast: #ffffff;
+  --focus: #1d4ed8;
+  --shadow: 0 1px 2px rgb(20 20 30 / 0.08), 0 4px 12px rgb(20 20 30 / 0.06);
+
+  --running-fg: #1d4ed8;
+  --running-bg: #e2eaff;
+  --waiting-fg: #0e5a6b;
+  --waiting-bg: #d9f1f6;
+  --idle-fg: #474752;
+  --idle-bg: #e9e9ee;
+  --completed-fg: #0a6340;
+  --completed-bg: #dcf3e8;
+  --failed-fg: #b01e12;
+  --failed-bg: #fde5e2;
+  --unknown-fg: #6b21a8;
+  --unknown-bg: #f0e6fb;
+  --stale-fg: #7c3f00;
+  --stale-bg: #fdecc8;
+  --partial-fg: #8a3100;
+  --partial-bg: #ffe6d2;
+  --ok-fg: #0a6340;
+  --ok-bg: #dcf3e8;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #111216;
+  --surface: #1a1b21;
+  --surface-2: #24252d;
+  --border: #353641;
+  --border-strong: #5a5b6a;
+  --control-border: #75768a;
+  --text: #e9e9ef;
+  --text-muted: #a3a3b1;
+  --accent: #8aaaff;
+  --accent-contrast: #101218;
+  --focus: #a9c0ff;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 12px rgb(0 0 0 / 0.35);
+
+  --running-fg: #9db9ff;
+  --running-bg: #1b2850;
+  --waiting-fg: #7fd3e6;
+  --waiting-bg: #0f2f37;
+  --idle-fg: #bcbfca;
+  --idle-bg: #2b2d36;
+  --completed-fg: #74dca8;
+  --completed-bg: #12331f;
+  --failed-fg: #ff9e92;
+  --failed-bg: #421a17;
+  --unknown-fg: #cbaeff;
+  --unknown-bg: #2e2147;
+  --stale-fg: #f6c56e;
+  --stale-bg: #3b2a0e;
+  --partial-fg: #ffb98a;
+  --partial-bg: #3d2211;
+  --ok-fg: #74dca8;
+  --ok-bg: #12331f;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='auto'] {
+    --bg: #111216;
+    --surface: #1a1b21;
+    --surface-2: #24252d;
+    --border: #353641;
+    --border-strong: #5a5b6a;
+    --control-border: #75768a;
+    --text: #e9e9ef;
+    --text-muted: #a3a3b1;
+    --accent: #8aaaff;
+    --accent-contrast: #101218;
+    --focus: #a9c0ff;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 12px rgb(0 0 0 / 0.35);
+    --running-fg: #9db9ff;
+    --running-bg: #1b2850;
+    --waiting-fg: #7fd3e6;
+    --waiting-bg: #0f2f37;
+    --idle-fg: #bcbfca;
+    --idle-bg: #2b2d36;
+    --completed-fg: #74dca8;
+    --completed-bg: #12331f;
+    --failed-fg: #ff9e92;
+    --failed-bg: #421a17;
+    --unknown-fg: #cbaeff;
+    --unknown-bg: #2e2147;
+    --stale-fg: #f6c56e;
+    --stale-bg: #3b2a0e;
+    --partial-fg: #ffb98a;
+    --partial-bg: #3d2211;
+    --ok-fg: #74dca8;
+    --ok-bg: #12331f;
+  }
+}
+
+/* ---- tone classes (lib/lifecycle-display.ts maps states to these; legacy .st-* names stay as aliases) ---- */
+.tone-running,
+.st-running,
+.tag-running {
+  color: var(--running-fg);
+  background: var(--running-bg);
+}
+.tone-waiting,
+.st-waiting {
+  color: var(--waiting-fg);
+  background: var(--waiting-bg);
+}
+.tone-idle,
+.st-idle,
+.tag-idle {
+  color: var(--idle-fg);
+  background: var(--idle-bg);
+}
+.tone-completed,
+.st-completed {
+  color: var(--completed-fg);
+  background: var(--completed-bg);
+}
+.tone-failed,
+.st-failed,
+.tag-failed {
+  color: var(--failed-fg);
+  background: var(--failed-bg);
+}
+.tone-unknown,
+.st-unknown {
+  color: var(--unknown-fg);
+  background: var(--unknown-bg);
+}
+.tone-stale,
+.st-stale {
+  color: var(--stale-fg);
+  background: var(--stale-bg);
+}
+.tone-partial,
+.tag-partial,
+.tag-unavailable {
+  color: var(--partial-fg);
+  background: var(--partial-bg);
+}
+.tone-ok {
+  color: var(--ok-fg);
+  background: var(--ok-bg);
+}
+.tone-neutral {
+  color: var(--text);
+  background: var(--surface-2);
+}

@@ -1,0 +1,10 @@
+/* Cascade layer order, then one import per file (04-ui.md 6.2). Plain CSS, no modules, no utility framework. */
+@layer tokens, base, layout, components, pages;
+
+@import './tokens.css' layer(tokens);
+@import './base.css' layer(base);
+@import './layout.css' layer(layout);
+@import './components.css' layer(components);
+@import './transcript.css' layer(components);
+@import './panels.css' layer(components);
+@import './pages.css' layer(pages);

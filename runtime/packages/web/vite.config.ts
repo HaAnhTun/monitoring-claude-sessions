@@ -1,16 +1,52 @@
-// Stub for the scaffold check. The real file is owned by 04-ui.md section 12.2; it must keep the
-// `resolve.conditions` line (workspace sources without a prior build) and must never default to port 8765.
+// Web build and dev server (04-ui.md section 12.2, ADR 0039). The `resolve.conditions` line lets dev, test and build read the
+// workspace TypeScript sources without a prior `tsc -b` (ADR 0040); the API default never points at the owner's live monitor.
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
 import react from '@vitejs/plugin-react';
-import { defaultClientConditions, defineConfig, loadEnv } from 'vite';
+import { defaultClientConditions, defineConfig, loadEnv, type Plugin } from 'vite';
+
+/**
+ * Runs the bundle budget (scripts/check-bundle-budget.mjs) after every production build, so `npm run build -w @mcs/web`
+ * fails over budget even though the package.json `build` script is `vite build` only (change request CR-WP-44-1).
+ */
+function bundleBudget(): Plugin {
+  const script = fileURLToPath(new URL('./scripts/check-bundle-budget.mjs', import.meta.url));
+  return {
+    name: 'mcs-bundle-budget',
+    apply: 'build',
+    closeBundle: {
+      order: 'post',
+      handler() {
+        const result = spawnSync(process.execPath, [script], { stdio: 'inherit', cwd: process.cwd() });
+        if (result.status !== 0) throw new Error('Bundle budget check failed (see the table above).');
+      },
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'MCS_');
+  // Server started by `npm run dev` (05 3.1, port range 18760-18769). Never 8765: that is the owner's live legacy monitor.
   const api = env['MCS_DEV_API'] ?? 'http://127.0.0.1:18765';
   return {
-    plugins: [react()],
+    plugins: [react(), bundleBudget()],
     base: '/',
+    // Workspace packages resolve to their TypeScript sources: no prior `tsc -b` for dev or build (05 2.8, ADR 0040).
     resolve: { conditions: ['@mcs/source', ...defaultClientConditions] },
-    build: { outDir: 'dist', emptyOutDir: true, sourcemap: false, manifest: true, modulePreload: { polyfill: false } },
+    build: {
+      outDir: 'dist',
+      assetsDir: 'assets',
+      emptyOutDir: true,
+      sourcemap: false,
+      manifest: true,
+      // No inline polyfill: Chrome, Edge and Firefox support modulepreload.
+      modulePreload: { polyfill: false },
+      target: 'es2022',
+      cssCodeSplit: true,
+      reportCompressedSize: true,
+    },
+    define: { 'import.meta.env.VITE_BUILD_ID': JSON.stringify(env['MCS_BUILD_ID'] ?? 'dev') },
     server: {
       host: '127.0.0.1',
       port: Number(env['MCS_WEB_DEV_PORT'] ?? '18766'),
@@ -18,8 +54,10 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: api,
+          // Host must match the server's guard (03 5.2 step 2).
           changeOrigin: true,
           configure: (proxy) => {
+            // Origin guard (03 5.2 step 3): present the target origin, as a same-origin browser would.
             proxy.on('proxyReq', (req) => {
               if (req.getHeader('origin') !== undefined) req.setHeader('origin', api);
             });
@@ -27,5 +65,6 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    preview: { host: '127.0.0.1', port: Number(env['MCS_WEB_PREVIEW_PORT'] ?? '18767'), strictPort: true },
   };
 });
