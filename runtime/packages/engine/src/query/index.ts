@@ -399,6 +399,17 @@ registerQueryPart(createTransitionQueries, ['sessionTransitions']);
 // @wp-end WP-30
 
 // @wp-begin WP-31
+import { createAlertQueries, type AlertQueries } from './alerts.ts';
+import { createErrorQueries, type ErrorQueries } from './errors.ts';
+import { createOverviewQueries, type OverviewQueries } from './overview.ts';
+import { createWorkItemQueries, type WorkItemQueries } from './work-items.ts';
+
+// the part of 03 12.1 that WP-31 owns: overview, work items, alerts and errors
+export interface EngineQueries extends OverviewQueries, WorkItemQueries, AlertQueries, ErrorQueries {}
+registerQueryPart(createOverviewQueries, ['overview']);
+registerQueryPart(createWorkItemQueries, ['workItemBoard', 'getWorkItem']);
+registerQueryPart(createAlertQueries, ['listAlerts', 'alertRules']);
+registerQueryPart(createErrorQueries, ['errors']);
 // @wp-end WP-31
 
 // @wp-begin WP-33

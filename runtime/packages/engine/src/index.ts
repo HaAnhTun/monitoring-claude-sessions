@@ -402,6 +402,9 @@ export type { NotFoundCode, PathSessionOptions, RefusalCode } from './query/inde
 // @wp-end WP-30
 
 // @wp-begin WP-31
+export { mergeServerErrors } from './query/errors.ts';
+export { registerMetricProvider } from './query/overview.ts';
+export type { MetricProvider, MetricProviderInput } from './query/overview.ts';
 // @wp-end WP-31
 
 // @wp-begin WP-32

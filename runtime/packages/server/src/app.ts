@@ -277,6 +277,12 @@ ROUTE_MODULES.push(sessionRoutes, agentRoutes, eventRoutes, toolCallRoutes);
 // @wp-end WP-30
 
 // @wp-begin WP-31
+import { alertRoutes } from './routes/alerts.ts';
+import { errorRoutes } from './routes/errors.ts';
+import { overviewRoutes } from './routes/overview.ts';
+import { workItemRoutes } from './routes/work-items.ts';
+
+ROUTE_MODULES.push(overviewRoutes, workItemRoutes, alertRoutes, errorRoutes);
 // @wp-end WP-31
 
 // @wp-begin WP-33
