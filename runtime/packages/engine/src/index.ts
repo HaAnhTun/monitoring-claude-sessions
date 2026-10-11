@@ -218,6 +218,20 @@ export type { AuditFile, AuditLogSink, AuditRef, EntriesOptions } from './audit/
 // @wp-end WP-14
 
 // @wp-begin WP-16
+export { createErrorRing } from './runtime/error-ring.ts';
+export type { ErrorRing } from './runtime/error-ring.ts';
+export { bindPanelStats, buildInstanceContext } from './runtime/context.ts';
+export type { BuildContextInput, ExecApi, InstanceContext, RuntimeProcessInfo } from './runtime/context.ts';
+export { createInstanceRuntime } from './runtime/instance-runtime.ts';
+export type {
+  InstanceRuntime,
+  InstanceRuntimeOptions,
+  RuntimeComponent,
+  RuntimeFactories,
+} from './runtime/instance-runtime.ts';
+export { createStateWatchdog } from './runtime/state-watchdog.ts';
+export type { StateWatchdog } from './runtime/state-watchdog.ts';
+export { testHook } from './runtime/test-hooks.ts';
 // @wp-end WP-16
 
 // @wp-begin WP-17
