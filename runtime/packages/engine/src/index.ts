@@ -275,6 +275,57 @@ export type { InstanceCommandInput } from './ops/commands.ts';
 // @wp-end WP-17
 
 // @wp-begin WP-19
+export * as opsLifecycle from './ops/lifecycle.ts';
+export {
+  controlAddressOf,
+  createProbe,
+  httpGet,
+  identifyInstance,
+  isLiveState,
+  isLoopbackBase,
+  isRunningState,
+  jsonBodyOf,
+  probeInstance,
+  readStateSnapshot,
+  requestControl,
+} from './ops/probe.ts';
+export type {
+  AddressHost,
+  ControlAttempt,
+  ControlReply,
+  HttpAttempt,
+  HttpReply,
+  IdentifyResponse,
+  ProbeDeps,
+  ProbeOptions,
+  ProbeResult,
+  ProbeState,
+  StateSnapshot,
+} from './ops/probe.ts';
+export type {
+  LegacyDelegate,
+  LegacyRequest,
+  LifecycleCommand,
+  LifecycleDeps,
+  ProcessApi,
+  RestartResult,
+  ServeInput,
+  ServeResult,
+  SessionLike,
+  SessionSummaryCounts,
+  SpawnDetachedFn,
+  SpawnForegroundFn,
+  StartInput,
+  StartOutcome,
+  StartResult,
+  StatusReport,
+  StatusResult,
+  StopInput,
+  StopOutcome,
+  StopResult,
+  TargetInput,
+  VerifyResult,
+} from './ops/lifecycle.ts';
 // @wp-end WP-19
 
 // @wp-begin WP-22

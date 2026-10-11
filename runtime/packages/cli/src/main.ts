@@ -168,6 +168,28 @@ const REGISTRY: readonly RegistryEntry[] = [
   { names: ['version'], load: () => import('./commands/version.ts') },
   { names: ['help'], load: () => import('./commands/help.ts') },
   // @wp-begin WP-19
+  { names: ['start'], load: () => import('./commands/start.ts') },
+  { names: ['stop'], load: () => import('./commands/stop.ts') },
+  { names: ['status'], load: () => import('./commands/status.ts') },
+  { names: ['restart'], load: () => import('./commands/restart.ts') },
+  { names: ['verify'], load: () => import('./commands/verify.ts') },
+  { names: ['serve'], load: () => import('./commands/serve.ts') },
+  // the full probe of 01 4.8 replaces the cheap look at state.json in inspect, discover and configure; the engine
+  // module is loaded already (the static import above), so the dynamic import below costs nothing
+  {
+    deps: (op) => ({
+      // the summary of the report: state, pid and url, not the identity and the bytes of the state file
+      probe: async (ws) => {
+        const engine = await import('@mcs/engine');
+        const { state, pid, url } = await engine.probeInstance(ws, { runtimeDir: op.runtimeDir });
+        return { state, pid, url };
+      },
+      isRunning: async (ws) => {
+        const engine = await import('@mcs/engine');
+        return engine.isLiveState((await engine.probeInstance(ws, { runtimeDir: op.runtimeDir })).state);
+      },
+    }),
+  },
   // @wp-end WP-19
 
   // @wp-begin WP-22
