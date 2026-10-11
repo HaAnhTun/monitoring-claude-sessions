@@ -475,6 +475,64 @@ export type {
 // @wp-end WP-33
 
 // @wp-begin WP-34
+export {
+  detectTranscriptsDir,
+  discoverSession as discoverTranscriptSession,
+  discoverTranscripts,
+  nodeDiscoveryFs,
+  projectsRoot,
+  readAgentMeta,
+  readCustomTitle,
+  readWorkflowStatus,
+  sanitizeProjectName,
+} from './ingest/transcripts/discovery.ts';
+export type {
+  AgentMeta,
+  DiscoveredFile,
+  DiscoveredSession as DiscoveredTranscriptSession,
+  DiscoveryCounters,
+  DiscoveryFs,
+  DiscoveryPolicy,
+  DiscoveryResult,
+  EntryStat,
+  WorkflowStatusFile,
+} from './ingest/transcripts/discovery.ts';
+export {
+  CLASSIFY_LINE_LIMIT,
+  classify,
+  compileSessionRules,
+  realFirstPrompt,
+  userTexts,
+} from './ingest/transcripts/classify.ts';
+export type {
+  Classification,
+  ClassifyOptions,
+  CompiledRule,
+  HeadRecord,
+  SessionRule,
+} from './ingest/transcripts/classify.ts';
+export { DEFAULT_IMPORT_SETTINGS, createTranscriptImporter } from './ingest/transcripts/importer.ts';
+export type {
+  DiscoverySummary,
+  ImportPhase,
+  ImportSettings,
+  ImportWork,
+  SliceOutcome,
+  TranscriptImporter,
+  TranscriptImporterOptions,
+  TranscriptStats,
+} from './ingest/transcripts/importer.ts';
+export { createImportScheduler, pickWork } from './ingest/transcripts/scheduler.ts';
+export type {
+  ImportScheduler,
+  ImportSchedulerOptions,
+  ImporterPort,
+  SchedulerStats,
+  SpoolPort,
+  StepResult,
+} from './ingest/transcripts/scheduler.ts';
+export { readEntryText } from './ingest/transcripts/entry-text.ts';
+export type { EntryTextFailure, EntryTextOptions, TranscriptRef } from './ingest/transcripts/entry-text.ts';
 // @wp-end WP-34
 
 // @wp-begin WP-35
