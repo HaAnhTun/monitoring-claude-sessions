@@ -57,7 +57,7 @@ await view(1440, 1000, 'light'); await fresh(); await open('#sid=' + sid('F')); 
 await view(1440, 1000, 'dark'); await fresh(); await open('#sid=' + sid('B'));
 await click('#next-error'); await sleep(500); await shot('03-failed-session-errors.png');
 await ev("document.querySelector('#search-input').value='Checkout'; document.querySelector('#search-input').dispatchEvent(new Event('input',{bubbles:true}))");
-await click('#search-whole'); await sleep(1200); await shot('04-search-whole-transcript.png');
+await sleep(600); await click('#search-whole'); await sleep(1500); await shot('04-search-whole-transcript.png');
 
 await fresh(); await open('#sid=' + sid('E')); await shot('05-partial-view-banner.png');
 await fresh(); await open('#sid=' + sid('F')); await click('#health-details-btn'); await sleep(600); await shot('06-health-details.png');
