@@ -3,6 +3,51 @@ export * from './pyjson/index.ts';
 // @wp-end WP-05
 
 // @wp-begin WP-07
+export { hostPlatform, pathsCaseInsensitive } from './platform/host.ts';
+export type { HostPlatform } from './platform/host.ts';
+export {
+  buildChildEnv,
+  childStats,
+  execFileText,
+  firstLine,
+  powershellEncodedArgs,
+  resolveExecutable,
+  setChildLogSink,
+  spawnDetached,
+  spawnForeground,
+} from './platform/exec.ts';
+export type {
+  ChildErrorCode,
+  ChildKind,
+  ChildKindStats,
+  ChildLogEntry,
+  ChildLogSink,
+  ChildResult,
+  ChildSpec,
+} from './platform/exec.ts';
+export { commandLineOf, forceKill, isValidPid, pidAlive, waitForExit } from './platform/process.ts';
+export {
+  AtomicWriteError,
+  SmallFileError,
+  atomicWriteFile,
+  clipCodePoints,
+  pySplitlines,
+  readSmallFile,
+  tailLines,
+  unlinkWithRetry,
+} from './platform/fsx.ts';
+export type { AtomicWriteOptions } from './platform/fsx.ts';
+export { canonicalPath, isMsysPath, pathKey, samePath, toPosixRel } from './platform/paths.ts';
+export { globFiles } from './platform/glob.ts';
+export type { GlobOptions, GlobResult } from './platform/glob.ts';
+export { PyStrptimeFormatError, pyStrptime, pyStrptimeValidate, toEpochMs } from './platform/pytime.ts';
+export type { PyTimeFields } from './platform/pytime.ts';
+export { createWatchHint } from './platform/watch-hint.ts';
+export type { WatchHint, WatchHintOptions } from './platform/watch-hint.ts';
+export { MutexTimeoutError, acquireMutex, mutexName, tryAcquireMutex } from './platform/mutex.ts';
+export type { AcquireOptions, ProcessMutex } from './platform/mutex.ts';
+export { hasLegacyMarker, hasRuntimeMarker, listRuntimeProcesses } from './platform/markers.ts';
+export type { RuntimeProcess } from './platform/markers.ts';
 // @wp-end WP-07
 
 // @wp-begin WP-08
