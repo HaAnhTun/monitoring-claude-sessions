@@ -45,6 +45,9 @@ export const pageRegistry: PageRegistry = {
   ),
   // @wp-end WP-49
   // @wp-begin WP-50
+  sessions: lazyPage(() =>
+    import('../pages/sessions/SessionExplorerPage.tsx').then((m) => ({ default: m.SessionExplorerPage })),
+  ),
   // @wp-end WP-50
   // @wp-begin WP-52
   // @wp-end WP-52
