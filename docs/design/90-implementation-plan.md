@@ -718,6 +718,7 @@ Phase 2, W2.10, M; impl opus xhigh; verify fable; 01 S9 (ops and CLI)
 - Creates: `packages/engine/src/ops/{lifecycle,probe}.ts`, `packages/cli/src/commands/{start,stop,status,restart,verify,serve}.ts`;
   tests `packages/engine/src/ops/probe.test.ts`, `packages/cli/test/{lifecycle,status}.int.test.ts` (05 4.2 names; T-LC-01, 02, 09, 15),
   `tests/resilience/process-lifecycle.test.ts` (T-LC-06, 08, 13; plan-assigned name).
+  Lead decisions 2026-10-12 (WP-19 verifier round 1): the smoke gate failure (BUILD_INVALID) was a kit defect: `wp-gate build` now writes the build stamp after a successful `tsc -b` (re-run the exact gate line `sh -c "node $K/wp-gate.mjs build --wp WP-19 && node scripts/smoke.mjs"`; it must exit 0 with smoke PASS, not SKIPPED). CR-WP-19-2 accepted: the result types stay in `engine/src/ops/lifecycle.ts` (registry row updated in the docs sync). CR-WP-19-1 accepted for the skeleton (second copy of the control address and exit-code table; move to `@mcs/shared/protocol` later). CR-WP-19-4 and CR-WP-19-5 accepted as documented workarounds.
 - Blocks: `cli/src/main.ts` WP-19, `engine/src/index.ts` WP-19; creates `ops/lifecycle.ts` with block WP-63.
 - Produces: `ops.lifecycle.{start,stop,status,restart,verify,serveForeground}`, `probeInstance`. Consumes: WP-18, WP-15, WP-07.
 - Depends: WP-15, WP-18.
