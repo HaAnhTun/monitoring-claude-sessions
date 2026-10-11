@@ -18,6 +18,10 @@ takes 2-5 s. With `ignore-scripts=true`, npm runs no root lifecycle scripts, so 
   (ADR 0005/0007; named pipe on Windows), using its own zero-dependency copy of the primitive because the engine is not built yet.
   Revision 2026-10-11 (critic issue I-24): this replaces a `mkdir` lock folder with a 10 min staleness rule.
 
+- Revision 2026-10-11 (registry C29, C30): the launcher's steps, messages, npm resolution and `RUNTIME_IN_USE` guard are design 01's
+  (section 5.1, ADR 0007); this ADR fixes only the stamp contract. `outdated` compares a running instance's boot `codeStamp` with the
+  `codeStamp` in `runtime/.mcs-build.json` (built code), never with a stamp computed from the source tree (01 section 5.3).
+
 ## Consequences
 - Source edits rebuild without reinstalling; lockfile/platform/Node-major changes reinstall and rebuild; test edits do neither.
 - The stamp is path-independent, so moving the skill folder does not force a rebuild.

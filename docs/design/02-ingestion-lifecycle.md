@@ -14,6 +14,13 @@ audit template, mutex and `ingest replay` (2.7, 3.1, 3.5); I-32 one `MAX_LINE_BY
 `viewChanged`, `toLegacy` (7.1). Alignment with issues owned elsewhere: I-01 (1.2), I-07 (7.10), I-11 (9.1), I-22 (9.5), I-26
 (2.3.2, 9.5), I-27 (1.3), I-34 (2.5.4, 5.1.1), I-37 (3.7).
 
+Revision 2026-10-11b (second critic pass; `98-contract-registry.md` is the arbiter of names): N-11 / C23 installer modules in
+`engine/src/hooks/installer/` behind 01's `ops.hooks.*` (1.1, 3, 9.5, 13 I-9); I-29 / C03 / C05 control op `ingest-replay` with
+`fromSegment` and 01 7.2's audit template (2.7, 4.10, 12); N-12 / C37 lifecycle-model test ids renamed `T-LF-01..57` (01 keeps
+`T-LC-*` for process lifecycle). Alignment: N-01 / C57 (4.3, 4.10, 5.4), I-08 / C16 / C17 (7.13), I-15 / C06 / C07 (4.10, 12),
+N-03 (1.2), N-04 / C02 (1.2), C18 `LifecycleEvidence` (7.1), C24 (5.2), C48 (3.5), C49 (ADRs 0012, 0014, 0016), C56 (4.1),
+registry notes N2, N8, N13 (1.1, 2.6.1, 9.4).
+
 Read first: `00-foundations.md` (D1-D15), `docs/research/claude-code-hooks.md` (cited `HK:<section>`),
 `docs/research/transcript-survey.md` (`TS:<section>`), `docs/research/current-state-backend.md` (`CS:<section>`),
 `docs/research/ccam-source-analysis.md` (`CC:<section>`).
@@ -80,17 +87,18 @@ Windows liveness can use the Claude Code pid that the handler sees (E7, ADR 0019
 
 | Path (under `.claude/skills/monitoring-claude-sessions/`) | Content |
 |---|---|
-| `runtime/packages/shared/src/protocol/hook-envelope.ts` | `HookEnvelopeV1` type, `HOOK_ENVELOPE_VERSION`, caps (section 2.3), `EnvelopeKind`, `SPOOL_SEGMENT_EXT`, `SPOOL_SEGMENT_RE`, `spoolSegmentName()` (2.7), id regexes `SID_RE`, `AGENT_RE`, `RUN_ID_RE`, `TOOL_ID_RE` (2.3.2) |
+| `runtime/packages/shared/src/protocol/hook-envelope.ts` | `HookEnvelopeV1` type, `HOOK_ENVELOPE_VERSION`, caps (section 2.3), `EnvelopeKind`, `SPOOL_SEGMENT_EXT`, `SPOOL_SEGMENT_RE`, `spoolSegmentName()` (2.7), id regexes `SID_RE`, `AGENT_RE`, `RUN_ID_RE`, `TOOL_ID_RE` (2.3.2), `HANDLER_VERSION` (2.1, registry N2) |
 | `runtime/packages/shared/src/protocol/limits.ts` | `MAX_LINE_BYTES = 64 * 1024 * 1024`: the single line-length cap shared by the tailer (5.3), `readEntryText` (5.7) and the data design's transcript window and search (03 7); no configuration key (I-32) |
 | `runtime/packages/shared/src/protocol/hook-events.ts` | `HOOK_EVENT_POLICY` table (section 2.4), `INSTALLED_HOOK_EVENTS`, `ASYNC_HOOK_EVENTS`, `HOOK_EVENT_RANK` |
 | `runtime/packages/shared/src/protocol/sanitize.ts` | `clip()`, `summarizeToolInput()`, `redact()`, `canonicalJsonHash()`, `normalizePath()` (zod-free, used by handler and engine) |
-| `runtime/packages/shared/src/protocol/routes.ts` | `HookRouteV1` type, `matchRoutes()` (pure) |
+| `runtime/packages/shared/src/protocol/routes.ts` | `HookRouteV1` type, `matchRoutes()` (pure), `resolveMcsHome(env)` (2.6.1; zod-free so the handler and the engine share it, registry N8) |
 | `runtime/packages/shared/src/protocol/stamp.ts` | `Stamp`, `compareStamp()` |
 | `runtime/packages/shared/src/schemas/ingest.ts` | zod: `HookEnvelopeV1Schema`, `HookRouteV1Schema`, `TranscriptRecordShape` (loose), `IngestHealthSchema` |
 | `scripts/mcs-hook.mjs` | Stable hook entry stub (section 2.1, CHALLENGES C1) |
 | `runtime/packages/cli/src/hook.ts` | Handler entry, emitted by `tsc` as `runtime/packages/cli/dist/hook.js`: `export { runHook } from './hook/main.js';` plus a main-module guard `if (process.argv[1] !== undefined && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) void runHook(process.argv.slice(2));` (E10). Imported by the stub (which calls `runHook` itself; the guard is false) or run directly (`node dist/hook.js --mcs-hook <Event>`, 05 `runHookHandler` option `direct: true`). Matches 05's lint block `cli/src/hook.ts` + `cli/src/hook/**` |
 | `runtime/packages/cli/src/hook/{main,routes-reader,spool-writer,nudge,handler-log}.ts` | The handler modules (`main.ts` exports `runHook(argv: string[]): Promise<void>`); emitted as `dist/hook/*.js`, reached only through `dist/hook.js` |
-| `runtime/packages/cli/src/commands/hooks/{plan,apply,verify,uninstall,status,settings-io}.ts` | Installer, verifier, uninstaller (section 3) |
+| `runtime/packages/engine/src/hooks/installer/{plan,apply,verify,uninstall,status,settings-io}.ts` | Installer, verifier, uninstaller, status (section 3; N-11, C23). Called only by 01's `ops.hooks.{install,uninstall,verify,status}` (`engine/src/ops/hooks.ts`, INV-12); the engine never imports `cli/` (05 2.2) |
+| `runtime/packages/cli/src/commands/hooks/{install,uninstall,verify,status}.ts` | Option tables and rendering only (3.1 flags, 3.6 human text, `--json` envelope): parse, call `ops.hooks.*`, print. Written in 01 S14 (CLI owner, 3.1 header); the text formats of 3.1 and 3.6 are normative here |
 | `runtime/packages/engine/src/ingest/tail/{jsonl-tailer,file-identity,line-splitter}.ts` | Shared tail reader for spool and transcripts (section 5.3) |
 | `runtime/packages/engine/src/ingest/spool/{spool-drainer,segments,replay}.ts` | Spool consumption, retention and replay (section 2.7) |
 | `runtime/packages/engine/src/ingest/service.ts` | `createIngestService(ctx)` (section 4.10) |
@@ -133,6 +141,12 @@ Every key lives in a `runtime.json` section that 01 composes into `RuntimeFileSc
 | `hooks.spoolWhileStoppedHours` | int 0..720 | 72 | 2.6.2 |
 | `lifecycle.*` | see 7.8 | see 7.8 | 7 |
 | `board.items` | see 7.11 | `[]` | 7.11 |
+
+Ranges: the "Type, range" column is normative for these 02-owned keys (N-04); 01 1.6 copies it into the section schemas (registry
+C02 points this column to 01 1.6, which then holds the same values; `hooks.spoolWhileStoppedHours` minimum 0 = stop spooling at
+once, 2.6.2). The section modules `shared/src/config/runtime/{spool,import,ingest,health,hooks,lifecycle,board}.ts` are written by
+01 S1 from this table, 7.8 and 7.11 and registered in `R_KEY_CATALOGUE` with owner `'02'` (N-03); this design's slices list no such
+file.
 
 There is no `import.maxLineBytes` (I-32): the line cap is the constant `MAX_LINE_BYTES` (1.1); tests lower it only through the injected
 `readLines` option `maxLineBytes` (5.3). Test that proves it: 01's unit test parses an override file setting every key of this table
@@ -399,7 +413,7 @@ auto-detection inside the handler; misses instances whose `transcripts_dir` poin
 
 #### 2.6.1 `MCS_HOME`
 
-`resolveMcsHome(env)`: `env.MCS_HOME` if non-empty and absolute; else on win32 `env.LOCALAPPDATA + '/mcs'` (fallback
+`resolveMcsHome(env)` (`shared/src/protocol/routes.ts`, 1.1): `env.MCS_HOME` if non-empty and absolute; else on win32 `env.LOCALAPPDATA + '/mcs'` (fallback
 `os.homedir() + '/AppData/Local/mcs'`); else `(env.XDG_STATE_HOME || os.homedir() + '/.local/state') + '/mcs'`. Layout used by
 this design: `routes/`, `logs/hook-handler.jsonl`, `hooks/installs.json`, `backups/settings/`. (The workspace
 designer owns the rest of `MCS_HOME`, including the mutex fallback `locks/`; see dependencies.)
@@ -485,11 +499,12 @@ Route writers (`engine/src/ingest/routes-file.ts`, function `writeRouteFile(inst
   3. Without `--yes` the CLI prints the plan (`<segment> <bytes>` lines and the total) and exits 0 (dry run, 01 6.2).
   4. Instance stopped: the CLI opens the DB in `maintenance` mode (03 4.5) and calls `applySpoolReplay`, which runs ONE
      `withWriteTx` that sets `offset_bytes = 0, partial_bytes = 0, sealed = 0, lines = 0` for every planned segment (rows are
-     created for segments without a cursor). Instance running: the CLI sends the control operation `ingest.replay {from}` (01 control
-     channel, ADR 0005); the server calls the same `applySpoolReplay` from the writer queue (so it never interleaves with a drain
-     transaction) and then triggers a drain.
-  5. Audit action `ingest-replay` (01 7.2 catalogue): Summary `spool replay from <segment|first>: <n> segments, <bytes> bytes`,
-     Files changed `data/monitor.db`, Validation `cursors reset`, Outcome `applied`.
+     created for segments without a cursor); 01 6.4 calls `planSpoolReplay` then `applySpoolReplay` (C04). Instance running: the
+     CLI sends the control operation `ingest-replay` with field `fromSegment` (01 4.3, ADR 0005; reply `{segments}`); the server's
+     `runtime.ingestReplay(fromSegment)` calls `IngestService.replay(fromSegment)` (4.10), which runs the same `applySpoolReplay`
+     from the writer queue (so it never interleaves with a drain transaction) and then triggers a drain. Both paths map
+     `segmentsReset` to the reply and output field `segments` (I-29, C03, C04).
+  5. Audit action `ingest-replay` with 01 7.2's template verbatim (no wording of its own here; C05).
   6. Dedupe D-1 (`event_uid`) makes the re-drain a no-op for already ingested lines; only lines never committed add rows.
   Tests: T-PL-03 (no new rows after replay of 3 segments), T-PL-11 (dry run changes nothing; `--from` unknown -> `NOT_FOUND`;
   running instance path goes through the writer queue: a drain and a replay submitted together never run in one transaction).
@@ -565,7 +580,7 @@ All spawn the real built handler through the stub with `MCS_HOME` in a temp dir;
 | T-HK-03 | Envelope shape and privacy | Each event fixture puts sentinel strings `SENTINEL_DROP_<field>` into every dropped field: the spool line passes `HookEnvelopeV1Schema`, is <= 16 KiB, and contains no sentinel |
 | T-HK-04 | Redaction | Table test of R1-R7 (at least 3 inputs each incl. a non-match) on `redact()`; plus a Bash `tool_input.command` with a bearer token produces a redacted `tool_summary` and flag `redacted` |
 | T-HK-05 | Routing | Unit (`matchRoutes`): backslash and drive-letter case variants, pinned session id, cwd fallback, disabled route, stopped route before and after `spoolUntil`, malformed `spoolDir`. Spawn test: two matching routes give two spool lines with the same `event_uid` and different `instance_id` |
-| T-HK-06 | Nudge bounded | Test server on 18000-18999: answering (1 request seen), port closed (wall < 400 ms), hanging (wall < 450 ms and request received), `state.instanceId` mismatch or `engine: "legacy"` (no request) |
+| T-HK-06 | Nudge bounded | Test server on `allocatePort(VITEST_PORTS)`: answering (1 request seen), port closed (wall < 400 ms), hanging (wall < 450 ms and request received), `state.instanceId` mismatch or `engine: "legacy"` (no request) |
 | T-HK-07 | Hard exit | stdin kept open: exit 0 within 1300 ms |
 | T-HK-08 | Caps | Prefilled segment of 64 MiB -> `minimal` envelope; 256 MiB (sparse file) -> no write + `SPOOL_FULL` in handler log |
 | T-HK-09 | Concurrency | 16 parallel handler runs on one route: 16 valid lines, 16 distinct `event_uid` |
@@ -582,6 +597,13 @@ All spawn the real built handler through the stub with `MCS_HOME` in a temp dir;
 ## 3. Hook installer, verifier, uninstaller
 
 ### 3.1 Commands (CLI designer owns parsing and help text; this section owns behavior)
+
+Each command is a thin CLI module (1.1) that calls 01's op, which calls this design's engine module (`engine/src/hooks/installer/`,
+N-11, C23): `hooks install` -> `ops.hooks.install` -> `planHooks` (3.4) + `applyHooks` (3.5); `hooks uninstall` ->
+`ops.hooks.uninstall` -> the same with op `uninstall`; `hooks verify` -> `ops.hooks.verify` -> `verifyHooks` (3.7); `hooks status`
+-> `ops.hooks.status` -> `hooksStatus`. 01 6.3 lists the same surface: `hooks install` with `--sync-tool-events`, `hooks status`
+(`--task` optional, `--json`, exit 0). Dry run is the default without `--yes` (01's `--dry-run` is accepted as an explicit spelling
+of the default).
 
 | Command | Default | Effect | Exit codes |
 |---|---|---|---|
@@ -671,7 +693,7 @@ replaced by one.
 ### 3.5 Apply (`--yes`): atomic write, validation, backup, concurrency
 
 ```
- 1. mutex = await acquireMutex(mutexName('settings', normalizePath(settingsPath)), { timeoutMs: 10000 })   (01 `ProcessMutex`,
+ 1. mutex = await acquireMutex(mutexName('settings', path.resolve(settingsPath)), { timeoutMs: 10000 })   (C48; 01 `ProcessMutex`,
     ADR 0005: released by the OS when the holder dies, so there is no stale-lock rule); timeout -> HOOKS_FAILED reason LOCKED (exit 1).
     01's `mutexName` kind union gains `'settings'` (owned by 01).
  2. bytes0, stat0 = read(settingsPath) (ENOENT -> null); h0 = sha256(bytes0)
@@ -707,14 +729,16 @@ of the `hooks` key only; last line `dry run: nothing was written; re-run with --
 
 ### 3.7 Verification without touching real settings or starting Claude Code
 
-`mcs hooks verify` returns `{check, ok, detail}[]` (doctor style). Checks in order:
+`mcs hooks verify` returns `{check, ok, detail}[]` (doctor style). V4 and V6 spawn through 06's `execFileText` with kind `node`
+(engine modules may not import `node:child_process`, 01 T-LC-16); V6 needs stdin, which `ChildSpec` lacks (request to 06 3.6,
+section 12 X-3). Checks in order:
 
 | # | Check | Pass condition |
 |---|---|---|
 | V1 | settings file parses | 3.4 steps 1-3 succeed |
 | V2 | entries complete | each of the 21 events has exactly one `isOurs` handler; none for other events |
 | V3 | paths current | `command` exists; `args[1]` (stub) exists; every entry uses the same `hookEntryPath` as this skill |
-| V4 | handler version | `spawnSync(command, [hookEntryPath, '--version'])` prints `HANDLER_VERSION` equal to the runtime version, exit 0, < 2 s |
+| V4 | handler version | `execFileText({kind: 'node', file: command, args: [hookEntryPath, '--version'], timeoutMs: 2000, ...})` prints `HANDLER_VERSION` equal to the runtime version, exit 0, < 2 s |
 | V5 | route file | `$MCS_HOME/routes/<instanceId>.json` exists, parses, `transcriptsDirs` contains the instance's resolved dir |
 | V6 | synthetic probe | spawn EXACTLY `command args...` of the installed `Notification` entry with stdin = probe payload (below): exit 0, stdout and stderr empty, wall < 1500 ms; then the current spool segment contains a line with the probe `session_id` (scan the last 64 KiB) |
 | V7 | server round trip (only if running; else `ok: null`) | `GET /api/v3/ingest/probes/:probeSessionId` (03 route `ingestProbe`, I-37) returns `200 {receivedAt, committedAt}` within 3 s (poll every 100 ms; `404 probe_not_found` = not yet committed); detail = commit latency `committedAt - receivedAt` |
@@ -740,10 +764,10 @@ temp `MCS_HOME` and `--settings-file` in temp dirs; step 4 of 3.5 refuses real p
 | T-IN-02 | Idempotent | install twice -> second plan `changed: false` |
 | T-IN-03 | Clean uninstall | for every fixture of T-IN-01 that is valid: `uninstall(install(x))` deep-equals `x` |
 | T-IN-04 | Ownership | entries without the marker are never removed, including a user script named `hook.js` |
-| T-IN-05 | Atomic apply | fault injection (`settings-io.ts` seams): crash after tmp write leaves the original intact; concurrent modification between read and rename -> retried, then `SETTINGS_CHANGED_CONCURRENTLY`; rename EPERM x3 then success |
+| T-IN-05 | Atomic apply | fault injection (`engine/src/hooks/installer/settings-io.ts` seams): crash after tmp write leaves the original intact; concurrent modification between read and rename -> retried, then `SETTINGS_CHANGED_CONCURRENTLY`; rename EPERM x3 then success |
 | T-IN-06 | Backup | apply writes a backup equal to the original bytes; prune keeps 20 |
 | T-IN-07 | Test guard | `MCS_TEST=1` + real user path + `--yes` -> `REAL_SETTINGS_IN_TEST`, file untouched (path computed from a temp `CLAUDE_CONFIG_DIR`, asserted equal to the guarded path) |
-| T-IN-08 | Verify | in a temp env: V1-V6 ok after install; V3 fails after moving the stub; V6 fails with a handler that prints; V7 with an in-process test server on 18000-18999 |
+| T-IN-08 | Verify | in a temp env: V1-V6 ok after install; V3 fails after moving the stub; V6 fails with a handler that prints; V7 with an in-process test server on `allocatePort(VITEST_PORTS)` |
 | T-IN-09 | Dry run writes nothing | without `--yes`: settings, manifest, backups, audit unchanged (hash before/after) |
 | T-IN-10 | CLI contract | every `--json` output of T-IN-01..09 is one `mcs.cli/1` envelope (schema-validated) with the 3.1 `data` shape; failures carry `HOOKS_FAILED` + `details.reason`; the audit entry text equals 01 7.2's `hooks-install` template for a fixture plan (2 added, 1 replaced, 0 removed); two concurrent `--yes` runs on one settings file serialize through the mutex (second waits, both succeed, final file valid) |
 
@@ -762,7 +786,7 @@ delivery and a transcript record that describe the same logical event share a na
 |---|---|---|---|---|
 | `event` (03 `events`) | one of: `event_uid` (hook rows), `natural_key` (4.1.1), `record_uuid` (= `entry_key`: record `uuid`, else `f<file_id>:<byte_offset>`); at least one is set, each UNIQUE | `session_id`, `agent_id`, `kind` (stored kind, 4.1.2), `entry_kind` (`prompt`, `say`, `think`, `tool`, `result`, `system`, `attachment`; transcript rows), `severity` (4.1.2), `sources` (bits: hook 1, transcript 2, monitor 4), `ts` + `ts_rank` + `ts_tie` (= `Stamp`, 4.3), `ts_source` (`hook_received` for hook rows, `record` for transcript rows, `derived` for monitor rows), `received_at`, hook columns (`hook_event` = envelope `event`, `content_hash`, `spool_segment`, `spool_offset`, `flags`, `detail` = sanitized envelope `data`, <= 16 KiB), transcript columns (`file_id`, `byte_offset`, `byte_length`, `line_no`, `record_type`, `subtype`, `message_id`, `text_len`, `summary` <= 160 cp redacted), shared ids (`prompt_id`, `tool_use_id`, `tool_name`) | never holds dropped fields (2.4) or a body (5.7); a D-2/D-3 hook duplicate (4.4) is NOT inserted (counter only) | `EventsRepo` insert of 03 3.6: `ON CONFLICT(event_uid)` and `ON CONFLICT(record_uuid)` do nothing; `ON CONFLICT(natural_key)` merges (`sources` OR, `tool.failure` wins, `severity` max, first non-null ids and transcript reference, record timestamp preferred); a `record_uuid` conflict from another file inserts an `entry_occurrence` instead |
 | `session` | (`instance_id`, `session_id`) | `project_dir`, `transcript_file_id`, `label`, `matched`, `rule_index`, `pinned`, `title_ai`, `title_custom`, `entrypoint`, `version`, `git_branch`, `cwd_latest`, `first_seen_at`, `last_activity_at`, `claude_pid`, `continued_in`, `copied_from`, `hook_coverage`, `facts_json`, lifecycle view columns (7.1), `next_check_at` | `session_id` matches `SID_RE`; one row per id; `last_activity_at` only from activity facts (bookkeeping never) | upsert; facts merged with `mergeFacts` (7.2); view replaced when `derive` changes it |
-| `agent` | (`instance_id`, `session_id`, `agent_id`) | `kind` (`subagent`, `workflow_agent`, `internal`), `agent_type`, `label`, `model`, `request_shape`, `spawn_tool_use_id`, `workflow_run_id`, `transcript_file_id`, `facts_json`, lifecycle view, `next_check_at` | `agent_id` matches `AGENT_RE`; parent session exists (FK) | upsert + facts merge |
+| `agent` | (`instance_id`, `session_id`, `agent_id`) | `kind` (`main`, `subagent`, `workflow_agent`, `teammate`, `internal`; the `main` row per session is created by `SessionsRepo.ensure`, `teammate` is reserved; C56), `agent_type`, `label`, `model`, `request_shape`, `spawn_tool_use_id`, `workflow_run_id`, `transcript_file_id`, `facts_json`, lifecycle view, `next_check_at` | `agent_id` matches `AGENT_RE`; parent session exists (FK) | upsert + facts merge |
 | `workflow_run` | (`instance_id`, `session_id`, `run_id`) | `name`, `launch_tool_use_id`, `status_file`, `agent_count`, `started_count`, `result_count`, `failed_count`, `facts_json`, lifecycle view | `run_id` matches `^wf_[A-Za-z0-9_-]{1,64}$` | upsert + facts merge |
 | `turn` | (`instance_id`, `session_id`, `prompt_id`) | `started_at`, `ended_at`, `end_kind` (`stop`, `stop_failure`, `end_turn`, `interrupted`, null), `origin`, `tool_count` | `started_at <= ended_at` when both set | upsert: `started_at` = min, `ended_at` = max, `end_kind` LWW(stamp) |
 | `tool_call` | (`instance_id`, `tool_use_id`) | `session_id`, `agent_id`, `prompt_id`, `name`, `summary` (<= 160 cp, redacted), `input_hash`, `started_at`, `ended_at` (only from PostToolUse/Failure, PermissionDenied, transcript `tool_result`), `batch_at` (PostToolBatch listing the call), `outcome` (`ok`, `error`, `denied`, `interrupted`, null), `exit_code`, `duration_ms`, `sources` (bit set: `hook_pre`=1, `hook_post`=2, `transcript_use`=4, `transcript_result`=8, `hook_batch`=16) | one row per call whatever the number of deliveries; open = `ended_at` and `batch_at` both null | upsert: `started_at` = min, `ended_at` = max, `batch_at` = max, `sources` = bitwise or, `outcome` by precedence `error > denied > interrupted > ok`, other columns first non-null. Display-only outcomes (never stored): `closed_by_batch` (no end, `batch_at` set: a denied call, HK:5) and `closed_by_turn_end` (no end, its turn ended) |
@@ -882,17 +906,21 @@ export type LogicalEvent =
 export type ToolOutcome = 'ok' | 'error' | 'denied' | 'interrupted';   // stored; 'closed_by_batch' / 'closed_by_turn_end' are display-only (4.1)
 ```
 
-Attempts evidence events (producer: 06 3.10.7 `PanelService.tickAttempts`, submitted through `IngestWriter` with
-`source: 'external'`; I-18):
-- `external.attempt`: `endedAt` = the attempt row's `ended_at` (the evidence time shown, `EvidenceItem.at`); `observedAt` = the
+Attempts evidence events (producer: 06 3.10.7 `PanelService.tickAttempts`, driven by 01 4.4a's 2 s clock timer, not by this
+design's scheduler; N-01, C57; I-18). 06 first commits its `AttemptsRepo` writes in its own `withWriteTx`, then, after that COMMIT,
+calls `writer.submit({source: 'external', items: [{kind: 'external', events, rows: []}], bytes: 0})`; the events commit in a later
+writer transaction (two transactions, never one). `submit` returning false means: keep the events and resubmit on `onDrain`. The
+`attempt` register is idempotent under resubmission (same stamp and `rowKey` -> no change, no publication), so 06 may resubmit
+freely; recovering a publication lost between its two commits is 06's (3.10.7).
+- `external.attempt`: `endedAt` = the attempt row's `ended_at` (the evidence time shown, `LifecycleEvidence.at`); `observedAt` = the
   `now` of the tick that published it (the register stamp, 7.3). Publication time, not `ended_at`, orders the register, because a
   config rebuild republishes OLD rows after a clear and they must win over the clear.
 - `external.attempt_cleared`: emitted for every session that had attempts evidence when a chain-log config rebuild deleted the rows
   (06 3.10.3 step 3), with `observedAt` = the tick's `now`, BEFORE that tick republishes any row. It retracts the evidence: the
   `attempt` register takes the value `null` (7.3) and rule S-1 no longer applies until a new `external.attempt` arrives.
 - Within one tick, `observedAt` is the same value for the clear and the republished rows; the stamp rank breaks the tie
-  (`attempt_cleared` rank 0 < `attempt` rank 1), so a republish in the same tick wins. 06 3.10.7 sets `observedAt` = tick `now` and
-  passes `endedAt` (alignment note for 06; 06 currently writes `observedAt: ended_at`).
+  (`attempt_cleared` rank 0 < `attempt` rank 1), so a republish in the same tick wins. 06 3.10.7 sets `observedAt` = `publishAt` (tick
+  `now`) and adds `endedAt: row.ended_at` (I-18, C41).
 
 Hook envelope mapping (`normalizeEnvelope`, stamp = `{at: received_at, rank: HOOK_EVENT_RANK[event], tie: event_uid}`):
 
@@ -1050,7 +1078,7 @@ These are `ingest_errors.code` values (uppercase, 03 `ingest_errors` CHECK); the
 ### 4.10 Service factories for the instance runtime (alignment with I-15)
 
 01 4.4 (slice S8) owns `InstanceContext` and `createInstanceRuntime(ctx)`; it calls the two factories below. This design reads only
-these `InstanceContext` fields: `instanceId`, `repoDir`, `workspaceDir` (requested addition to 01's type: the task workspace, for the spool and the route file), `config` (resolved, 1.2 keys), `clock` (`now(): number`),
+these `InstanceContext` fields (`engine/src/runtime/context.ts`): `instanceId`, `repoDir`, `instanceDir` (realpath of the task workspace: spool `<instanceDir>/data/spool/`, route file; C07), `config` (resolved, 1.2 keys), `clock` (`now(): number`),
 `db` (`InstanceDb`, writer mode `serve`), `queries`, `claudeHome`, `mcsHome`, `logger` (05 logger, allow-listed fields), `errors`
 (server error ring).
 
@@ -1061,12 +1089,13 @@ export interface IngestStats {
   spoolBytesBehind: number; transcriptBytesBehind: number; backfillRemainingBytes: number; filesTracked: number;
 }
 export interface IngestService {
-  readonly writer: IngestWriter;                       // shared with the sweeper and with 06's attempts tick (external events)
+  readonly writer: IngestWriter;                       // 01 4.4a passes it to createLifecycleSweeper(ctx, {writer}) and
+                                                       // createPanelService(ctx, {writer}); 06 submits after its own COMMIT (4.3)
   start(): Promise<void>;
   stop(deadlineMs: number): Promise<void>;
   untilIdle(o: { timeoutMs: number }): Promise<void>;  // createInstanceRuntime.ingestUntilIdle delegates here
   nudge(): void;                                        // POST /api/v3/ingest/nudge (2.8), coalesced (2.7)
-  replay(from: string | null): Promise<{ segmentsReset: number }>;   // control op ingest.replay (2.7)
+  replay(fromSegment: string | null): Promise<{ segmentsReset: number }>;   // control op ingest-replay {fromSegment} (2.7); 01 maps segmentsReset -> segments
   stats(): IngestStats;
 }
 export function createIngestService(ctx: InstanceContext): IngestService;
@@ -1088,11 +1117,13 @@ ingest service before the sweeper and stops them in reverse order.
 `untilIdle({timeoutMs})` resolves when, at one check: every spool segment cursor equals its file size minus partial bytes, every
 tracked transcript file has `bytes_behind == 0` and `backfill_remaining == 0` (or `skipped_backfill`), no discovery is pending, and
 the writer queue is empty with no transaction in progress. It polls every 50 ms; on timeout it rejects with
-`IngestIdleTimeoutError { pending: IngestStats }`. Used by 06 5.4 (parity harness) and by integration tests.
+`IngestIdleTimeoutError { pending: IngestStats }`. 01 4.4a `ingestUntilIdle` calls `untilIdle({timeoutMs: remaining})` and maps
+`IngestIdleTimeoutError` to `{idle: false, stats}` (I-15, C06); 06 5.4 (parity harness) asserts `.idle === true`; integration tests
+call the service directly.
 
 Tests that prove it: T-PL-13 (`createIngestService` on a temp workspace: `start` drains a pre-filled spool before resolving;
 `untilIdle` resolves after a 30 MB fixture import and rejects with `pending` on a file that keeps growing; `stop(500)` with a full
-queue returns within 600 ms and a restart ingests the remainder without duplicates), T-LC-54 (sweeper `stop` waits for a running
+queue returns within 600 ms and a restart ingests the remainder without duplicates), T-LF-54 (sweeper `stop` waits for a running
 tick; `tickNow` re-derives only rows past `next_check_at`).
 
 ## 5. Transcript importer
@@ -1156,10 +1187,10 @@ Computed from the head read (5.5), never by a second file pass:
 2. `firstUserText`: within line indexes 0..120, the first non-empty text block of a `user` record, boilerplate included.
 3. `realFirstPrompt = userTexts[0] ?? firstUserText ?? ''`.
 4. For each rule in order: `text = rule.scope === 'any' ? userTexts.join('\n') : realFirstPrompt`;
-   `re = compilePyRegex(rule.match, { dotAll: true })` (D5 translator; a compile error at runtime skips the rule, as the legacy
-   `re.error`); `m = re.exec(text)` (search semantics). On a match: `label = rule.label ?? rule.name ?? 'session'`; for
-   `i = 1..m.length-1`: replace ALL `{i}` with `m[i] ?? ''` (sequential, like Python `str.replace`); then replace all `{0}` with the
-   first 40 cp of `m[0]`. Result `(label, matched: true, ruleIndex)`.
+   `re = compilePyRegex(rule.match, 'session_rule')` (01 2.8; context `session_rule` = Python `re.search(..., re.S)`; a
+   `REGEX_UNSUPPORTED` throw at runtime skips the rule, as the legacy `re.error`); `m = re.exec(text)` (`PyMatch`, search
+   semantics). On a match: `label = applyLabelTemplate(rule.label ?? rule.name ?? 'session', m)` (01 2.8: sequential `{i}`, then
+   `{0}` = first 40 cp; C24). Result `(label, matched: true, ruleIndex)`.
 5. No match: `label = realFirstPrompt.trim()` with LF -> space, first 70 cp, or `'(no prompt)'`; `matched = false`.
 6. Pinned ids (`session_ids`) force `matched = true`.
 
@@ -1230,6 +1261,9 @@ ImportScheduler (engine/src/ingest/transcripts/scheduler.ts)
     await setImmediate()                                   // yield to HTTP, SSE, timers
     P3 runs only while its token bucket allows import.backfillShare (0.25) of wall time per second
 ```
+
+The scheduler drives no panel work: 06's `tickAttempts` runs on 01 4.4a's 2 s timer and reaches this design only through
+`IngestWriter.submit` (4.3; N-01).
 
 Guarantee: no synchronous section longer than `sliceMs` plus the parse time of one line (a 64 MiB line is the only exception).
 Health exports `eventLoopDelayP99Ms` (`monitorEventLoopDelay`); if production shows p99 > 50 ms, parsing moves to a
@@ -1531,14 +1565,14 @@ export type EvidenceSource = 'hook' | 'transcript' | 'registry' | 'job' | 'attem
 export type EvidenceFact = 'session_end' | 'session_start' | 'stop' | 'stop_failure' | 'end_turn' | 'interrupt' | 'prompt' | 'tool_open' | 'permission_request'
   | 'notification' | 'registry_status' | 'job_state' | 'attempt_row' | 'pid_dead' | 'pid_alive' | 'file_written' | 'child_active' | 'background_pending'
   | 'agent_notification' | 'agent_stop' | 'agent_final' | 'agent_link' | 'workflow_status' | 'quiet' | 'no_records' | 'api_error' | 'activity_after_end' | 'parent_ended';
-export interface EvidenceItem { source: EvidenceSource; fact: EvidenceFact; at: number | null; count?: number;
+export interface LifecycleEvidence { source: EvidenceSource; fact: EvidenceFact; at: number | null; count?: number;   // engine form (C18)
   value?: string /* enum-like, <= 64 chars, never content; exception: attempts:attempt_row carries 06's chain-log evidence text, <= 160 cp */ }
 export interface LifecycleView {
   state: LifecycleState; presence: Presence; waitReason: WaitReason | null; staleKind: StaleKind | null;
   endReason: string | null;                         // SessionEnd reason, job state, attempt status
   turnOutcome: 'ok' | 'error' | 'interrupted' | null;
   basis: Basis; confidence: Confidence; ruleId: string;   // rule that decided, e.g. 'S-7c'
-  evidence: EvidenceItem[];                         // ordered, <= 8; words are rendered at read time ("quiet 12m")
+  evidence: LifecycleEvidence[];                    // ordered, <= 8; words are rendered at read time ("quiet 12m")
   since: number | null;                             // at of the deciding fact
   evaluatedAt: number; nextCheckAt: number | null;
 }
@@ -1551,8 +1585,9 @@ Exports used by the data design (03 3.6, 5.5, 9.3) and the CLI (I-33):
 ```ts
 // engine/src/lifecycle/rules.ts
 export function fmtAge(ms: number): string;                                  // 7.1.1
-export function renderEvidence(item: EvidenceItem, now: number): string;     // 7.1.1 template table; pure, English, never content
-export function toApiEvidence(item: EvidenceItem, now: number): ApiEvidenceItem;   // { kind: `${source}:${fact}`, at: iso(at) | null, text: renderEvidence(item, now) } (03 5.5 EvidenceItem)
+export function renderEvidence(item: LifecycleEvidence, now: number): string;     // 7.1.1 template table; pure, English, never content
+export function toApiEvidence(item: LifecycleEvidence, now: number): ApiEvidenceItem;   // { kind: `${source}:${fact}`, at: iso(at) | null, text: renderEvidence(item, now) }
+// ApiEvidenceItem = import type { EvidenceItem as ApiEvidenceItem } from '@mcs/shared' (sh/api/entities.ts, 03 5.5; C18)
 export function viewChanged(a: LifecycleView | null, b: LifecycleView): boolean;   // 7.8 field list; a === null -> true
 // engine/src/lifecycle/legacy.ts
 export function toLegacy(view: Pick<LifecycleView, 'state'>): LegacyState;  // 7.9 item 2 mapping
@@ -1878,7 +1913,7 @@ time from `at` values (`renderEvidence`, 7.1.1), so time passing alone never cre
    `transcriptMtime`, `registry` = `registry` restricted to `busy|idle` with live pid, `last_stop` = `legacy.lastStop`,
    `pending`/`oldest_pending_ts` = `tool_call` rows with the `transcript_use` bit and without `transcript_result`, agent mtimes,
    `active_seconds`, `pending_tool_grace_seconds`. Agents add the override `IDLE` + end stop -> `COMPLETED` with the legacy text.
-   This path is the parity oracle target (T-LC-09).
+   This path is the parity oracle target (T-LF-51).
 2. Sessions with hook evidence, through the exported `toLegacy(view)` (7.1): `running | working | waiting_agent | waiting_tool` -> `RUNNING`; `waiting_input | turn_ended` -> `IDLE`;
    `completed` -> `COMPLETED`; `failed` -> `FAILED`; `stale | unknown` -> `UNKNOWN`. Evidence = the rendered new evidence;
    source `hook` (a new source value; legacy readers display it as text).
@@ -1938,22 +1973,25 @@ with random noise (duplicates, delays up to 60 s, drops of non-terminal events),
 | P7 | `nextCheckAt` soundness: `derive(t)` equals `derive(evaluatedAt)` for 50 sampled `t` in `[evaluatedAt, nextCheckAt)` |
 | P8 | Subagent isolation: adding agent stop/notification/journal events never changes a session to `completed`/`failed` |
 | P9 | Stop is not SessionEnd: folds with Stop and without SessionEnd/job/attempt never yield `completed` |
-| T-LC-01..48 | every row of 7.7 (47 rows: N1-N16, F1-F6, D1-D5, M1-M7, L1-L4, O1-O6, C1-C3; both delivery orders); T-LC-48 asserts that every row ran in both orders |
-| T-LC-49 | agent table A-1..A-10 and workflow table W-1..W-7 rows |
-| T-LC-50 | `viewChanged` + sweeper: 1,000 sessions, only rows past `next_check_at` are evaluated; an unchanged view publishes nothing |
-| T-LC-51 | legacy parity: `classifyLegacy` equals the Python `classify_state` golden outputs (CS:C.1 cases + `tests/test_state_config_tasks.py` StateTest inputs + generated boundary cases at `age = active_seconds +- 1`, `waited = grace +- 1`, `age = 59/60/61 min`) |
-| T-LC-52 | work items: fixtures for W-DECL, W-ATT (retry: attempt 1 failed, attempt 2 running -> `working`), W-LBL, unmatched excluded |
-| T-LC-53 | external: registry `.key` never opened (fs spy), unknown session ids ignored, dead pid via a spawned-and-exited child process |
-| T-LC-55 | attempts retraction: rows C1-C3 of 7.7 plus the property "clear then republish of the same evidence in one tick leaves the view unchanged and publishes no change" |
-| T-LC-56 | `renderEvidence` golden table of 7.1.1 (`rules.test.ts`), `toLegacy` table of 7.9 item 2, `viewChanged` field list (one case per field) |
-| T-LC-57 | completion evidence: the table of 7.13 (`completion.test.ts`) |
+| T-LF-01..48 | every row of 7.7 (47 rows: N1-N16, F1-F6, D1-D5, M1-M7, L1-L4, O1-O6, C1-C3; both delivery orders); T-LF-48 asserts that every row ran in both orders |
+| T-LF-49 | agent table A-1..A-10 and workflow table W-1..W-7 rows |
+| T-LF-50 | `viewChanged` + sweeper: 1,000 sessions, only rows past `next_check_at` are evaluated; an unchanged view publishes nothing |
+| T-LF-51 | legacy parity: `classifyLegacy` equals the Python `classify_state` golden outputs (CS:C.1 cases + `tests/test_state_config_tasks.py` StateTest inputs + generated boundary cases at `age = active_seconds +- 1`, `waited = grace +- 1`, `age = 59/60/61 min`) |
+| T-LF-52 | work items: fixtures for W-DECL, W-ATT (retry: attempt 1 failed, attempt 2 running -> `working`), W-LBL, unmatched excluded |
+| T-LF-53 | external: registry `.key` never opened (fs spy), unknown session ids ignored, dead pid via a spawned-and-exited child process |
+| T-LF-55 | attempts retraction: rows C1-C3 of 7.7 plus the property "clear then republish of the same evidence in one tick leaves the view unchanged and publishes no change" |
+| T-LF-56 | `renderEvidence` golden table of 7.1.1 (`rules.test.ts`), `toLegacy` table of 7.9 item 2, `viewChanged` field list (one case per field) |
+| T-LF-57 | completion evidence: the table of 7.13 (`completion.test.ts`) |
 
 
 ### 7.13 Completion evidence (`completion.ts`; brief 8.9 "verifying task completion evidence", I-08)
 
 Consumers: 01 `verify-completion` through `InstanceReader.explainCompletion(t)`; 03 adds `explainCompletion(ctx, t)` to
 `EngineQueries` (12.1), implemented by calling the function below with a `CompletionLookup` built over its repositories; `ApiReader`
-reaches it through a 03 route and `DbReader` in process, so both return the same JSON.
+reaches it through a 03 route and `DbReader` in process, so both return the same JSON. There is no `null` path: the function
+throws `CompletionTargetError`; 03 maps `target_invalid` -> 400 `validation_failed` and `target_not_found` -> 404
+`completion_target_not_found`, 01 maps them to `USAGE` (exit 2) and `NOT_FOUND` (exit 1). 03's `CompletionEvidenceSchema` carries
+every field below, including `sessionId: string | null`, `resolvedBy` and `candidates` (I-08, C16).
 
 ```ts
 // engine/src/lifecycle/completion.ts
@@ -1982,8 +2020,8 @@ export function explainCompletion(lookup: CompletionLookup, target: CompletionTa
 ```
 
 Algorithm (numbered, normative):
-1. Validate: `sessionId` must match `SID_RE`; `label` 1..200 chars; `attemptPart` 0..128 chars (the empty part is legal: legacy
-   attempts without a `part` group). Otherwise throw `target_invalid` (01 maps it to `USAGE`, exit 2).
+1. Validate: `sessionId` must match `SID_RE`; `label` 1..200 chars; `attemptPart` 0..512 chars (= the `attempt_runs.part` cap of 03 3.5
+   and 03 6.1's route bound; the empty part is legal: legacy attempts without a `part` group; C17). Otherwise throw `target_invalid` (01 maps it to `USAGE`, exit 2).
 2. `{sessionId}`: `c = lookup.sessionById(id)`; null -> throw `target_not_found` (01: `NOT_FOUND`, exit 1). Go to step 5 with `c`,
    `resolvedBy 'session_id'`, `candidates 1`.
 3. `{label}`: `cs = lookup.sessionsByLabel(label)`; empty -> `target_not_found`. Choose the most recently started candidate:
@@ -2152,7 +2190,7 @@ Per session, the API exposes freshness from the same data: `lastActivityAt`, `la
 | Hook payloads | `engine/test/fixtures/hooks.ts` | one builder per installed event with the documented keys (HK:2.2) and the observed key sets of the lab (sanitized: key names and value types only, placeholder values): e.g. SessionStart `{session_id, transcript_path, cwd, hook_event_name, source}`; PostToolUse(Bash) `tool_response {stdout, stderr, interrupted, isImage, noOutputExpected}`; PostToolUse(Agent) `tool_response {status, prompt, agentId, agentType, harnessNoteCount, harnessTailCount, harnessSectionHash, content, resolvedModel, totalDurationMs, totalTokens, totalToolUseCount, usage}`; SubagentStop `{stop_hook_active, agent_id (17 hex), agent_type, agent_transcript_path, last_assistant_message, background_tasks, session_crons}` |
 | Hook sequences | `engine/test/fixtures/hook-sequences.ts` | the observed orders of lab runs 1-4 (HK:8) with relative ms: allowed Bash, foreground subagent, denied call (PreToolUse, PermissionRequest, PostToolBatch only), failing Bash (PostToolUseFailure); plus docs-only events (StopFailure, Notification, PreCompact/PostCompact, TaskCreated/TaskCompleted) |
 | Spool segments | `engine/test/fixtures/spool.ts` | valid envelopes, malformed cases of 4.8, torn tail, two instances, old segments for downtime. Valid lines are produced ONLY by the real handler (05 testkit `runHookHandler(payload, {mcsHome})` over 05 `hookPayload` builders, the rule of 06 6.2 and I-11); malformed cases are appended afterwards as raw text; segment names come from `spoolSegmentName()` |
-| Settings files | `cli/test/fixtures/settings/*.json` | the T-IN-01 matrix |
+| Settings files | `engine/test/fixtures/settings/*.json` | the T-IN-01 matrix |
 | External | `engine/test/fixtures/external.ts` | registry files (busy, idle, waiting + waitingFor, bg kind, dead pid, a `.key` decoy), job `state.json` (working, done) |
 | Legacy parity | legacy `tests/fixtures/make.py` output + this design's worked example converted | golden outputs captured from the Python engine by the cross-engine procedure (owned by the parity designer) |
 
@@ -2172,17 +2210,17 @@ Per session, the API exposes freshness from the same data: `lastActivityAt`, `la
 | Discovery, classification parity (5) | T-TR-12..14 |
 | Persisted vs referenced (12) | T-TR-16, 17 |
 | Token accounting, missing vs zero, lower bounds, parity (8.7) | T-TK-01..09 |
-| Lifecycle rules (6) | T-LC-01..57, P1-P9 |
-| Completion evidence (8.9) | T-LC-57 (CE-1..17), 01 T-CLI-08 |
+| Lifecycle rules (6) | T-LF-01..57, P1-P9 |
+| Completion evidence (8.9) | T-LF-57 (CE-1..17), 01 T-CLI-08 |
 | Spool names keep the legacy audit green (13, fallback) | T-HK-16 |
 | CLI contract of hooks commands and replay (5) | T-IN-10, T-PL-11 |
-| Service lifecycle for the instance runtime | T-PL-13, T-LC-54 |
+| Service lifecycle for the instance runtime | T-PL-13, T-LF-54 |
 | Health and stale indicators (5, 8.8) | T-HE-01..07 |
 
 ### 9.3 E2E items of brief 14 that this domain feeds (the E2E designer owns the runner)
 
 4/5 "generate a test event / verify it appears": run the installed handler command with a synthetic payload (as `mcs hooks
-verify` V6) against a running test instance on a port in 18000-18999; expect the session in the API within 2 s. 8 "token
+verify` V6) against a running test instance on a port from 05's `allocatePort` (E2E range of 05 4.5); expect the session in the API within 2 s. 8 "token
 aggregates": import the worked-example fixture files into a temp `CLAUDE_CONFIG_DIR`; compare the API totals with 6.4.
 13/14 "simulate ingestion failure / UI shows degraded": make the DB read-only or remove the transcripts dir; expect
 `IngestHealth.status` `down`/`degraded` with the reason codes of 8.2. Optional real-provider E2E (`MCS_E2E_CLAUDE=1`): one
@@ -2190,7 +2228,7 @@ aggregates": import the worked-example fixture files into a temp `CLAUDE_CONFIG_
 
 ### 9.4 Rules for every test in this domain
 
-Temp dirs for `MCS_HOME`, `CLAUDE_CONFIG_DIR`, workspaces and settings; ports 18000-18999 only, closed in `afterEach`; no real
+Temp dirs for `MCS_HOME`, `CLAUDE_CONFIG_DIR`, workspaces and settings; ports only from 05 4.4 `allocatePort(VITEST_PORTS)` (18000-18499, registry N13), closed in `afterEach`; no real
 settings path is ever written (guard T-IN-07); performance assertions scale with `MCS_PERF_FACTOR`; seeds printed for every
 randomized test; no test reads real transcripts.
 
@@ -2202,7 +2240,8 @@ randomized test; no test reads real transcripts.
 | `shared/src/protocol/routes.ts` | `shared/src/protocol/routes.test.ts` | T-HK-05 unit part |
 | `shared/src/protocol/hook-envelope.ts` | `shared/src/protocol/hook-envelope.test.ts` | T-HK-16 unit part, id regexes |
 | `cli/src/hook.ts`, `cli/src/hook/**` | `cli/test/hook.int.test.ts` (spawns) | T-HK-01..03, 05..17 |
-| `cli/src/commands/hooks/**` | `cli/src/commands/hooks/plan.test.ts`, `cli/test/hooks.int.test.ts` | T-IN-01..10 |
+| `engine/src/hooks/installer/**` | `engine/src/hooks/installer/{plan,apply,verify}.test.ts`, `engine/test/hooks-installer.int.test.ts` | T-IN-01..09 |
+| `cli/src/commands/hooks/**` (rendering) | `cli/test/hooks.int.test.ts` (spawns `mcs hooks *`, which goes through 01 `ops.hooks.*`) | T-IN-10 |
 | `engine/src/ingest/tail/jsonl-tailer.ts` | `engine/src/ingest/tail/jsonl-tailer.test.ts` | T-TR-01..08, 11 |
 | `engine/src/ingest/hooks/normalize-envelope.ts` | `engine/src/ingest/hooks/normalize-envelope.test.ts` | 4.3 table, stored kinds |
 | `engine/src/ingest/transcripts/normalize-record.ts` | `engine/src/ingest/transcripts/normalize-record.test.ts` | T-TR-15, 16, 19, 5.6 stored kinds |
@@ -2210,7 +2249,7 @@ randomized test; no test reads real transcripts.
 | `engine/src/ingest/{writer,service}.ts`, `spool/**` | `engine/test/hook-to-db.int.test.ts`, `engine/test/ingest-service.int.test.ts` | T-PL-01..03, 05..13 |
 | `engine/src/ingest/transcripts/{discovery,classify,importer,entry-text}.ts` | same names `*.test.ts` + `engine/test/import-tokens.int.test.ts` | T-TR-09, 10, 12..14, 17, 18 |
 | `engine/src/tokens/aggregate.ts` (+ `accumulate`, `legacy-projection`) | `engine/src/tokens/aggregate.test.ts`, `worked-example.test.ts`, `legacy-projection.test.ts` | T-TK-01..09 |
-| `engine/src/lifecycle/**` | `transitions.test.ts`, `properties.test.ts`, `rules.test.ts`, `legacy.test.ts`, `completion.test.ts`, `work-items.test.ts`, `sweeper.test.ts` | T-LC-01..57, P1-P9 |
+| `engine/src/lifecycle/**` | `transitions.test.ts`, `properties.test.ts`, `rules.test.ts`, `legacy.test.ts`, `completion.test.ts`, `work-items.test.ts`, `sweeper.test.ts` | T-LF-01..57, P1-P9 |
 | `engine/src/health/**` | `engine/src/health/ingest-health.test.ts` | T-HE-01..07 |
 
 ## 10. CHALLENGES
@@ -2295,8 +2334,8 @@ reconciliation can check them; this design is complete either way because each i
 | Id | Owner | Change requested |
 |---|---|---|
 | X-1 | 03 | `spool_cursors.segment` CHECK `GLOB '*.ndjson'` (I-02); `MAX_LINE_BYTES` moves from `shared/src/db-constants.ts` to `shared/src/protocol/limits.ts` (I-32); remove the "assumed" label of A-2 and freeze `0001` (I-03); `EventsRepo.findByNaturalKey`, `deleteTranscriptOnly`, `detachTranscript` (4.4, 5.3); `ChangeSink.record('event', ...)` maps to `event/append` (4.6); `explainCompletion(ctx, t)` in `EngineQueries` with a route for `ApiReader` (7.13, I-08); route `ingestProbe` with `probe_not_found` (I-37) |
-| X-2 | 01 | `mutexName` kind `'settings'` (3.5); `ingest replay` command, control op `ingest.replay` and audit action `ingest-replay` (2.7, I-29); `InstanceContext.workspaceDir` (4.10); sections `spool`, `import`, `health` with the 1.2 keys and the scaled derived defaults (I-01); the 1.3 variables in 2.10 (I-27); 1.1 / C-1 spool extension (I-02); `HOOKS_FAILED` `details.reason` values (3.1) |
-| X-3 | 06 | `external.attempt` carries `endedAt` and `observedAt` = tick `now` (4.3, I-18); spool extension in 7.1 (I-02); 4's lint rule exempts `shared/src/protocol/**` (I-34) |
+| X-2 | 01 | `mutexName` kind `'settings'` keyed by `path.resolve(settingsPath)` (3.5, C48); `ingest replay` calling `planSpoolReplay` + `applySpoolReplay` (stopped) or control op `ingest-replay {fromSegment}` -> `IngestService.replay` (running), `segmentsReset` -> `segments`, audit action `ingest-replay` (2.7, I-29, C03-C05); 6.3 `hooks install --sync-tool-events`, `hooks status` -> `ops.hooks.status`, name `planHooks`, ops calling `engine/src/hooks/installer/*` (3.1, N-11, C23); 4.4a `ingestUntilIdle` and sweeper shapes (4.10, C06); 1.6 ranges of 1.2 (N-04, C02); sections `spool`, `import`, `health` with the 1.2 keys and the scaled derived defaults (I-01); the 1.3 variables in 2.10 (I-27); 1.1 / C-1 spool extension (I-02); `HOOKS_FAILED` `details.reason` values (3.1) |
+| X-3 | 06 | `external.attempt` carries `endedAt` and `observedAt` = tick `now` (4.3, I-18); attempts rows commit first, events submitted to `IngestWriter` after COMMIT (4.3, N-01); `ChildSpec` gains an optional capped `stdin` string for `hooks verify` V6 (3.7); spool extension in 7.1 (I-02); 4's lint rule exempts `shared/src/protocol/**` (I-34) |
 | X-4 | 05 | spool extension in 1.2 (I-02); `ErrorCode` names in 5.3/5.6 (I-04); test paths of 4.2 = 9.5 (I-22); `RUN_ID_RE` imported from `shared/src/protocol/hook-envelope.ts` (I-26) |
 | X-5 | 04 | 11.4/11.5 use `runHookHandler` and the envelope field `event` (I-11); error names of 13 (I-04) |
 | X-6 | lead | foundations D3 text `data/spool/*.ndjson` (C6) |
@@ -2310,11 +2349,11 @@ reconciliation can check them; this design is complete either way because each i
 | I-3 | JsonlTailer | `engine/src/ingest/tail/*` + tests | I-1 | T-TR-01..08, 11 green |
 | I-5 | Normalizers (envelope and transcript record) with stored kinds, severity and natural keys, `EventRowWrite`, task-notification parser | `engine/src/ingest/hooks/normalize-envelope.ts`, `engine/src/ingest/event-row.ts`, `engine/src/ingest/transcripts/{normalize-record,task-notification}.ts` + tests | I-1, 03 S3 (`EVENT_KINDS` in `shared/src/api/entities.ts`) | T-TR-15, 16, 19; `normalize-envelope.test.ts` and `normalize-record.test.ts` (4.3 and 5.6 stored-kind columns) green |
 | I-6 | Token accounting + legacy projection | `engine/src/tokens/*` | I-5 | T-TK-01..08 green |
-| I-7 | Lifecycle facts, merges (incl. `external.attempt_cleared`), derive tables, `renderEvidence` / `toApiEvidence` / `viewChanged` (`rules.ts`), `toLegacy` (`legacy.ts`), nextCheckAt, work items | `engine/src/lifecycle/{facts,merge,derive-*,rules,legacy,next-check,work-items}.ts` + tests | I-5 | P1-P9, T-LC-01..52, 55, 56 green (in-memory model, no DB) |
-| I-7b | Completion evidence | `engine/src/lifecycle/completion.ts`, `completion.test.ts` | I-7 | T-LC-57 CE-1..16 green with an in-memory `CompletionLookup`; CE-17 and 01 T-CLI-08 run when 03 S5/S12 and 01 S13b land |
-| I-4 | Hook path to the DB: writer (`withWriteTx`), dedupe, error codes, spool drainer, segments, retention, replay engine, nudge handling, route-file writer | `engine/src/ingest/{writer,dedupe,errors}.ts`, `engine/src/ingest/spool/{spool-drainer,segments,replay}.ts`, `engine/src/ingest/routes-file.ts` + tests | I-1, I-3, I-5, I-7, 03 S1/S2 (DB, repositories, `withWriteTx`, `createChangeSink`), 03 S4 (nudge route), 01 S8 (+I-15 instance runtime) | T-PL-02..12, T-HK-06b green (the `mcs ingest replay` command itself is 01 S13b) |
-| I-8 | Transcript side and services: scheduler, discovery, classification, importer, entry text, `createIngestService`, `createLifecycleSweeper`, external pollers | `engine/src/ingest/service.ts`, `engine/src/ingest/transcripts/{discovery,classify,importer,scheduler,entry-text}.ts`, `engine/src/lifecycle/sweeper.ts`, `engine/src/external/*`, `engine/src/ingest/config-keys.test.ts` | I-4, I-6, 01 S8 (`InstanceContext`), D5 translator (01) | T-PL-01, 13, T-TR-09, 10, 12..14, 17, 18, T-LC-50, 53, 54, T-TK-09, config-keys test green |
-| I-9 | Installer, verifier, uninstaller, status (CLI envelope, 01 mutex and audit template) | `cli/src/commands/hooks/*`, `cli/test/hooks.int.test.ts` | I-1, I-2, 01 CLI scaffold (envelope, `acquireMutex` with kind `settings`, audit writer) | T-IN-01..10 green |
+| I-7 | Lifecycle facts, merges (incl. `external.attempt_cleared`), derive tables, `renderEvidence` / `toApiEvidence` / `viewChanged` (`rules.ts`), `toLegacy` (`legacy.ts`), nextCheckAt, work items | `engine/src/lifecycle/{facts,merge,derive-*,rules,legacy,next-check,work-items}.ts` + tests | I-5 | P1-P9, T-LF-01..52, 55, 56 green (in-memory model, no DB) |
+| I-7b | Completion evidence | `engine/src/lifecycle/completion.ts`, `completion.test.ts` | I-7 | T-LF-57 CE-1..16 green with an in-memory `CompletionLookup`; CE-17 and 01 T-CLI-08 run when 03 S5/S12 and 01 S13b land |
+| I-4 | Hook path to the DB: writer (`withWriteTx`), dedupe, error codes, spool drainer, segments, retention, replay engine, nudge handling, route-file writer | `engine/src/ingest/{writer,dedupe,errors}.ts`, `engine/src/ingest/spool/{spool-drainer,segments,replay}.ts`, `engine/src/ingest/routes-file.ts` + tests | I-1, I-3, I-5, I-7, 03 S1/S2 (DB, repositories, `withWriteTx`, `createChangeSink`), 03 S4 (nudge route), 01 S8 (+I-15 instance runtime) | T-PL-02..12, T-HK-06b green (the `mcs ingest replay` command itself is 01 S14) |
+| I-8 | Transcript side and services: scheduler, discovery, classification, importer, entry text, `createIngestService`, `createLifecycleSweeper`, external pollers | `engine/src/ingest/service.ts`, `engine/src/ingest/transcripts/{discovery,classify,importer,scheduler,entry-text}.ts`, `engine/src/lifecycle/sweeper.ts`, `engine/src/external/*`, `engine/src/ingest/config-keys.test.ts` | I-4, I-6, 01 S8 (`InstanceContext`), D5 translator (01) | T-PL-01, 13, T-TR-09, 10, 12..14, 17, 18, T-LF-50, 53, 54, T-TK-09, config-keys test green |
+| I-9 | Installer, verifier, uninstaller, status (engine side; N-11, C23) | `engine/src/hooks/installer/{plan,apply,verify,uninstall,status,settings-io}.ts` + colocated tests, `engine/test/hooks-installer.int.test.ts`, `engine/test/fixtures/settings/*` | I-1, I-2, 01 S4 (`acquireMutex` kind `settings`), 01 S6 (audit writer), 06 PP1 (`execFileText` kind `node`) | T-IN-01..09 green; T-IN-10 (`cli/test/hooks.int.test.ts`) green once 01 S14 wires `ops.hooks.*` and `cli/src/commands/hooks/*` |
 | I-10 | Health + alert inputs | `engine/src/health/*` | I-8 | T-HE-01..07 green |
 | I-11 | Integration + E2E inputs | `engine/test/{hook-to-db,import-tokens,ingest-service}.int.test.ts` (05 4.2 names) | I-8..I-10, 03 S4/S5, 01 S8 | 9.3 scenarios green; optional real-provider run recorded |
 

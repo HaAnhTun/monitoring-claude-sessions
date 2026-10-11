@@ -1,6 +1,6 @@
 # ADR 0016: Persist transcript metadata and references, never bodies
 
-Status: Proposed (Phase 1 design, 2026-10-11). Design reference: sections 5.6-5.7.
+Status: Proposed (Phase 1 design, 2026-10-11; revised by the second critic pass, registry C49: single `events` table). Design reference: sections 5.6-5.7.
 
 ## Context
 
@@ -11,7 +11,8 @@ persisting tool-result bodies, attachment bodies, thinking signatures and accoun
 
 ## Decision
 
-- Each conversational record becomes a `transcript_entry` row with metadata only: kind, ids (uuid, parent, message, tool use,
+- Each conversational record becomes a row of the single `events` table (design 03 3.5; hook deliveries of the same logical
+  event merge into that row by natural key) with metadata only: kind, ids (uuid, parent, message, tool use,
   agent), timestamps, byte offset and length, line number, sizes, flags, tool name and a redacted 160-code-point tool summary.
 - Text is read on demand through `readEntryText(ref)` from the provider file at the stored offset after re-checking the file
   identity; it returns the legacy `events_of` projection with the legacy clips and is not cached beyond the request.

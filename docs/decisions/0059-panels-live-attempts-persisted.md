@@ -1,6 +1,6 @@
 # ADR 0059: Panel data is sampled live; attempts runs are persisted lifecycle evidence
 
-Status: Proposed (Phase 1, 2026-10-11; amended after the critic review, issues I-07 and I-18). Design reference:
+Status: Proposed (Phase 1, 2026-10-11; amended after the critic review, issues I-07 and I-18, and revision 3: N-01, N-10). Design reference:
 `docs/design/06-panels-parity-platform.md` sections 3.1, 3.4, 3.5, 3.10.
 
 ## Context
@@ -13,9 +13,12 @@ sessions (D9) and the legacy version reads only a 4,000-line tail of the chain l
   single-flight, stale-while-revalidate caches with fixed TTLs; never stored in the database, never pushed over SSE; the response carries
   per-source `status` and `sampledAt`.
 - Attempts: the chain log is ingested incrementally (02 tailer primitives, byte offsets, identity generations) into design 03's tables
-  `attempt_sources` and `attempt_runs` (`0001_initial.sql`, no per-row `instance_id`); rows are matched to sessions by the legacy rule;
-  ended rows publish design 02's `external.attempt` event in the same transaction (persist before publish); a config change rebuilds
-  the rows and clears published evidence (`external.attempt_cleared`, 02 4.3).
+  `attempt_sources` and `attempt_runs` (`0001_initial.sql`, no per-row `instance_id`) through 03's `AttemptsRepo`; rows are matched to
+  sessions by the legacy rule (`SessionsRepo.attemptCandidates`). The tick runs every 2 s, driven by a timer of design 01's instance
+  runtime (01 4.4a component 4, which passes the shared `IngestWriter` to `createPanelService`). One `withWriteTx` holds the attempts
+  writes; after its COMMIT (persist before publish) the tick submits design 02's `external.attempt` events (with `endedAt` = the row's
+  `ended_at`) through the writer, which runs its own transaction; a config change rebuilds the rows and clears published evidence
+  (`external.attempt_cleared`, 02 4.3). A crash between the two commits can lose one tick's events (accepted, design 3.10.7 step 5).
 - The events carry `observedAt` = a strictly increasing publication stamp (not the chain-log END time), so the LWW join of 02 7.2
   keeps the latest derivation: a clear never hides re-published evidence, and the latest START wins even when an earlier START ended later.
 

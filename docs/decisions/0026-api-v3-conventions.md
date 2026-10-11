@@ -28,8 +28,9 @@ that only says "drain your spool now".
   proxy rewrites `Origin`, so dev mode needs no exception (revision 2, I-31).
 - Revision 2 adds two read-only routes: `GET /api/v3/ingest/probes/:probeSessionId` (`{receivedAt, committedAt}` or `404
   probe_not_found`; the id must carry the probe prefix `00000000-0000-4000-8000-`), used by `mcs hooks verify` (I-37), and
-  `GET /api/v3/completion` (exactly one of `session`, `label`, `attemptPart`; `404 completion_target_not_found`), the HTTP side of
-  `verify-completion` (I-08).
+  `GET /api/v3/completion` (exactly one of `session`, `label` (1..200), `attemptPart` (0..512, empty allowed); design 02's
+  `CompletionTargetError` maps to `400 validation_failed` (`target_invalid`) and `404 completion_target_not_found`
+  (`target_not_found`); no `null` result), the HTTP side of `verify-completion` (I-08; revision 3, registry C16/C17).
 
 ## Consequences
 - No CSRF surface beyond the nudge, whose only effect is a spool drain.

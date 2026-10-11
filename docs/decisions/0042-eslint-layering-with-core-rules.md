@@ -14,6 +14,10 @@ ESLint 10.12.0 is flat-config only; eslint-plugin-jsx-a11y 6.10.2 declares peer 
 - Layering, deep-import, banned-package, hook-handler, driver and child-process rules via `no-restricted-imports` blocks built by one
   helper (flat config replaces rule values per block); stdout/stderr via `no-restricted-properties`; raw HTML, `shell: true` and test
   sleeps via `no-restricted-syntax`; browser globals via `no-restricted-globals`.
+- Platform branching (design 06 section 4, critic I-34; revision 2026-10-11): `no-restricted-properties` entry `PLATFORM_ENTRY`
+  (`process.platform`) and `no-restricted-syntax` for `os.platform()` in `packages/engine/src/**`, allow-list
+  `engine/src/platform/**` and `engine/src/security/paths.ts` (that block re-declares the stdio entries, because a later block replaces
+  a rule's options); the logger keeps `['error', PLATFORM_ENTRY]`.
 - `tests/tooling/lint-rules.test.ts` keeps the probe table as a regression test.
 
 ## Consequences
@@ -29,4 +33,7 @@ ESLint 10.12.0 is flat-config only; eslint-plugin-jsx-a11y 6.10.2 declares peer 
 - 2026-10-11, ESLint 10.12.0, typescript-eslint 8.71.1: probe files produced 33 targeted findings on the expected lines and rules,
   allowed cases passed (`as const`, `node:crypto` and `@mcs/shared/protocol` in the hook, assertions in tests); a first selector on any
   `.write()` call wrongly matched `process.stdout.write` and was narrowed to `document.write` (design 05 section 9, E6, E7).
+- 2026-10-11, same versions, Appendix A.9 of design 05 revision 2 in a scaffold copy: `process.platform`/`os.platform()` reported in
+  `engine/src/panels/x.ts` and `engine/src/log/logger.ts`, not in `engine/src/platform/x.ts`, `engine/src/security/paths.ts`, test files,
+  server, cli or `shared/src/protocol`; stdout still reported in the allow-list files (design 05 E24, design 06 E24).
 - `stack-versions.md` section 6 (jsx-a11y peer conflict and override).

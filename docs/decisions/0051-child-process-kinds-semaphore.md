@@ -1,6 +1,6 @@
 # ADR 0051: Child processes: one helper with kinds, executable resolution, a 2-slot semaphore and spawn statistics
 
-Status: Proposed (Phase 1, 2026-10-11; amended after the critic review, issue I-06). Design reference:
+Status: Proposed (Phase 1, 2026-10-11; amended after the critic review, issue I-06, and revision 3: registry C11-C13). Design reference:
 `docs/design/06-panels-parity-platform.md` sections 3.6 and 4.2. Builds on design 05 S-PROC, which stays the owner of the security
 rules. The `ChildSpec`/`ChildResult` signature below is the only `execFileText`; design 01 4.2 imports it.
 
@@ -12,12 +12,16 @@ output, take the git index lock, or be resolved to `.cmd` shims that need a shel
 ## Decision
 - Every short-lived spawn goes through `execFileText(spec, signal?)` in `engine/src/platform/exec.ts`; `spawnDetached` and
   `spawnForeground` (design 01 4.2 signatures) live in the same file for long-lived children. The spec has `kind` (closed union
-  `powershell.processes | powershell.cmdline | git | docker | ps | taskkill | node | python | icacls`), `maxOutputBytes`, `encoding`, result fields
+  `powershell.processes | powershell.cmdline | git | docker | ps | taskkill | node | python | icacls | opener`), `maxOutputBytes`, `encoding`, result fields
   `error` (`ENOENT | EACCES | TIMEOUT | OUTPUT_LIMIT | NONZERO_EXIT | SPAWN_FAILED | QUEUE_FULL | ABORTED`), `truncated`, `durationMs`; the
   function never throws.
 - `platform/process.ts` (same owner): `pidAlive`, `commandLineOf` (`-EncodedCommand` constant script, 5 s cache), `forceKill`,
-  `waitForExit`, `listRuntimeProcesses`; the earlier `killPid` is dropped.
-- `resolveExecutable(name)`: fixed `%SystemRoot%` paths for `powershell.exe`/`taskkill.exe`/`icacls.exe`, `process.execPath` for `node`; PATH search for `git.exe`/`docker.exe`,
+  `waitForExit`; the earlier `killPid` is dropped. `forceKill` on Windows is `taskkill.exe /PID <pid> /F` through `execFileText` kind
+  `taskkill` (exit 128 = already gone, success); POSIX `SIGKILL`. Design 01 4.2 and ADR 0006 adopt this mechanism.
+  `listRuntimeProcesses` is design 01's, in `platform/markers.ts` (01 S4), and spawns through `execFileText`.
+- `resolveExecutable(name)` (inline union of names; there is no `ExecutableName` type, and design 01 passes its probed Python path
+  directly as `file`): fixed `%SystemRoot%` paths for `powershell.exe`/`taskkill.exe`/`icacls.exe`, `process.execPath` for `node`,
+  `opener` = `explorer.exe` (Windows) / `/usr/bin/open` (macOS) / `xdg-open` on PATH; PATH search for `git.exe`/`docker.exe`,
   with the Git `cmd\git.exe` shim swapped for `mingw64\bin\git.exe`; cached 10 min (null 5 min).
 - A per-process semaphore: 2 running children, FIFO queue of 8, beyond that `QUEUE_FULL`.
 - `childStats()` per kind (spawned, failed, timedOut, totalMs) exposed as `HealthReport.children` (design 03 6.2, critic I-21).

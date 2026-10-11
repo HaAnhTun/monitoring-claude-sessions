@@ -1,6 +1,8 @@
 # 06 - Panels, platform specifics and legacy parity
 
 Status: Phase 1 design, implementation-grade. Author: panels/platform/parity designer, 2026-10-11.
+Revision 3 (2026-10-11): second critic issues N-01, N-05, N-06, N-10, I-05, I-06, I-12, I-18 and contract-registry rows C06, C11-C15,
+C28, C36, C40-C44, C47, C57 applied (`98-contract-registry.md` arbitrates names).
 Owner of this file and of ADRs 0050-0059. Inputs: `00-foundations.md` (D1-D15, open questions 2 and 6), the owner's brief
 (sections 8.1, 12, 13 Phase 6, 14), `docs/research/current-state-backend.md`, `current-state-frontend.md`, `transcript-survey.md`,
 `claude-code-hooks.md`, `stack-versions.md`, the legacy code (`src/backend/panels.py`, `proc.py`, `state.py`, `sessions.py`,
@@ -116,7 +118,8 @@ runtime/packages/engine/src/platform/watch-hint.ts   createWatchHint (4.4)
 runtime/packages/engine/src/platform/fsx.ts          atomicWriteFile, readSmallFile, tailLines, pySplitlines, clipCodePoints (3.9, 4.3); the one
                                                      file-I/O module of the engine (01's workspace/fsio.ts wraps it, critic I-28)
 runtime/packages/engine/src/platform/glob.ts         globFiles (3.9.4)
-runtime/packages/engine/src/platform/process.ts      pidAlive, commandLineOf, forceKill, waitForExit, listRuntimeProcesses (4.2; 01 4.2 imports them)
+runtime/packages/engine/src/platform/process.ts      pidAlive, commandLineOf, forceKill, waitForExit (4.2; 01 4.2 imports them; listRuntimeProcesses
+                                                     is 01's, in platform/markers.ts, 01 S4, registry C13)
 runtime/packages/engine/src/platform/pytime.ts       pyStrptime, toEpochMs (3.10.4)
 runtime/packages/engine/src/panels/source-cache.ts   SourceCache (3.5)
 runtime/packages/engine/src/panels/machine.ts        MachineSampler: memory, cpu, processes, docker (3.7)
@@ -129,10 +132,14 @@ runtime/packages/engine/src/panels/service.ts        PanelService.get(key) -> Pa
 runtime/packages/server/src/routes/panels.ts         GET /api/v3/panels/:key (3.4)
 ```
 `engine` may import `shared`; `server` imports `engine` and `shared`. Nothing under `panels/` touches another instance: every function
-takes the instance context `InstanceContext` defined by design 01 4.4 / slice S8 in `packages/engine/src/runtime/instance-runtime.ts`
-(critic I-15). Fields this design reads: `instanceId`, `repoDir`, `config`, `clock`, `db`, `errors`, `exec`, `claudeHome`, `mcsHome`,
-`logger`, `queries` (03 `createQueries`). `createPanelService(ctx)` (3.4) is plugged into 01's `createInstanceRuntime(ctx)`, whose
-`start()` calls `panels.tickAttempts()` on the ingestion tick and whose `stop(deadlineMs)` calls `panels.close()`.
+takes the instance context `InstanceContext` of design 01 4.4a / slice S8, declared in `packages/engine/src/runtime/context.ts`
+(`createInstanceRuntime` is in `packages/engine/src/runtime/instance-runtime.ts`; critic I-15, registry C15). Fields this design reads:
+`instanceId`, `repoDir`, `config`, `clock`, `db`, `errors`, `exec`, `claudeHome`, `mcsHome`, `logger`, `queries` (03 `createQueries`,
+session `TokenUsage` for attempts rows). `createPanelService(ctx, { writer })` (3.4) is component 4 of 01's `createInstanceRuntime(ctx)`,
+which passes `writer: ingest.writer` (02 4.10: the one `IngestWriter`, shared with this design's attempts tick). That component's
+`start()` arms a 2 s `ctx.clock` timer calling `panels.tickAttempts()` (first call at start; serialized: a firing while a tick runs is
+skipped); its `stop(deadlineMs)` clears the timer, then calls `panels.close()` (01 4.4a; critic N-01, registry C57). Nothing in design 02's
+scheduler drives attempts.
 
 ### 3.3 Contracts (`@mcs/shared` `api/panels.ts`)
 
@@ -237,7 +244,8 @@ and API reference follow from it, 03 section 13). The server does not validate i
   `500 internal_error` and goes to the error ring with `where: 'panel.<key>'`.
 - Headers: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` (API design's middleware). No ETag.
 - Cost model: one request triggers at most one refresh per stale source (single flight); N tabs polling cost the same as one (legacy
-  guarantee, `server.py:30-50`). No timers: with no client nothing is sampled (legacy idle 0.1% of a core).
+  guarantee, `server.py:30-50`). No panel timers: with no client nothing is sampled (legacy idle 0.1% of a core). The only periodic
+  work is the 2 s attempts tick (3.10), which stats the chain log and reads only appended bytes.
 - Panels are not pushed over SSE; the UI polls them (`04-ui.md` `usePanel`). Attempts changes that affect lifecycle reach the UI through
   the lifecycle's own `session` stream changes.
 
@@ -245,14 +253,19 @@ and API reference follow from it, 03 section 13). The server does not validate i
 ```ts
 export interface PanelService {
   get<K extends PanelKey>(key: K, opts?: { limit?: number }): Promise<PanelResponse<K>>;
-  /** Called by the ingestion scheduler tick (every 2 s) and at startup; runs attempts ingestion + matching when configured. */
+  /** Called every 2 s by the timer of 01 4.4a component 4 (first call at component start); runs attempts ingestion, matching and
+   *  evidence publication when configured (3.10). A call while a tick runs returns that tick's promise (never two ticks at once). */
   tickAttempts(): Promise<AttemptsTickResult>;
   stats(): PanelStats;          // exposed as HealthReport.panels (03 6.2, critic I-21)
-  close(): void;                // aborts in-flight children
+  close(): void;                // aborts in-flight children; drops events not yet accepted by the writer (3.10.7 step 5)
+}
+export interface AttemptsTickResult {
+  state: 'ok' | 'not_configured' | 'missing' | 'error';   // = AttemptsPanel.sourceState
+  linesRead: number; rowsChanged: number; eventsSubmitted: number;
 }
 export interface PanelSourceStats { refreshes: number; failures: number; lastDurationMs: number | null; lastStatus: SourceStatus | null }
 export type PanelStats = Partial<Record<PanelSource, PanelSourceStats>>;   // only sources that were read at least once; in shared/src/api/panels.ts
-export function createPanelService(ctx: InstanceContext): PanelService;
+export function createPanelService(ctx: InstanceContext, deps: { writer: IngestWriter }): PanelService;   // IngestWriter: 02 4.6
 ```
 `PanelStats` and `PanelSourceStats` live in `shared/src/api/panels.ts` so that 03's `HealthReport` can reference them without importing
 the engine.
@@ -310,7 +323,9 @@ Design 05 (S-PROC rules 1-5) owns the security rules of this module: no shell, `
 become arguments or PowerShell text, timeout and a 1 MiB default output cap. This section owns the **signature** (critic I-06: the
 `ChildSpec`/`ChildResult` form below is the only `execFileText`; design 01 4.2's `execFileText(file, args, ExecOptions) -> ExecResult`
 is replaced by it and 01's call sites pass a `ChildSpec`) and rules 6-10. Where the two disagree, 05 wins on security rules and this
-section on the fields. Slice PP1 owns `exec.ts` and `process.ts`; 01 slice S4 owns only `platform/mutex.ts`.
+section on the fields. Slice PP1 owns `exec.ts` and `process.ts`; 01 slice S4 owns `platform/mutex.ts` and `platform/markers.ts`
+(registry C13). There is no `ExecutableName` type: `resolveExecutable` takes the inline union below, and 01 passes the Python path it
+probes (6.5) directly as `ChildSpec.file` (registry C11).
 
 Mapping for 01's former `ExecResult` fields: `timedOut` = `error === 'TIMEOUT'`; `signal` is not exposed (Windows has none; on POSIX a
 signal exit is `code: null` with `error: 'NONZERO_EXIT'`); `maxStdoutBytes` = `maxOutputBytes`; `env` = `extraEnv` on top of the rule-4
@@ -323,7 +338,8 @@ export type ChildKind =
   | 'node'                           // short-lived process.execPath children run by the CLI (01, critic I-06); the long-lived server
                                      // child uses spawnDetached/spawnForeground below, the launcher its own copy (ADR 0007)
   | 'python'                         // legacy delegation $V (01 6.5), resolved by 01's MCS_PYTHON probe, passed as an absolute path
-  | 'icacls';                        // 01 doctor ACL check (Windows only)
+  | 'icacls'                         // 01 doctor ACL check (Windows only)
+  | 'opener';                        // 01 4.7 `start --open`: hands the instance URL to the desktop's browser opener
 export interface ChildKindStats { spawned: number; failed: number; timedOut: number; totalMs: number }
 export interface ChildSpec {
   kind: ChildKind;
@@ -342,7 +358,7 @@ export interface ChildResult {
   error: ChildErrorCode | null; truncated: boolean; durationMs: number;
 }
 export function execFileText(spec: ChildSpec, signal?: AbortSignal): Promise<ChildResult>;   // the only one (I-06); never throws, never rejects
-export function resolveExecutable(name: 'git' | 'docker' | 'powershell' | 'ps' | 'taskkill' | 'icacls' | 'node'): Promise<string | null>;  // 'node' -> process.execPath
+export function resolveExecutable(name: 'git' | 'docker' | 'powershell' | 'ps' | 'taskkill' | 'icacls' | 'node' | 'opener'): Promise<string | null>;  // 'node' -> process.execPath
 export function childStats(): Record<ChildKind, ChildKindStats>;   // every kind present (zeros); served as HealthReport.children (03 6.2, I-21)
 // 01 4.2 signatures, kept verbatim in this file (they do not go through the semaphore: long-lived children, not counted in childStats):
 export function spawnDetached(file: string, args: readonly string[], o: { cwd: string; env: Record<string, string>; stdoutFd: number; stderrFd: number }): ChildProcess;  // detached:true, windowsHide:true
@@ -354,7 +370,9 @@ Rules (each has a test in 3.11):
 2. `file` must be absolute and end in `.exe` or `.com` on Windows (a `.cmd`/`.bat` needs `cmd.exe` = a shell: refused with `SPAWN_FAILED`).
 3. `resolveExecutable`: Windows `powershell` -> `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` (fixed, existence-checked;
    pwsh 7 is not used: 2x CPU in E1); `taskkill` -> `%SystemRoot%\System32\taskkill.exe`; `icacls` -> `%SystemRoot%\System32\icacls.exe`;
-   `node` -> `process.execPath` (never a PATH lookup); `python` is not resolved here (01 6.5 probes `MCS_PYTHON`, `python`, `python3`,
+   `node` -> `process.execPath` (never a PATH lookup); `opener` -> Windows `%SystemRoot%\explorer.exe`, macOS `/usr/bin/open`
+   (fixed, existence-checked), other POSIX the first `PATH` entry with an executable `xdg-open` (`explorer.exe` may exit 1 after a
+   successful hand-over, UNVERIFIED: 01 4.7 treats the opener's exit code as advisory); `python` is not resolved here (01 6.5 probes `MCS_PYTHON`, `python`, `python3`,
    `py -3` and passes the absolute result); `git`, `docker` -> first `PATH` entry
    containing `<name>.exe` (PATH split on `;`, entries trimmed of quotes, relative entries ignored). POSIX: first `PATH` entry with an
    executable `<name>` (`fs.access X_OK`). Results cached 10 min; `null` cached 5 min.
@@ -368,8 +386,9 @@ Rules (each has a test in 3.11):
 6. Output cap: count bytes on both pipes; above `maxOutputBytes` kill, `truncated: true`, `error: 'OUTPUT_LIMIT'`.
 7. Concurrency: a per-process semaphore of 2 running children, FIFO queue of 8; a 9th waiting request returns `QUEUE_FULL` immediately.
 8. No argument is built from transcript or hook data. The only dynamic values: a validated integer pid (`/^[1-9][0-9]{0,9}$/`) for
-   `powershell.cmdline`/`taskkill`, the configured repo directory as `cwd`, and for kinds `node`/`python`/`icacls` the paths and
-   validated CLI values that design 01 passes (script paths inside the skill, workspace paths, slugs matching the slug rule). Config
+   `powershell.cmdline`/`taskkill`, the configured repo directory as `cwd`, for kinds `node`/`python`/`icacls` the paths and
+   validated CLI values that design 01 passes (script paths inside the skill, workspace paths, slugs matching the slug rule), and for
+   `opener` the URL `http://127.0.0.1:<port>/` built from the validated integer port of the instance. Config
    strings are never interpolated into a PowerShell script (scripts are constants passed with `-EncodedCommand`; filtering happens in
    Node).
 9. Logging: one debug log line per spawn with `kind`, `durationMs`, `code`, `error` (no args, no output). stderr text is reduced to its
@@ -517,7 +536,7 @@ the panel endpoint answers `404 panel_disabled` and computes nothing.
   with `.` (Python and Node both skip dotfiles, E17). Symbolic links to directories are not descended (`lstat`).
 - Stops after `maxMatches` files (source message `'more than 500 files match live_log_globs; showing the newest of the first 500'`).
   Recursion stops at `maxDepth` directories below the first wildcard segment. Own implementation (about 80 lines): `fs.glob` is
-  experimental on part of the supported Node range (floor 22.12, D7) and its `**` semantics would bind us to a Node version.
+  experimental on part of the supported Node range (floor 22.22.0, 01 5.1 / ADR 0007, critic I-05) and its `**` semantics would bind us to a Node version.
 
 ### 3.10 Attempts (ingestion, matching, state; ADR 0059)
 
@@ -528,66 +547,36 @@ by the translator of design 01: `compilePyRegex(pattern, 'attempts')` -> `Compil
 position 0, not at the end, sticky `y`; legacy `re.match` without flags); a pattern that cannot be translated exactly is a config error
 `REGEX_UNSUPPORTED` (01). `matchSticky(rx, line)` = `rx.exec(line)` (01 resets `lastIndex`) and the groups used below are
 `m.groupdict()` (values `string | null`, like Python's `groupdict()`).
-`time_format` is validated at config load by `pyStrptimeValidate(format)` (3.10.4): unknown directive -> config error
-`E_ATTEMPTS_TIME_FORMAT` `"attempts.time_format: unsupported directive %X (supported: %Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%)"`.
+`time_format` is validated at config load by `pyStrptimeValidate(format)` (3.10.4): an unknown directive is a validation problem
+reported as `McsError('CONFIG_INVALID', ...)` with the message
+`"attempts.time_format: unsupported directive %X (supported: %Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%)"` (no own error
+code; 01 2.4 lists it under the Node-only additions; critic N-06, registry C42).
 
-#### 3.10.2 Persistence (tables owned by design 03, `0001_initial.sql`; critic I-07)
-The DDL is design 03's (`attempt_sources`, `attempt_runs`, STRICT, no per-row `instance_id`: one DB per instance, 03 C-1). The column
-list below is the one the critic fixed for 03 and is reproduced only so that this design's algorithms can name the columns; if 03's
-file differs, 03 wins and this section follows.
-```sql
--- reference copy; authoritative: runtime/packages/engine/migrations/0001_initial.sql (design 03 3.5)
-CREATE TABLE attempt_sources (
-  id            INTEGER PRIMARY KEY,
-  path          TEXT    NOT NULL,              -- canonicalPath of chain_log (4.1)
-  path_key      TEXT    NOT NULL UNIQUE,       -- samePath key: path lower-cased on win32/darwin, else path
-  generation    INTEGER NOT NULL DEFAULT 1,    -- +1 when the file was truncated or replaced
-  ino           TEXT,                          -- design 02 FileIdentity: inode as decimal text (null where unavailable)
-  head_len      INTEGER NOT NULL,
-  head_hash     TEXT    NOT NULL,              -- sha256 hex of the first head_len (<= 256) bytes
-  read_offset   INTEGER NOT NULL,              -- byte offset after the last consumed LF
-  config_sha256 TEXT    NOT NULL,              -- hash of [start, end, label_prefix, time_format]
-  updated_at    INTEGER NOT NULL               -- epoch ms
-) STRICT;
-CREATE TABLE attempt_runs (
-  id              INTEGER PRIMARY KEY,
-  source_id       INTEGER NOT NULL REFERENCES attempt_sources(id),
-  generation      INTEGER NOT NULL,
-  start_offset    INTEGER NOT NULL,            -- byte offset of the START line (natural key)
-  part            TEXT    NOT NULL,            -- '' when the group is absent (legacy)
-  n_raw           TEXT,
-  model           TEXT,                        -- NULL when absent or empty
-  effort          TEXT,
-  started_at      INTEGER NOT NULL,            -- epoch ms
-  end_offset      INTEGER,
-  ended_at        INTEGER,                     -- epoch ms; = started_at when the END time does not parse (legacy)
-  exit_raw        TEXT,
-  status_raw      TEXT,
-  end_reason      TEXT    NOT NULL CHECK (end_reason IN ('open','ended','superseded')),
-  state           TEXT    NOT NULL CHECK (state IN ('COMPLETED','FAILED','RUNNING','UNKNOWN')),
-  evidence        TEXT    NOT NULL,
-  session_id      TEXT,                        -- provider session id (uuid) or NULL; soft reference (no FK: the session may be pruned)
-  match_delta_ms  INTEGER,
-  updated_seq     INTEGER NOT NULL,            -- change sequence of the last write (D11, 03 9.1)
-  updated_at      INTEGER NOT NULL,            -- epoch ms
-  UNIQUE (source_id, generation, start_offset)
-) STRICT;
-CREATE INDEX attempt_runs_by_session  ON attempt_runs (session_id);
-CREATE INDEX attempt_runs_open_by_part ON attempt_runs (source_id, generation, part) WHERE end_reason = 'open';
-CREATE INDEX attempt_runs_by_start    ON attempt_runs (started_at, id);
-```
-Writes go through the repository functions design 03 exposes for these tables (03 3.6 / 4.5 boundary: only `engine/src/db/**` holds
-SQL); `panels/attempts/repo.ts` is the thin adapter that calls them. Change publication: attempts rows themselves are not a stream
-kind; their lifecycle effect is published through design 02's `external.attempt` / `external.attempt_cleared` logical events, which
-end as `session` changes (3.10.7), and the panel is polled (3.4). If 03 adds a `changes.kind` value for attempts, `updated_seq` is the
-seq it records; nothing else in this design changes.
+#### 3.10.2 Persistence (design 03's tables and repositories; critic I-07, N-10, registry C40)
+The DDL, indexes and statements are design 03's and are not copied here: tables `attempt_sources` and `attempt_runs` in
+`0001_initial.sql` (03 3.5: STRICT, no `instance_id`, soft references without foreign keys), indexes `idx_attempt_runs_session`,
+`idx_attempt_runs_open`, `idx_attempt_runs_start` (03 3.5), repository `AttemptsRepo` (`packages/engine/src/db/repos/attempts.ts`,
+03 3.6: `getSource`, `saveSource`, `resetSource`, `openRun`, `insertRun`, `endRun`, `supersedeRun`, `setMatch`, `runsToMatch`,
+`latestRuns`, `evidenceRun`) and match candidates from `SessionsRepo.attemptCandidates` (03 3.6). The algorithms below use 03's column
+names. Three rules follow from 03's shapes:
+- `attempt_runs.session_id` holds the `sessions.id` **row id** (`AttemptRunRow.sessionRowId`), not the provider session id. Design 02's
+  events and the panel need the provider id (`sessions.session_uid`): rows matched in the current tick take it from the
+  `AttemptCandidate.sessionId` they were matched with; every other row id (an earlier match, the ids returned by `resetSource`) is
+  mapped through `SessionsRepo` (by-id lookup of `session_uid`, 03 3.6) before an event or a panel row is built. A row id whose
+  session no longer exists (data retention detaches runs, 03 3.8) yields no event and `sessionId: null` in the panel.
+- Change publication: `AttemptsRepo` reserves one `attempt/upsert` change per transaction and stamps every changed row's `updated_seq`
+  with its seq (03 9.1); the UI invalidates the attempts panel on it (03 9.2) and otherwise polls (3.4). The lifecycle effect travels
+  separately, through design 02's events (3.10.7).
+- `panels/attempts/repo.ts` is a thin adapter over `AttemptsRepo` and `SessionsRepo`; it holds no SQL (only `engine/src/db/**` does, 03 4.5).
 
 #### 3.10.3 Ingestion (`attempts/ingest.ts`, called by `PanelService.tickAttempts`)
 1. Not configured -> return `{state: 'not_configured'}`. `p = canonicalPath(rel(repo, chain_log))`; `stat` fails -> `missing` (rows kept).
-2. Load the `attempt_sources` row by `path_key` (`samePath` key of `p`). `cfgHash = sha256(JSON.stringify([start, end, label_prefix ?? '', time_format ?? default]))`.
-3. If no row or `cfgHash` differs: in one transaction collect the distinct non-null `session_id` of the source's `attempt_runs` rows with
-   `end_reason = 'ended'`, delete all `attempt_runs` of that `source_id`, upsert the source `{generation: 1, read_offset: 0}`, and submit
-   `external.attempt_cleared` for each collected session (design 02 4.3, critic I-18; 3.10.7) before any new evidence is published.
+2. `AttemptsRepo.getSource(pathKey(p))` (`pathKey` = the `samePath` key, 4.1). `cfgHash = sha256(JSON.stringify([start, end, label_prefix ?? '', time_format ?? default]))`.
+3. No row: the transaction of step 7 creates it with `saveSource({generation: 1, read_offset: 0, ...})`. `cfgHash` differs: the
+   transaction of step 7 starts with `resetSource(sourceId, cfgHash)` (03 3.6: deletes the source's runs, generation 1, offset 0, and
+   returns the session row ids that had an ended matched run); those ids, mapped to provider ids (3.10.2), are the `cleared` set of
+   3.10.7 step 2, whose `external.attempt_cleared` events are submitted after COMMIT ahead of any new evidence (design 02 4.3, critic
+   I-18). The read of step 5 then starts at offset 0.
 4. Identity: design 02's tailer primitive `checkIdentity(path, stored, storedSize, read_offset)` (ADR 0015: inode + head hash of up to
    256 bytes, reset when the file shrinks below the cursor or the head changes). On reset: `generation += 1`, `read_offset = 0` (old rows
    stay as history of the previous file).
@@ -606,8 +595,13 @@ seq it records; nothing else in this design changes.
       `ended_at = parseTime(m.groupdict().time, fmt) ?? started_at`; `exit_raw = m.groupdict().exit ?? null`; `status_raw = m.groupdict().status ?? null`;
       `end_reason = 'ended'`; `{state, evidence} = externalState(exit_raw, status_raw)` (3.10.5).
    c. Else ignore the line.
-7. Persist `read_offset`, set `updated_seq` (03 change sequence) and `updated_at` on every changed row, commit (one transaction per tick). Then run matching (3.10.6) for rows changed
-   in this tick plus unmatched rows started within the last `attemptsWindowHours` (default 24, `runtime.json panelOptions.attemptsWindowHours`, design 01).
+7. Transaction: every write of steps 3-6, the source row (`saveSource`: `read_offset`, identity, generation) and matching (3.10.6, for
+   rows changed in this tick plus `runsToMatch(now - attemptsWindowHours * 3600000, 500)`; `attemptsWindowHours` default 24,
+   `runtime.json panelOptions.attemptsWindowHours`, design 01) run inside ONE `withWriteTx(db, ctx, fn)` per tick (03 4.5; `fn` is
+   synchronous; the chain-log read of step 5 happens before it, asynchronously). `AttemptsRepo` reserves the `attempt/upsert` change
+   and stamps `updated_seq`/`updated_at` on every changed row (3.10.2). The transaction also computes the evidence set of 3.10.7 step 3
+   (reads only). No design 02 event is written inside it: after COMMIT the tick submits the events through the shared `IngestWriter`,
+   which runs its own transaction (02 4.6; 3.10.7). A throw rolls back rows and offset together; the next tick re-reads the same bytes.
 
 #### 3.10.4 `pyStrptime(text, format)` (`platform/pytime.ts`)
 Port of CPython `_strptime` for the supported directives; returns `{ year, month, day, hour, minute, second, ms, utcOffsetMin | null } | null`.
@@ -642,16 +636,20 @@ export function externalState(exitRaw: string | null, statusRaw: string | null):
 Open rows: `state = 'RUNNING'`, `evidence = 'chain log: started, no END yet'`. Whitespace classes differ (measured over the BMP with Python 3.14 `re` and V8 `/\s/u`): Python-only `\x1c-\x1f`, `\x85`; JS-only `\ufeff`. The translator of design 01 owns `\s` inside user regexes; for the two constant regexes above the difference only matters for a status text starting with one of those characters: accepted, documented by the vector `'\x1cPASS'` in `golden/vectors/external_state.json`.
 
 #### 3.10.6 Matching rows to sessions (`attempts/match.ts`)
-Inputs: rows to (re)match; candidate sessions from design 03's query layer (`ctx.queries`) with fields `sessionId`, `label`,
-`matched` (rule matched or pinned), `firstRecordAtMs` (timestamp of the **first record in file order that has a string `timestamp`**,
-the legacy `usage.first`, `reader.py:265-267`; NOT the minimum timestamp), `lastActivityAtMs` (transcript mtime, legacy `age`).
+Inputs: rows to (re)match; candidate sessions from `SessionsRepo.attemptCandidates(ctx, labels, activeSinceMs)` (03 3.6, inside the
+tick's transaction; `labels` = the distinct `label_prefix + row.part` of the rows to match, `activeSinceMs = now - attemptsWindowHours *
+3600000`), each an `AttemptCandidate { sessionRowId, sessionId, label, matched, firstRecordAtMs, lastActivityAtMs }`: `matched` = rule
+matched or pinned, `firstRecordAtMs` = timestamp of the **first record in file order that has a string `timestamp`** (the legacy
+`usage.first`, `reader.py:265-267`; NOT the minimum timestamp; `null` when absent), `lastActivityAtMs` = transcript mtime (legacy `age`).
+03's query only prefilters (one hour of slack); the exact rules are these:
 ```
 candidates = sessions where label === (label_prefix + row.part)
-                         and firstRecordAtMs > 0
+                         and firstRecordAtMs !== null and firstRecordAtMs > 0
                          and (matched || config.include_unmatched)
                          and now - lastActivityAtMs <= attemptsWindowHours * 3600000      // legacy lists with hours=24
 for each candidate: d = (firstRecordAtMs - row.started_at) / 1000
 accept when -15 <= d <= 600; choose the smallest d; ties -> larger lastActivityAtMs, then smaller sessionId
+-> AttemptsRepo.setMatch(row.id, candidate.sessionRowId, round(d * 1000))
 ```
 Once matched, a row keeps its `session_id` (it is not unmatched when the session leaves the 24 h window; legacy re-derived on each poll
 and lost the match after 24 h, D22). A session may match several rows (legacy). Rows are re-matched when they change or are unmatched
@@ -659,38 +657,54 @@ and within the window.
 
 #### 3.10.7 Lifecycle evidence and the legacy precedence rule
 For each session with at least one matched row in `end_reason='ended'`: the evidence row = the one with the greatest `started_at`
-(ties: greatest `id`) - the legacy `external_map` overwrote by row order, so the latest START wins. The ingest tick submits design 02's
-logical event (4.3) through its `IngestWriter`, in the same transaction as the row changes (persist before publish):
-`{ k: 'external.attempt', sessionId, state: 'COMPLETED' | 'FAILED' | 'UNKNOWN', evidence, rowKey: 'attempt:' + id, observedAt: publishAt }`
-(02 merges it LWW into the `attempt` fact; rule S-1 maps it to `completed`/`failed`/`unknown`). When a session loses its evidence
-(config rebuild, 3.10.3 step 3), the tick submits `{ k: 'external.attempt_cleared', sessionId, observedAt: publishAt }` (design 02 4.3
-per critic I-18: 02 7.3 merges it into the `attempt` LWW fact with value `null` at `observedAt`; rule S-1 treats `null` as no evidence;
-02's transition-table row "cleared after rebuild -> re-derived without S-1").
+(ties: greatest `id`; `AttemptsRepo.evidenceRun`) - the legacy `external_map` overwrote by row order, so the latest START wins. After the
+attempts transaction of 3.10.3 step 7 has committed (persist before publish), the tick submits design 02's logical events (4.3) through
+the shared writer (`deps.writer`, 02 4.6 / 4.10) as one batch:
+`writer.submit({ source: 'external', items: [{ kind: 'external', events, rows: [] }], bytes: 0 })` (`bytes` = input bytes, none here).
+The writer merges them in its own transaction and publishes the `session/upsert` changes after its own COMMIT (02 4.6). Events:
+`{ k: 'external.attempt', sessionId, state: 'COMPLETED' | 'FAILED' | 'UNKNOWN', evidence, rowKey: 'attempt:' + row.id, endedAt: row.ended_at, observedAt: publishAt }`
+(`sessionId` = the provider id of `row.session_id`, 3.10.2; `endedAt` is the evidence time shown, 02 `EvidenceItem.at`, critic I-18,
+registry C41; 02 merges the event LWW into the `attempt` fact; rule S-1 maps it to `completed`/`failed`/`unknown`). When a session loses
+its evidence (config rebuild, 3.10.3 step 3), the batch carries `{ k: 'external.attempt_cleared', sessionId, observedAt: publishAt }`
+(design 02 4.3 per critic I-18: 02 7.3 merges it into the `attempt` LWW fact with value `null` at `observedAt`; rule S-1 treats `null`
+as no evidence; 02's transition-table row "cleared after rebuild -> re-derived without S-1").
 
 `observedAt` is the time the monitor observed the evidence (as for 02's registry and pid observations), not the chain-log END time:
 02's LWW joins by stamp (`Stamp.at` first, 02 7.2), so an END-time stamp would (a) let a cleared fact (stamped `now`) beat re-published
 evidence whose END is older, and (b) let an earlier START with a later END beat the latest START, breaking the legacy rule above. S-1
 does not read the stamp time (02 7.4), so nothing else depends on it. Algorithm (`attempts/evidence.ts`):
-1. `publishAt = max(clock(), lastPublishAt + 1)`; `lastPublishAt` is kept by the panel service and initialised at service start with
-   `SELECT coalesce(max(updated_at), 0) FROM attempt_runs` (rows written in a tick get `updated_at = publishAt`), so a restart or a
-   small backward wall-clock step cannot produce an older stamp.
-2. `touched` = sessions of rows inserted, changed or (re)matched in this tick, plus the sessions collected by a rebuild (3.10.3 step 3).
-3. For each `s` in `touched` (sorted by session id, deterministic): `row = evidenceRow(s)` (rule above, current rows only). `row` exists
-   -> submit `external.attempt` for it; else, if `s` came from a rebuild -> submit `external.attempt_cleared`; else nothing.
-   Consequence: a session that is cleared and re-evidenced in the same tick gets only the new evidence; one re-evidenced in a later
-   tick gets a strictly later stamp than its clear.
+1. `publishAt = max(clock(), lastPublishAt + 1)`, taken once per tick after COMMIT; `lastPublishAt` is kept by the panel service and
+   initialised at service start to `max(clock(), source.updatedAt)` where `source` = `AttemptsRepo.getSource` of the configured chain
+   log (written in every tick's transaction with `tx.now`, so it bounds the previous ticks' stamps), so a restart or a small backward
+   wall-clock step cannot produce an older stamp.
+2. `touched` = session row ids of rows inserted, changed or (re)matched in this tick, plus the `cleared` ids returned by `resetSource`
+   (3.10.3 step 3).
+3. Inside the transaction (reads only), for each `s` in `touched`: `row = evidenceRun(s)` (rule above, current rows only). `row`
+   exists -> an `external.attempt` for it; else, if `s` came from a rebuild -> an `external.attempt_cleared`; else nothing. Row ids are
+   mapped to provider ids (3.10.2) there too; after COMMIT the events get `observedAt = publishAt` and are sorted by provider id
+   (deterministic), clears first. Consequence: a session that is cleared and re-evidenced in
+   the same tick gets only the new evidence; one re-evidenced in a later tick gets a strictly later stamp than its clear.
 4. A session whose evidence row did not change is not re-published (no churn on idle ticks).
+5. `submit` returns `false` (queue full): the batch is kept in the service and re-submitted, before any later batch, from
+   `writer.onDrain` or the next tick (stamps stay as computed, so order is kept). A throw inside the attempts transaction submits nothing.
+   Accepted residual risk: a process crash after the attempts COMMIT and before the writer's COMMIT loses that tick's events (rows and
+   offset are committed, so they are not re-derived); the window is one writer tick plus queue time and opens only on ticks that
+   publish; recovery is the next change of that session's evidence row or `mcs db rebuild` (7.1 item 6).
 Open or superseded rows publish nothing (legacy: no external evidence while open). `UNKNOWN` (ended, ambiguous status) is published:
 legacy `external_state` returned `{state: 'UNKNOWN'}` and the session showed UNKNOWN with source `external`.
 
 #### 3.10.8 Panel read
-`SELECT ... FROM attempt_runs ORDER BY started_at, id` (index `attempt_runs_by_start`) -> last `limit` rows -> map to `AttemptsPanel.rows`:
+`AttemptsRepo.latestRuns(limit)` (newest `limit` rows in start order, index `idx_attempt_runs_start`, 03 3.6) -> map to `AttemptsPanel.rows`
+(`sessionId` = provider id of `session_id`, 3.10.2):
 `n = /^\d+$/.test(n_raw) ? Number(n_raw) : null`, `exit = /^-?\d+$/.test(exit_raw) ? Number(exit_raw) : null`, `usage` = the session's
 aggregate `TokenUsage` (03 5.5, `usageInclSubagents`) or null. Rows from older generations are included (history).
 
 ### 3.11 Tests that prove the panel guarantees
 
-| Guarantee | Test file (`runtime/packages/engine/test/panels/`) | Cases |
+Placement (05 4.1, registry C47): unit tests sit next to their module (`engine/src/panels/*.test.ts`, `engine/src/panels/attempts/*.test.ts`,
+`engine/src/platform/*.test.ts`); only `*.int.test.ts` files live under `engine/test/{panels,platform}/`.
+
+| Guarantee | Test file | Cases |
 |---|---|---|
 | single flight, N callers -> 1 load | `source-cache.test.ts` | 20 concurrent `read()` -> loader called once; second read inside ttl -> no call |
 | stale-while-revalidate + last good value | `source-cache.test.ts` | loader fails after a success -> old value with status `error`; next ttl retries with backoff `ttl*2^n` capped 300 s; `unavailable` waits `retryAfterUnavailableMs` |
@@ -709,9 +723,10 @@ aggregate `TokenUsage` (03 5.5, `usageInclSubagents`) or null. Rows from older g
 | logs panel | `files.test.ts` | 6 files -> newest 4, tails only for 2, 220 code points (emoji), vanished file skipped, `**` recursion, dotfile excluded, 501 files -> capped message |
 | strptime | `pytime.test.ts` + `golden/vectors/strptime.json` | every directive, unconverted data, Feb 29, `%y` pivot, `%z` fix, unsupported directive error |
 | externalState | `attempts-state.test.ts` + `golden/vectors/external_state.json` | the legacy table incl. `PASS_WITH_ERRORS`, `exit=1 PASS`, `00`, blank+0, blank+None |
+| attempts tick driver | `service.test.ts` | `tickAttempts` called while a tick runs returns the same promise (one ingestion); `close()` drops an unaccepted batch |
 | attempts ingestion | `attempts-ingest.test.ts` | demo chain log -> rows A..F; append END for C -> C COMPLETED in the next tick only (offset); START with bad time skipped; duplicate START -> superseded; CRLF lines; truncation -> generation 2 and old rows kept; config change -> rebuild + retract call |
 | matching | `attempts-match.test.ts` | window -15/600 boundaries inclusive; smallest delta wins; tie rules; unmatched session excluded unless include_unmatched; first-record vs min timestamp difference |
-| precedence to lifecycle | `attempts-evidence.test.ts` | two ended rows for one session -> the later START published, also when the earlier START has the later END; open row publishes nothing; config change -> `external.attempt_cleared` for sessions without new evidence, only `external.attempt` for sessions re-evidenced in the same tick, and a later tick's evidence carries a stamp greater than the clear; `publishAt` strictly increasing across a simulated restart and a 5 s backward clock step |
+| precedence to lifecycle | `attempts-evidence.test.ts` | events carry `endedAt` = `ended_at` and the provider session id mapped from the row id; a writer stub sees `submit` only after the attempts COMMIT and none when the transaction throws; `submit` returning `false` -> the same batch re-submitted first on drain; two ended rows for one session -> the later START published, also when the earlier START has the later END; open row publishes nothing; config change -> `external.attempt_cleared` for sessions without new evidence, only `external.attempt` for sessions re-evidenced in the same tick, and a later tick's evidence carries a stamp greater than the clear; `publishAt` strictly increasing across a simulated restart and a 5 s backward clock step |
 
 ---
 ## 4. Windows and platform catalogue
@@ -737,7 +752,7 @@ Platform branching rule (critic I-34), an addition to design 05's ESLint flat co
   `platform/**` and `security/paths.ts` re-declares `'no-restricted-properties': ['error', ...NO_STDIO]` (flat config replaces a rule's
   options per matching block, so the allow-list must not switch the stdio restriction off; verified E24). 05's `engine/src/log/logger.ts` block,
   which sets the rule `off` for stdio, becomes `['error', PLATFORM_ENTRY]` so the logger stays covered.
-- Test: `engine/test/platform/platform-branching.test.ts` (slice PP1) runs ESLint's Node API with the repository config and
+- Test: `engine/src/platform/platform-branching.test.ts` (slice PP1) runs ESLint's Node API with the repository config and
   `lintText("export const w = process.platform === 'win32';", { filePath })` for `filePath` = `packages/engine/src/panels/x.ts` (one
   error), `packages/engine/src/platform/x.ts`, `packages/engine/src/security/paths.ts`, `packages/shared/src/protocol/x.ts`
   (no error); no fixture file is written under `src/`.
@@ -762,7 +777,7 @@ Where identity matters (instance ownership, transcript file keys, attempts sourc
 
 | Concern | Rule | Evidence / test |
 |---|---|---|
-| Drive-letter case | upper-cased by `canonicalPath`; hook payloads give `C:\...` while Git Bash gives `/c/...`: the runtime never receives MSYS paths (Node APIs and Claude Code use Windows form); a config value starting with `/<letter>/` on win32 is rejected by config validation with `E_MSYS_PATH` "use C:/... instead of /c/..." | `paths.test.ts` |
+| Drive-letter case | upper-cased by `canonicalPath`; hook payloads give `C:\...` while Git Bash gives `/c/...`: the runtime never receives MSYS paths (Node APIs and Claude Code use Windows form); a config value starting with `/<letter>/` on win32 is a validation problem reported as `McsError('CONFIG_INVALID', ...)` with the message "use C:/... instead of /c/..." (01 2.4 Node-only additions; critic N-06, registry C42) | `paths.test.ts` |
 | Long paths (> 260) | supported by Node fs (E11, 308 chars); nothing to do; the legacy engine is not involved | `paths.int.test.ts` creates a 300-char tree |
 | UNC repos (`\\server\share\repo`) | allowed; `fs.watch` hints disabled for UNC roots (SMB change notifications are unreliable, UNVERIFIED), polling only; 02's `sanitizeProjectName` applies the same sanitizing (UNVERIFIED: no UNC sample in the survey) | `paths.test.ts` (string level) |
 | Forward slashes in config | accepted (`path.resolve` normalizes); API returns `toPosixRel` values | `paths.test.ts` |
@@ -771,14 +786,14 @@ Where identity matters (instance ownership, transcript file keys, attempts sourc
 
 ### 4.2 Process liveness, command line, termination (`platform/process.ts`)
 
-Owned by slice PP1 (critic I-06); design 01 4.2 imports these functions and keeps only `platform/mutex.ts` (01 slice S4). The former
-`killPid` of this design is dropped in favour of 01's `forceKill` + `waitForExit`.
+Owned by slice PP1 (critic I-06); design 01 4.2 imports these functions and keeps `platform/mutex.ts` and `platform/markers.ts` (01
+slice S4; `listRuntimeProcesses`, `hasRuntimeMarker`, `hasLegacyMarker` live there, registry C13). The former `killPid` of this design
+is dropped in favour of `forceKill` + `waitForExit`.
 ```ts
 export function pidAlive(pid: number): boolean;                         // never signals a live process
 export function commandLineOf(pid: number): Promise<string | null>;     // null = unknown (process gone, access denied, lookup failed)
 export function forceKill(pid: number): Promise<void>;                  // 01 4.2 semantics; never throws for an already-dead pid
 export function waitForExit(pid: number, timeoutMs: number, pollMs?: number /* 100 */): Promise<boolean>;   // true = exited
-export function listRuntimeProcesses(runtimeDir: string): Promise<{ pid: number; instanceId: string | null; instanceDir: string | null }[]>;  // 01 4.2
 ```
 - `pidAlive`: `Number.isSafeInteger(pid) && pid > 0` else false; `process.kill(pid, 0)` returns -> true; `EPERM` -> true; `ESRCH` or other ->
   false. libuv's signal 0 on Windows is a health check (`OpenProcess` + exit code `STILL_ACTIVE`), verified in the backend research; same
@@ -794,11 +809,10 @@ export function listRuntimeProcesses(runtimeDir: string): Promise<{ pid: number;
   Linux: read `/proc/<pid>/cmdline`, NUL -> space, trailing space trimmed. macOS: `ps -o command= -p <pid>` via `execFileText` (kind `ps`, UNVERIFIED).
 - `forceKill`: Windows: `execFileText({kind:'taskkill', file: resolveExecutable('taskkill'), args: ['/PID', String(pid), '/F'], timeoutMs: 10000, maxOutputBytes: 65536, encoding: 'utf8'})`
   (01 E3: plain `process.kill` and `taskkill /F` both terminate immediately; `taskkill` keeps 01's tested path); exit code 128 (not
-  found) counts as success. POSIX: `process.kill(pid, 'SIGKILL')`, `ESRCH` ignored. The pid is validated like `commandLineOf`.
+  found) counts as success. This is the one mechanism: 01 4.2 and ADR 0006 adopt it (critic I-06, registry C12). POSIX: `process.kill(pid, 'SIGKILL')`, `ESRCH` ignored. The pid is validated like `commandLineOf`.
 - `waitForExit`: polls `pidAlive` every `pollMs` until false (-> `true`) or `timeoutMs` (-> `false`).
-- `listRuntimeProcesses`: 01 4.2 semantics (one CIM query for `node.exe` processes whose command line contains
-  `<runtimeDir>/packages/server/dist/main.js`), implemented with a constant `-EncodedCommand` script that prints `ProcessId<TAB>CommandLine`
-  lines; the filtering by `runtimeDir` and the parsing of `--mcs-instance` / `--instance-dir` happen in Node (rule 8 of 3.6).
+- `listRuntimeProcesses` is design 01's (`platform/markers.ts`, 01 S4, launcher-copy parity; registry C13). It spawns only through
+  `execFileText` with a constant `-EncodedCommand` script; filtering and parsing happen in Node (rule 8 of 3.6).
 - The marker check before a kill (Node runtime marker or legacy `viewer.py`, D12) is design 01's (4.9); it calls `commandLineOf` and
   compares with `samePath`/`pathsCaseInsensitive` (4).
 
@@ -811,11 +825,11 @@ same way (`PermissionError` 5) while Node holds the file; a Python reader racing
 editors, antivirus.
 
 **One module (critic I-28).** `engine/src/platform/fsx.ts` is the only implementation of atomic replace and short read-and-close reads in
-the engine. Design 01's `workspace/fsio.ts` (1.2) becomes a thin wrapper: its `writeFileAtomic`, `writePyJsonFile`, `readTextUniversal`,
+the engine. Design 01's `workspace/fsio.ts` (1.2) becomes a thin wrapper: its `writeWorkspaceFile`, `writePyJsonFile`, `readTextUniversal`,
 `readJsonFile`, `compareAndDelete` keep their names and error codes, call `fsx`, and add only the workspace rules (`assertNotLink`,
 `McsError` mapping, universal newlines, PyJson). Panels, attempts and the server use `fsx` directly for non-workspace files. The API is
-asynchronous; the budget is 3000 ms (E10: a 3 s holder needed 52 retries); 01's synchronous signatures become `Promise`-returning in
-the wrapper (01 owns that change).
+asynchronous; the budget is 3000 ms (E10: a 3 s holder needed 52 retries); 01 1.2's wrapper functions are async as well
+(`writeWorkspaceFile(path, data, {budgetMs})`, registry C14).
 ```ts
 export interface AtomicWriteOptions { budgetMs?: number /* 3000 */; mode?: number /* 0o644, ignored on win32 */ }
 export async function atomicWriteFile(file: string, data: string | Uint8Array, opts?: AtomicWriteOptions): Promise<void>;
@@ -939,12 +953,12 @@ Linux CI: `ubuntu-latest` runs unit + integration suites (not E2E). macOS: no ru
 
 ### 4.11 Tests that prove the platform guarantees
 
-| Guarantee | Test (`runtime/packages/engine/test/platform/`) |
+| Guarantee | Test (unit tests in `runtime/packages/engine/src/platform/`, `*.int.test.ts` in `runtime/packages/engine/test/platform/`; registry C47) |
 |---|---|
 | canonical identity | `paths.test.ts`: drive case, `/` vs `\`, 8.3 short temp path equals long path (E22), junction resolved, non-existing tail kept, UNC prefix strip (string), MSYS path rejected |
 | atomic replace | `fsx.int.test.ts` (win32): a child Python/Node process holds the target open 600 ms -> write succeeds after retry with final content; held 4 s -> `E_ATOMIC_WRITE_BUSY` and no `.tmp` left |
 | bytes in, bytes out; reader retry | `fsx.test.ts`: `atomicWriteFile` writes the given bytes unchanged (BOM-free UTF-8 for strings); `readSmallFile` retries a simulated `EBUSY` (injected `fs` stub) 10 x 20 ms, then `E_FILE_BUSY`; size cap -> `E_FILE_TOO_LARGE`; the shared-JSON byte format is proven by 01's `pyjson.golden.test.ts` and by the `json_atomic.json` vector run against 01's `writePyJsonFile` (5.2.4) |
-| pid helpers | `process.test.ts`: own pid alive, 999999 not alive, `commandLineOf(own pid)` contains `node`, a second call within 5 s spawns nothing (spawn counter from `childStats`), invalid pid rejected without spawning; a `process.execPath -e "setInterval(()=>{},1000)"` child: `forceKill` then `waitForExit(pid, 5000)` -> `true`; `forceKill` of a dead pid resolves; `listRuntimeProcesses` finds a stand-in whose argv contains the fake runtime path |
+| pid helpers | `process.test.ts`: own pid alive, 999999 not alive, `commandLineOf(own pid)` contains `node`, a second call within 5 s spawns nothing (spawn counter from `childStats`), invalid pid rejected without spawning; a `process.execPath -e "setInterval(()=>{},1000)"` child: `forceKill` then `waitForExit(pid, 5000)` -> `true`; `forceKill` of a dead pid resolves (Windows: `taskkill` exit 128 counted as success) (`listRuntimeProcesses` is tested by 01 S4) |
 | platform branching confined | `platform-branching.test.ts` (section 4 rule) |
 | no console windows | `hidden-console.int.test.ts` (4.7) |
 | time zone pinned | `setup.ts` assertion |
@@ -1097,10 +1111,11 @@ section specifies what the `*.parity.test.ts` files must compare. 05 slice S8 ow
 Per L2 scenario:
 1. Build the tree with `@mcs/testkit/legacy` into a temp dir; assert the manifest (5.3).
 2. Create a Node instance in a temp workspace with the scenario's legacy config as `config.json` (schema_version 1 added), hooks
-   disabled: build design 01's `InstanceContext` (01 4.4 / slice S8, critic I-15) with `claudeHome` = the tree's home, `mcsHome` = a
-   temp folder, `clock = () => FROZEN_NOW * 1000`, and `rt = createInstanceRuntime(ctx)` (`packages/engine/src/runtime/instance-runtime.ts`).
-3. `await rt.start()`; `await rt.ingestUntilIdle({ timeoutMs: 30000 })` (rejects on timeout -> the test fails with the pending work
-   listed); start the HTTP server for `ctx` on a port in `127.0.0.1:18875-18899` (05 4.5); after the comparisons `await rt.stop(5000)`.
+   disabled: build design 01's `InstanceContext` (01 4.4a / slice S8, `packages/engine/src/runtime/context.ts`, critic I-15, registry
+   C15) with `claudeHome` = the tree's home, `mcsHome` = a temp folder, `clock = () => FROZEN_NOW * 1000`, and
+   `rt = createInstanceRuntime(ctx)` (`packages/engine/src/runtime/instance-runtime.ts`).
+3. `await rt.start()`; `const r = await rt.ingestUntilIdle({ timeoutMs: 30000 })`; assert `r.idle === true` (01 4.4a maps 02's
+   `IngestIdleTimeoutError` to `{ idle: false, stats }`; on `false` the test fails listing `r.stats`, registry C06); start the HTTP server for `ctx` on a port in `127.0.0.1:18875-18899` (05 4.5); after the comparisons `await rt.stop(5000)`.
 4. Fetch v3 data, apply `legacy-shapes.ts` (built on 05's `projections.ts`; test-only code), compare field by field with the matrix below,
    report every mismatch with a JSON pointer.
 
@@ -1221,7 +1236,7 @@ asserts the Node error code `REGEX_UNSUPPORTED` (01 `compilePyRegex`) and record
 | R22 | rule without `label`, with `name` | `name` used | EXACT (undocumented fallback kept) |
 | R23 | unmatched, multi-line prompt of 100 code points | stripped, newlines -> spaces, 70 code points | EXACT |
 | R24 | no user text | `(no prompt)` | EXACT |
-| R25 | pattern that is invalid in Python, legacy flat config | rule skipped at runtime | flat config: rule skipped + config warning (D3); task config: validation error in both engines |
+| R25 | pattern that is invalid in Python, legacy flat config | rule skipped at runtime | flat config: N/A in Node (served by the legacy engine, 01 6.5; D3); `config migrate --from-legacy` (01 2.7) refuses the untranslatable regex (`REGEX_UNSUPPORTED`) and reports dropped keys; task config: validation error in both engines. The test asserts these three outcomes |
 | R26 | `tool_result` block containing the pattern | not a text candidate | EXACT |
 | R27 | prompt only on line 402 | not seen | EXACT |
 | R28 | invalid JSON lines before the prompt | consume line numbers | EXACT |
@@ -1240,7 +1255,7 @@ attempts design that PD6 defers to: D20 and D22 change behaviour, ADR 0055), PD7
 |---|---|---|---|---|
 | D1 | `'workflows' in p` tests the whole path: an agent under a project path containing `workflows` is tagged as a workflow member (`sessions.py:138`) | FIX | workflow = the directory directly under `<sid>/subagents/workflows/` | scenario S28 `wf-path-trap`: DIFF; `agents.test.ts` |
 | D2 | `init_task` `relpath` raises `ValueError` across drives, uncaught (`tasks.py:86`) | FIX | store the absolute repo path and note `repo stored absolute (different drive)` in the audit summary | `tasks.test.ts` with a mocked `path.relative` failure (no second drive needed) |
-| D3 | legacy flat configs: validation problems computed, never raised (`config.py:187,196`) | REPRODUCE + surface | flat configs still load leniently; problems listed in `inspect`, `doctor`, `/api/v3/health` `configWarnings` | R25; `config-legacy.test.ts` |
+| D3 | legacy flat configs: validation problems computed, never raised (`config.py:187,196`) | N/A in Node | flat configs are served by the legacy engine (01 6.5 delegates every flat-config form to `$V`); `config migrate --from-legacy` (01 2.7) validates strictly: reports dropped keys, refuses untranslatable regexes; no `configWarnings` field anywhere (critic N-05, registry C43) | R25 |
 | D4 | `usage_total` lacks `scanned_pct`, `models` | FIX | aggregate carries `models` (union), `scannedPct` (min), `complete` (AND) | projection drops extras |
 | D5 | `config_hash` includes `_source_path` (machine-specific) | FIX | hash of the effective config without source paths, canonical JSON | IGNORED in parity |
 | D6 | attempts consider sessions of the last 24 h only | REPRODUCE (default) | `runtime.json panelOptions.attemptsWindowHours`, default 24 | `attempts-match.test.ts` |
@@ -1342,7 +1357,7 @@ export interface ManifestRow { path: string; size: number; sha256: string; age_s
 
 // expect.ts - independent expectations, computed from builder inputs, never by parsing files
 export interface UsageTotals { input: number; output: number; cacheRead: number; cacheCreation: number; turns: number }
-export type LegacyState = 'RUNNING' | 'IDLE' | 'COMPLETED' | 'FAILED' | 'UNKNOWN';
+import type { LegacyState } from '@mcs/shared';                       // 03 5.5 (registry C36); not redeclared here
 export type LifecycleState = import('@mcs/shared').LifecycleState;     // design 02 section 7.1 (ten values)
 export interface SessionExpectation {
   usageOwn: UsageTotals; usageTotal: UsageTotals;                      // new rules (global dedupe, iterations fallback, ints only)
@@ -1485,7 +1500,8 @@ function mcs { node .claude/skills/monitoring-claude-sessions/scripts/mcs.mjs @a
    engine, byte-compatible); `instance.json`, `runtime.json`, `state.json`, `run/control.token`, `data/monitor.db` (+ `-wal`, `-shm`),
    `data/spool/hooks-<YYYYMMDD>T<HH>Z.ndjson` (hook write-ahead log, 02 2.7; `.ndjson` so that the legacy `audit` does not flag it,
    critic I-02), `data/backups/<backupId>/` (01 5.5), `logs/runtime.log` (+ `.1`..`.5`), `logs/boot.log` (+ `.1`).
-2. **Prerequisites** (01 5.1; 01 6.4 `doctor`). `node --version` (>= 22.12, 24 recommended); the first `$MCS` command bootstraps the
+2. **Prerequisites** (01 5.1; 01 6.4 `doctor`). `node --version` (>= 22.22.0, 24 recommended; an older Node makes `$MCS` print
+   `ERROR: Node >= 22.22.0 is required (found <v>); install the Node 24 LTS` and exit 1, `NODE_TOO_OLD`, 01 5.1); the first `$MCS` command bootstraps the
    runtime (`npm ci` + build, stamped; D6); `$MCS doctor` prints each check as `{check, ok, detail, level}`. Windows PowerShell 5.1 is
    used for per-process memory and command-line checks only; `git` and `docker` are optional.
 3. **Create or adopt an instance** (01 6.4 `discover`; 01 4.12 `init`; 01 6.4 `configure`, `inspect`, `check`).
@@ -1528,7 +1544,7 @@ function mcs { node .claude/skills/monitoring-claude-sessions/scripts/mcs.mjs @a
    | DB older than the runtime (start exit 16) | `$MCS upgrade --task X --dry-run` -> `$MCS upgrade --task X --yes --restart` (01 5.4), or `$MCS db migrate --task X --yes` |
    | migration failed | `$MCS backup list --task X --verify` -> `$MCS backup restore --task X --id <the upgrade backup> --yes` (01 5.5); or fix the cause (disk, permissions) and rerun `$MCS db migrate --task X --yes` (03 4.4) |
    | DB corrupt (`db.ok: false`; doctor `database integrity` fails) | `$MCS stop --task X` -> `$MCS backup list --task X --verify` -> `$MCS backup restore --task X --id <newest valid> --yes` (01 5.5) |
-   | DB corrupt, no usable backup | `$MCS stop --task X`; by hand, move `data/monitor.db`, `data/monitor.db-wal`, `data/monitor.db-shm` into a new folder `data/corrupt-<YYYYMMDDTHHMMSSZ>/`; `$MCS start --task X` creates an empty DB and re-imports the transcripts and spool segments still on disk (03 4.4; history no longer on disk is lost). There is no `reimport` command (critic I-12); a guarded `mcs db rebuild` is an open proposal to design 01 (OI-7) |
+   | DB corrupt, no usable backup | `$MCS stop --task X` -> `$MCS db rebuild --task X --yes --confirm X` -> `$MCS start --task X` (01 5.4: the DB files move into a backup with sha256 in its manifest, audit `db-rebuild`; the next start creates a new DB and re-imports the transcripts and spool segments still on disk; history no longer on disk is lost). There is no `reimport` command (critic I-12) |
    | hook delivery failing | `$MCS hooks verify --task X` (01 6.3); events wait in `data/spool/*.ndjson` and the running server drains them; health `ingestion.hooks.spoolPendingBytes` shows the backlog |
    | transcripts folder missing | `$MCS discover`; `$MCS configure --task X --set 'transcripts_dir="<path>"' --reason "<why>"` |
 
@@ -1604,7 +1620,7 @@ function mcs { node .claude/skills/monitoring-claude-sessions/scripts/mcs.mjs @a
 | T18 | 403 through a proxy or tunnel | - | loopback-only, Host/Origin checks | open `http://127.0.0.1:<port>` locally |
 | T19 | DB file keeps growing | health `db.sizeBytes`, `db.walBytes`; `$MCS cleanup --task X --scope data` (plan only) | retention too long | `$MCS configure --task X --set 'retention.<key>=<value>' --reason "<why>"` (keys: 03 3.8); `$MCS stop --task X`; `$MCS cleanup --task X --scope data --yes --confirm X`; `$MCS start --task X` |
 | T20 | monitor CPU higher than expected | health `children` and `panels` (03 6.2, I-21) | many open Overview tabs are free, but per-process sampling every 20 s costs about 1% | `$MCS configure --task X --set panelOptions.machineProcessIntervalMs=60000 --reason "<why>"` (runtime.json); or `--set panels.machine=false` |
-| T21 | `node` too old | `$MCS` prints the floor | Node < 22.12 | install Node 24 LTS |
+| T21 | `node` too old | `$MCS` prints `ERROR: Node >= 22.22.0 is required (found <v>); install the Node 24 LTS` (exit 1, 01 5.1) | Node < 22.22.0 | install Node 24 LTS |
 | T22 | bootstrap `npm ci` fails with node-gyp | `runtime/.npmrc` | `ignore-scripts=true` missing (stack-versions finding 4) | restore `.npmrc`; rerun `$MCS doctor` |
 | T23 | legacy `viewer.py audit` flags a file in the workspace | the file name | a `*.jsonl` file outside the Node layout (Node spool segments are `.ndjson`, critic I-02) | move the file out of the workspace; `$MCS audit --task X` explains Node-specific problems |
 
@@ -1682,16 +1698,21 @@ pass these three through for the `docker` kind only.
 
 - Design 01: `compilePyRegex(source, 'session_rule' | 'attempts'): CompiledPyRegex` (throws `McsError` `REGEX_UNSUPPORTED`),
   `PyMatch.groupdict()`, `applyLabelTemplate`; `runtime.json` `panelOptions.attemptsWindowHours` and `panelOptions.machineProcessIntervalMs`;
-  `writePyJsonFile` and PyJson (1.2, 1.9, ADR 0003); `InstanceContext` and `createInstanceRuntime(ctx) -> { start, stop(deadlineMs),
-  ingestUntilIdle({timeoutMs}), health() }` in `packages/engine/src/runtime/instance-runtime.ts` (4.4 / S8, critic I-15); CLI commands
-  and flags of 6.3/6.4 used in section 7; backup layout and `backup.keep` (5.5); the stop marker check that calls `commandLineOf` (4.9);
-  `spawnDetached`/`spawnForeground` signatures (4.2).
-- Design 02: `HookEnvelopeV1` (2.3.1), logical events `external.attempt` and `external.attempt_cleared` (4.3, I-18), `IngestWriter`
-  (4.6), `checkIdentity`/`readLines` (5.3, ADR 0015), `ImportScheduler` hints input (5.4), `sanitizeProjectName` and
+  `writeWorkspaceFile`, `writePyJsonFile` and PyJson (1.2, 1.9, ADR 0003); `InstanceContext` in `packages/engine/src/runtime/context.ts`
+  and `createInstanceRuntime(ctx) -> { start, stop(deadlineMs), ingestUntilIdle({timeoutMs}) -> {idle, waitedMs, stats}, health() }` in
+  `packages/engine/src/runtime/instance-runtime.ts` (4.4a / S8, critic I-15, registry C06/C15), whose component 4 calls
+  `createPanelService(ctx, { writer: ingest.writer })` and drives `tickAttempts()` with a 2 s timer (critic N-01, registry C57); CLI
+  commands and flags of 6.3/6.4 used in section 7, incl. `db rebuild` (5.4); backup layout and `backup.keep` (5.5); the stop marker check
+  that calls `commandLineOf` (4.9) and `listRuntimeProcesses` in `platform/markers.ts` (4.2, S4); `spawnDetached`/`spawnForeground`
+  signatures (4.2); error code `CONFIG_INVALID` and the 2.4 Node-only validation additions (critic N-06); Node floor 22.22.0 (5.1).
+- Design 02: `HookEnvelopeV1` (2.3.1), logical events `external.attempt` (with `endedAt`) and `external.attempt_cleared` (4.3, I-18),
+  `IngestWriter`/`IngestBatch` (4.6) and the shared `IngestService.writer` (4.10), `checkIdentity`/`readLines` (5.3, ADR 0015), `ImportScheduler` hints input (5.4), `sanitizeProjectName` and
   `detectTranscriptsDir` (5.1), `transcript_file.first_ts_in_order` (4.1), `legacyFileUsage`/`legacyUsageTotal` (6.5),
   `aggregateSession`/`aggregateInstance` (6.3), `LifecycleState` (7.1), `Stamp`/LWW join (7.2), S-1 (7.4), legacy mapping (7.9), spool
   segment name `hooks-<YYYYMMDD>T<HH>Z.ndjson` (2.7, I-02).
-- Design 03: tables `attempt_sources`/`attempt_runs` and their repository functions (3.5, I-07); `HealthReport` (6.2) with the I-21
+- Design 03: tables `attempt_sources`/`attempt_runs` and indexes `idx_attempt_runs_*` (3.5, I-07); `AttemptsRepo` and
+  `SessionsRepo.attemptCandidates` plus a by-id `session_uid` lookup (3.6); `withWriteTx(db, ctx, fn)` (4.5); change kind `attempt/upsert`
+  (9.1); `HealthReport` (6.2) with the I-21
   additions; route `panel` with `response: PanelResponseSchema` in `shared/src/api/routes.ts`; `IsoTime` (`api/time.ts`), `TokenUsage`
   (`api/entities.ts`); uniform error envelope and `panel_disabled` (404); `/api/v3/instance.poll`; recovery guidance (4.4); export
   `mcs.export/1` (11.1); `applyRetention` (3.8, 11.3).
@@ -1705,7 +1726,8 @@ pass these three through for the `docker` kind only.
 - Brief 8.1 (overview dashboard): panel data with a defined source, TTL and aggregation rule per field (3.3-3.10); no fabricated or
   unlabelled precision (`sampledAt`, per-source status, `cpuPct: null` first sample, lower-bound token flags).
 - Brief 7 / requirement R-7.E.13 (attempts as a persisted entity): attempts runs persisted in 03's `attempt_sources`/`attempt_runs`
-  (3.10.2, critic I-07), ingested incrementally (3.10.3), published as lifecycle evidence with deterministic precedence (3.10.7).
+  (3.10.2, critic I-07), ingested incrementally by a 2 s tick (3.10.3), published as lifecycle evidence after commit with
+  deterministic precedence (3.10.7).
 - Brief 8.8 (diagnostics): panel source errors and stats in `HealthReport.panels`, child statistics in `HealthReport.children`
   (8.2, critic I-21); troubleshooting table 7.2.
 - Brief 8.9 (CLI diagnostics) and 8.10 (health, export, backup, retention, cleanup, version info, diagnostics): runbook 7.1 items 4-13,
@@ -1736,19 +1758,23 @@ lands the change, nothing here changes):
 | Id | Item | Owner | Resolution path |
 |---|---|---|---|
 | OI-1 | 04 `usePanel` reads `PanelResponse.data` and maps `status`/`sources`; 04 section 13 imports panel types from `@mcs/shared` `api/panels.ts` (CH-3) | 04 (critic I-10) | contract test `panels.contract.test.ts` |
-| OI-2 | `attempt_sources` / `attempt_runs` in `0001_initial.sql` with the columns of 3.10.2 and their repository functions | 03 (critic I-07) | 03 S1 before `0001` is frozen; PP5 depends on it |
-| OI-3 | logical event `external.attempt_cleared { sessionId, observedAt }`, LWW clear of `attempt`, S-1 treats `null` as no evidence, transition-table row; and a note that `external.attempt.observedAt` is the monitor's publication stamp (3.10.7) | 02 (critic I-18) | 02 4.3, 7.3, 7.4 |
+| OI-2 | `attempt_sources` / `attempt_runs` in `0001_initial.sql`, `AttemptsRepo`, `SessionsRepo.attemptCandidates` (3.10.2 now points at 03 3.5/3.6, critic N-10) and a `SessionsRepo` by-id `session_uid` lookup used to map row ids to provider ids | 03 (critic I-07, N-10) | 03 S1/S2; PP5 depends on it |
+| OI-3 | logical event `external.attempt_cleared { sessionId, observedAt }`, LWW clear of `attempt`, S-1 treats `null` as no evidence, transition-table row; `external.attempt` carries `endedAt` and `observedAt` = publication stamp (3.10.7) | 02 (critic I-18) | 02 4.3, 7.3, 7.4 (done in 02 4.3) |
 | OI-5 | docker env pass-through in 05 S-PROC (CH-4) | 05 | add the three variables for kind `docker` |
 | OI-6 | `HealthReport.runtime.{rssBytes, heapUsedBytes, cpuUserMicros, cpuSystemMicros}`, `HealthReport.children`, `HealthReport.panels` (8.2); `DiagnosticsBundle.health` carries the `HealthReport` | 03 6.2 and 01 6.4 (critic I-21) | 03 adds the fields importing `ChildKind`, `ChildKindStats`, `PanelStats` from `shared/src/api/panels.ts` |
-| OI-7 | optional guarded command `mcs db rebuild --task S --yes --confirm <slug>` (stopped instance: backup, move the DB aside, audit) to replace the manual "DB corrupt, no usable backup" steps of 7.1 item 6 | 01 (critic I-12 option) | if 01 adds it, 7.1 item 6 cites it; until then the manual steps stand |
 | OI-8 | `workspace/fsio.ts` becomes a thin async wrapper over `platform/fsx.ts`; `writePyJsonFile` writes through `fsx.atomicWriteFile` | 01 1.2 (critic I-28) | 01 S4 |
-| OI-9 | 01 4.2 imports `execFileText(ChildSpec)` and `process.ts` from this design and keeps `mutex.ts` | 01 (critic I-06) | 01 S4 shrinks to `mutex.ts` + `fsio.ts` |
+| OI-9 | 01 4.2 imports `execFileText(ChildSpec)` and `process.ts` from this design and keeps `mutex.ts` and `markers.ts` (`listRuntimeProcesses`); 01 4.2 and ADR 0006 adopt `taskkill.exe /PID <pid> /F` for `forceKill` and drop `ExecutableName` (kind and resolution of `opener` are here, 3.6) | 01 (critic I-06, registry C11-C13) | 01 S4 = `mutex.ts` + `markers.ts` + `fsio.ts` |
 | OI-10 | `PLATFORM_ENTRY` added to the engine and logger blocks of `runtime/eslint.config.js` (section 4) | 05 S1 (critic I-34) | lint config change; PP1's `platform-branching.test.ts` proves it |
 | OI-11 | `MCS_FS_WATCH`, `MCS_GOLDEN_DIR`, `MCS_PARITY_LIVE` listed in 01 2.10's test and development table | 01 (critic I-27) | env-var grep test (05 S1) |
 | OI-12 | logger rotation constants `LOG_ROTATE_BYTES = 10 MiB`, `LOG_KEEP = 5` (S-LOG-6) cited by 7.1 item 12 | 05 (critic I-25) | 05 S6 |
 | OI-13 | spool segment extension `.ndjson` (`SPOOL_SEGMENT_EXT`) cited by 7.1 item 1 and T23 | 02 (critic I-02) | 02 I-1 |
+| OI-14 | 01 4.4a component 4: `createPanelService(ctx, { writer: ingest.writer })`, `start()` arms the 2 s `tickAttempts` timer (first call at start), `stop()` clears it then `close()` (3.2) | 01 (critic N-01, registry C57) | 01 S8 |
+| OI-15 | 03 3.6 (attempts paragraph) and its I/O table row drop "inside the same transaction": the events are submitted through the writer after the attempts COMMIT (3.10.7) | 03 (critic N-01) | 03 S2 |
+| OI-16 | 01 2.4 Node-only additions list `attempts.time_format` (`pyStrptimeValidate`, 3.10.1) and MSYS `/<letter>/` paths on win32 (4.1) as `CONFIG_INVALID` messages | 01 (critic N-06, registry C42) | 01 S1/S2 |
+| OI-17 | Node floor 22.22.0 in 05 3.2 (repository scripts); 05 4.11.5 PD3 = N/A in Node like D3 (5.8) | 05 (critic I-05, N-05, registry C28, C43) | 05 S1 |
 
-Former OI-4 (capture engine choice) is closed by critic I-09 (CH-2). No open item is owned by this design.
+Former OI-4 (capture engine choice) is closed by critic I-09 (CH-2). Former OI-7 (`mcs db rebuild`) is closed: 01 5.4 defines it and
+7.1 item 6 uses it (critic I-12, registry C44). No open item is owned by this design.
 
 ## 13. Phase 2+ task slices (dependency order; each independently testable)
 
@@ -1757,14 +1783,14 @@ PP7 after 03 S1 and 01 S8; parity slices after the ingestion and API slices; PP1
 
 | Slice | Phase | Depends on | Files owned | Done when |
 |---|---|---|---|---|
-| PP0 panel contracts | 2 | 05 S1 scaffold; 03 S3 `api/time.ts`, `api/entities.ts` (same change allowed) | `shared/src/api/panels.ts` (types, zod schemas incl. `PanelResponseSchema`, `ChildKind`, `ChildKindStats`, `PanelStats`), `shared/test/api/panels.test.ts` | schema round trip for one sample per `PanelKey`; `PanelResponseSchema` rejects a mismatched `key`/`data`; 03 S3's route `panel` compiles against it |
-| PP1 platform layer | 2 | 05 S1; PP0 (`ChildKind`) | `engine/src/platform/{exec,process,fsx,host,paths,glob,pytime,watch-hint}.ts` and `engine/test/platform/**` (incl. `platform-branching.test.ts`); 01 S4 keeps only `platform/mutex.ts` and `workspace/fsio.ts` (I-06, I-28) | 3.11 exec/glob/pytime rows and 4.11 pass on Windows; Linux CI unit run green; 01's wrapper tests (T-LC-16, atomic retry) pass against `fsx` |
+| PP0 panel contracts | 2 | 05 S1 scaffold; 03 S3 `api/time.ts`, `api/entities.ts` (same change allowed) | `shared/src/api/panels.ts` (types, zod schemas incl. `PanelResponseSchema`, `ChildKind`, `ChildKindStats`, `PanelStats`), `shared/src/api/panels.test.ts` | schema round trip for one sample per `PanelKey`; `PanelResponseSchema` rejects a mismatched `key`/`data`; 03 S3's route `panel` compiles against it |
+| PP1 platform layer | 2 | 05 S1; PP0 (`ChildKind`) | `engine/src/platform/{exec,process,fsx,host,paths,glob,pytime,watch-hint}.ts`, their unit tests next to them (incl. `platform-branching.test.ts`) and `engine/test/platform/*.int.test.ts`; 01 S4 keeps `platform/mutex.ts`, `platform/markers.ts` and `workspace/fsio.ts` (I-06, I-28, registry C13) | 3.11 exec/glob/pytime rows and 4.11 pass on Windows; Linux CI unit run green; 01's wrapper tests (T-LC-16, atomic retry) pass against `fsx` |
 | PP2 golden generator | 2-3 | none (Python only) | `tests/legacy-parity/README.md`, `tests/legacy-parity/tools/**`, `tests/legacy-parity/golden/**` (generated, committed by the lead) (I-09) | two captures -> `--check` clean; skill tree clean (`git status`), no `__pycache__`; temp dirs removed |
 | PP3 testkit additions | 2-3 | 05 testkit core (S2/S3) | `testkit/src/{pyjson,io,expect,big}.ts`, `testkit/src/legacy/*`, `testkit/legacy/ORDER.md`, `shapes.json`, tests 6.5 | 6.5 rows pass |
 | PP4 parity skeleton | 3 | PP1, PP2, PP3, 01 S1/S2/S4/S5/S6, 05 S8 (parity layout) | `runtime/tests/parity/{reference-usage.ts,vectors.ts,legacy-trees.parity.test.ts,vectors.parity.test.ts}` | manifests equal for all L-* trees; `vectors.parity.test.ts` passes exactly these vector files: `splitlines.json`, `tail.json`, `strptime.json` (PP1), `pydumps.json` (PP3), `slug.json`, `merge_provenance.json`, `audit_entry.json`, `json_atomic.json` (01). Later vector files are added by the slice that ports the function, each as its own `runtime/tests/parity/vectors/<name>.parity.test.ts` using `vectors.ts` `runVectorFile(file, fn)`: `external_state` (PP5), `classify_state` (02 I-7), `classify_rules` (02 I-8, with 01 S3 translator), `events_of`, `clip` (03 S7) |
-| PP5 attempts | 3 | PP1, 03 S1 (tables of 3.10.2 + repository functions, I-07), 02 I-3 (tailer), 02 I-8 (writer) with `external.attempt_cleared` (I-18), 01 S3 (`compilePyRegex`) | `engine/src/panels/attempts/{parse,state,ingest,match,evidence,repo}.ts`, `engine/test/panels/attempts-*.test.ts`, `runtime/tests/parity/vectors/external_state.parity.test.ts` | 3.11 attempts rows (incl. the stamp-ordering cases); L-PANELS attempts parity EXACT except D20 rows |
+| PP5 attempts | 3 | PP1, 03 S1/S2 (tables of 03 3.5, `AttemptsRepo`, `SessionsRepo`, I-07, N-10), 02 I-3 (tailer), 02 I-8 (writer) with `external.attempt_cleared` (I-18), 01 S3 (`compilePyRegex`) | `engine/src/panels/attempts/{parse,state,ingest,match,evidence,repo}.ts`, `engine/src/panels/attempts/attempts-*.test.ts`, `runtime/tests/parity/vectors/external_state.parity.test.ts` | 3.11 attempts rows (incl. the stamp-ordering cases); L-PANELS attempts parity EXACT except D20 rows |
 | PP6 scenario catalogue + CLI | 3-4 | PP3, 05 S3 (`hookPayload`, `runHookHandler`), 02 I-2 (handler) | `testkit/src/scenarios/*`, `testkit/src/cli.ts` | every scenario deterministic; expectations test passes; CLI guards |
-| PP7 panels | 4-5 | PP0, PP1, PP5, 01 S8 (`InstanceContext`, `createInstanceRuntime`), 03 S4 (route adapter) | `engine/src/panels/{source-cache,machine,proc-win32,proc-posix,git,files,service,constants}.ts`, `server/src/routes/panels.ts`, `engine/test/panels/**` except attempts | 3.11 rows pass; Windows integration tests pass; `HealthReport.panels` and `.children` filled (after 03 adds the fields, OI-6); B7 measured |
+| PP7 panels | 4-5 | PP0, PP1, PP5, 01 S8 (`InstanceContext`, `createInstanceRuntime` with component 4's writer and 2 s timer, OI-14), 03 S4 (route adapter) | `engine/src/panels/{source-cache,machine,proc-win32,proc-posix,git,files,service,constants}.ts`, `server/src/routes/panels.ts`, `engine/src/panels/*.test.ts`, `engine/test/panels/*.int.test.ts` | 3.11 rows pass; Windows integration tests pass; `HealthReport.panels` and `.children` filled (after 03 adds the fields, OI-6); B7 measured |
 | PP8 parity harness | 3-6 (grows) | PP4, 01 S8 (`createInstanceRuntime`), 02 I-8, 03 S5, 05 S8 | `runtime/tests/parity/legacy-shapes.ts` and `runtime/tests/parity/{sessions,events,search,attempts,tokens,config-regex,workspace-files,panels,diffs}.parity.test.ts` | L2 matrix green for every committed scenario; T1-T6 green |
 | PP9 shadow tool | 6 | PP8, 01 S9 | `runtime/scripts/parity-shadow.mjs`, `runtime/tests/parity/shadow.test.ts` | `unexplained == 0` on a testkit tree; no label text in output; ports 18850-18899; temp removed |
 | PP10 benchmarks | 5-6 | PP6, PP7, 01 S9, 03 S4 (health with I-21 fields) | `runtime/bench/**` | scripts produce JSON; B1-B7 evaluated and reported |

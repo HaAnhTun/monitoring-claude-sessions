@@ -9,7 +9,7 @@ may be stale". The legacy page derived health from per-endpoint poll success and
 ## Decision
 - **Connection** (client-observed): `connecting | live | polling | reconnecting | offline`, computed by a pure function from the stream
   snapshot, endpoint records (legacy `computeHealth` thresholds) and `navigator.onLine`.
-- **Freshness** (client-observed): `stale` when `now - lastSyncAt > staleAfterMs` (single default 15000 ms from `@mcs/shared`).
+- **Freshness** (client-observed): `stale` when `now - lastSyncAt > staleAfterMs` (value = `InstanceInfo.staleAfterMs` from config `poll.stale_after_ms`, default 15000, 03 6.2; one value for every client; registry C50).
   `lastSyncAt` = last heartbeat with `headSeq === lastSeq` or last applied batch while live; otherwise the oldest core endpoint success.
 - **Ingestion** (server-computed only): `health.ingestion.status`; shown as "unknown (last known X, N s ago)" whenever the client is not
   in sync. The UI never infers ingestion health from the stream.

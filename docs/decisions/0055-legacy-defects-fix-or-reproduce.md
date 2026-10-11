@@ -14,9 +14,12 @@ them blindly keeps bugs; silently fixing them makes parity tests fail or, worse,
   D20 a later START supersedes an open row (UNKNOWN instead of RUNNING forever); D21 `%z` honoured; D22 an attempt keeps its session
   match after 24 h; D23 docker status instead of a fake row; D25 vanished log files skipped; D26 recursive `**`; D27 BOM stripped;
   D30/D31 global dedupe and `iterations[0]` (foundations D8).
-- Reproduced on purpose: D3 lenient flat configs (plus warnings), D6 24 h attempts window (configurable), D7 several rows per session,
+- Reproduced on purpose: D6 24 h attempts window (configurable), D7 several rows per session,
   D11 code-point clipping, D12 25-text overshoot, D24 raw exit text (`00` is non-zero), D29 first record in file order, D34 matched
   candidates only.
+- N/A in Node: D3 lenient flat configs (flat configs stay with the legacy engine, design 01 6.5; `config migrate --from-legacy`
+  validates strictly, reports dropped keys and refuses untranslatable regexes; no `configWarnings` field; critic N-05). Amended in
+  revision 3.
 - Each FIX row has a DIFF assertion of the new value in `runtime/tests/parity/diffs.parity.test.ts`; no blanket skips.
 
 ## Consequences

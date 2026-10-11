@@ -1,6 +1,6 @@
 # ADR 0014: Hook installer: marker-based merge, atomic write, backups, dry run by default
 
-Status: Proposed (Phase 1 design, 2026-10-11). Design reference: section 3.
+Status: Proposed (Phase 1 design, 2026-10-11; revised by the second critic pass, registry C23, C48, C49). Design reference: section 3.
 
 ## Context
 
@@ -17,11 +17,13 @@ uninstall, and no test against real settings.
 - Ownership marker: a `command` handler whose `args` contain `--mcs-hook` (or whose shell command contains it). Install removes
   every marked handler and appends one group per installed event; uninstall removes marked handlers and only the groups/keys
   that this removal emptied. Indentation, EOL, BOM, trailing newline and key order are preserved.
-- Apply: lock file, backup of the original bytes under `$MCS_HOME/backups/settings/` (20 kept), write temp next to the target,
+- Apply: OS mutex `mutexName('settings', path.resolve(settingsPath))` (01 4.2, released by the OS when the holder dies), backup of the original bytes under `$MCS_HOME/backups/settings/` (20 kept), write temp next to the target,
   fsync, re-parse and compare, optimistic concurrency (hash unchanged since read, 3 attempts), rename with retries for Windows
   sharing violations, post-check with restore, manifest `$MCS_HOME/hooks/installs.json`, audit entry in the task.
 - Dry run unless `--yes`; agents pass `--yes` only after the user agreed to the shown plan and scope. Never installed implicitly.
   Under `MCS_TEST=1`/Vitest, writing a real settings path is refused.
+- Home: the installer is engine code (`engine/src/hooks/installer/`) called by 01's `ops.hooks.{install,uninstall,verify,status}`;
+  the CLI modules keep option tables and rendering only (the engine never imports the CLI package).
 - `mcs hooks verify` checks settings, paths, handler version, route file, then runs the installed command with a synthetic probe
   payload and confirms arrival in the spool (and in the DB when the server runs), without touching settings or starting Claude Code.
 

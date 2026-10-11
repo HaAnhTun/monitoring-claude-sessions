@@ -1,6 +1,6 @@
 # 0006 Process identity before any kill: control-channel identity first, command-line marker as fallback
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` sections 4.1, 4.8, 4.9).
+Status: Proposed (Phase 1, 2026-10-11; revision 3 adopts design 06's `forceKill`). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` sections 4.1, 4.2, 4.8, 4.9).
 
 ## Context
 D12 requires `stop` to verify the pid's command line before killing (pids are reused; the legacy CLI checks for `viewer.py`). On this
@@ -18,8 +18,10 @@ machine `wmic` no longer exists; the remaining command-line sources cost a Power
   Linux `/proc/<pid>/cmdline`; macOS `ps -o command= -p <pid>`. The pid is validated (`/^[1-9][0-9]{0,9}$/`) before building the script.
 - Marker checks live in `platform/markers.ts` (`hasRuntimeMarker`, `hasLegacyMarker`), the only place outside `exec.ts`/`process.ts`
   that branches on the platform for this purpose (design 06 lint scope, I-34).
-- The kill itself is `forceKill(pid)`: `process.kill(pid)` on Windows (TerminateProcess, the effect of `taskkill /F`, no child process)
-  and `SIGKILL` on POSIX, followed by `waitForExit`.
+- The kill itself is `forceKill(pid)` of `platform/process.ts` (design 06 4.2, ADR 0051; revision 3, registry C12): on Windows
+  `taskkill.exe /PID <pid> /F` through `execFileText` kind `taskkill` (10 s timeout; exit code 128 = process already gone = success),
+  so every kill goes through the one child-process helper and its statistics; `SIGKILL` on POSIX (`ESRCH` ignored); then `waitForExit`.
+  E3 showed `process.kill(pid)` and `taskkill /F` have the same effect (immediate termination, no handlers); the choice is 06's.
 - The server argv always carries the marker, also for the foreground `serve`.
 
 ## Consequences

@@ -4,6 +4,11 @@ Status: Critic output, 2026-10-11. Author: independent critic (read every design
 MEGA-PROMT-V3 in full, the research files for the facts the designs rely on, and the legacy sources named below).
 Inputs are the design documents as they stood at 15:36 on 2026-10-11. Nothing in this file changes a design; it records where the
 designs agree, where they conflict and what is missing. The lead resolves the issues listed in section 2 before Phase 2 starts.
+Second review (convergence critic, 2026-10-11, inputs = the revised designs as of 16:25 and ADRs as of 16:24): every row's status
+column is current; the first review's issue table (section 2) is kept as the record, its per-issue status and the new findings are in
+section 2a. 21 of 37 prior issues are closed in every document they touch; 16 keep a residual; 13 new issues (N-01..N-13).
+`98-contract-registry.md` (contract registrar, 16:45) appeared during this review; its conflict ids `Cnn` are cited in 2a and the
+fix directions below follow its authority order wherever both found the same divergence, so that one shape per conflict remains.
 
 Reading guide: section 1 is the one-row-per-requirement matrix (brief sections 1-18). Section 2 lists the cross-design conflicts
 and gaps with the required fix and the document that must change. Section 3 checks the Phase 2+ slices across documents.
@@ -27,7 +32,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-0.3 | Stable releases, no experimental features | 05 2.4 (`erasableSyntaxOnly`, type stripping dev-only), D6 | `tsconfig.base.json` | `npm run build` | designed | `fs.glob` deliberately avoided (06 3.9.4) |
 | R-0.4 | TypeScript strict, no `any`, no unsafe assertions, runtime validation at boundaries | 05 2.4, 2.6; 03 5.2 step 6; 02 4.2 | `tsconfig.base.json`, `eslint.config.js`, shared zod schemas | `tests/tooling/lint-rules.test.ts` | designed | |
 | R-0.5 | Consistent naming, formatting, imports, error handling, async, cleanup | 05 2.6-2.7; 01 INV-11; 03 DA-I12 | `eslint.config.js`, `.prettierrc.json` | `npm run lint`, `format:check` | designed | import order not linted (documented) |
-| R-0.6 | Automated enforcement: format, lint, typecheck, tests, dependency and security checks, reproducible commands, CI | 05 3.1, 5.3 S-DEP, 8 | `runtime/scripts/ci.mjs`, `check-deps.mjs`, `runtime/ci/github-actions-ci.yml` | `npm run ci` | designed | GitHub workflow inactive, never run remotely (05 8.2) |
+| R-0.6 | Automated enforcement: format, lint, typecheck, tests, dependency and security checks, reproducible commands, CI | 05 3.1, 5.3 S-DEP, 8 | `runtime/scripts/ci.mjs`, `check-deps.mjs`, `runtime/ci/github-actions-ci.yml` | `npm run ci` | designed | GitHub workflow inactive, never run remotely (05 8.2); N-02 (the `smoke` gate starts the server with an argv that 01 4.4 refuses) |
 | R-0.7 | Maintainability over ceremony: no speculative abstractions or needless deps | 05 ADR 0041 avoid list; 04 ADR 0034/0038 | `eslint.config.js` banned packages | lint | designed | |
 | R-0.8 | Repository consistency: inspect before changing, preserve patterns | 00 C1 (legacy read-only), 01 INV-02 | n/a | T-XE-01/02 | designed | |
 | R-0.9 | Evidence-based decisions recorded in ADRs | ADRs 0001-0059 | `docs/decisions/` | review | designed | |
@@ -52,9 +57,9 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-2.1 | Still a skill with documented instructions and deterministic commands | 01 Appendix A (SKILL.md), 01 6, ADR 0008 | `SKILL.md`, `scripts/mcs.mjs`, `packages/cli` | T-CLI-01..10 | designed | |
 | R-2.A.1 | Discover environment and sessions | 01 6.4 `discover` | `engine/src/ops/workspace.ts` | T-CLI-03 | designed | |
 | R-2.A.2 | Initialize an independent instance | 01 4.12 | `ops/workspace.init` | T-LC-10/11/12 | designed | |
-| R-2.A.3 | Create and validate configuration | 01 2, 6.4 `configure`/`check` | `engine/src/config/*` | T-CLI-04 | designed | I-01 (runtime.json sections) |
+| R-2.A.3 | Create and validate configuration | 01 2, 6.4 `configure`/`check` | `engine/src/config/*` | T-CLI-04 | designed | I-01 closed (01 1.6 sections `spool`, `import`, `health`, `analytics`); N-03 (five section modules without an owning slice); N-04 (range bounds 01 1.6 vs 02 1.2) |
 | R-2.A.4 | Select runtime/template version | 01 5.2, 5.4 | `ops/upgrade.ts` | T-UP-05..07 | designed | |
-| R-2.A.5 | Install or verify dependencies | 01 5.1 launcher, 05 3.3 | `scripts/mcs.mjs`, `runtime/scripts/build-stamp.mjs` | T-UP-01..04 | designed | I-05 (Node floor), I-24 (bootstrap lock) |
+| R-2.A.5 | Install or verify dependencies | 01 5.1 launcher, 05 3.3 | `scripts/mcs.mjs`, `runtime/scripts/build-stamp.mjs` | T-UP-01..04 | designed | I-24 closed (mutex in 05 3.3.4 and ADR 0047); I-05 closed in 01/05/ADR 0007, residual `22.12` in 06 7.1 item 2 and T21 |
 | R-2.A.6 | Start, stop, inspect, upgrade, recover | 01 4, 5 | `ops/lifecycle.ts`, `ops/upgrade.ts` | T-LC-*, T-UP-* | designed | |
 | R-2.A.7 | Health checks and E2E verification | 01 4.10 `verify`, 6.4 `doctor` | `ops/lifecycle.verify`, `ops/diagnostics.doctor` | T-LC-01, doctor tests | designed | |
 | R-2.A.8 | Task-specific audit records | 01 7 | `engine/src/audit/writer.ts` | T-AU-01..05 | designed | |
@@ -62,7 +67,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-2.B.1 | Event ingestion | 02 2, 4 | `engine/src/ingest/**` | T-HK-*, T-PL-* | designed | |
 | R-2.B.2 | Session and agent lifecycle state | 02 7 | `engine/src/lifecycle/**` | P1-P9, T-LC-01..53 | designed | |
 | R-2.B.3 | Transcript import and incremental reading | 02 5 | `engine/src/ingest/transcripts/**`, `ingest/tail/**` | T-TR-01..19 | designed | |
-| R-2.B.4 | Normalized data storage | 03 3 | `engine/migrations/0001_initial.sql`, `engine/src/db/**` | DA-T-DB-* | designed | I-03 (events table acceptance) |
+| R-2.B.4 | Normalized data storage | 03 3 | `engine/migrations/0001_initial.sql`, `engine/src/db/**` | DA-T-DB-* | designed | I-03 closed (02 4.1 adopts the single `events` table; `0001` frozen, X14) |
 | R-2.B.5 | Search and filtering | 03 5.4, 7 | `engine/src/search/**`, `shared/src/api/filters.ts` | DA-T-S-*, DA-T-API-7 | designed | |
 | R-2.B.6 | Token usage and analytics | 02 6, 03 8 | `engine/src/tokens/**`, `engine/src/analytics/**` | T-TK-*, DA-T-A-* | designed | |
 | R-2.B.7 | API endpoints | 03 5, 6 | `packages/server/src/routes/**` | DA-T-API-* | designed | |
@@ -77,18 +82,18 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 
 | Id | Requirement (short) | Design | Code | Test | Status | Notes |
 |---|---|---|---|---|---|---|
-| R-3.B.1 | Node LTS compatible with deps | D7, 05 2.5 engines, 05 C-1 | `runtime/package.json` | `npm ci` | designed | I-05 floor 22.12 vs 22.22 |
+| R-3.B.1 | Node LTS compatible with deps | D7, 05 2.5 engines, 05 C-1 | `runtime/package.json` | `npm ci` | designed | one floor 22.22.0 (I-05: 01 5.1, ADR 0007, 05 3.3.4); 06 7.1 item 2 and T21 still print 22.12 |
 | R-3.B.2 | TypeScript strict | 05 2.4 | `tsconfig.base.json` | `npm run typecheck` | designed | |
 | R-3.B.3 | Express or justified alternative | D7, 03 5 (Express 5.3.0) | `packages/server` | DA-T-API-1 | designed | |
 | R-3.B.4 | Zod or equivalent | D7, 03 13 | `@mcs/shared` | DA-T-API-2 | designed | |
-| R-3.B.5 | SQLite with a maintained driver | D7, D10, 03 3.2, ADR 0020 | `engine/src/db/driver.ts` | DA-T-DB-1 | designed | I-14 (driver file path 05 vs 03) |
+| R-3.B.5 | SQLite with a maintained driver | D7, D10, 03 3.2, ADR 0020 | `engine/src/db/driver.ts` | DA-T-DB-1 | designed | I-14 closed (`db/driver.ts` in 05 A.9 and 2.2, E22) |
 | R-3.B.6 | Versioned DB migrations | 03 4, ADR 0021 | `engine/src/db/migrations.ts` | DA-T-DB-2..6 | designed | |
 | R-3.B.7 | WebSocket or SSE | D11, 03 9, ADR 0025 | `server/src/stream/**` | DA-T-RT-* | designed | SSE chosen with evidence |
-| R-3.B.8 | Structured logging with levels | 05 S-LOG, 01 1.6 `logLevel` | `engine/src/log/logger.ts` | `logger.test.ts`, SEC-22 | designed | I-25 (rotation constants undefined) |
+| R-3.B.8 | Structured logging with levels | 05 S-LOG, 01 1.6 `logLevel` | `engine/src/log/logger.ts` | `logger.test.ts`, SEC-22, SEC-31 | designed | I-25 closed (05 S-LOG-6 `LOG_ROTATE_BYTES`, `LOG_KEEP`) |
 | R-3.B.9 | Maintained test framework | D7 Vitest 5.0.3, ADR 0043 | `runtime/vitest.config.ts` | `npm test` | designed | |
 | R-3.F.1 | React | D7, 04 | `packages/web` | | designed | |
 | R-3.F.2 | TypeScript (web) | 05 2.4 web tsconfig | `web/tsconfig.json` | typecheck | designed | |
-| R-3.F.3 | Vite | 04 12.2, ADR 0039 | `web/vite.config.ts` | `npm run build -w @mcs/web` | designed | I-13 (MCS_DEV_API 8765, conditions) |
+| R-3.F.3 | Vite | 04 12.2, ADR 0039 | `web/vite.config.ts` | `npm run build -w @mcs/web` | designed | I-13 closed (04 12.2 adopts 05 A.27: 18765/18766/18767, `resolve.conditions`) |
 | R-3.F.4 | Lightweight CSS | 04 6.2, ADR 0035 | `web/src/styles/*.css` | `tokens-contrast.test.ts` | designed | |
 | R-3.F.5 | Router only if needed | 04 3.1, ADR 0030 | `web/src/app/routes.tsx` | component tests | designed | seven views justify it |
 | R-3.F.6 | Small component system | 04 4.3 | `web/src/components/**` | component tests | designed | |
@@ -96,19 +101,19 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-3.F.8 | Data fetching and cache strategy | 04 5.2, ADR 0031 | `web/src/data/query-client.ts` | 04 11.1 | designed | |
 | R-3.F.9 | No large component framework | ADR 0035 | lint banned packages | lint | designed | |
 | R-3.S.1 | TS interfaces and schemas for API payloads | 03 5.5, 13 | `shared/src/api/*.ts` | DA-T-API-1/2 | designed | |
-| R-3.S.2 | Explicit event type definitions | 03 5.5 `EVENT_KINDS`; 02 4.3 `LogicalEvent`; 02 2.3 `HookEnvelopeV1` | `shared/src/api/entities.ts`, `shared/src/protocol/*.ts` | unit | designed | I-03 (kind mapping 02 -> 03 unconfirmed) |
+| R-3.S.2 | Explicit event type definitions | 03 5.5 `EVENT_KINDS`; 02 4.3 `LogicalEvent`; 02 2.3 `HookEnvelopeV1` | `shared/src/api/entities.ts`, `shared/src/protocol/*.ts` | unit | designed | I-03 closed (stored-kind columns of 02 4.3/5.6 equal 03 3.6; every 02 kind is in `EVENT_KINDS`) |
 | R-3.S.3 | Runtime validation at external boundaries | 02 4.2, 03 5.2 | zod schemas | T-PL-07, DA-T-API-3 | designed | |
 | R-3.S.4 | Stable ids for projects, tasks, sessions, agents, events | 01 3.1, 03 5.1 Ids | `shared/src/ids.ts`, `shared/src/api/ids.ts` | unit | designed | taskId = slug (01) and `workItemId` (03) both exist; documented |
 | R-3.S.5 | Explicit timestamps and timezone handling | D10, 03 5.1 Time, 06 4.9 | all entity schemas | DA-T-A-3 | designed | |
-| R-3.S.6 | Versioned configuration schema | 01 2.6, 2.7, 2.9 | `shared/src/config/**`, `schemas/*.schema.json` | `schemas.drift.test.ts`, T-ISO-27 | designed | |
+| R-3.S.6 | Versioned configuration schema | 01 2.6, 2.7, 2.9 | `shared/src/config/**`, `schemas/*.schema.json` | `schemas.drift.test.ts`, T-ISO-27 | designed | N-03 (`config/runtime/{board,panelOptions,retention,alerts,pricing}.ts` have no owning slice) |
 | R-3.D.1 | Command: install deps | 05 3.1 `npm ci`; launcher bootstrap | `scripts/mcs.mjs` | T-UP-01 | designed | |
 | R-3.D.2 | Command: dev mode | 05 3.1 `dev` (18765/18766) | `runtime/scripts/dev.mjs` | 05 E16 | designed | |
 | R-3.D.3 | Command: build frontend | 05 3.1 `build` | `package.json` scripts | 05 E5 | designed | |
-| R-3.D.4 | Command: run backend | 05 `start`, 01 `start`/`serve` | `packages/cli/dist/main.js` | T-LC-01 | designed | |
+| R-3.D.4 | Command: run backend | 05 `start`, 01 `start`/`serve` | `packages/cli/dist/main.js` | T-LC-01 | designed | N-02 (05 A.37 `smoke.mjs` and A.28 start `server/dist/main.js --port N`; 01 4.1 argv is `serve --mcs-instance=<id> --instance-dir=<ws>`) |
 | R-3.D.5 | Commands: unit, integration, E2E tests | 05 3.1 `test:*`, `test:e2e` | `vitest.config.ts`, Playwright config | `npm test` | designed | |
 | R-3.D.6 | Command: type-check | 05 `typecheck` | `runtime/scripts/typecheck.mjs` | E4 | designed | |
 | R-3.D.7 | Command: lint | 05 `lint` | `eslint.config.js` | E6/E7 | designed | |
-| R-3.D.8 | Command: run DB migrations | 01 5.4 `mcs db migrate`; 05 `migrate` script | `ops/upgrade.migrateDb` | T-UP-06 | designed | I-26 (05 script spells `migrate`, CLI is `db migrate`) |
+| R-3.D.8 | Command: run DB migrations | 01 5.4 `mcs db migrate`; 05 `migrate` script | `ops/upgrade.migrateDb` | T-UP-06 | designed | I-26 closed for the script (05 3.1/A.1 `db migrate`); I-26 residuals: `buildDemo` option `now` vs 04 `nowMs`, duplicate id regexes in 05 `security/paths.ts` |
 | R-3.D.9 | Command: health check | 01 `verify`, 05 `health` | `ops/lifecycle.verify` | T-LC-01 | designed | |
 | R-3.D.10 | Command: initialize a new instance | 01 `init`, 05 `init-instance` | `ops/workspace.init` | T-LC-10..12 | designed | |
 | R-3.D.11 | Simple monorepo, no build orchestration tooling | 05 T1, ADR 0040 | `runtime/package.json` workspaces | `npm run ci` | designed | |
@@ -123,7 +128,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-4.ID.3 | `taskId` | 01 3.1 (slug); 03 work items | folder name / `work_items.id` | T-ISO-01 | designed | |
 | R-4.ID.4 | `sessionId` | 01 3.1, 03 5.1 | `sessions.session_uid` | unit | designed | |
 | R-4.ID.5 | `agentId` | 03 5.1 (`main` or provider id) | `agents.agent_uid` | unit | designed | |
-| R-4.ID.6 | `eventId` | 03 5.1 (integer) + `key` | `events.id` | DA-T-API-1 | designed | 04 assumed string (I-10) |
+| R-4.ID.6 | `eventId` | 03 5.1 (integer) + `key` | `events.id` | DA-T-API-1 | designed | I-10 closed (04 13 imports `ActivityEvent.id: number`) |
 | R-4.ID.7 | Never conflate task, session, agent, OS process | 01 0.2 terms, 02 7 (session vs agent), 01 4.8 (pid never alone) | | T-ISO-22 | designed | |
 | R-4.OWN.1 | Instance owns its configuration | 01 1.4, 1.6 | `config.json`, `runtime.json` | T-ISO-06 | designed | |
 | R-4.OWN.2 | Its monitoring scope | D14, 02 2.6 route file, 02 5.1 | `config.json` L keys, `routes/<instanceId>.json` | T-HK-05, T-TR-12 | designed | |
@@ -137,9 +142,9 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-4.ISO.2 | Not one app copy per session | D2, D15 | | | designed | |
 | R-4.ISO.3 | Every query, subscription, request, cache key, selector respects the instance boundary | 03 DA-I3 (`RepoContext`), 04 UI-I11 (query keys), 03 5.1 `X-MCS-Instance` | `db/open.ts assertScope`, `web/src/data/query-keys.ts` | DA-T-DB-7, `StreamProvider.test.tsx` | designed | 03 C-1: no per-row column (accepted with evidence) |
 | R-4.CFG.1 | Precedence built-in -> skill -> instance -> CLI | D4, 01 2.1 | `engine/src/config/resolve.ts` | 01 S5 unit tests | designed | |
-| R-4.CFG.2 | Env overrides only where documented | 01 2.10 | `resolveConfig` step 5 | unit | designed | I-27 (`MCS_FS_WATCH`, `MCS_TEST`, `MCS_PERF_FACTOR` undocumented in 01) |
+| R-4.CFG.2 | Env overrides only where documented | 01 2.10 | `resolveConfig` step 5 | `tooling/env-vars.test.ts` | designed | I-27 closed except `MCS_E2E_PORT` (listed by 01 2.10, read only by the 05 A.28 stub that 04 W14 replaces) |
 | R-4.CFG.3 | Deterministic merge, documented rules | 01 2.2, C-3 | `engine/src/config/merge.ts` | C-3 merge tests | designed | |
-| R-4.CFG.4 | Validate against a versioned schema | 01 2.4, 2.6 | `LegacyConfigFileSchema`, `RuntimeOverridesSchema` | legacy message goldens | designed | I-01 |
+| R-4.CFG.4 | Validate against a versioned schema | 01 2.4, 2.6 | `LegacyConfigFileSchema`, `RuntimeOverridesSchema` | legacy message goldens, `runtime-sections.contract.test.ts` | designed | I-01 closed; I-32 residual (01 1.6 keeps `import.maxLineBytes`, removed by 02 1.2); N-04 |
 | R-4.CFG.5 | Migration or compatibility behaviour on schema change | 01 2.7 `config migrate`, 5.4 `upgrade` | `engine/src/config/migrations.ts` | T-ISO-27 | designed | |
 | R-4.T.1 | Test: A cannot read B's private state | 01 T-ISO-01..05; 05 ISO-1, ISO-1b; 03 DA-T-DB-7 | `tests/isolation/read-isolation.test.ts`, `db-identity.test.ts` | release-blocking | designed | |
 | R-4.T.2 | Test: A cannot overwrite B's configuration | 01 T-ISO-06..08; 05 ISO-2 | `tests/isolation/config-write-isolation.test.ts` | | designed | |
@@ -149,7 +154,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-4.T.6 | Test: restarting one does not corrupt the other's DB | 01 T-ISO-16/17; 05 ISO-6; 03 DA-T-E-6 | `tests/isolation/restart-isolation.test.ts` | | designed | |
 | R-4.T.7 | Test: no conflicting ownership, port, runtime state | 01 T-ISO-18..23; 05 ISO-7 | `tests/isolation/ownership-isolation.test.ts` | | designed | |
 | R-4.T.8 | Test: upgrades never overwrite user config or audit | 01 T-ISO-24..27; 05 ISO-8 | `tests/isolation/upgrade-isolation.test.ts` | | designed | |
-| R-4.T.9 | Isolation tests release-blocking | 05 4.1, 7.1; 01 3.5 | `npm run test:isolation` in `ci` | | designed | I-23 (ISO ids differ between 01 and 05; matrix maps them) |
+| R-4.T.9 | Isolation tests release-blocking | 05 4.1, 7.1; 01 3.5 | `npm run test:isolation` in `ci` | | designed | I-23 closed (05 4.8 maps ISO-1..9 to 01 T-ISO rows); N-07 (05 S9 and 01 slices both write the isolation test files) |
 
 ### 5. Data collection: hooks first, transcripts as recovery
 
@@ -157,7 +162,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 |---|---|---|---|---|---|---|
 | R-5.1 | Research the current hook spec; do not assume stability | `docs/research/claude-code-hooks.md`; ADR 0013 (version-sensitive, re-check per minor) | `shared/src/protocol/hook-events.ts` | review | designed | |
 | R-5.2 | Install only supported events; invent no fields | 02 2.4 (21 events), ADR 0013 | `INSTALLED_HOOK_EVENTS` | T-HK-03 | designed | |
-| R-5.H.1 | Read and validate JSON stdin | 02 2.2 steps 4, 6, 7; 2.3.2 | `cli/src/hook/main.ts` | T-HK-01 | designed | I-17 (entry file must be `cli/src/hook.ts` to emit `dist/hook.js`) |
+| R-5.H.1 | Read and validate JSON stdin | 02 2.2 steps 4, 6, 7; 2.3.2 | `cli/src/hook.ts`, `cli/src/hook/main.ts` | T-HK-01, T-HK-17 | designed | I-17 closed (02 1.1 entry `cli/src/hook.ts`, E10) |
 | R-5.H.2 | Preserve provider ids and timestamps | 02 2.3.1 | envelope | T-HK-03 | designed | |
 | R-5.H.3 | Attach instance routing identity | 02 2.6 (`instance_id` per envelope), ADR 0011 | `shared/src/protocol/routes.ts` | T-HK-05 | designed | |
 | R-5.H.4 | Deliver to the intended runtime | 02 2.2 steps 11-13 (spool + nudge) | `cli/src/hook/{spool-writer,nudge}.ts` | T-HK-05/06 | designed | |
@@ -215,18 +220,19 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-7.E.3 | Tasks | 03 `work_items`, `work_item_sessions` | DDL | T-LC-52 | designed | |
 | R-7.E.4 | Sessions | 03 `sessions` | DDL | | designed | |
 | R-7.E.5 | Agents | 03 `agents` | DDL | | designed | |
-| R-7.E.6 | Events | 03 `events` | DDL | DA-T-DB-9 | designed | I-03 |
+| R-7.E.6 | Events | 03 `events` | DDL | DA-T-DB-9 | designed | I-03 closed |
 | R-7.E.7 | Transcript entries or references | 03 `events` (sources & 2), `transcript_files`, `transcript_checkpoints`, ADR 0022 | DDL | DA-T-S-7 | designed | |
 | R-7.E.8 | Token usage | 03 `usage_files`, `usage`, ADR 0024 | DDL | DA-T-DB-10 | designed | |
 | R-7.E.9 | Model and pricing metadata (if cost) | 03 8.3 (`pricing` in `runtime.json`, `usage.model`) | config + DDL | DA-T-A-4 | designed | prices never shipped (D15) |
 | R-7.E.10 | Ingestion health | 03 `ingest_health`, `ingest_errors` | DDL | DA-T-API-13 | designed | |
 | R-7.E.11 | Alerts | 03 `alerts`, `alert_state` | DDL | DA-T-AL-* | designed | |
 | R-7.E.12 | Schema migrations | 03 4.2 `schema_migrations` | runner | DA-T-DB-2..6 | designed | |
-| R-7.E.13 | Attempts (chain-log runs) | 06 3.10.2 proposes `attempt_source`, `attempt_run`; absent from 03 `0001_initial.sql` | | | gap | I-07 |
+| R-7.E.13 | Attempts (chain-log runs) | 03 3.5 `attempt_sources`/`attempt_runs` (in the frozen `0001`, X14), 03 3.6 `AttemptsRepo`, 03 9.1 `attempt/upsert`; 06 3.10 | `engine/migrations/0001_initial.sql`, `engine/src/db/repos/attempts.ts`, `engine/src/panels/attempts/*` | DA-T-DB-20, DA-T-RT-13, 06 3.11 attempts rows | designed | I-07 closed; N-01 (who drives `tickAttempts`, writer access, transaction boundary); N-10 (06 3.10.2 reference copy drifts from 03) |
+| R-7.E.14 | Attempts ingestion runs inside the instance process (timer, access to the ingest writer, one defined transaction boundary) | 06 3.4 says `tickAttempts` is "called by the ingestion scheduler tick"; 01 4.4a component 4 starts no timer; 02 5.4 has no such hook; 03 3.6 says the lifecycle events commit "in the same transaction" while 06 3.10.3 commits its own | `engine/src/runtime/instance-runtime.ts`, `engine/src/panels/service.ts` | 01 `instance-runtime.test.ts`, 06 `attempts-evidence.test.ts` | gap | N-01 |
 | R-7.2 | Only needed entities, relationships and indexes | 03 3.4, 3.7 (measured) | DDL | DA-T-DB-14 | designed | |
 | R-7.P.1 | Parameterized queries | 03 3.6 | repos | review | designed | |
 | R-7.P.2 | Foreign keys enabled and verified | 03 3.2 step 5, 4.3 | `openInstanceDb` | DA-T-DB-1/8 | designed | |
-| R-7.P.3 | Transactions for related updates | 03 4.5 `withWriteTx`, 02 4.6 | `db/write.ts` | DA-T-RT-1, T-PL-05 | designed | I-16 |
+| R-7.P.3 | Transactions for related updates | 03 4.5 `withWriteTx`, 02 4.6 | `db/write.ts` | DA-T-RT-1, T-PL-05 | designed | I-16 closed; N-01 (attempts tick transaction boundary) |
 | R-7.P.4 | WAL evaluated | 03 3.2, ADR 0020 | pragmas | DA-T-DB-15 | designed | |
 | R-7.P.5 | Migrations plus rollback/recovery guidance | 03 4.4, 01 5.5-5.6 | `docs/operations.md` | T-UP-05/08 | designed | |
 | R-7.P.6 | Retention and cleanup defined | 03 3.8, 01 `cleanup` | `maintenance/retention.ts` | DA-T-E-4/5 | designed | |
@@ -254,7 +260,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-8.2.2 | Sorting | 03 5.3 | | DA-T-API-6 | designed | |
 | R-8.2.3 | Filtering | 03 5.4 | | DA-T-API-7 | designed | |
 | R-8.2.4 | Status | `SessionSummary.state` | | | designed | |
-| R-8.2.5 | Project and task | `projectId`, `workItemIds` | | | designed | 04 `taskIds` -> rename (I-10) |
+| R-8.2.5 | Project and task | `projectId`, `workItemIds` | | | designed | I-10 closed (`workItemIds`, UI key `task` maps to `workItem`) |
 | R-8.2.6 | Provider | `provider: 'claude-code'` | | | designed | |
 | R-8.2.7 | Model when known | `models`, `lastModel` | | | designed | |
 | R-8.2.8 | Start time and last activity | `startedAt`, `lastActivityAt` | | | designed | |
@@ -274,7 +280,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-8.3.8 | Transcript context | 03 7.3 window/locate; 04 4.4.3 | `transcript/window.ts` | DA-T-S-7 | designed | |
 | R-8.3.9 | Token usage | `sessionUsage`; 04 `SessionTokens` | | | designed | |
 | R-8.3.10 | Errors and warnings | timeline severity filter; 04 `SessionErrors` | | | designed | |
-| R-8.3.11 | Project/task audit references | 03 `SessionDetail.auditRefs` needs 01 `entriesBetween` | `audit/writer.ts` | | gap | I-19 |
+| R-8.3.11 | Project/task audit references | 01 7.1 `entriesBetween` (`audit/reader.ts`); 03 6.3 `getSession` `auditRefs`; 04 `AuditRefs` | `engine/src/audit/reader.ts` | T-AU-06, 03 `getSession` tests | designed | I-19 residual: 03 12.1 `AuditReader.entriesBetween(): AuditEntry[]` is synchronous with `at: number`; 01 7.1 returns `Promise<AuditRef[]>` with ISO `at` |
 | R-8.3.12 | Timeline distinguished from the provider transcript | 04 `SessionTimeline` heading, separate tabs | | | designed | |
 | R-8.4.1 | Feed: chronological activity | 03 `listEvents`; 04 4.4.4 | | | designed | |
 | R-8.4.2 | Event-type filters | `type`, `category` | | DA-T-API-7 | designed | |
@@ -284,14 +290,14 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-8.4.6 | Cursor history loading | 03 5.3, 04 5.3 | | DA-T-API-6 | designed | |
 | R-8.4.7 | Error highlighting | 04 `ActivityRow` | | | designed | |
 | R-8.4.8 | Event details and timestamps | `ActivityEvent.details`, `at` | | | designed | |
-| R-8.4.9 | Clear indication of missing or stale data | 03 `monitor.gap` events; 04 separator + `StaleDataIndicator` | | | designed | 04 assumed `gapBefore` (I-10) |
+| R-8.4.9 | Clear indication of missing or stale data | 03 `monitor.gap` events; 04 separator + `StaleDataIndicator` | | | designed | I-10 closed (04 4.4.4 renders `monitor.gap` separators) |
 | R-8.5.1 | Typed reusable filter model | 03 5.4 `shared/src/api/filters.ts`; 04 `FilterBar` | | DA-T-API-7 | designed | |
 | R-8.5.2 | Filters: text, project, task, session, agent, state, type, tool, model, errors, time, tokens | 03 5.4 table | | | designed | |
 | R-8.5.3 | Transcript content search separate from metadata search | 03 7 | `search/scan.ts` | DA-T-S-2 | designed | |
 | R-8.5.4 | Never claim "entire transcript" when partial | 03 `SearchCoverage`, 04 4.4.3 step 9 | | DA-T-S-1 | designed | |
 | R-8.5.5 | Pagination, limits, cancellation, stale-request protection | 03 6.4, 04 5.3 | | DA-T-S-6 | designed | |
 | R-8.6.1 | Board with six states | 02 7.11, 03 `BOARD_STATES`, 04 4.4.5 | `lifecycle/work-items.ts` | T-LC-52 | designed | |
-| R-8.6.2 | Explicit task records or documented derivation | 02 7.11 W-DECL/W-ATT/W-LBL, D14 | `runtime.json board.items` | T-LC-52 | designed | 04 `tasks[]` -> `board.items` (I-10) |
+| R-8.6.2 | Explicit task records or documented derivation | 02 7.11 W-DECL/W-ATT/W-LBL, D14 | `runtime.json board.items` | T-LC-52 | designed | I-10 closed (`board.items`, 04 4.4.5); N-03 (no slice owns `config/runtime/board.ts`) |
 | R-8.6.3 | Evidence explains a task's state | 03 `WorkItem.evidence`, `boardReason` | | | designed | |
 | R-8.7.1 | Input / output / cache categories | 02 6.3, 03 `TokenUsage` | | T-TK-01 | designed | |
 | R-8.7.2 | Per session / project / model, over time, tool frequency | 03 8.2-8.4 | `analytics/*` | DA-T-A-1..5 | designed | |
@@ -302,7 +308,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-8.7.7 | Missing vs zero | 02 6.2 rule 8, 03 DA-I9 | | T-TK-06, DA-T-API-8 | designed | |
 | R-8.7.8 | Estimated vs provider-reported cost | 03 `CostEstimate.basis`, `reportedCost` | | DA-T-A-4 | designed | |
 | R-8.7.9 | No hook/transcript double counting | D8, 02 6.1 | | T-TK-08 | designed | |
-| R-8.7.10 | Trend charts only after validation | 03 `features.usageTrend` default false; 04 4.4.6 | | `AnalyticsPage.test.tsx` | designed | needs 01 `analytics` section (I-01) |
+| R-8.7.10 | Trend charts only after validation | 03 `features.usageTrend` default false; 04 4.4.6 | | `AnalyticsPage.test.tsx` | designed | I-01 closed (01 1.6 `analytics.usageTrend`) |
 | R-8.8.1 | Alert: no activity beyond threshold | 03 10.1 `inactivity` | `alerts/rules.ts` | DA-T-AL-5 | designed | |
 | R-8.8.2 | Repeated ingestion errors | `ingest_errors` rule | | | designed | |
 | R-8.8.3 | Runtime unavailable | `runtime_unavailable` rule | | DA-T-AL-4 | designed | |
@@ -318,17 +324,17 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-8.9.6 | Read recent errors | 01 `errors` | | | designed | |
 | R-8.9.7 | Run diagnostics | 01 `doctor`, `diagnostics` | | T-CLI-09 | designed | |
 | R-8.9.8 | Validate configuration | 01 `check`, `configure` dry run | | T-CLI-04 | designed | |
-| R-8.9.9 | Verify task completion evidence | 01 `verify-completion` depends on 02 `explainCompletion`, which 02 does not define | `InstanceReader.explainCompletion` | T-CLI-08 | gap | I-08 |
+| R-8.9.9 | Verify task completion evidence | 02 7.13 `explainCompletion` (`lifecycle/completion.ts`); 03 6.1 route `explainCompletion`, 12.1; 01 6.4 `verify-completion` | `engine/src/lifecycle/completion.ts`, `server/src/routes/completion.ts`, CLI `verify-completion` | T-LC-57 (CE-1..17), DA-T-API-15, T-CLI-08 | designed | I-08 residual: 03 6.3/12.1/A-1 (returns `null`, `sessionId: string`, strict schema without `resolvedBy`/`candidates`, `attemptPart` 1..512) contradicts 02 7.13 (throws `CompletionTargetError`, `sessionId: string \| null`, extra fields, `attemptPart` 0..128) |
 | R-8.9.10 | Read-only MCP after contracts stabilize | D1 (optional MCP in `packages/cli`), open question 7 | | | deferred-with-reason | Phase 5 research + ADR; read-only only (SEC-29) |
 | R-8.9.11 | No unrestricted file access, shell or destructive mutation tools | 03 DA-I10/I11, 05 S-PROC | | SEC-19 | designed | |
-| R-8.10.1 | Configuration inspection | 01 `inspect`, 03 `GET /config` | | | designed | I-20 (`ConfigInspection` undefined) |
+| R-8.10.1 | Configuration inspection | 01 `inspect`, 6.4 `ConfigInspection`; 03 `GET /config` | `shared/src/cli/results.ts` | `config-inspection.test.ts` | designed | I-20 closed (01 6.4; 04 4.4.7 uses `source`) |
 | R-8.10.2 | Runtime health | 01 `status`, 03 `/health` | | | designed | |
 | R-8.10.3 | Data export | 01 `export`, 03 11.1 | | DA-T-E-1 | designed | |
 | R-8.10.4 | Database backup | 01 5.5, 03 4.4 | | T-UP-08 | designed | |
 | R-8.10.5 | Transcript/index retention | 03 3.8, 02 2.7 spool retention | | DA-T-E-5 | designed | |
 | R-8.10.6 | Cleanup of stale records | 01 `cleanup` scopes | | T-CLI-06 | designed | |
 | R-8.10.7 | Version information | 01 `version`, 5.2 | | T-UP-10 | designed | |
-| R-8.10.8 | Diagnostics report | 01 `diagnostics` bundle | `schemas/diagnostics.v1.schema.json` | T-CLI-09 | designed | I-21 |
+| R-8.10.8 | Diagnostics report | 01 `diagnostics` bundle | `schemas/diagnostics.v1.schema.json` | T-CLI-09, DA-T-API-16 | designed | I-21 closed in 03 6.2 / 06 8.2 / 01 6.4; residual type name `ChildStat` (03) vs `ChildKindStats` (06) |
 | R-8.10.9 | Destructive cleanup needs scope and confirmation; never another instance's data | 01 6.2, 6.4 containment | | T-CLI-06, SEC-15 | designed | |
 
 ### 9. UI requirements
@@ -390,7 +396,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-11.G.8 | Settings | `config`, `alertRules`, `instance` | | | designed | |
 | R-11.G.9 | Export | `export` | | DA-T-E-1 | designed | |
 | R-11.D.1 | Request and response schemas | 03 13 registry | | DA-T-API-1/2 | designed | |
-| R-11.D.2 | Error response structure | 03 5.2 `ErrorEnvelope` | | DA-T-API-3 | designed | I-04 (code names differ in 02/05/04) |
+| R-11.D.2 | Error response structure | 03 5.2 `ErrorEnvelope` | `shared/src/api/errors.ts` | DA-T-API-3 | designed | I-04 closed (02 2.8, 05 S-NET/SEC, 04 5.1 and ADR 0045 use the one lowercase catalogue) |
 | R-11.D.3 | Pagination conventions | 03 5.3 | | DA-T-API-6 | designed | |
 | R-11.D.4 | Filter semantics | 03 5.4 | | DA-T-API-7 | designed | |
 | R-11.D.5 | Sort semantics | 03 5.3 | | DA-T-API-6 | designed | |
@@ -407,7 +413,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 |---|---|---|---|---|---|---|
 | R-12.1 | Bind loopback by default | 05 S-NET-1, 01 4.11, ADR 0045 | `server/src/main.ts` | SEC-01 | designed | |
 | R-12.2 | No all-interfaces exposure without explicit config | 05 5.4 (no option in v3) | | SEC-01 | designed | |
-| R-12.3 | Validate Host and Origin | 05 S-NET-2/3/4, 03 5.2 | `server/src/http/guards.ts` | SEC-02..04, DA-T-API-4 | designed | I-04 |
+| R-12.3 | Validate Host and Origin | 05 S-NET-2/3/4, 03 5.2 | `server/src/http/guards.ts` | SEC-02..04, DA-T-API-4 | designed | I-04 closed |
 | R-12.4 | Protect non-loopback endpoints with auth and TLS | 05 5.4 | | | non-goal | no non-loopback endpoint exists (D15) |
 | R-12.5 | Secrets out of logs and audit | 05 S-LOG, 01 7.1, 8.2 | `engine/src/log/logger.ts` | SEC-22/23, T-AU-05 | designed | |
 | R-12.6 | Filesystem access restricted to configured paths | 05 S-FS, 03 DA-I10, 02 5.1.2 | `engine/src/security/paths.ts` | SEC-12..15 | designed | |
@@ -416,7 +422,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-12.9 | Timeouts and resource limits | 05 S-NET-6, 03 6.4, 06 3.6 | | SEC-06/07, DA-T-S-6 | designed | |
 | R-12.10 | Escape transcript and event content in the UI | 04 8 | | SEC-16 | designed | |
 | R-12.11 | No arbitrary command execution from the web UI | 03 DA-I11 (read-only API) | | SEC-05 | designed | |
-| R-12.12 | Safe subprocess argument handling in the CLI | 05 S-PROC, 01 INV-11, 06 3.6 | `engine/src/platform/exec.ts` | SEC-19/20, T-LC-16 | designed | I-06 (three `execFileText` signatures) |
+| R-12.12 | Safe subprocess argument handling in the CLI | 05 S-PROC, 01 INV-11, 06 3.6 | `engine/src/platform/exec.ts` | SEC-19/20, T-LC-16 | designed | I-06 closed for the signature (06 3.6 authoritative); residuals: `forceKill` on Windows (01 4.2/ADR 0006 `process.kill` vs 06 4.2/ADR 0051 `taskkill`), `'opener'` missing from `ChildKind`/`resolveExecutable` |
 | R-12.13 | Malformed JSONL and events never crash the runtime | 02 4.8, 03 14 | | T-PL-07/08, `malformed-input.test.ts` | designed | |
 | R-12.14 | Clear shutdown and restart behaviour | 01 4.5, 4.10 | | T-LC-05/15 | designed | |
 | R-12.15 | Monitoring failures never block Claude Code | 02 2.1/2.11, D8 | | T-HK-01/11, SEC-25 | designed | |
@@ -428,7 +434,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 |---|---|---|---|---|---|---|
 | R-13.0.1 | Phase 0 outputs: current-state architecture, feature inventory, data-flow diagram, dependency inventory, risks, capability mapping, must-preserve list | `docs/research/current-state-backend.md` A-G, `current-state-frontend.md` | n/a | review | designed | done |
 | R-13.1.1 | Phase 1: module boundaries | 05 2.2, 00 D1 | | lint layering | designed | |
-| R-13.1.2 | Event schemas | 02 2.3, 4.3; 03 5.5 | | | designed | I-03 |
+| R-13.1.2 | Event schemas | 02 2.3, 4.3; 03 5.5 | | | designed | I-03 closed |
 | R-13.1.3 | Lifecycle state machine | 02 7 | | | designed | |
 | R-13.1.4 | Instance isolation | 01 3, D2 | | | designed | |
 | R-13.1.5 | Configuration precedence | 01 2 | | | designed | |
@@ -437,12 +443,12 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-13.1.8 | Realtime synchronization | 03 9, 04 5.5-5.6 | | | designed | |
 | R-13.1.9 | Migration and rollback strategy | 01 5.6, 06 5.9, 05 7.2.1 | | | designed | |
 | R-13.1.10 | Decision records before irreversible changes | ADRs 0001-0059 | | | designed | |
-| R-13.2.1 | Phase 2: Node + TS server, validated config, migrations, health endpoint, logging, core contracts, identity/isolation, unit + integration tests | 01 S1-S9, 03 S1-S5, 05 S1-S6 | | | designed | see section 3 slice check |
+| R-13.2.1 | Phase 2: Node + TS server, validated config, migrations, health endpoint, logging, core contracts, identity/isolation, unit + integration tests | 01 S1-S9, 03 S1-S5, 05 S1-S6 | | | designed | see section 3 slice check; I-15 residual (component interface names and idle semantics differ between 01 4.4a, 02 4.10 and 03 11.4/12.1) |
 | R-13.3.1 | Phase 3: hook handler, install/verify, validation/normalization, idempotency, transcript import, reconciliation, token correctness, ingestion diagnostics | 02 I-1..I-11 | | | designed | |
 | R-13.3.2 | No advanced charts before Phase 3 trustworthy | 03 `usageTrend` gate | | | designed | |
 | R-13.4.1 | Phase 4: React + Vite, components, routing, typed client, states, explorer, detail, feed, realtime | 04 W1-W8 | | | designed | |
 | R-13.5.1 | Phase 5: search, board, hierarchy, analytics, alerts, export/retention, CLI, optional MCP | 03 S8-S11, 04 W9-W12, 01 S11-S13 | | | designed | MCP deferred (R-8.9.10) |
-| R-13.6.1 | Compare old and new session detection | 06 5.4, 5.6 (shadow) | `runtime/tests/parity/sessions.parity.test.ts` | G1/G2 | designed | I-09 (capture engine 05 vs 06) |
+| R-13.6.1 | Compare old and new session detection | 06 5.4, 5.6 (shadow) | `runtime/tests/parity/sessions.parity.test.ts` | G1/G2 | designed | I-09 closed (05 4.11.4 and ADR 0044 adopt 06 5.2 / ADR 0053) |
 | R-13.6.2 | Compare token aggregates | 06 5.5 T1-T7, 02 6.5 | `tokens.parity.test.ts` | | designed | |
 | R-13.6.3 | Test lifecycle transitions | 02 7.7, 7.12 | | G3 | designed | |
 | R-13.6.4 | Test large and changing transcripts | 05 4.9 `large-file`, 06 S14/S30, B4 | | | designed | |
@@ -453,7 +459,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-13.6.9 | Test upgrade from existing configuration | 01 T-LC-12 (adoption), T-ISO-24, 06 G8 | | | designed | |
 | R-13.6.10 | Update documentation and examples | 05 6, 06 7 | | `check-docs` | designed | |
 | R-13.6.11 | Verified migration report | 05 7.2 | `docs/migration.md` | review | designed | |
-| R-13.6.12 | Fallback path until regression checks pass | 06 5.9 gates, ADR 0056, 01 6.5 delegation | | G1-G10 | designed | I-02 (legacy `audit` breaks on `.jsonl` spool) |
+| R-13.6.12 | Fallback path until regression checks pass | 06 5.9 gates, ADR 0056, 01 6.5 delegation | | G1-G10 | designed | I-02 closed in 01/02/03/05/06 and ADRs 0001/0012; residual `hooks-*.jsonl` glob in 04 11.4 step 13a; N-05 (06 D3 / 05 PD3 contradict 01 6.5 flat-config delegation) |
 
 ### 14. Testing requirements
 
@@ -464,7 +470,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-14.U.3 | Lifecycle transitions | 02 7.12 | `lifecycle.transitions.test.ts` | | designed | |
 | R-14.U.4 | Token aggregation | 02 6.7 | `tokens.worked-example.test.ts` | | designed | |
 | R-14.U.5 | Deduplication | 02 4.9, 03 DA-T-DB-9 | `ingest/dedupe.test.ts` | | designed | |
-| R-14.U.6 | Transcript parsing | 02 5.10 T-TR-15 | `normalize-record` tests | | designed | 05 4.2 paths stale (I-22) |
+| R-14.U.6 | Transcript parsing | 02 5.10 T-TR-15 | `normalize-record` tests | | designed | I-22 mostly closed; residual names in 05 4.2 (`lifecycle.transitions.test.ts`, `tokens.worked-example.test.ts`, `shared/src/filters/`, `config/pyregex.test.ts`) |
 | R-14.U.7 | Incremental offsets | 02 T-TR-01..09 | `ingest/tail/*.test.ts` | | designed | |
 | R-14.U.8 | Filtering | 03 DA-T-API-7, 04 `filters.test.ts` | `shared/src/api/filters.test.ts` | | designed | |
 | R-14.U.9 | Instance routing | 02 T-HK-05 | `shared/src/protocol/routes.test.ts` | | designed | |
@@ -477,7 +483,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-14.I.6 | Transcript import and token accounting | 02 T-TK-*, 05 `import-tokens.int.test.ts` | | | designed | |
 | R-14.I.7 | CLI diagnostics | 05 `cli/test/doctor.int.test.ts`, 01 T-CLI-09 | | | designed | |
 | R-14.I.8 | Instance initialization and shutdown | 01 T-LC-01, 05 `cli/test/lifecycle.int.test.ts` | | | designed | |
-| R-14.E.1-14 | E2E steps 1-14 | 04 11.4 `lifecycle.spec.ts` | `packages/web/e2e/` | Playwright | designed | I-11 (`sendHook`/`hookEnvelope` vs real handler; `init --task`) |
+| R-14.E.1-14 | E2E steps 1-14 | 04 11.4 `lifecycle.spec.ts` | `packages/web/e2e/` | Playwright | designed | I-11 closed (real handler, `init --slug`); I-02 residual (step 13a `.jsonl` glob); N-02 (05 A.28 `webServer` stub contradicts 04's start procedure, `MCS_E2E_PORT` 18900 outside the E2E range) |
 | R-14.E.15 | Browser automation where supported | 04 11.4 Playwright `channel: 'chrome'` | | | designed | |
 | R-14.1 | Never claim unrun tests; record skipped | 05 7.1-7.3, `release-check.mjs` SKIPPED rows | | | designed | |
 
@@ -492,7 +498,7 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 | R-15.5 | `docs/hooks.md` | 05 6.1 (02 source) | | | designed | |
 | R-15.6 | `docs/api.md` | 05 6.1, 03 13 generated reference | | DA-T-API-2 | designed | |
 | R-15.7 | `docs/instance-isolation.md` | 05 6.1 (01 source) | | | designed | |
-| R-15.8 | `docs/operations.md` | 05 6.1, 06 7.1 | | | designed | I-12 (06 runbook commands do not match 01) |
+| R-15.8 | `docs/operations.md` | 05 6.1, 06 7.1 | | | designed | I-12 closed except 06 7.1 item 6 (`db rebuild` exists in 01 5.4; 06 still calls it an open proposal) and item 2/T21 (Node floor) |
 | R-15.9 | `docs/testing.md` | 05 6.1 | | | designed | |
 | R-15.10 | `docs/migration.md` | 05 6.1, 7.2 | | | designed | |
 | R-15.11 | `docs/ccam-reference.md` | 05 6.5 | | | designed | |
@@ -555,6 +561,8 @@ issue id (`I-nn`) in the notes column so the matrix and the issue list stay link
 
 Severity: blocker = implementation would fail or contradict a hard requirement; major = rework across slices; minor = polish.
 "Owner" is the document that must change; "also touches" lists documents whose text must follow.
+The table below is the first review's record (15:36). The second review (section 2a) states, per id, whether the fix landed in every
+document it touches; rows here are not edited.
 
 | Id | Sev | Owner | Also touches | Finding | Required fix (single authoritative shape) |
 |---|---|---|---|---|---|
@@ -610,6 +618,56 @@ Feasibility notes (no change required, recorded for the lead):
 - F-12 (D1 five packages): 05 C-2 adds `@mcs/testkit`; 04, 06, 01 all depend on it; accept.
 - F-13 (D1 `tests/legacy-parity/` executable tests): 05 C-3 moves executable tests to `runtime/tests/parity/`; artefacts stay; accept.
 
+## 2a. Second review (convergence critic, 2026-10-11, designs as of 16:25)
+
+Method: every prior issue was checked in the text of every document it touches (not in the designers' revision notes); the six
+designs and the 59 ADRs were then compared again for names, shapes, paths, routes, codes, config keys, env vars, state words, CLI flags,
+slice ownership, test ids, versions and ports. Blockers and majors are listed in full; minors are grouped per owner.
+
+Closed in every document (21): I-01, I-03, I-04, I-07, I-09, I-10, I-11, I-13, I-14, I-16, I-17, I-20, I-23, I-24, I-25, I-28, I-30,
+I-31, I-33, I-35, I-37. Both blockers are closed.
+
+Open after the second review (16 residuals of prior issues, 13 new). `Cnn` = the same divergence in `98-contract-registry.md` 15;
+where this table and the registry proposed different directions, the row says which one stands and why.
+
+| Id | Sev | Owner | Also | Finding (both sides cited) | Required fix (single authoritative shape) |
+|---|---|---|---|---|---|
+| N-01 | major | 06 | 01, 02, 03 | (registry C57 covers the timer only) No document drives attempts ingestion: 06 3.4 says `tickAttempts()` is "called by the ingestion scheduler tick (every 2 s) and at startup" and 06 3.2 says 01's `start()` calls it "on the ingestion tick"; 01 4.4a component 4 starts nothing ("panels sample on request") and 02 5.4 `ImportScheduler` has no hook. `createPanelService(ctx)` (06 3.4) has no way to reach the `IngestWriter` (02 4.10 says the writer is "shared with 06's attempts tick"; 01's `InstanceContext` has no writer). The transaction boundary contradicts itself: 06 3.10.3 step 7 and 03 3.6 run "one `withWriteTx` per attempts tick" while 03 3.6 and ADR 0059 say the `external.attempt` events "go through 02's writer inside the same transaction"; 02's writer runs its own `withWriteTx` per tick (4.6). | 01 4.4a component 4: `createPanelService(ctx, { writer: ingest.writer })`; `start()` arms a 2 s timer (`ctx.clock`) that calls `panels.tickAttempts()` (first call at start), `stop()` clears it then `panels.close()`. 06 3.10.3/3.10.7: the tick runs one `withWriteTx` for the `AttemptsRepo` writes (reserving `attempt/upsert`), then after COMMIT submits `writer.submit({ source: 'external', items: [{ kind: 'external', events, rows: [] }], bytes })`; 03 3.6 and ADR 0059 drop "in the same transaction" (persist-before-publish still holds: the events are committed by the writer before the stream publishes). 06 3.4 text names 01 4.4a as the caller. 06 3.10.7 event literal adds the required `endedAt: row.ended_at` (02 4.3). |
+| N-02 | major | 05 | 01, 04 | (registry C31/C54 cover the port and `webServer`, not the argv) 05 A.37 `smoke.mjs` (gate `smoke` of `npm run ci`, S1 baseline) spawns `packages/server/dist/main.js --port <n>` with no workspace; 05 A.28 `playwright.config.ts` `webServer` runs `node ../../server/dist/main.js --port <port>` with `MCS_E2E_PORT` default 18900. 01 4.1/4.4 define the only server argv as `serve --mcs-instance=<id> --instance-dir=<ws>` (bad argv -> exit 17, identity check exit 11); 04 11.4 starts instances itself with `$MCS init/start` on `findFreePort(18500, 18599)` and has no `webServer`; 05 4.5 puts 18900-18999 under "manual experiments". From 01 S8 on, the `ci` gate fails. | 05 A.37/3.2: from S1 the smoke drives the real contract on a testkit workspace: `$MCS init --slug smoke --name "FIXTURE smoke" --repo <tmp> --port <free in 18800-18849>` (with `MCS_HOME`, `CLAUDE_CONFIG_DIR` temp), `start`, `GET /api/v3/health` 200 with `Host: 127.0.0.1:<port>`, 403 with `Host: evil.example`, `stop`, `assertPortClosed`; until 01 S8 lands the gate is `SKIPPED (server not built)`, never a stub argv. A.28 is marked "replaced by 04 W14 `e2e/playwright.config.ts` (no `webServer`)"; `MCS_E2E_PORT` is removed from A.28 and from 01 2.10. |
+| N-03 | major | 01 | 02, 03, 06 | 01 1.6 says the `runtime.json` sections `board` (02 7.11), `panelOptions` (06 3.5/3.10.3), `retention`, `alerts`, `pricing` (03 3.8/10.1/8.3) are exported from `@mcs/shared/config/runtime/<name>.ts`, "file owned by the named design's slice"; 01 S1 imports them into `RuntimeFileSchema`. The slice tables of 02 (13), 03 (23) and 06 (13) list no such file, so 01 S1's "Done when" (`RuntimeFileSchema.parse({schema_version: 1})` returns every default) cannot compile. | 01 S1 owns all section modules: `config/runtime/{section,index,server,process,logging,backup,lifecycle,hooks,ingest,import,spool,health,analytics,board,panelOptions,retention,alerts,pricing}.ts`, written from the owners' key tables (02 7.11 `board.items` schema; 06 3.5 `machineProcessIntervalMs` int 10000..300000 default 20000, 06 3.10.3 `attemptsWindowHours` default 24; 03 3.8 retention keys; 03 10.1 `alerts` object; 03 8.3 `pricing.currency`/`models`), each registered in `R_KEY_CATALOGUE` with `owner`; the owners' tables stay normative (same rule 01 1.6 already applies to `spool`/`import`/`health`). |
+| I-08 | major | 03 | 02, 01 | (= registry C16, C17) 02 7.13 defines `explainCompletion(lookup: CompletionLookup, target, now): CompletionEvidence` that throws `CompletionTargetError('target_invalid' \| 'target_not_found')`, returns `sessionId: string \| null` plus `resolvedBy` and `candidates`, and accepts `attemptPart` 0..128 chars (empty part legal). 03 6.3/12.1/A-1 say 02 "returns `null` when the target resolves to no session", type the response as a `z.strictObject` `{ outcome, state, basis, confidence, evidence, sessionId: string, ruleId }` (strict: 02's extra fields fail the response validation of 03 13 step 2), and validate `attemptPart` 1..512. 01 6.4 maps `target_invalid` to `USAGE` and `target_not_found` to `NOT_FOUND` (02's contract). | 03 6.3 and 12.1 adopt 02 7.13: `EngineQueries.explainCompletion(ctx, target)` builds the `CompletionLookup` over its repositories and calls 02's function with `now`; `CompletionTargetError` `target_invalid` -> `400 validation_failed`, `target_not_found` -> `404 completion_target_not_found` (no `null` path); `CompletionEvidenceSchema` = `{ outcome, state, basis, confidence, evidence: EvidenceItem[], sessionId: string \| null, ruleId, resolvedBy: 'session_id' \| 'label' \| 'attempt_part', candidates: number }`; route query `attemptPart` 0..512 chars (empty allowed) and 02 7.13 step 1 raises its cap to 512 (= `attempt_runs.part` CHECK). DA-T-API-15 adds the `attemptPart=` (empty) and `sessionId: null` cases. |
+| I-15 | major | 01 | 02, 03, 06 | The composition root exists (01 4.4a) but its plug-in contracts disagree: 01 calls `createLifecycleSweeper(ctx) -> { start, stop, tick }` and `await sweeper.tick()`; 02 4.10 defines `createLifecycleSweeper(ctx, { writer }) -> { start, stop, tickNow }`. 01 names `createMaintenanceScheduler(ctx) -> RuntimeComponent` (`stop(deadlineMs)`); 03 3.2/11.4 define `createDbScheduler(ctx): { start(): void; stop(): Promise<void> }` in `maintenance/schedule.ts`. 01 `ingestUntilIdle` loops on `ingest.untilIdle(remaining)` (a number) and "never throws"; 02 4.10 `untilIdle({ timeoutMs })` returns `Promise<void>` and rejects with `IngestIdleTimeoutError`; 06 5.4 step 3 expects `rt.ingestUntilIdle` to reject. 01 4.4a builds `createQueries(db, { config, now, process })`; 03 12.1 declares `createQueries(db, { config, now, audit })` (no `process`, no `audit` in 01). 02 4.10 reads `ctx.workspaceDir`; 01 has `instanceDir`. | The owners' shapes stand and 01 4.4a adapts (registry C06, C07, C08, C09): 01 component 2 = `createLifecycleSweeper(ctx, { writer: ingest.writer })` and `ingestUntilIdle` calls `await sweeper.tickNow()`; 01 `ingestUntilIdle` calls `await ingest.untilIdle({ timeoutMs: remaining })` and maps `IngestIdleTimeoutError` to `{ idle: false, stats: e.pending }` (01's "never throws" stays; 06 5.4 step 3 asserts `.idle === true` and prints `stats`); 01 component 3 = `createDbScheduler(ctx)` (03 11.4) wrapped as `{ name: 'db-scheduler', start, stop: () => sched.stop() }`; 03 12.1 `createQueries(db, { config, now, audit, process?: RuntimeProcessInfo, childStats?: () => Record<ChildKind, ChildKindStats>, panelStats?: () => PanelStats })` (optional parts absent for the `DbReader`) and 01 4.4a passes all six; 02 4.10 and X-2 use `ctx.instanceDir`; 06 3.2/5.4/10 cite `en/runtime/context.ts` for `InstanceContext` (C15). |
+| I-02 | minor | 04 | - | (C25) 04 11.4 step 13a appends malformed lines to "the newest `<workspaceA>/data/spool/hooks-*.jsonl`"; every other document and ADR 0012 use `hooks-<YYYYMMDD>T<HH>Z.ndjson`. | 04 11.4 step 13a: `hooks-*.ndjson` (match `SPOOL_SEGMENT_RE` from `@mcs/shared/protocol`). |
+| I-05 | minor | 06 | 05 | (C28) 06 7.1 item 2 (`node --version` >= 22.12), T21 (`Node < 22.12`) and 06 3.9.4 ("floor 22.12") keep the old floor, as does 05 3.2 ("Node >= 22.12" for repo scripts); 01 5.1, ADR 0007 and 05 3.3.4 fix 22.22.0. | 06 7.1 item 2, T21, 3.9.4 and 05 3.2: `22.22.0`. |
+| I-06 | minor | 06 | 01 | 01 4.2 and ADR 0006: `forceKill` on Windows is `process.kill(pid)` (no spawn, E3); 06 4.2 and ADR 0051 implement it with `execFileText({ kind: 'taskkill', args: ['/PID', pid, '/F'] })` (C12). 01 4.2 requires `ChildKind` `'opener'` and an `ExecutableName` type with `'python'`/`'icacls'`/`'opener'`; 06 3.6 has no `'opener'`, no `ExecutableName` type and resolves no `python` (C11). 01 4.2/5.1 place `listRuntimeProcesses` in `platform/markers.ts` (01 S4, launcher parity test); 06 3.2/4.2/4.11 and ADR 0051 put it in `platform/process.ts` (06 PP1) (C13). | Registry directions adopted: 06 owns `process.ts`, so 01 4.2 comment and ADR 0006 adopt 06's `taskkill.exe /PID <pid> /F` through `execFileText` kind `taskkill` (exit 128 = already gone) (C12); 06 3.6 + ADR 0051 add kind `'opener'` and `resolveExecutable('opener')` (win32 `%SystemRoot%\explorer.exe`, darwin `/usr/bin/open`, else `xdg-open` on PATH), 01 4.2 drops `ExecutableName` and passes the probed Python path as `file` (C11); `listRuntimeProcesses` moves to `en/platform/markers.ts` (01 S4) in 06 3.2/4.2/4.11/ADR 0051 (C13). |
+| I-12 | minor | 06 | 01 | (C44) 06 7.1 item 6 says "There is no `reimport` command ... a guarded `mcs db rebuild` is an open proposal to design 01 (OI-7)" and gives manual file moves; 01 5.4 defines `mcs db rebuild --task S --yes --confirm S` (audited, `dbCopy: 'raw'`, T-CLI-12). | 06 7.1 item 6 "DB corrupt, no usable backup": `$MCS stop --task X` -> `$MCS db rebuild --task X --yes --confirm X` (01 5.4) -> `$MCS start --task X`; manual steps and OI-7 removed. |
+| I-18 | minor | 06 | 02 | (C41) 02 4.3 `external.attempt` requires `endedAt`; 06 3.10.7 submits `{ k, sessionId, state, evidence, rowKey, observedAt }` without it (02 notes 06 "currently writes `observedAt: ended_at`"; 06 now writes `publishAt`, which is right, but omits `endedAt`). | 06 3.10.7: `{ k: 'external.attempt', sessionId, state, evidence, rowKey: 'attempt:' + id, endedAt: row.ended_at, observedAt: publishAt }` (covered by N-01's text change). |
+| I-19 | minor | 03 | 01 | (registry N9 leaves this open; decided here) 03 12.1 `AuditReader { entriesBetween(fromMs, toMs, limit): AuditEntry[] }` with `at: number`, called inside the synchronous `getSession`; 01 7.1 `entriesBetween(ws, fromMs, toMs, limit): Promise<AuditRef[]>` with `at: ISO ms Z` (01 1.2: no synchronous file API in the server). | 03 6.3/12.1: `AuditReader.entriesBetween(...): Promise<AuditRef[]>` (01's type, ISO `at`); `getSession` stays synchronous and returns `auditRefs: []`; the route handler and the `DbReader` await `deps.audit.entriesBetween(...)` after the snapshot and attach the result (same `asOfSeq`). |
+| I-21 | minor | 03 | 06 | (C10) 03 6.2/A-6 name the per-kind statistics type `ChildStat`; 06 3.6/8.2/PP0 export `ChildKindStats` from `shared/src/api/panels.ts`. | 03 adopts `ChildKindStats` (06 owns the file). |
+| I-22 | minor | 05 | 02, 03, 04 | (C38) 05 4.2 names `engine/src/lifecycle/lifecycle.transitions.test.ts`, `engine/src/tokens/tokens.worked-example.test.ts`, `shared/src/filters/*.test.ts`, `engine/src/config/pyregex.test.ts`; the owners name `engine/src/lifecycle/transitions.test.ts`, `engine/src/tokens/worked-example.test.ts` (02 9.5), `shared/src/api/filters.test.ts` (03 S3), `shared/src/pyregex/*.test.ts` + `tests/legacy-parity/regex/` (01 S3). 04 11.3 names `server/test/api-to-web.test.ts` and `stream-reconnect.test.ts`; 05 4.1/4.2 require the `.int.test.ts` suffix. | 05 4.2 uses the owners' names; 04 11.3 uses `api-to-web.int.test.ts` and `stream-reconnect.int.test.ts`. |
+| I-26 | minor | 05 | 04, 02 | (C34, C35) 05 4.4 `buildDemo` comment: `DemoOptions = { root; now; ... }` and a `runtimeJson` member; 04 11.5 (contract owner) has `nowMs` and no `runtimeJson`. 05 S-FS `security/paths.ts` exports its own `SESSION_ID_RE`, `AGENT_ID_RE`, `RUN_ID_RE` while 02 2.3.2 exports `SID_RE`, `AGENT_RE`, `RUN_ID_RE` from `shared/src/protocol/hook-envelope.ts` "imported by every other design". | 05 4.4 `DemoOptions` = 04 11.5 verbatim (`nowMs`, no `runtimeJson`); 05 `security/paths.ts` re-exports `SID_RE`, `AGENT_RE`, `RUN_ID_RE` from `@mcs/shared/protocol` (no second definition). |
+| I-27 | minor | 01 | 05, 04 | 01 2.10 lists `MCS_E2E_PORT` ("Playwright config (05), default 18900"); 04 11.4 chooses ports with `findFreePort(18500, 18599)` and defines no such variable; 05 4.5 reserves 18900-18999 for manual experiments; only the 05 A.28 stub reads it. 01's own `env-vars.test.ts` fails on a documented name that is never read. | 01 2.10 drops `MCS_E2E_PORT`; N-02 removes it from A.28 (this supersedes registry C31's "default 18500": 04's specs allocate a port per instance, so a single Playwright `baseURL` port has no reader and would fail 01's `env-vars.test.ts`). |
+| I-29 | minor | 02 | 01 | (C03, C04, C05) 01 4.3/6.4 use control op `'ingest-replay'` with `fromSegment` and call `02 replaySpool(db, scope, { fromSegment, nowMs })`; 02 2.7/4.10 define `planSpoolReplay(ctx, repos, spoolDir, from)` + `applySpoolReplay(db, ctx, plan)` and write the op as `ingest.replay {from}`. Audit template differs: 01 7.2 `spool replay of <n> segments from <first segment or "all">` / Files `none` / Validation `cursors re-read` / Outcome `scheduled`; 02 2.7 step 5 `spool replay from <segment\|first>: <n> segments, <bytes> bytes` / `data/monitor.db` / `cursors reset` / `applied`. | 02 2.7/4.10 use the op name `ingest-replay` with field `fromSegment` and 01 7.2's template (01 owns the catalogue); 01 4.4a/6.4/open item 3 call `planSpoolReplay` + `applySpoolReplay` (02 owns the functions); `InstanceRuntime.ingestReplay` = `ingest.replay(fromSegment)`. |
+| I-32 | minor | 01 | 02 | (C01) 01 1.6 lists `import.maxLineBytes` (64 MiB, "02 4.8") and counts 10 `import` keys (E14: 16 keys); 02 1.2 says "There is no `import.maxLineBytes`" and 03 3.3 imports the one constant from `shared/src/protocol/limits.ts`. 01's contract test (3) would expect a key 02 never reads and 02's `config-keys.test.ts` would flag it. | 01 1.6 removes `import.maxLineBytes` (9 `import` keys, 15 new keys in the test text). |
+| I-34 | minor | 05 | 06 | 06 section 4 specifies the `process.platform` lint rule (`PLATFORM_ENTRY`, engine block, allow-list `platform/**` + `security/paths.ts`, logger block `['error', PLATFORM_ENTRY]`) and says 05 S1 adds it; 05 2.6 table and A.9 do not contain it. | 05 2.6 gains the row and A.9 the entries exactly as 06 section 4 writes them (E24). |
+| I-36 | minor | 05 | 01 | (C27) 05 1.2 and S2 own `packages/shared/src/clock.ts` (`Clock`, `systemClock`); 01 4.4a and S1 own `packages/shared/src/time.ts` with the same `Clock`/`systemClock` plus `isoSecondsZ`/`isoMsZ`. One interface, two files, two slices. | One file: 01's `packages/shared/src/time.ts` (slice S1); 05 1.2 and S2 reference it and drop `clock.ts`; `FakeClock` imports `Clock` from there. |
+| N-04 | minor | 01 | 02 | (C02) Validation bounds differ for the same keys: 01 1.6 `spool.pollMs` 50..60000 vs 02 1.2 100..10000; `spool.sealGraceMs` 5000.. vs 10000..; `import.tailWindowBytes` 65536..1 GiB vs 1 MiB..4 GiB; `import.backfillMaxBytes` 65536.. vs 0..; `import.scanIntervalMs` 100.. vs 250..; `import.lookbackHours` number vs int; `hooks.spoolWhileStoppedHours` 1..720 vs 0..720 where 02 2.6.2 gives `0` the meaning "stop spooling at once" (01's schema rejects it). | 01 1.6 adopts 02 1.2's bounds verbatim for every 02-owned key (the owner's table is normative, as 01 1.6 says); `hooks.spoolWhileStoppedHours` min 0. |
+| N-05 | minor | 06 | 05, 01, 03 | 06 5.8 D3 / 05 4.11.5 PD3: "flat configs still load leniently; problems listed in `inspect`, `doctor`, `/api/v3/health` `configWarnings`" and R25 "flat config: rule skipped + config warning". 01 6.5 delegates every flat-config form to `$V` and 01 2.7 `config migrate --from-legacy` validates strictly (unknown keys listed and dropped, regexes must translate); 03 `HealthReport` has no `configWarnings`. | 06 D3 and 05 PD3 become "N/A in Node: flat configs are served by the legacy engine (01 6.5); `config migrate --from-legacy` reports dropped keys and refuses untranslatable regexes (01 2.7)"; R25 asserts that behaviour; `configWarnings` removed (registry C43 keeps warnings in `inspect`/`doctor`; that presumes Node loads flat configs, which 01 6.5 rules out, so this row stands). |
+| N-06 | minor | 06 | 01 | (C42) 06 3.10.1 raises config error `E_ATTEMPTS_TIME_FORMAT` and 06 4.1 `E_MSYS_PATH`; 01 6.2's error catalogue (`@mcs/shared/errors.ts`) has neither, and 01 2.4 reports Node-only validation additions as `CONFIG_INVALID` with a documented message. | 06 uses `McsError('CONFIG_INVALID', 'attempts.time_format: unsupported directive %X ...')` and `('CONFIG_INVALID', '<key>: use C:/... instead of /c/...')`; 01 2.4 lists both messages under "Node-only additions". |
+| N-07 | minor | 05 | 01, 06 | (C46 for the export; the slice overlap is not in the registry) 05 S9 owns `runtime/tests/isolation/*` and says 01 S6/S9/S12/S13 "write the row bodies" of the same files (two slices, one file). 01 S2/S3 place `pyjson.golden.test.ts` and `pyregex.golden.test.ts` (project `parity`) under `tests/legacy-parity/{pyjson,regex}/`, where 05 C-3 says executable tests cannot resolve `@mcs/*`. 06 6.1 imports `@mcs/testkit/legacy`; 05 A.21 exports only `.`. | 05 S9 owns `runtime/tests/isolation/_setup.ts` (helpers, wiring) only; each `*.test.ts` file belongs to the 01 slice that implements its T-ISO rows (05 4.3 keeps the file list). 01 S2/S3: golden JSON stays in `tests/legacy-parity/{pyjson,regex}/`, the tests move to `runtime/tests/parity/{pyjson,pyregex}.golden.test.ts`. 05 A.21 adds the `./legacy` export (`@mcs/source` -> `src/legacy/index.ts`). |
+| N-08 | minor | 03 | 01, 02 | (C59, C21) 03 9.1 `ChangeSink.record` mapping still names entities `hook_event` and `transcript_entry`; 02 4.6 passes `'event'` ("replaces the former `hook_event` \| `transcript_entry`"). 01 6.1 `InstanceReader.errors(): Promise<ServerErrorItem[]>` while 01 4.4a and 03 6.2 use `ErrorItem`. | 03 9.1: `event -> event/append`; 01 6.1: `ErrorItem[]`. |
+| N-09 | minor | 04 | 03 | 04 5.2 `usePanel` polls with `poll.<key>Ms` for every panel key ("git/ledger/chainLog 5000"); 03 6.2 `InstanceInfo.poll` has `healthMs, sessionsMs, overviewMs, transcriptMs, machineMs, logsMs, attemptsMs` only and never says which legacy `poll.*` key feeds each (C26). | Registry C26 adopted: 03 6.2 states `transcriptMs = poll.events_ms`, `overviewMs = poll.overview_ms` (the legacy `/api/overview` cadence, which also drives the git, ledger and chain-log panels), `healthMs` = 5000; 04 5.2 polls git/ledger/chainLog with `poll.overviewMs`; no new keys. |
+| N-10 | minor | 06 | 03, 02 | (C40) 06 3.10.2 "reference copy" of the DDL differs from 03 3.5: `session_id TEXT` (provider uuid) vs `INTEGER` soft ref to `sessions.id`; `source_id ... REFERENCES` vs soft ref; index names `attempt_runs_by_*` vs `idx_attempt_runs_*`; 06 says "attempts rows themselves are not a stream kind" while 03 9.1 and ADR 0025 define `attempt/upsert` and 04 5.5 handles it. 06 3.10.6 reads candidates from `ctx.queries`; 03 defines `SessionsRepo.attemptCandidates` (repository). `resetSource` (03) returns session row ids; `external.attempt_cleared` needs provider ids. | 06 3.10.2 replaces the copy with a pointer to 03 3.5 and the `AttemptsRepo`/`SessionsRepo.attemptCandidates` signatures of 03 3.6 (row ids, mapped to `session_uid` via `SessionsRepo` before building 02 events); 06 3.10.2 states that `attempt/upsert` is reserved by `AttemptsRepo` (03 9.1). |
+
+| N-11 | major | 02 | 01, 05 | Hooks installer layering (registry C23): 02 1.1 and slice I-9 put the installer (`{plan,apply,verify,uninstall,status,settings-io}.ts`) under `runtime/packages/cli/src/commands/hooks/`, while 01 6.3 routes `hooks install/verify/uninstall` through engine `ops.hooks.*` (01 INV-12: the CLI, server and UI call the same engine functions) and 05 2.2/A.9 forbid `@mcs/engine` from importing `@mcs/cli`. 02 3.1 also defines `hooks status`, `--sync-tool-events` and `--settings-file` that 01 6.3 does not list (01 lists `--dry-run`, which 02 does not use), and 01 names the functions `planHooksInstall`/`applyHooksPlan` while 02 names `planHooks`. | 02 1.1/9.5/13 I-9: installer modules move to `en/hooks/installer/{plan,apply,verify,uninstall,status,settings-io}.ts` (engine, called by 01 `ops.hooks.*`); `cl/commands/hooks/*.ts` keep option tables and rendering only. 01 6.3: `hooks install` gains `--sync-tool-events`, the table gains `hooks status` (`--task`, `--json`, exit 0, `ops.hooks.status`), function name `planHooks` (02 3.4); dry run stays the default without `--yes` (no `--dry-run` flag). |
+| N-12 | minor | 02 | 01, 05 | Test-id collision (registry C37): 01 4.16 uses `T-LC-01..16` for process-lifecycle tests and 02 7.12/9.2/9.5 use `T-LC-01..57` for the lifecycle model; this matrix and 05 7.4 need one id per row. | 02 renames its ids to `T-LF-01..57` (also the `T-LF-54`/`T-LF-57` references in 02 4.10 and 7.13); matrix rows R-2.B.2, R-6.*, R-13.6.3, R-14.U.3 read `T-LF-*` once 02 is edited. |
+| N-13 | minor | per registry | - | Divergences found by the registry and not covered above, each with a one-line fix in `98-contract-registry.md` 15 that this review confirms: C14 (`writeWorkspaceFile` name in 06 4.3), C18 (`EvidenceItem` engine vs API name), C19 (`ErrorCode` declared twice in `@mcs/shared`: 01 `sh/errors.ts` -> `CliErrorCode`), C20 (`docs/OPERATIONS.md` casing), C22 (`HooksVerifyResult`), C24 (02 5.2 `compilePyRegex(rule.match, 'session_rule')` + `applyLabelTemplate`), C29 (05 3.3.4 defers to 01 5.1 for bootstrap steps and messages), C30 (`outdated` compares with `.mcs-build.json`), C32 (`allocatePort` instead of `findFreePort`), C33 (01 3.5 fixture names exported by testkit), C36 (`LegacyState` imported from `@mcs/shared`), C39 (`data/exports/` in 01 1.1 and `cleanup --scope stale-state`), C45 (npm scripts `schemas`, `schemas:check`, `parity:shadow`, `bench`, `testkit`), C47 (06 unit tests next to their modules), C48 (`mutexName('settings', path.resolve(settingsPath))`), C49 (stale texts in ADRs 0012/0014/0016), C50, C51 (`sh/api/health.ts`), C52, C53 (`withWriteTx(db, ctx, fn)`), C55 (`mcs diagnostics`), C56 (agent kinds), C58 (`e2e/specs/`). | Apply the registry's fix column verbatim; no second shape is proposed here. |
+
+Feasibility re-check: no new load-bearing blocker. The three UNVERIFIED items that gate release stay as recorded (F-3 POSIX control
+channel, F-5 cold-cache scan, O-2 `node:sqlite`); none changed in the revisions. C1-C6 check: no design or test edits a legacy file,
+binds 8765, or installs hooks into real settings (04 11.4 and 05 4.5 use temp `MCS_HOME`/`--settings-file`; 02 3.5 step 4 refuses real
+paths under test).
+
 ## 3. Slice consistency check (Phase 2+ task slices across documents)
 
 | Check | Result | Action |
@@ -618,7 +676,10 @@ Feasibility notes (no change required, recorded for the lead):
 | Ordering | 03 S1 (DB core, `0001_initial.sql`) must land before 02 I-4/I-8, 06 PP5 and 01 S8; 03 freezes `0001` only after I-03 and I-07 are resolved. 01 S1 (shared contracts incl. runtime sections) must absorb I-01 before 02 I-1 and 03 S3 import them. 01 S8 (server shell) needs 03 S1 and the composition root (I-15) before 03 S4 and 02 I-11. 06 PP1 (exec additions) must precede 01 S9 (`stop` forced path) and 06 PP7. 05 S1 scaffold is first for everyone (every design agrees). | Proposed order: 05 S1 -> 01 S1 (+I-01) -> {01 S2, 01 S3, 02 I-1, 03 S3, 05 S2} -> 03 S1 (+I-03, I-07) -> {01 S4/06 PP1 merged, 05 S6} -> 01 S5, S6 -> 03 S2 -> 02 I-3, I-5, I-6, I-7 -> 01 S8 (+I-15) -> 03 S4, S5 -> 02 I-4, I-8 -> 01 S9 -> 03 S6, S7 -> 04 W1..W8 -> 02 I-9, I-10 -> 06 PP5, PP7 -> 03 S8..S11 -> 01 S11..S15 -> 04 W9..W12 -> parity (06 PP2..PP4, PP8; 05 S8) -> 05 S7, S9 -> 06 PP9, PP10 -> docs (05 S10, 01 S16, 06 PP11). |
 | Independent testability | Every slice names "Done when" tests. Exceptions: 04 W13 (ownership unclear, O-4), 06 PP4 ("the rest listed as pending" is not a pass criterion: must list the exact vector files expected to pass at that point), 01 S13 depends on three designs at once (split: S13a readers over 03 S5 queries; S13b `verify-completion` after I-08). | 04 drops W13 as a file-owning slice; 06 PP4 enumerates its vectors; 01 splits S13. |
 | Missing slices | (a) Composition root / instance runtime (I-15): no slice owns `engine/src/runtime/*`; add to 01 S8. (b) `ingest replay` CLI (I-29): add to 01 S13b or 02 I-4. (c) `explainCompletion` (I-08): add 02 slice I-7b. (d) Attempts DDL (I-07): add to 03 S1. (e) `renderEvidence`/`viewChanged`/`toLegacy` exports (I-33): 02 I-7. (f) Env-var grep test (I-27): 05 S1. (g) Log rotation (I-25): 05 S6. | Listed in the issue table; each is small. |
-| Phase mapping | 02 I-2 (handler) is Phase 3 but 04 W14/E2E and 06 S31/S32 fixtures need it in Phase 4; 03 S8 search is Phase 5 but E2E step 7 (Phase 4 smoke in 04) needs it. | 04 marks steps 7 and 13-14 of the Phase 4 smoke as Phase 5/6 additions; or 03 S8 moves to Phase 4. |
+| Phase mapping | 02 I-2 (handler) is Phase 3 but 04 W14/E2E and 06 S31/S32 fixtures need it in Phase 4; 03 S8 search is Phase 5 but E2E step 7 (Phase 4 smoke in 04) needs it. | 04 marks steps 7 and 13-14 of the Phase 4 smoke as Phase 5/6 additions; or 03 S8 moves to Phase 4. (Resolved: 04 W14 lists steps 7 and 13-14 as Phase 5/6 additions.) |
+| Second review: file ownership | Resolved: `exec.ts`/`process.ts` -> 06 PP1, `mutex.ts`/`markers.ts` -> 01 S4, `fsio.ts` -> 01 S6, `fsx.ts` -> 06 PP1; `guards.ts` -> 05 S6; `tests/legacy-parity/**` -> 06 PP2, `runtime/tests/parity/{projections,normalize,run-python}.ts` -> 05 S8; testkit split per 06 6.1; `eslint.config.js` -> 05 S1 (04 W1 supplies rules). Still overlapping: `runtime/tests/isolation/*.test.ts` (05 S9 and 01 S6/S9/S12/S13), `packages/shared/src/{clock,time}.ts` (05 S2 and 01 S1, one `Clock`). Unowned: `config/runtime/{board,panelOptions,retention,alerts,pricing}.ts`. | N-07, I-36, N-03 (section 2a). |
+| Second review: composition root | 01 4.4a exists; 02 4.10, 03 11.4/12.1 and 06 3.2 plug into it, but with different names and semantics (`tick`/`tickNow`, `createMaintenanceScheduler`/`createDbScheduler`, `untilIdle` throws or returns, `createQueries` deps, `workspaceDir`/`instanceDir`), and nobody drives `tickAttempts` or hands the panel service the ingest writer. | I-15, N-01 (section 2a); 01 S8 cannot be declared done before both land. |
+| Second review: CI gate | 05 A.37 `smoke.mjs` (gate `smoke`) and A.28 start the server with `main.js --port`, which 01 4.4 refuses (exit 17) once 01 S8 lands; `npm run ci` would fail from then until 05 S9. | N-02 (section 2a): the smoke drives `$MCS init/start/verify/stop` from S1 (or reports `SKIPPED`). |
 
 ## 4. Experiments run for this review (2026-10-11, Windows 11 Pro 10.0.26200, Node v24.14.1, Python 3.14.3)
 
@@ -638,9 +699,11 @@ I-37 (minor, owner 03, also 02): 02 3.7 V7 polls `GET /api/v3/ingest/probes/:ses
 
 | Row | Requirement | Why it is a gap | Closed by |
 |---|---|---|---|
-| R-7.E.13 | Attempts (chain-log runs) persisted entity | 06 proposes DDL; 03's migration has none | I-07 |
-| R-8.3.11 | Project/task audit references in session detail | 03 depends on an undefined 01 function | I-19 |
-| R-8.9.9 | Verify task completion evidence (`verify-completion`) | 01 depends on an undefined 02 function | I-08 |
+| R-7.E.13 | Attempts (chain-log runs) persisted entity | 06 proposes DDL; 03's migration has none | I-07 (closed: 03 3.5/3.6/9.1; row now `designed`) |
+| R-8.3.11 | Project/task audit references in session detail | 03 depends on an undefined 01 function | I-19 (closed in substance: 01 7.1 `entriesBetween`; row now `designed`, residual sync/async shape in 2a) |
+| R-8.9.9 | Verify task completion evidence (`verify-completion`) | 01 depends on an undefined 02 function | I-08 (closed in substance: 02 7.13; row now `designed`, residual contract mismatch with 03 in 2a) |
+| R-7.E.14 (new, second review) | Attempts ingestion driven inside the instance process | 06 names a caller that 01 and 02 do not provide; the panel service cannot reach the ingest writer; transaction boundary stated twice | N-01 |
 
-Every other brief bullet is `designed`, `deferred-with-reason` (R-8.8.7 webhooks, R-8.9.10 MCP) or `non-goal` (section 16, R-12.4).
-The three gaps are each closed by one named issue above; no requirement lacks an owner after the issue list is applied.
+After the second review every brief bullet is `designed`, `deferred-with-reason` (R-8.8.7 webhooks, R-8.9.10 MCP) or `non-goal`
+(section 16, R-12.4), except R-7.E.14 (`gap`, N-01). The residuals of section 2a are shape and name mismatches between documents that
+already cover the requirement; each names the single authoritative shape and the document that changes.

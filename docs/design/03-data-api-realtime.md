@@ -3,7 +3,7 @@
 Status: Phase 1 design, written 2026-10-11 for the V3 migration (branch `feat/v3-node-runtime`). Owner of this document: the
 data/API designer. ADRs 0020-0029 belong to it. Revision 2 (2026-10-11) applies the critic review of
 `99-requirements-matrix.md` in place: I-07 (attempts tables), I-30 (legacy health key set), I-31 (no dev origins), I-37 (probe route),
-and aligns with I-01, I-02, I-03, I-08, I-10, I-12, I-14, I-15, I-16, I-19, I-20, I-21, I-22, I-32, I-33, I-35 (section 15). Inputs: `docs/design/00-foundations.md` (D1-D15), the owner's brief MEGA-PROMT-V3
+and aligns with I-01, I-02, I-03, I-08, I-10, I-12, I-14, I-15, I-16, I-19, I-20, I-21, I-22, I-32, I-33, I-35 (section 15). Revision 3 adopts `98-contract-registry.md` names: I-08 (completion lookup, errors, schema), I-19 (async audit references), I-21 (`ChildKindStats`), N-08 (`event` entity), and aligns with N-01, N-09, N-10, I-15 (C09) and the N-13 rows C20, C45, C51, C52, C53. Inputs: `docs/design/00-foundations.md` (D1-D15), the owner's brief MEGA-PROMT-V3
 (sections 7, 8.1-8.8, 8.10, 10, 11, 12), `docs/research/*`, and the sibling designs written in parallel: `01-instances-config-ops.md`
 (workspace, CLI, backups, upgrades, control channel), `02-ingestion-lifecycle.md` (hooks, importer, tokens, lifecycle; it delegates
 table names, DDL and indexes to this document), `04-ui.md` (UI; its section 13 lists the contracts it assumed),
@@ -835,7 +835,7 @@ names, DDL, indexes and `AttemptsRepo`): `attempt_sources`, `attempt_runs`.
 
 ### 3.6 Write paths (repository statements)
 
-Every write runs inside `withWriteTx(ctx, fn)` (4.5): one `BEGIN IMMEDIATE` transaction with a fresh `ChangeRecorder`; COMMIT; then the
+Every write runs inside `withWriteTx(db, ctx, fn)` (4.5): one `BEGIN IMMEDIATE` transaction with a fresh `ChangeRecorder`; COMMIT; then the
 stream is notified. The ingestion writer of `[02 4.6]` calls it once per tick and implements its `ChangeSink` on top of the recorder
 (9.1). Statements below are normative; parameters are named.
 
@@ -1020,10 +1020,15 @@ feed show where data may be missing (brief 8.4). Instance-level rows (`session_i
 alerts (section 10) and through `GET /health/ingest`.
 
 **Attempts** (`AttemptsRepo`, `packages/engine/src/db/repos/attempts.ts`; the tick algorithm, matching and evidence rules are
-`[06 3.10.3-3.10.8]`). One `withWriteTx` per attempts tick; the chain-log read happens before it, asynchronously (DA-I12). The tick's
-`external.attempt` / `external.attempt_cleared` logical events go through `[02]`'s writer inside the same transaction, so their
-lifecycle effect is published as `session/upsert` after COMMIT. Every changed `attempt_runs` row is stamped with the seq of the one
-`attempt/upsert` change reserved for the transaction (9.1).
+`[06 3.10.3-3.10.8]`). One `withWriteTx` per attempts tick holds every `AttemptsRepo` write of that tick (the `attempt/upsert`
+reservation, `saveSource`, `resetSource`, `insertRun`, `endRun`, `supersedeRun`, `setMatch`); the chain-log read happens before it,
+asynchronously (DA-I12). After that COMMIT the tick submits its `external.attempt` / `external.attempt_cleared` logical events to `[02]`'s
+writer (`writer.submit({ source: 'external', items: [{ kind: 'external', events, rows: [] }] })`, `[06 3.10.7]`, N-01), which commits
+them in its own transaction and publishes their lifecycle effect as `session/upsert`; the two transactions are not shared. The session
+row ids returned by `resetSource` and stored in `attempt_runs.session_id` are mapped to provider ids with `SessionsRepo.uidsByRowIds(ctx,
+rowIds): Map<number, string>` (`SELECT id, session_uid FROM sessions WHERE id IN (SELECT value FROM json_each(:idsJson))`, primary key)
+before the 02 events are built (N-10). Every changed `attempt_runs` row is stamped with the seq of the one `attempt/upsert` change
+reserved for the transaction (9.1).
 ```ts
 export interface AttemptSourceRow { id: number; path: string; pathKey: string; generation: number; ino: string | null; headLen: number;
   headHash: string; readOffset: number; configSha256: string; updatedAt: number }
@@ -1047,6 +1052,7 @@ export interface AttemptsRepo {
   runsToMatch(ctx: RepoContext, startedSinceMs: number, limit: number): AttemptRunRow[];                  // unmatched, start order
   latestRuns(ctx: RepoContext, limit: number): AttemptRunRow[];                                           // newest `limit`, start order
   evidenceRun(ctx: RepoContext, sessionRowId: number): AttemptRunRow | undefined;                         // newest ended run
+  runsByPart(ctx: RepoContext, part: string): AttemptRowRef[];   // [02 7.13] CompletionLookup.attemptRowsByPart, every generation (I-08)
 }
 ```
 Statements (normative; `:seq` = the reserved `attempt/upsert` seq, `:now` = `tx.now`):
@@ -1074,6 +1080,10 @@ Statements (normative; `:seq` = the reserved `attempt/upsert` seq, `:now` = `tx.
 - `latestRuns`: `SELECT * FROM (SELECT ... FROM attempt_runs ORDER BY started_at DESC, id DESC LIMIT :limit) ORDER BY started_at, id`.
 - `evidenceRun`: `SELECT ... FROM attempt_runs WHERE session_id = :sid AND end_reason = 'ended' ORDER BY started_at DESC, id DESC
   LIMIT 1` (`idx_attempt_runs_session`; the legacy "latest START wins" rule of `[06 3.10.7]`).
+- `runsByPart` (I-08): `SELECT r.id, r.part, r.started_at, r.ended_at, r.end_reason, r.state, r.evidence, s.session_uid FROM attempt_runs r
+  LEFT JOIN sessions s ON s.id = r.session_id WHERE r.part = :part ORDER BY r.started_at, r.id` (`:part` clipped like a stored part;
+  `sessionId` = `session_uid`, null when unmatched or detached). No index covers `part` across generations: the call is
+  operator-triggered (`verify-completion`), never polled, and DA-T-API-15 records its plan and time (O-5).
 Value rules applied by the repository before every write: `part`, `nRaw`, `exitRaw`, `model`, `effort`, `statusRaw` and `evidence` are
 clipped to their column caps (3.1) by code points with `clip()` of `[02 2.5]`; empty `model`/`effort` become NULL (legacy `or None`); a
 clipped `part` stays the matching key (session labels are at most 200 code points, so a part longer than that never matches anyway).
@@ -1088,6 +1098,11 @@ s.last_activity_at >= :since - 3600000 AND s.label IN (SELECT value FROM json_ea
 500 labels per call, chunked). `firstRecordAtMs` = `Date.parse(first_ts_in_order)` (the first record in file order with a string
 `timestamp`, legacy `usage.first`), `NaN` -> `null`; `lastActivityAtMs` = the main file's `mtime_seen` (legacy `age`), else
 `last_activity_at`. The one-hour slack only widens the prefilter; `[06 3.10.6]` applies the exact window and delta rules.
+Completion candidates for `[02 7.13]` (I-08): `SessionsRepo.completionCandidates(ctx, by: { sessionId: string } | { label: string }):
+CompletionCandidate[]` (`[02 7.13]`'s type: `{ sessionId, label, startedAt, lastActivityAt, view }`): `SELECT s.session_uid, s.label,
+s.started_at, s.last_activity_at, <the stored view columns of 3.5>, s.facts_json FROM sessions s WHERE s.session_uid = :id` (unique index)
+or `WHERE s.label = :label` (exact, case-sensitive; a scan of `sessions`, O-5); `view` is rebuilt from the stored columns exactly as the
+lifecycle sweeper reads it. `CompletionLookup.sessionById` returns the single element or null.
 
 **Write discipline** (DA-I12): the ingestion tick of `[02 4.6]` (500 items or 8 ms) is the dominant writer. Measured on the final schema
 (nine event indexes, ordered timestamps, random ids): about 16,000 event rows/s with 500-row transactions, slowest transaction 99.6 ms
@@ -1317,7 +1332,7 @@ export function backupDb(src: InstanceDb | { path: string; expectedInstanceId: s
 Measured: online backup of a 196 MB DB 581 ms from the writer `[exp:X1]`, of a 38.9 MB DB 124 ms from a read-only connection, copy passed
 `quick_check` `[exp:X12]`; `quick_check` 988 ms and full `integrity_check` 7.6 s on 196 MB `[exp:X1]` (full check only on request).
 
-Recovery guidance (goes to `docs/OPERATIONS.md` with `[01 5.6]`):
+Recovery guidance (goes to `docs/operations.md` with `[01 5.6]`, registry C20):
 - Migrations are forward-only; the recovery point of every migration is the `upgrade` backup made by `[01 5.4]`; rollback is
   `mcs backup restore --id <that backup>` `[01 5.5]`, run by the older runtime if needed (it refuses the newer DB until then).
 - A failed migration leaves the DB at the last successful version; fix the cause (disk, permissions), rerun `mcs db migrate`, or restore.
@@ -1645,7 +1660,9 @@ export interface TransitionItem {
   basis: 'observed' | 'inferred'; confidence: 'high' | 'medium' | 'low'; evidence: EvidenceItem[];
 }
 export interface WorkItem {
-  id: number; key: string; seq: number; title: string; source: 'declared' | 'attempts' | 'label'; rule: 'W-DECL' | 'W-ATT' | 'W-LBL';
+  id: number; key: string; seq: number; title: string;
+  source: 'declared' | 'attempts' | 'label';   // = work_items.kind (3.5) with 'attempt' -> 'attempts' (registry C52)
+  rule: 'W-DECL' | 'W-ATT' | 'W-LBL';
   state: BoardState; boardReason: string; evidence: EvidenceItem[] /* one per member: '<label>: <state> (<rule>)' */; since: IsoTime;
   sessionIds: string[] /* <= 50 */; sessionCount: number; lastActivityAt: IsoTime | null; usage: TokenUsage | null;
 }
@@ -1702,7 +1719,7 @@ Route ids (left column) are the keys of the shared route registry (section 13). 
 | `export` | `GET /api/v3/export` | `ExportQuery` (11.1) | `application/x-ndjson` stream in `mcs.export/1` | `range_invalid`, `export_busy` (an export is already running) |
 | `ingestNudge` | `POST /api/v3/ingest/nudge` | `{ "instanceId": "<uuid>" }` (<= 256 bytes, no `Origin`) | `204` | `409 instance_mismatch`, `413`, `415` |
 | `ingestProbe` | `GET /api/v3/ingest/probes/:probeSessionId` | path param matching `^00000000-0000-4000-8000-[0-9a-f]{12}$` (the probe prefix rule of `[02 2.2]` step 9 and `[02 3.7]`; anything else `400 validation_failed`) | `HookProbeResult` `{ receivedAt: IsoTime; committedAt: IsoTime }` | `404 probe_not_found` (not committed yet, or never received) |
-| `explainCompletion` | `GET /api/v3/completion` | exactly one of `session` (one `sessionId`), `label` (1..200 chars), `attemptPart` (1..512 chars); none or several -> `400 validation_failed` | `CompletionEvidence & { asOfSeq }` (`[02 7.13]`) | `404 completion_target_not_found` |
+| `explainCompletion` | `GET /api/v3/completion` | exactly one of `session` (one `sessionId`), `label` (1..200 chars), `attemptPart` (0..512 chars, present-but-empty allowed: legacy attempts without a `part` group; registry C17); none or several -> `400 validation_failed` | `CompletionEvidence & { asOfSeq }` (`[02 7.13]`, schema 6.3) | `400 validation_failed` (also `CompletionTargetError('target_invalid')`), `404 completion_target_not_found` (`target_not_found`) |
 | `stream` | `GET /api/v3/stream` | `since` (int >= 0), `epoch` (8 hex); a `Last-Event-ID` header wins over `since` | `text/event-stream` (section 9) | `503 stream_limit` |
 
 `EventPage = Page<ActivityEvent> & { scanCapped: boolean; newerCursor: string | null }` (`newerCursor` only with `around`).
@@ -1728,6 +1745,8 @@ the Node server answers `/api/sessions` with `404 route_not_found`, so legacy `s
 same task would declare the Node instance dead and launch a second engine (`[research:current-state-backend.md C.10, F.5]`).
 `legacyHealth` and `ingestProbe` are the two meta routes without `asOfSeq` (they read no change-tracked entity).
 
+`HealthReport`, `InstanceInfo` and `ErrorItem` live in `packages/shared/src/api/health.ts` (registry C51; `LegacyHealth` in `legacy-health.ts`).
+
 `HealthReport` (target <= 10 ms per request, measured in slice S4; polled by the UI every 5 s `[04 5.2]`; used by `mcs status` `[01 4.10]`):
 ```ts
 export interface HealthReport {
@@ -1743,7 +1762,7 @@ export interface HealthReport {
     transcripts: { dirFound: boolean; filesTracked: number; lastScanAt: IsoTime | null; lastImportedAt: IsoTime | null;
                    importLagMs: number | null; pendingBytes: number; invalidLines: number; errorsLastHour: number; lastError: ErrorItem | null };
   };
-  children: Record<ChildKind, ChildStat>;   // [06 3.6] childStats(); ChildStat = { spawned; failed; timedOut; totalMs } (I-21)
+  children: Record<ChildKind, ChildKindStats>;   // [06 3.6] childStats(); ChildKindStats = { spawned; failed; timedOut; totalMs } (I-21)
   panels: PanelStats;                       // [06 3.4] PanelService.stats() (I-21)
   alerts: AlertItem[];               // open, newest first, <= 20
   errors: ErrorItem[];               // server error ring, newest first, <= 20
@@ -1757,7 +1776,8 @@ and `walBytes` from `fs.stat`; `freeDiskBytes` from `fs.statfs(dataDir)` (`bavai
 Resources (I-21): `rssBytes`, `heapUsedBytes` from `process.memoryUsage()`; `cpuUserMicros`, `cpuSystemMicros` from `process.cpuUsage()`
 (cumulative since process start; benchmarks take differences); `eventLoopDelayP99Ms` from `perf_hooks.monitorEventLoopDelay({ resolution:
 20 })`, reset every 60 s. `children` and `panels` are read from `[06]`'s `childStats()` and `PanelService.stats()` at request time (every
-`ChildKind` present, zeros when never spawned). `ChildKind`, `ChildStat` and `PanelStats` are declared in `packages/shared/src/api/panels.ts`
+`ChildKind` present, zeros when never spawned; both come from `createQueries` deps `childStats` and `panelStats` (12.1), absent in the
+`DbReader`, which reports zeros and `{}`). `ChildKind`, `ChildKindStats` and `PanelStats` are declared in `packages/shared/src/api/panels.ts`
 (`[06]` owns their definition there; `engine/src/platform/exec.ts` imports `ChildKind` from it, so `@mcs/shared` never imports the engine).
 `HealthReport` is the measurement surface of `[06 8.2]` and the `health` member of `[01]`'s diagnostics bundle.
 
@@ -1775,6 +1795,9 @@ export interface InstanceInfo {
   limits: { pageMax: 200; eventsQueryWindowDays: 7; searchBudgetMsMax: 10000; textChars: number };
 }
 ```
+`poll` (registry C26): `transcriptMs` = config `poll.events_ms` (1500); `overviewMs` = `poll.overview_ms` (5000; the legacy `/api/overview`
+cadence, also the interval of the git, ledger and chainLog panels `[04 5.2]`); `sessionsMs` = `poll.sessions_ms`; `machineMs` =
+`poll.machine_ms`; `logsMs` = `poll.logs_ms`; `attemptsMs` = `poll.attempts_ms`; `healthMs` = constant 5000 (no legacy key).
 `staleAfterMs` = config `poll.stale_after_ms` (15000); `heartbeatMs` = 15000; `features.usageTrend` = `runtime.json` `analytics.usageTrend`
 (false until the lead enables it after the Phase 6 token parity test, `[04 4.4.6]`); `features.costEstimates` = `pricing.models`
 non-empty; `features.hooks` = `instance.json.hooks.enabled`.
@@ -1798,16 +1821,26 @@ non-empty; `features.hooks` = `instance.json.hooks.enabled`.
   `[02]` writes the row in the drain transaction that reads the probe envelope (`received_at` = envelope receive time, `committed_at` =
   that transaction's `now`); the probe never becomes a session, event or count. `mcs hooks verify` check V7 polls this route every 100 ms
   for at most 3 s `[02 3.7]`; `404 probe_not_found` means "not committed yet". Rows are bookkeeping (3.8: deleted after 24 h).
-- `explainCompletion` (I-08, brief 8.9): `EngineQueries.explainCompletion` (12.1) calls `explainCompletion(queries, target)` of `[02 7.13]`
-  (`engine/src/lifecycle/completion.ts`) in the same synchronous step as `headSeq`; `[02]` returns `null` when the target resolves to no
-  session, which the route maps to `404 completion_target_not_found`. The resolution order and the rule "terminal outcome only when
-  `basis === 'observed'`" (D9) are `[02 7.13]`'s. The response schema `CompletionEvidenceSchema` lives in
-  `packages/shared/src/api/completion.ts` and `[02]`'s `CompletionEvidence` type is its `z.infer` (one definition): `{ outcome:
-  'completed' | 'failed' | 'not_terminal'; state: LifecycleState; basis: 'observed' | 'inferred'; confidence: 'high' | 'medium' | 'low';
-  evidence: EvidenceItem[]; sessionId: string; ruleId: string }`. Consumer: `mcs verify-completion` through `InstanceReader` (12.2).
-- `getSession` `auditRefs` (I-19): `deps.audit.entriesBetween(startedAtMs, (endedAtMs ?? lastActivityAtMs) + 1, 10)` (12.1), mapped to
-  `{ file, at: ISO, title, summary }` with `summary` clipped to 160 code points; the function is `[01 7.1]`'s `entriesBetween(ws, fromMs,
-  toMs, limit)` bound to the instance workspace by the composition root; an unreadable audit file gives `[]`, never an error.
+- `explainCompletion` (I-08, brief 8.9, registry C16): `EngineQueries.explainCompletion` (12.1) builds a `CompletionLookup` over the
+  repositories and calls `[02 7.13]`'s `explainCompletion(lookup, target, deps.now())` (`engine/src/lifecycle/completion.ts`) in the same
+  synchronous step as `headSeq`. There is no `null` path: `[02]` throws `CompletionTargetError`, the query rethrows it unchanged (so the
+  `DbReader` sees the same error), and the route maps `target_invalid` -> `400 validation_failed` and `target_not_found` -> `404
+  completion_target_not_found`. Lookup: `sessionById(id)` and `sessionsByLabel(label)` = `SessionsRepo.completionCandidates(ctx, { sessionId
+  } | { label })` (`WHERE session_uid = :id` through its unique index, or `WHERE label = :label`, exact and case-sensitive, a scan of
+  `sessions`; each row gives `{ sessionId, label, startedAt, lastActivityAt, view }` with `view` read from the stored view columns and
+  `facts_json` of 3.5, the projection `SessionsRepo.writeView` writes); `attemptRowsByPart(part)` = `AttemptsRepo.runsByPart` (3.6). The
+  resolution order and the rule "terminal outcome only when `basis === 'observed'`" (D9) are `[02 7.13]`'s. The response schema
+  `CompletionEvidenceSchema` lives in `packages/shared/src/api/completion.ts` and `[02]`'s `CompletionEvidence` type is its `z.infer` (one
+  definition): `{ outcome: 'completed' | 'failed' | 'not_terminal'; state: LifecycleState; basis: 'observed' | 'inferred'; confidence:
+  'high' | 'medium' | 'low'; evidence: EvidenceItem[] /* <= 8 */; sessionId: string | null /* null only for an unmatched attempt row */;
+  ruleId: string; resolvedBy: 'session_id' | 'label' | 'attempt_part'; candidates: number /* int >= 1 */ }`. Consumer: `mcs
+  verify-completion` through `InstanceReader` (12.2), which maps the two error codes to `USAGE` / `NOT_FOUND` `[01 6.4]`.
+- `getSession` `auditRefs` (I-19): `EngineQueries.getSession` stays synchronous and returns `auditRefs: []`, because `[01 7.1]`'s
+  `entriesBetween(ws, fromMs, toMs, limit): Promise<AuditRef[]>` reads files asynchronously (01 1.2: no synchronous file API in the
+  server). After the snapshot, the route handler and the `DbReader` both `await queries.sessionAuditRefs(detail)` (12.1), which calls
+  `deps.audit.entriesBetween(Date.parse(startedAt), Date.parse(endedAt ?? lastActivityAt) + 1, 10)` and attaches the result unchanged
+  (`AuditRef` is structurally the `auditRefs` element: ISO `at`, `summary` clipped to 300 code points by `[01 7.1]`); a rejected promise
+  gives `[]`, never an error. The audit files are not change-tracked, so `asOfSeq` still describes the snapshot.
 
 ### 6.4 Bounded queries, cancellation and stale-request protection
 
@@ -2108,12 +2141,12 @@ export function createChangeSink(tx: WriteTx): ChangeSink;
 
 Attempts have their own kind (decision for I-07) instead of riding on `session/upsert`: an unmatched run has no session, and DA-I7
 requires every observable change in the log. The lifecycle effect of an attempt (the `attempt` fact of a session) still arrives as
-`session/upsert`, written by `[02]`'s writer in the same transaction. `AttemptsRepo` reserves the change directly through
+`session/upsert`, written by `[02]`'s writer in its own transaction after the attempts transaction commits (3.6, N-01). `AttemptsRepo` reserves the change directly through
 `tx.changes.reserve('attempt', 'upsert', { entityId: null, sessionUid: null })` and `noteId`; it does not go through `ChangeSink`.
 
 `ChangeSink.record(entity, key, op)` mapping: `session` and `turn` -> `session/upsert` (throttled unless the view changed); `agent` ->
-`agent/upsert`; `workflow_run` -> `workflow/upsert`; `tool_call` -> `tool_call/upsert` (with the id); `hook_event` and `transcript_entry`
--> `event/append` (with the id); `usage` -> `usage/invalidate`; `ingest_health` -> `health/upsert`; `reconciliation` -> `event/append` of
+`agent/upsert`; `workflow_run` -> `workflow/upsert`; `tool_call` -> `tool_call/upsert` (with the id); `event` (the single entity name
+`[02 4.6]` passes for hook and transcript rows, I-03) -> `event/append` (with the id); `usage` -> `usage/invalidate`; `ingest_health` -> `health/upsert`; `reconciliation` -> `event/append` of
 the monitor row inserted by `ReconciliationsRepo` (3.6), or `health/upsert` for instance-level rows. A transaction touching one session
 1,000 times and appending 1,000 events writes exactly two change rows (DA-T-RT-7).
 
@@ -2417,7 +2450,7 @@ export interface EngineQueries {
   series(ctx: RepoContext, q: SeriesQuery): UsageSeries;
   tools(ctx: RepoContext, q: ToolsQuery): ToolFrequencyReport;
   hookProbe(ctx: RepoContext, probeSessionId: string): HookProbeResult | null;                     // route ingestProbe (I-37)
-  explainCompletion(ctx: RepoContext, target: CompletionTarget): (CompletionEvidence & { asOfSeq: number }) | null;   // [02 7.13] (I-08)
+  explainCompletion(ctx: RepoContext, target: CompletionTarget): CompletionEvidence & { asOfSeq: number };   // [02 7.13] over a CompletionLookup (6.3); throws CompletionTargetError (I-08)
 }
 export interface TranscriptQueries {
   window(ctx: RepoContext, q: TranscriptWindowQuery, signal: AbortSignal): Promise<TranscriptWindowResponse>;
@@ -2425,15 +2458,27 @@ export interface TranscriptQueries {
   searchSession(ctx: RepoContext, q: TranscriptSearchQuery, signal: AbortSignal): Promise<TranscriptSearchResponse>;
   searchInstance(ctx: RepoContext, q: InstanceSearchQuery, signal: AbortSignal): Promise<InstanceSearchResponse>;
 }
-export interface AuditEntry { file: 'changes' | 'decisions'; at: number; title: string; summary: string }
-export interface AuditReader { entriesBetween(fromMs: number, toMs: number, limit: number): AuditEntry[] }   // [01 7.1] bound to the workspace
-export function createQueries(db: InstanceDb, deps: { config: ResolvedConfig; now: () => number; audit: AuditReader }): EngineQueries & TranscriptQueries;
+export interface AuditQueries {
+  sessionAuditRefs(detail: Pick<SessionDetail, 'startedAt' | 'endedAt' | 'lastActivityAt'>): Promise<AuditRef[]>;   // 6.3 (I-19)
+}
+export interface AuditReader { entriesBetween(fromMs: number, toMs: number, limit: number): Promise<AuditRef[]> }   // [01 7.1] AuditRef, bound to the workspace
+export interface QueryDeps {
+  config: ResolvedConfig; now: () => number; audit: AuditReader;
+  process?: RuntimeProcessInfo;                                  // [01 4.4a]; HealthReport.runtime pid/startedAt (registry C09)
+  childStats?: () => Record<ChildKind, ChildKindStats>;          // [06 3.6]; HealthReport.children
+  panelStats?: () => PanelStats;                                 // [06 3.4] PanelService.stats(); HealthReport.panels
+}
+export function createQueries(db: InstanceDb, deps: QueryDeps): EngineQueries & TranscriptQueries & AuditQueries;
 ```
-`CompletionTarget` (`{ sessionId } | { label } | { attemptPart }`) and `explainCompletion` are `[02 7.13]`'s; `CompletionEvidence` is the
-`z.infer` of the shared schema (6.3). Composition (I-15): `[01 4.4a]`'s `createInstanceRuntime(ctx)` builds `ctx.queries =
-createQueries(ctx.db, { config: ctx.config, now: ctx.clock.now, audit })`; the server routes, the stream hub, `[06]`'s
-`createPanelService(ctx)`, `[02]`'s `createIngestService(ctx)` (for `health()` inputs only) and the CLI DB reader use that one object.
-All synchronous functions read inside one synchronous step and return `asOfSeq` (DA-I8). The query types (`SessionListQuery`, ...) are
+`CompletionTarget` (`{ sessionId } | { label } | { attemptPart }`), `CompletionLookup`, `CompletionTargetError` and `explainCompletion(lookup,
+target, now)` are `[02 7.13]`'s; `CompletionEvidence` is the `z.infer` of the shared schema (6.3). `AuditRef` is `[01 7.1]`'s type
+(`engine/src/audit/reader.ts`). Composition (I-15, registry C09): `[01 4.4a]`'s `createInstanceRuntime(ctx)` builds `ctx.queries =
+createQueries(ctx.db, { config: ctx.config, now: ctx.clock.now, audit, process, childStats, panelStats })` with all six deps (`audit` =
+`entriesBetween` bound to the workspace); the CLI `DbReader` passes `config`, `now` and `audit` only. The server routes, the stream hub,
+`[06]`'s `createPanelService(ctx, { writer })`, `[02]`'s `createIngestService(ctx)` (for `health()` inputs only) and the CLI DB reader
+use that one object.
+All synchronous functions read inside one synchronous step and return `asOfSeq` (DA-I8); `sessionAuditRefs` is the only async read
+outside `TranscriptQueries`, and it reads no database table. The query types (`SessionListQuery`, ...) are
 the parsed outputs of the route Zod schemas, so the CLI builds them from flags with the same schemas.
 
 ### 12.2 Mapping of `[01 6.1]` `InstanceReader`
@@ -2441,10 +2486,10 @@ the parsed outputs of the route Zod schemas, so the CLI builds them from flags w
 | `InstanceReader` method | `ApiReader` (server running) | `DbReader` (stopped, read-only) |
 |---|---|---|
 | `sessions(q)` | `GET /api/v3/sessions` | `listSessions` |
-| `session(id)` | `GET /api/v3/sessions/:id` (404 -> null) | `getSession` |
+| `session(id)` | `GET /api/v3/sessions/:id` (404 -> null; the route already attached `auditRefs`) | `getSession`, then `await sessionAuditRefs(detail)` attached as `auditRefs` (6.3, I-19) |
 | `usage(q)` | `GET /api/v3/analytics/usage` | `usage` |
 | `errors(q)` | `GET /api/v3/errors` | `errors` (ingest rows only; no server ring offline) |
-| `explainCompletion(t)` | `GET /api/v3/completion` (404 -> null) | `explainCompletion` (12.1, wraps `[02 7.13]`) |
+| `explainCompletion(t)` | `GET /api/v3/completion`; `404 completion_target_not_found` -> throws `CompletionTargetError('target_not_found')`, `400 validation_failed` -> `CompletionTargetError('target_invalid')` | `explainCompletion` (12.1, wraps `[02 7.13]`; the error propagates unchanged) |
 | `exportTo(q, out)` | `GET /api/v3/export` streamed to `out` | `exportInstance` |
 Both modes return the same JSON (validated with the same response schemas); a contract test runs every method in both modes on one
 fixture and compares (DA-T-CLI-1).
@@ -2460,8 +2505,8 @@ fixture and compares (DA-T-CLI-1).
    Express's routes and asserts a 1:1 match with the registry (plus the static and history fallback of `[04]` ADR 0039).
 3. **Clients**: the web client (`[04]` `data/endpoints.ts`) and the CLI `ApiReader` build URLs from `route.path` and validate responses
    with `route.response`; stream messages are validated with the schemas of `stream.ts`.
-4. **JSON Schema**: `npm run schemas` (`runtime/scripts/gen-api-schemas.mjs`, part of `[01]` S16 `gen-schemas.mjs` if the lead merges
-   them) writes per route `schemas/api/<routeId>.{params,query,body,response}.schema.json` with `z.toJSONSchema(schema, { io: 'input' })`
+4. **JSON Schema**: `npm run schemas` (the one generator `runtime/scripts/gen-schemas.mjs` of `[05 3.1]`/`[01 2.9]`, registry C45; this
+   document owns its API part) writes per route `schemas/api/<routeId>.{params,query,body,response}.schema.json` with `z.toJSONSchema(schema, { io: 'input' })`
    for inputs and the default (output) for responses (draft 2020-12, verified on Zod 4.6.5 `[exp:X6]`), plus `schemas/api/stream.schema.json`,
    `schemas/export/<type>.schema.json` and `docs/api/reference.md` (method, path, summary, params, error codes, schema links).
 5. **Drift check**: `npm run schemas:check` regenerates into a temporary folder and diffs with the committed files (CI and the root `ci`).
@@ -2540,11 +2585,12 @@ out by I-10 in `[04]`.
 | `InstanceReader` with Api and Db readers calling the same engine functions | 12.2 |
 | this document needs from 01 | the `analytics` R section `{ usageTrend: boolean }` (default false, owned here) composed as `strictObject().prefault({})` (I-01); nothing in `server` (no `server.devOrigins`, I-31) |
 | C-4 key set `{ ok, version, pid, started, uptime, now, code_stamp, engine, instanceId, task, config_source, errors, reader }` | 6.2 `LegacyHealth`, adopted verbatim (I-30) |
-| composition root `InstanceContext`, `createInstanceRuntime(ctx)` (`[01 4.4a]`, I-15) | `ctx.queries` = `createQueries(...)` (12.1); `createDbScheduler(ctx)` (11.4) plugs into `start`/`stop`; the runtime's `health()` returns `EngineQueries.health` |
-| `entriesBetween(ws, fromMs, toMs, limit)` (`[01 7.1]`, I-19) | `SessionDetail.auditRefs` through `deps.audit` (6.3, 12.1) |
+| composition root `InstanceContext`, `createInstanceRuntime(ctx)` (`[01 4.4a]`, I-15) | `ctx.queries` = `createQueries(ctx.db, { config, now, audit, process, childStats, panelStats })` (12.1, C09); `createDbScheduler(ctx)` (11.4) plugs into `start`/`stop`; the runtime's `health()` returns `EngineQueries.health` |
+| `entriesBetween(ws, fromMs, toMs, limit): Promise<AuditRef[]>` (`[01 7.1]`, I-19) | `SessionDetail.auditRefs` through `deps.audit` and the async `sessionAuditRefs`, awaited after the snapshot (6.3, 12.1) |
 | `ConfigInspection` in `shared/src/cli/results.ts` (I-20) | response of route `config` (6.1) |
 | diagnostics bundle `health` (I-21) | carries `HealthReport` (6.2) with `runtime` resources, `children`, `panels` |
-| `verify-completion`, `InstanceReader.explainCompletion` (I-08) | route `explainCompletion` and `EngineQueries.explainCompletion` (6.1, 6.3, 12) |
+| `verify-completion`, `InstanceReader.explainCompletion` (I-08) | route `explainCompletion` and `EngineQueries.explainCompletion` (6.1, 6.3, 12); both readers throw `CompletionTargetError`, mapped by `[01 6.4]` to `USAGE` / `NOT_FOUND` |
+| `InstanceReader.errors` (`[01 6.1]`) | returns `ErrorItem[]` (6.1, `shared/src/api/health.ts`; registry C21) |
 | optional `mcs db rebuild` (I-12) | the 4.4 recovery steps; no DB function other than `backupDb` |
 
 ### 15.3 `05-tooling-testing-security.md` (ADR 0045)
@@ -2568,7 +2614,7 @@ out by I-10 in `[04]`.
 |---|---|
 | "The data-model designer owns names, DDL, indexes" (4.1) | 3.5 DDL and the entity mapping table; access patterns of 4.1 covered by `idx_events_session_ts`, `idx_events_content`, `ux_events_*`, `idx_tool_calls_open`, `idx_*_next_check`, `idx_turns_session`, `idx_usage_files_key` (verified plans `[exp:X12]`) |
 | one `event` entity in the single `events` table (`[02 4.1]`, I-03) | 3.5 and the natural-key and stored-kind tables of 3.6 (normative; `[02 4.1, 4.3, 5.6]` carry the same stored kind); 02 writes through `EventsRepo` |
-| `ChangeSink { record, flush, discard }` implemented by the realtime layer | `createChangeSink` (9.1); one `withWriteTx` per tick, `record()` -> `reserve()`, publication in `onCommitted` (I-16, no behaviour change) |
+| `ChangeSink { record, flush, discard }` implemented by the realtime layer; entity `event` (4.6) | `createChangeSink` (9.1; `event` -> `event/append`); one `withWriteTx` per tick, `record()` -> `reserve()`, publication in `onCommitted` (I-16, no behaviour change) |
 | `GET /api/v3/health/ingest` served by the API design | 6.1 `healthIngest` |
 | Projection of `IngestHealth` to `HealthReport.ingestion` | 6.2 uses it as defined in `[02 8.2]` |
 | Alert inputs (8.3) | 10.1 rules |
@@ -2576,12 +2622,12 @@ out by I-10 in `[04]`.
 | Token rules 6.2 and aggregates 6.3 | storage and rollups 3.6, aggregation 8.2 (normative rules stay in 02) |
 | Entry text on demand (`readEntryText`, 5.7) | the transcript window reuses the same projection (7.1); the entry index is this document's (7.2) |
 | `GET /api/v3/ingest/probes/:probeSessionId` (3.7 V7, I-37) | route `ingestProbe` (6.1, 6.3) |
-| `explainCompletion(queries, target)`, `CompletionTarget`, `CompletionEvidence` (7.13, I-08) | `EngineQueries.explainCompletion` and route `explainCompletion`; `null` for an unresolved target; shared response schema (6.3) |
+| `explainCompletion(lookup, target, now)`, `CompletionLookup`, `CompletionTarget`, `CompletionEvidence`, `CompletionTargetError` (7.13, I-08) | `EngineQueries.explainCompletion` builds the lookup (6.3, `SessionsRepo.completionCandidates`, `AttemptsRepo.runsByPart`) and the route maps `target_invalid` -> 400, `target_not_found` -> 404; shared response schema with `resolvedBy`, `candidates`, nullable `sessionId` (6.3); `attemptPart` 0..512 (C17) |
 | spool segments `hooks-<YYYYMMDD>T<HH>Z.ndjson`, `SPOOL_SEGMENT_EXT` (2.3, 2.7, I-02) | `spool_cursors.segment` CHECK `GLOB '*.ndjson'` (3.5) |
 | `MAX_LINE_BYTES` in `shared/src/protocol/limits.ts` (1.1, I-32) | imported (3.3); no copy in `db-constants.ts` |
 | `renderEvidence(item, now)` and `viewChanged` (`lifecycle/rules.ts`), `toLegacy` (`lifecycle/legacy.ts`) (7.1, 7.9, I-33) | used by 5.5 and the view writes of 3.6 |
 | `createIngestService(ctx)`, `createLifecycleSweeper(ctx)` (4.10, I-15) | use `ctx.db`, the repositories and `withWriteTx`; nothing here changes |
-| `external.attempt` / `external.attempt_cleared` logical events of the attempts tick (`[06 3.10.7]`) | written by `[02]`'s writer inside the attempts `withWriteTx` (3.6) |
+| `external.attempt` / `external.attempt_cleared` logical events of the attempts tick (`[06 3.10.7]`) | submitted to `[02]`'s writer after the attempts `withWriteTx` commits; the writer commits them in its own transaction (3.6, N-01) |
 
 ### 15.5 `06-panels-parity-platform.md`
 
@@ -2592,7 +2638,7 @@ out by I-10 in `[04]`.
 | panel contracts in `shared/src/api/panels.ts` (I-35) | route `panel` response schema `PanelResponseSchema` (6.1, 13) |
 | `PanelService.stats()`, `childStats()` and process resources for measurement (8.2, I-21) | `HealthReport.panels`, `HealthReport.children`, `HealthReport.runtime` resources (6.2) |
 | runbook 7.1/7.2 (I-12) | backups and restore are `[01 5.5]`; no `reimport` (4.4); health field names are 6.2's |
-| `createPanelService(ctx)` (I-15) | reads `ctx.queries` (session `TokenUsage` for rows) and writes through `AttemptsRepo` inside `withWriteTx` |
+| `createPanelService(ctx, { writer })` (I-15, N-01) | reads `ctx.queries` (session `TokenUsage` for rows); the attempts tick writes through `AttemptsRepo` inside one `withWriteTx`, then submits the 02 events to `writer` after COMMIT (3.6); candidates from `SessionsRepo.attemptCandidates`, uids from `SessionsRepo.uidsByRowIds` (N-10) |
 
 ## 16. CHALLENGES
 
@@ -2713,7 +2759,8 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
 | DA-T-API-12 | asOfSeq consistency (DA-I8) | under concurrent writes every snapshot's `asOfSeq` <= the head after the response, and every entity `seq <= asOfSeq` | I |
 | DA-T-API-13 | ingest health route | `/health/ingest` equals the last `ingest_health.report_json` with `asOfSeq`; `HealthReport.ingestion` equals the `[02 8.2]` projection on table-driven inputs | U + I |
 | DA-T-API-14 | probe route (I-37) | a drained probe envelope -> `200 { receivedAt, committedAt }` with `committedAt >= receivedAt`; an unknown probe id -> `404 probe_not_found`; a non-probe session id or an uppercase probe id -> `400 validation_failed`; no session, event or counter changes; a row older than 24 h is gone after bookkeeping retention | I |
-| DA-T-API-15 | completion route (I-08) | for each `[02 7.13]` fixture target (`[01]` T-CLI-08 fixtures over S-1, S-3, S-4, S-8e) the route body equals `EngineQueries.explainCompletion` and the `DbReader` result; none or two of `session`/`label`/`attemptPart` -> 400; an unknown label -> `404 completion_target_not_found` | I |
+| DA-T-API-15 | completion route (I-08) | for each `[02 7.13]` fixture target (`[01]` T-CLI-08 fixtures over S-1, S-3, S-4, S-8e) the route body equals `EngineQueries.explainCompletion` and the `DbReader` result; none or two of `session`/`label`/`attemptPart` -> 400; a malformed session id (`target_invalid`) -> `400 validation_failed`; an unknown label or part -> `404 completion_target_not_found` and the `DbReader` throws `CompletionTargetError('target_not_found')`; `attemptPart=` (empty) is accepted and a 513-character part is refused; the body parses with `CompletionEvidenceSchema` including `resolvedBy`, `candidates` and `sessionId: null` for an unmatched ended row (CE-12); records `EXPLAIN QUERY PLAN` and time of the label and part lookups at 5,000 sessions / 20,000 runs (O-5) | I |
+| DA-T-API-17 | audit references (I-19) | `EngineQueries.getSession` returns `auditRefs: []` synchronously; the route and the `DbReader` return the entries of a fixture `audit/changes.md` and `decisions.md` inside the session window (<= 10, newest first) identically; an `entriesBetween` stub that rejects gives `auditRefs: []` and `200` | U + I |
 | DA-T-API-16 | health resources (I-21) | `HealthReport` parses; `runtime.rssBytes` and `heapUsedBytes` > 0; `cpuUserMicros` does not decrease across two calls; `children` has every `ChildKind` key; `panels` equals the stubbed `PanelService.stats()` | U + I |
 
 ### 19.4 Realtime
@@ -2792,13 +2839,13 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
 
 | Id | Owner | What this document assumes |
 |---|---|---|
-| A-1 | `[02]` lifecycle | the `LifecycleView` fields and enums of `[02 7.1]` (stored as in 3.5); `facts_json` sizes within the caps (sessions 64 KiB, agents and runs 16 KiB); `viewChanged` and `renderEvidence(item, now)` exported from `engine/src/lifecycle/rules.ts`, `toLegacy()` from `lifecycle/legacy.ts` (I-33); `explainCompletion(queries, target)` with `CompletionTarget`, `null` for an unresolved target, result typed as the `z.infer` of `CompletionEvidenceSchema` (6.3) (`[02 7.13]`, I-08); board derivation `[02 7.11]` writes `work_items` with `rule` and `board_reason` |
+| A-1 | `[02]` lifecycle | the `LifecycleView` fields and enums of `[02 7.1]` (stored as in 3.5); `facts_json` sizes within the caps (sessions 64 KiB, agents and runs 16 KiB); `viewChanged` and `renderEvidence(item, now)` exported from `engine/src/lifecycle/rules.ts`, `toLegacy()` from `lifecycle/legacy.ts` (I-33); `explainCompletion(lookup, target, now)` with `CompletionLookup`, `CompletionTarget` and `CompletionTargetError('target_invalid' | 'target_not_found')` (no `null` result), `attemptPart` 0..512, result typed as the `z.infer` of `CompletionEvidenceSchema` (6.3) (`[02 7.13]`, I-08, C16, C17); `ChangeSink.record` entity `event` for hook and transcript rows (`[02 4.6]`, N-08); board derivation `[02 7.11]` writes `work_items` with `rule` and `board_reason` |
 | A-2 | `[02]` ingestion | writes through `withWriteTx` + `createChangeSink` and the repositories of 4.5 with the statements and natural keys of 3.6; `TranscriptFilesRepo.updateCursors` for cursor moves; reconciliations through `ReconciliationsRepo`; stores the values of the normative stored-kind table of 3.6 (I-03: `[02 4.1, 4.3, 5.6]` carry the same values; no longer an assumption); writes probe rows through `HookProbesRepo` in the drain transaction |
 | A-3 | `[02]` hooks | nudge body and behaviour of `[02 2.8]` (no longer an assumption: adopted in 5.2) |
-| A-4 | `[01]` instances/ops | the composition root of `[01 4.4a]` (I-15): `InstanceContext` (`instanceId, repoDir, config, clock, db, errors, exec` plus `claudeHome, mcsHome, logger, queries`) and `createInstanceRuntime(ctx)` -> `{ start(), stop(deadlineMs), ingestUntilIdle({ timeoutMs }), health() }`, which opens the DB with `openInstanceDb('serve')`, maps errors with `DB_OPEN_EXIT_CODES`, builds `ctx.queries` with `createQueries`, starts and stops `createDbScheduler(ctx)`, and runs `backupDb` for the control op `backup`; `mcs start` uses `peekDbSchemaVersion`; `upgrade`/`db migrate` use `planDbMigrations`/`migrateDb` after their backup; `cleanup --scope data` uses `applyRetention`; `commands` strings for `InstanceInfo` (`[01 6.6]`); `outdated` per `[01 5.3]`; graceful shutdown `[01 4.5]`; the bound port is passed to the Host guard |
+| A-4 | `[01]` instances/ops | the composition root of `[01 4.4a]` (I-15): `InstanceContext` (`instanceId, repoDir, config, clock, db, errors, exec` plus `claudeHome, mcsHome, logger, queries`) and `createInstanceRuntime(ctx)` -> `{ start(), stop(deadlineMs), ingestUntilIdle({ timeoutMs }), health() }`, which opens the DB with `openInstanceDb('serve')`, maps errors with `DB_OPEN_EXIT_CODES`, builds `ctx.queries` with `createQueries` and all six deps (12.1, C09), starts and stops `createDbScheduler(ctx)`, and runs `backupDb` for the control op `backup`; `mcs start` uses `peekDbSchemaVersion`; `upgrade`/`db migrate` use `planDbMigrations`/`migrateDb` after their backup; `cleanup --scope data` uses `applyRetention`; `commands` strings for `InstanceInfo` (`[01 6.6]`); `outdated` per `[01 5.3]`; graceful shutdown `[01 4.5]`; the bound port is passed to the Host guard |
 | A-5 | `[01]` config | composes the sections `retention`, `alerts`, `pricing` and `analytics` (`{ usageTrend: boolean }`, default false) owned here, each `strictObject().prefault({})` (I-01); no `server.devOrigins` (I-31); legacy keys read here: `window_hours`, `include_unmatched`, `session_ids`, `poll.stale_after_ms`, `limits.text_chars`, `panels`, `ui`; `ConfigInspection` (`shared/src/cli/results.ts`, I-20) behind `GET /config` |
-| A-6 | `[06]` panels | `PanelResponseSchema`, `AttemptState`, `ChildKind`, `ChildStat`, `PanelStats` exported from `shared/src/api/panels.ts` (I-35, I-21); `pathKey()` in `platform/paths.ts`; the attempts tick writes only through `AttemptsRepo` inside one `withWriteTx` and 06 3.10 uses the table names of 3.5 (I-07) |
-| A-7 | `[01]` audit | `entriesBetween(ws, fromMs, toMs, limit): { file, at, title, summary }[]` (`[01 7.1]`, I-19) over `audit/changes.md` and `decisions.md` (`## <ts> \| <title>` headers, the legacy split rule, universal newlines) for `SessionDetail.auditRefs` |
+| A-6 | `[06]` panels | `PanelResponseSchema`, `AttemptState`, `ChildKind`, `ChildKindStats`, `PanelStats` exported from `shared/src/api/panels.ts` (I-35, I-21); `pathKey()` in `platform/paths.ts`; the attempts tick writes only through `AttemptsRepo` inside one `withWriteTx` and submits its 02 events to the writer after COMMIT (N-01); 06 3.10 uses the table names of 3.5 and points to 3.5/3.6 instead of a copy of the DDL (I-07, N-10) |
+| A-7 | `[01]` audit | `entriesBetween(ws, fromMs, toMs, limit): Promise<AuditRef[]>` with `AuditRef = { file, at: ISO, title, summary }` (`[01 7.1]`, I-19) over `audit/changes.md` and `decisions.md` (`## <ts> \| <title>` headers, the legacy split rule, universal newlines) for `SessionDetail.auditRefs` |
 | A-8 | `[04]` UI | adapts the rows marked "adapt" in 15.1 by importing the contracts from `@mcs/shared` (I-10) |
 | A-9 | testkit (`[04 11.5]`, `[02]` fixtures) | synthetic transcripts and envelopes with sentinels, the `[02 6.4]` worked example files |
 | A-10 | `[02]` constants and probes | `SPOOL_SEGMENT_EXT = '.ndjson'` (`shared/src/protocol/hook-envelope.ts`, I-02); `MAX_LINE_BYTES` (`shared/src/protocol/limits.ts`, I-32); the probe prefix rule of `[02 2.2]` step 9; probe rows written in the drain transaction |
@@ -2830,7 +2877,7 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
   deduplication, filtering, retention, DB to API, persistence before broadcast, realtime reconnect (19).
 - Matrix rows closed by revision 2: R-7.E.13 attempts as a persisted entity (3.5 `attempt_sources`/`attempt_runs`, 3.6 `AttemptsRepo`,
   9.1 `attempt/upsert`; I-07); R-8.3.11 project/task audit references in session detail (6.3 `auditRefs` over `[01 7.1]`
-  `entriesBetween`; I-19); R-8.9.9 verify task completion evidence (route and query `explainCompletion` over `[02 7.13]`; I-08); brief
+  `entriesBetween`; I-19); R-8.9.9 verify task completion evidence (route and query `explainCompletion` over `[02 7.13]` with a `CompletionLookup`; I-08); brief
   13 fallback: the legacy CLI recognizes a running Node instance (6.2, I-30); brief 8.10 hook verification round trip (`ingestProbe`,
   I-37); brief 12 Origin validation without configurable exceptions (5.2, I-31).
 - Foundations: D2 (C-1), D3 (data layout), D7 (one driver module), D8 (tokens from transcripts, dedupe), D9 (state columns, transitions),
@@ -2847,11 +2894,15 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
   declaration goes into a local module augmentation in that file.
 - O-4 Cross-design confirmations. This document is final on its side; each item is specified on the other side by the critic's fix and
   is checked by the lead when Phase 1 closes (grep of the six designs for the names in 15.2-15.5): (a) `[02]` 4.1/4.3/5.6 carry the
-  stored-kind column equal to 3.6 (I-03) and `[02 7.13]` returns `null` for an unresolved target (I-08); (b) `[01]` defines
-  `InstanceContext`/`createInstanceRuntime` (4.4a), `entriesBetween` (7.1), `ConfigInspection` and the `analytics` section (I-01, I-15,
-  I-19, I-20); (c) `[04]` imports the contracts (I-10); (d) `[06]` uses the attempts names of 3.5, writes through `AttemptsRepo`, and
-  exports `pathKey`, `ChildKind`, `ChildStat`, `PanelStats` from the paths of A-6 (I-07, I-21, I-35). No fallback is needed: `0001`
+  stored-kind column equal to 3.6 (I-03), `[02 4.6]` records entity `event` (N-08) and `[02 7.13]` step 1 accepts `attemptPart` 0..512
+  (I-08, C17); (b) `[01]` defines
+  `InstanceContext`/`createInstanceRuntime` (4.4a, passing the six `createQueries` deps), `entriesBetween` (7.1), `ConfigInspection` and
+  the `analytics` section (I-01, I-15, I-19, I-20), and types `InstanceReader.errors` as `ErrorItem[]` (6.1, N-08, C21); (c) `[04]` imports the contracts (I-10); (d) `[06]` uses the attempts names of 3.5, writes through `AttemptsRepo`, and
+  exports `pathKey`, `ChildKind`, `ChildKindStats`, `PanelStats` from the paths of A-6 (I-07, I-21, I-35). No fallback is needed: `0001`
   contains the single `events` table and the attempts tables.
+- O-5 Completion lookups by label and by attempt part scan `sessions` and `attempt_runs` (no index on `label` or on `part` across
+  generations; the route is operator-triggered). UNVERIFIED time. Plan: slice S5b measures them in DA-T-API-15 at 5,000 sessions and
+  20,000 runs; above 5 ms a later migration adds `idx_sessions_label` / `idx_attempt_runs_part` (0001 stays frozen).
 
 ## 23. Phase 2+ task slices (dependency order; each independently testable)
 
@@ -2862,11 +2913,11 @@ S13a/S13b) -> S13. Test file names follow `[05 4.1]` (section 19 intro).
 | Slice | Phase | Depends on | Owns (paths under `runtime/`) | Done when |
 |---|---|---|---|---|
 | S1 DB core | 2 | `[05]` S1 scaffold, `[01]` S1 shared contracts | `packages/engine/migrations/0001_initial.sql` (as in 3.5, including the attempts tables; committed with the X14 checksum and frozen from then on), `packages/engine/src/db/{driver,errors,open,migrations,backup,write,changes}.ts`, `packages/shared/src/db-constants.ts`; tests `packages/engine/src/db/{driver,migrations,write,changes}.test.ts`, `packages/engine/test/db-{migrations,open,constraints,backup}.int.test.ts`, `packages/engine/test/fixtures/db/schema.snapshot.sql` | DA-T-DB-1..8, 15..18, the X14 probes of DA-T-DB-20 and DA-T-E-3 pass; O-2/O-3 checked |
-| S2 Repositories and change sink | 2 | S1 | `packages/engine/src/db/repos/*.ts` (including `attempts.ts` and `SessionsRepo.attemptCandidates`), `packages/engine/src/db/change-sink.ts`; tests `packages/engine/src/db/repos/*.test.ts`, `packages/engine/src/db/change-sink.test.ts` | DA-T-DB-9..13, 19, 20, DA-T-RT-7, 11, 13, DA-T-PRIV-3 pass |
-| S3 Shared API contracts | 2 | `[05]` S1 (parallel with S1) | `packages/shared/src/api/{ids,time,errors,filters,cursor,entities,health,legacy-health,stream,export,routes}.ts` (the `panel` route row lands with `[06]`'s `panels.ts`), `scripts/gen-api-schemas.mjs`, `schemas/api/**`, `schemas/export/**`, `docs/api/reference.md` (generated); tests `packages/shared/src/api/{routes,filters,cursor}.test.ts` | DA-T-API-2 and the round trip of DA-T-API-7 pass |
+| S2 Repositories and change sink | 2 | S1 | `packages/engine/src/db/repos/*.ts` (including `attempts.ts` with `runsByPart`, and `SessionsRepo.attemptCandidates`, `uidsByRowIds`, `completionCandidates`), `packages/engine/src/db/change-sink.ts`; tests `packages/engine/src/db/repos/*.test.ts`, `packages/engine/src/db/change-sink.test.ts` | DA-T-DB-9..13, 19, 20, DA-T-RT-7, 11, 13, DA-T-PRIV-3 pass |
+| S3 Shared API contracts | 2 | `[05]` S1 (parallel with S1) | `packages/shared/src/api/{ids,time,errors,filters,cursor,entities,health,legacy-health,stream,export,routes}.ts` (the `panel` route row lands with `[06]`'s `panels.ts`), the API part of `scripts/gen-schemas.mjs` (registry C45), `schemas/api/**`, `schemas/export/**`, `docs/api/reference.md` (generated); tests `packages/shared/src/api/{routes,filters,cursor}.test.ts` | DA-T-API-2 and the round trip of DA-T-API-7 pass |
 | S4 Server skeleton and meta routes | 2 | S1-S3, `[01]` S8 (server shell, `createInstanceRuntime`, I-15), `[05]` S6 (owns `packages/server/src/http/guards.ts`; error codes from 5.2) | `packages/server/src/{app,errors,route-adapter}.ts`, `packages/server/src/routes/{meta,ingest}.ts` (`legacyHealth`, `health`, `healthIngest`, `instance`, `config`, `ingestNudge`, `ingestProbe`), `packages/engine/src/query/health.ts`; tests `packages/server/test/{meta,ingest,errors-envelope}.int.test.ts` | DA-T-API-3, 4, 5, 10, 11, 13, 14, 16 pass |
-| S5 Query layer and read routes | 2-3 | S2, S4 | `packages/engine/src/query/**` (except transcript, search, analytics, completion), `packages/server/src/routes/{sessions,agents,events,tool-calls,work-items,overview,alerts,errors}.ts`; tests `packages/engine/src/query/*.test.ts`, `packages/server/test/contract/*.int.test.ts` | DA-T-API-1, 6, 7, 8, 9, 12, DA-T-DB-14 pass |
-| S5b Completion route | 3 | S5, `[02]` I-7b (`explainCompletion`) | `packages/shared/src/api/completion.ts`, `packages/engine/src/query/completion.ts`, `packages/server/src/routes/completion.ts`; test `packages/server/test/completion.int.test.ts` | DA-T-API-15 passes |
+| S5 Query layer and read routes | 2-3 | S2, S4 | `packages/engine/src/query/**` (except transcript, search, analytics, completion), `packages/server/src/routes/{sessions,agents,events,tool-calls,work-items,overview,alerts,errors}.ts`; tests `packages/engine/src/query/*.test.ts`, `packages/server/test/contract/*.int.test.ts` | DA-T-API-1, 6, 7, 8, 9, 12, 17, DA-T-DB-14 pass |
+| S5b Completion route | 3 | S5, `[02]` I-7b (`explainCompletion`) | `packages/shared/src/api/completion.ts`, `packages/engine/src/query/completion.ts`, `packages/server/src/routes/completion.ts`; test `packages/server/test/completion.int.test.ts` | DA-T-API-15 passes; O-5 measured |
 | S6 Stream | 3 | S5 | `packages/server/src/stream/{hub,hydrate,sse}.ts`; tests `packages/server/src/stream/hub.test.ts`, `packages/server/test/stream-*.int.test.ts` | DA-T-RT-1..6, 8..10 pass |
 | S7 Transcript entries, index, window, locate | 3 | S2 (`[02]` `readEntryText` then imports `entries.ts`) | `packages/engine/src/transcript/{entries,index-service,window}.ts`, `packages/server/src/routes/transcript.ts`; tests `packages/engine/src/transcript/*.test.ts`, `packages/engine/test/transcript-window.int.test.ts` | DA-T-S-7, 8, 9 pass |
 | S8 Search | 5 (4 if the lead keeps transcript search in the Phase 4 smoke, `99` section 3) | S7 | `packages/engine/src/search/{scan,service}.ts`, `packages/server/src/routes/search.ts`; tests `packages/engine/src/search/scan.test.ts`, `packages/engine/test/search.int.test.ts` | DA-T-S-1..6, 10 pass; O-1 measured |

@@ -7,6 +7,11 @@ Machine for every experiment: Windows 11, Git Bash, Node 24.14.1, npm 11.11.0, P
 from `D:/mvp/private/scratch/mcs-v3/nodes`. Scratch: `D:/mvp/private/scratch/mcs-v3/{scaffold-check,security-probe,parity-probe,tooling-fix}`.
 Revision 2026-10-11 (critic issues I-09, I-14, I-22..I-26 and the aligned I-02, I-04, I-05, I-06, I-11, I-13, I-17, I-27, I-36): shapes
 owned by designs 01, 02, 03, 04 and 06 adopted where named; experiments E22-E23 added.
+Revision 2, 2026-10-11 (second critic N-02, N-07, N-13, I-22, I-26, I-34, I-36; the contract registry `98-contract-registry.md` is the
+arbiter of names, its rows C27-C36, C38, C45, C46, C54, C55 adopted): the smoke gate drives the real CLI (`init`/`start`/`stop`) or
+reports SKIPPED, the Playwright config is 04's (A.28 withdrawn), `Clock` comes from 01's `shared/src/time.ts`, id regexes from 02's
+protocol module, the platform-branching lint rule of 06 section 4 is in A.9, T-ISO test files belong to the 01 slices, testkit exports
+`./legacy`. Experiment E24 added.
 Every file in Appendix A was built, linted, type-checked, tested and run in `scaffold-check` (section 9 has the exact outputs).
 
 Read order for an implementer: section 0 (decisions), then only the sections your slice names (section 13). Appendix A (scaffold
@@ -47,7 +52,7 @@ file contents) sits before the closing sections 11-13.
 | `runtime/ci/github-actions-ci.yml` | inactive CI workflow |
 | `runtime/packages/*/package.json`, `runtime/packages/*/tsconfig*.json` | package manifests (code inside packages is owned by the package designs) |
 | `runtime/packages/testkit/**` | fixture library (section 4.4) |
-| `runtime/tests/**` | cross-package suites: isolation, resilience, security, parity, tooling |
+| `runtime/tests/**` | cross-package suites: isolation (only `_setup.ts`; each `isolation/*.test.ts` belongs to the 01 slice of its T-ISO rows, `hook-routing-isolation.test.ts` to 02; critic N-07), resilience, security, parity (base modules only, see next row; `*.golden.test.ts` are 01 S2/S3), tooling |
 | `runtime/tests/parity/{projections,normalize,run-python}.ts`, `runtime/scripts/parity-capture.mjs` | Node side of the parity harness (section 4.11). `tests/legacy-parity/tools/**` and `tests/legacy-parity/golden/**` are owned by design 06 (slice PP2); the `*.parity.test.ts` files by 06 PP4/PP8 |
 | `.gitignore` additions | section 2.9 |
 | `docs/testing.md` (Phase 6) and the docs plan | section 6 |
@@ -63,10 +68,10 @@ the tests in section 5.7 still apply unchanged. `packages/engine/src/platform/ex
 
 | Item | Owner | What this design assumes (shape) |
 |---|---|---|
-| Launcher `scripts/mcs.mjs` | design 01 (launcher/CLI/instances) | calls `staleness()` / writes stamps as in section 3.3; implements the bootstrap steps of section 3.3.4 |
-| CLI command names | design 01 | `mcs init --slug <slug> --name <name> --repo <path>`, `start`, `stop`, `status`, `verify`, `doctor`, `db migrate`, `upgrade`, `hooks install|verify|uninstall`; other commands take `--task <slug> --repo <path>`; exit 0 ok, 1 failure, 2 usage (legacy convention) |
+| Launcher `scripts/mcs.mjs` | design 01 (launcher/CLI/instances) | calls `staleness()` / writes stamps as in section 3.3; owns the bootstrap steps (01 section 5.1) and relies on the stamp contract of section 3.3.4 |
+| CLI command names | design 01 | `mcs init --slug <slug> --name <name> --repo <path> [--port <n>]`, `start`, `stop`, `status`, `verify`, `doctor`, `diagnostics`, `db migrate`, `upgrade`, `hooks install|verify|uninstall|status` (installer modules in `engine/src/hooks/installer/`, called by `ops.hooks.*`, critic N-11); other commands take `--task <slug> --repo <path>`; exit 0 ok, 1 failure, 2 usage (legacy convention) |
 | `MCS_HOME` | design 02 section 2.6.1 (layout of `routes/`, `logs/`, `hooks/`, `backups/`, `locks/`), design 01 (the rest) | the per-user state folder, resolved by `resolveMcsHome(env)`: `env.MCS_HOME` if non-empty and absolute; else win32 `%LOCALAPPDATA%/mcs`, POSIX `${XDG_STATE_HOME:-~/.local/state}/mcs`. Tests always set `MCS_HOME` to a temp dir so nothing touches the real per-user folder |
-| `Clock` interface | this design (`@mcs/shared` `src/clock.ts`), used by 01 (critic issue I-36) | `interface Clock { now(): number }` (epoch ms) and `systemClock: Clock`. Modules of 02/03/06 that take a bare `now: () => number` receive `() => clock.now()`; `FakeClock` (4.4) implements `Clock` |
+| `Clock` interface | design 01 (`@mcs/shared` `src/time.ts`, 01 section 4.4a, slice 01 S1; critic issue I-36, registry C27) | `interface Clock { now(): number }` (epoch ms) and `systemClock: Clock` (same file: `isoSecondsZ`, `isoMsZ`). This design declares no clock module; testkit `FakeClock` (4.4) imports `type Clock` from `@mcs/shared` and implements it. Modules of 02/03/06 that take a bare `now: () => number` receive `() => clock.now()` |
 | DB layout, `meta.instance_id`, migrations | design 03 (sections 3-4) | `PRAGMA integrity_check`, a `meta` table, numbered migrations, backup before migration (D10); the only `better-sqlite3` importer is `packages/engine/src/db/driver.ts` (03 section 4.5) |
 | Hook handler, spool format, routing | design 02 (sections 2.1-2.7) | installed command `node --no-warnings <skill>/scripts/mcs-hook.mjs --mcs-hook <Event> [--async]` (zero-dependency stub that imports `runtime/packages/cli/dist/hook.js`, emitted from the entry `cli/src/hook.ts`); spool segments `<workspace>/data/spool/hooks-<YYYYMMDD>T<HH>Z.ndjson` (extension constant `SPOOL_SEGMENT_EXT = '.ndjson'` in `shared/src/protocol/hook-envelope.ts`; not `.jsonl`, which the legacy audit flags, critic issue I-02); event list `INSTALLED_HOOK_EVENTS` (21 events) in `shared/src/protocol/hook-events.ts`; `MCS_HOOK_DISABLE=1` honoured first |
 | API v3 endpoints, SSE, error codes | design 03 (sections 5-6, 9) | `/api/v3/health`, `/api/v3/stream`, error envelope `{ error: { code, message, requestId, details? } }` with `ErrorCode` from `packages/shared/src/api/errors.ts` (03 section 5.2 catalogue, authoritative, critic issue I-04); the security suite imports that type and never spells codes of its own |
@@ -112,7 +117,7 @@ the tests in section 5.7 still apply unchanged. `packages/engine/src/platform/ex
 | `@mcs/server` | Express app + process main | `.` (app factory for tests); process entry `dist/main.js` by path | `@mcs/engine`, `@mcs/shared`, `express` 5.3.0, `zod` 4.6.5 | engine, shared, express, node:* except child_process |
 | `@mcs/cli` | `mcs` commands + hook handler | none (entries by path: `dist/main.js`, `dist/hook.js`); `bin.mcs` for completeness | `@mcs/engine`, `@mcs/shared` | engine, shared, node:* except child_process; `src/hook.ts`+`src/hook/**`: only `node:*`, `@mcs/shared/protocol`, `./` |
 | `@mcs/web` | React SPA | none (static `dist/` served by server) | `@mcs/shared`, react 19.3.0, react-dom 19.3.0, react-router 8.4.0, @tanstack/react-query 5.104.1, lucide-react 1.55.0 | shared and the listed libs; no node:*, no zod (schemas via shared) |
-| `@mcs/testkit` | dev-only fixtures | `.` | `@mcs/shared` | anything; never imported by any `src/**` non-test file (lint + check-deps) |
+| `@mcs/testkit` | dev-only fixtures | `.` and `./legacy` (design 06 section 5.3 legacy tree builders `tk/legacy/*`, registry C46) | `@mcs/shared` | anything; never imported by any `src/**` non-test file (lint + check-deps) |
 
 Dev dependencies: root holds the toolchain (`typescript` 6.0.3, `@tsconfig/node24` 24.0.5, `@types/node` 24.19.2, `vitest` 5.0.3,
 `@vitest/coverage-v8` 5.0.3, `eslint` 10.12.0, `@eslint/js` 10.0.1, `typescript-eslint` 8.71.1, `eslint-plugin-react-hooks` 7.1.1,
@@ -216,6 +221,7 @@ Configuration: Appendix A.9. Base: `@eslint/js` recommended, `typescript-eslint`
 | No shell | `no-restricted-syntax` `Property[key.name='shell'][value.value=true]`; `exec`/`execSync` import names banned | all TS | `{ shell: true }` -> error |
 | One process launcher | `node:child_process` banned except `engine/src/platform/exec.ts` | engine, server, cli | import in server/engine -> error |
 | One SQLite module | `better-sqlite3` banned except `engine/src/db/driver.ts` (03 section 4.5, which adds a grep test); banned in server/cli | engine, server, cli | -> error (re-verified after the rename, E22) |
+| Platform branching in one place (06 section 4, critic issue I-34) | `no-restricted-properties` entry `PLATFORM_ENTRY` (`process.platform`) next to `NO_STDIO`; `no-restricted-syntax` `CallExpression[callee.object.name='os'][callee.property.name='platform']` | `packages/engine/src/**`; allow-list `engine/src/platform/**` and `engine/src/security/paths.ts` (block re-declares `['error', ...NO_STDIO]` and the base syntax list); logger block `['error', PLATFORM_ENTRY]`; shared, cli, server, `scripts/**` and test files exempt | 06 E24: `process.platform` in `engine/src/panels/x.ts` -> error; `platform/x.ts`, `security/paths.ts`, `shared/src/protocol/x.ts` -> none; re-run on the A.9 file here (E24 of this design); regression test 06 PP1 `engine/test/platform/platform-branching.test.ts` |
 | Layering | `shared` imports no `node:*`/builtins/`@mcs/*`; `shared/protocol` imports no `zod` and no `../`; `engine` imports no server/cli/web/testkit/express/react; `server` no cli/web/testkit/react; `cli` no server/web/testkit/express/react; `web` no node builtins, no engine/server/cli/testkit/express/better-sqlite3/zod | per package | every case -> error |
 | Hook handler stays tiny | `cli/src/hook.ts`, `cli/src/hook/**`: regex `^(?!node:\|@mcs/shared/protocol$\|\./)` | hook files | `zod`, `@mcs/shared`, `../io/terminal.ts` -> error; `node:crypto`, `@mcs/shared/protocol` ok |
 | No deep imports | `@mcs/*/src/*`, `@mcs/*/dist/*`, relative `../(../)*(shared\|engine\|...)/` | all | both -> error |
@@ -316,13 +322,20 @@ The existing entries (`node_modules/`, `state.json`, `*.state.json`, `__pycache_
 | `release-check` | `node scripts/release-check.mjs` (S9) | section 7.1 sequence with a report file | audit | |
 | `parity:capture` | `node scripts/parity-capture.mjs` (S8) | regenerate goldens with design 06's `capture_golden.py` (4.11.4) | no | wrapper passes the tool's exit code |
 | `parity:check` | `node scripts/parity-capture.mjs --check` (S8) | golden drift check (`capture_golden.py --check`) | no | 0 identical, 1 drift, 2 no usable Python |
+| `schemas` | `node scripts/gen-schemas.mjs` (01 S16) | regenerate the committed JSON Schemas: `<skill>/schemas/*.json` (01 2.9) and `schemas/api/**` (03 section 13 item 4); one generator for both (registry C45) | no | 1 on error |
+| `schemas:check` | `node scripts/gen-schemas.mjs --check` (01 S16) | regenerate into a temp folder and byte-compare with the committed files | no | 0 identical, 1 drift |
+| `parity:shadow` | `node scripts/parity-shadow.mjs` (06 section 5.6, slice PP9) | live shadow comparison on the owner's task (`-- --task <slug> ...`) | no | 06's |
+| `bench` | runs `runtime/bench/*.mjs` in sequence (06 section 8.3; slice PP10 writes the exact command) | performance budgets B1-B7, phase boundaries only | no | 1 when a budget fails |
+| `testkit` | `node packages/testkit/dist/cli.js` (06 section 6.4, slice PP6) | fixture CLI `list`, `demo`, `scenario`, `big` | no | 06's |
 
 Agents and the SKILL use `node .claude/skills/monitoring-claude-sessions/scripts/mcs.mjs <command>` ($MCS, D6). The npm wrappers above
 exist for developers inside `runtime/`; they never bootstrap. Appendix A.1 is the slice S1 baseline: the scripts marked with a slice
 (`check:text`, `check:docs`, `test:security`, `test:tooling`, `test:stress`, `release-check`, `parity:capture`, and `--project security`
-in `test`, and `parity:check`) are added to `package.json` and `ci.mjs` by that slice together with the script file.
+in `test`, and `parity:check`) are added to `package.json` and `ci.mjs` by that slice together with the script file; likewise `schemas`,
+`schemas:check` (01 S16), `parity:shadow` (06 PP9), `bench` (06 PP10) and `testkit` (06 PP6) are added to `package.json` by the named
+slice (registry C45). None of these five is a `ci` gate.
 
-### 3.2 Repository scripts (all zero-dependency ESM, Node >= 22.12; Appendix A.31-A.38)
+### 3.2 Repository scripts (all zero-dependency ESM, Node >= 22.22.0, the one floor of 01 section 5.1 with its message, critic I-05, registry C28; Appendix A.31-A.38)
 
 Common rules: spawn only `process.execPath` with a JS entry resolved from the tool's `package.json` `bin` field (`lib.mjs binPath()`),
 never a `.cmd` shim (Node refuses `.cmd` without a shell, E12), `shell: false`, `windowsHide: true`; print one summary line per step;
@@ -340,9 +353,17 @@ non-zero exit on failure; no network except `npm audit`.
      the package `devDependencies` and the root `devDependencies`.
 - `build-stamp.mjs`: section 3.3.
 - `ci.mjs`: section 8.1.
-- `smoke.mjs`: starts `packages/server/dist/main.js` on the first free port in 18800-18899 (`exclusive: true` probe), polls health
-  for up to 10 s, expects 200 for `Host: 127.0.0.1:<port>` and 403 for `Host: evil.example`, kills the child in `finally`. Slice S9 extends
-  it to the real CLI flow once design 01 lands: `$MCS init` in a temp repo with `MCS_HOME`, `start`, `verify`, `stop`, assert port closed.
+- `smoke.mjs` (critic N-02): drives the real CLI, never a server argv of its own (01 4.1 owns the `serve` argv). `$MCS` here is the
+  built CLI `node packages/cli/dist/main.js` (what the launcher runs after bootstrap; the smoke never bootstraps). Steps: (1) readiness:
+  when `packages/server/dist/boot.js` (01 S8) or `packages/engine/dist/ops/lifecycle.js` (01 S9, `start`/`stop`) is missing, print
+  `smoke: SKIPPED (01 S8/S9 not built: <missing path>)` and exit 77, which `ci.mjs` records as `SKIPPED` (8.1); (2) temp root
+  `mcs-smoke-<random>` with `FIXTURE.md`, `MCS_HOME=<tmp>/mcs-home`, `CLAUDE_CONFIG_DIR=<tmp>/claude-home` (empty), `repo=<tmp>/repo`,
+  env `MCS_HOOK_DISABLE=1`; (3) port = first free port in 18800-18849 (`exclusive: true` probe; registry C54); (4) `$MCS init --slug
+  smoke --name "FIXTURE smoke" --repo <repo> --port <port>`, then `$MCS start --task smoke --repo <repo>`, each must exit 0; (5) `GET
+  /api/v3/health` with `Host: 127.0.0.1:<port>` polled up to 10 s until 200, then once with `Host: evil.example`, expecting 403; (6) in
+  `finally`: `$MCS stop --task smoke --repo <repo>`, then assert the port is closed (connection refused within 5 s), remove the temp
+  root. Exit 0 only when every step passed; one summary line `smoke: port <p> health <s>, foreign host <s>, stop exit <n>, port
+  closed <bool>`. The broader flow (`verify`, `status`, `restart`, a second instance, `doctor`) is release step 7.1-9.
 - `dev.mjs`: section 3.1; sets `MCS_HOOK_DISABLE=1`, `MCS_DEV_API=http://127.0.0.1:<api>`, `MCS_WEB_DEV_PORT=<web>` (04's env names);
   if either child exits the other is killed. Known limit: `taskkill /F` on the parent orphans the children on Windows (no signal
   propagation); stop with Ctrl+C in the console.
@@ -367,7 +388,8 @@ non-zero exit on failure; no network except `npm audit`.
   "node": "v24.14.1", "builtAt": "2026-10-11T07:23:07.576Z" }
 ```
 `codeStamp` is the Node engine's equivalent of the legacy 10-hex `code_stamp` (current-state-backend C.10); the server reads it at start
-and reports it in health; `status` compares it with `staleness().buildStamp.slice(0, 10)` to set `outdated` (design 01 owns that use).
+and reports it in health; the server and `status` compare the running instance's boot `codeStamp` with the `codeStamp` of
+`runtime/.mcs-build.json` (the built code on disk, not the source tree) to set `outdated` (01 section 5.3 owns that use; registry C30).
 
 #### 3.3.2 Algorithm (`computeStamps(root)`)
 
@@ -397,25 +419,18 @@ export function staleness(root?: string): { install: boolean; build: boolean; re
 // CLI: node build-stamp.mjs check (exit 0 current, 1 stale, prints JSON) | write | write-install
 ```
 
-#### 3.3.4 Bootstrap steps the launcher performs (normative for design 01)
+#### 3.3.4 Stamp contract the launcher relies on (the bootstrap steps are design 01's)
 
-1. Check Node: `process.versions.node` >= 22.22.0 (the one floor, C-1, critic issue I-05; 01 section 5.1 step 1 prints the message)
-   else `ERROR: Node >= 22.22.0 is required (found <v>); install the Node 24 LTS` and exit 1. No warning branch.
-2. `s = staleness(runtimeRoot)`; if neither flag, exec the CLI (`dist/main.js`) with the user's argv.
-3. Serialise: `m = await acquireMutex(mutexName('bootstrap', realpath(runtimeDir)), { timeoutMs: 15 * 60_000 })` (01 section 4.2
-   `ProcessMutex`, ADR 0005/0007: a named pipe on Windows, abstract socket on Linux, released by the OS when the holder dies, even by
-   `taskkill /F`; evidence 01 E10). The launcher cannot import `@mcs/engine` before the build exists, so it carries its own
-   zero-dependency copy of `acquireMutex`/`mutexName` with the same name derivation (01 owns both copies; a tooling test asserts both
-   derive the same name for three sample paths). After acquiring, call `staleness()` again (another process may have finished the
-   work) and skip what is no longer needed. No lock file or lock folder is created, so a crashed bootstrap leaves nothing to clean up.
-4. If `s.install`: print `bootstrap: installing dependencies (npm ci, ~10-20 s)`; run `npm ci` with the npm CLI resolved without a shell
-   (`process.execPath <npm-cli.js>`; locate `npm-cli.js` next to the Node binary: `<dir of node>/node_modules/npm/bin/npm-cli.js`, else
-   fail with `ERROR: npm not found next to node; install Node with npm`); on success `node scripts/build-stamp.mjs write-install` (root
-   lifecycle scripts do not run under `ignore-scripts`).
-5. If `s.build`: print `bootstrap: building runtime (~5 s)`; run `npm run build` (writes the build stamp last).
-6. Release the mutex (`await m.release()`) in `finally`; on failure print the failing step and the last 20 lines of its output, exit 1,
-   and never leave a partial stamp (stamps are written atomically, temp + rename, and only after success).
-7. Exec the CLI.
+The launcher algorithm (Node floor and its message, mutex, `RUNTIME_IN_USE` guard, npm resolution, progress messages,
+`runtime/.mcs-bootstrap.log`, verification) is normative in 01 section 5.1 and is not restated here (registry C29). This design
+guarantees only the stamp side:
+1. `staleness(runtimeRoot)` (3.3.3) is the only staleness test; `{ install: false, build: false }` means the CLI can run without a
+   bootstrap. It is cheap enough to call twice (before and after acquiring the bootstrap mutex, 01 5.1 step 6a).
+2. The install stamp is written only by `node scripts/build-stamp.mjs write-install`, which the launcher runs after a successful
+   `npm ci` (root lifecycle scripts do not run under `ignore-scripts`, C-4); the build stamp only by the last step of `npm run build`.
+3. Stamps are written atomically (temp + rename) and only after success, so a failed or killed bootstrap never leaves a stamp that
+   claims a state which does not exist.
+4. `build-stamp.mjs` stays zero-dependency and importable by path before any install (the launcher imports it, 01 5.1 step 4).
 Measured costs on this machine: `npm ci` 6.8-7.2 s from a warm cache, 15.7 s with an empty cache (397 packages, 273 MB `node_modules`,
 largest: lucide-react 42 MB, better-sqlite3 26 MB, typescript 24 MB, @rolldown 21 MB); build 1.9-5.4 s.
 
@@ -448,13 +463,13 @@ Playwright only.
 | Brief item | Test file(s) (owner slice) |
 |---|---|
 | Unit: schema validation | `shared/src/**/*.test.ts` (shared slice) |
-| Unit: configuration merging | `engine/src/config/merge.test.ts`, `provenance.test.ts`, `pyregex.test.ts` (config slice) |
-| Unit: lifecycle transitions | `engine/src/lifecycle/lifecycle.transitions.test.ts` (02 section 7.7 table) + property tests (02 lifecycle slice) |
-| Unit: token aggregation | `engine/src/tokens/aggregate.test.ts`, `tokens.worked-example.test.ts` (02 section 6) |
+| Unit: configuration merging | `engine/src/config/merge.test.ts`, `provenance.test.ts` (01 S5); Python-regex dialect `shared/src/pyregex/*.test.ts` (01 section 2.8, S3) and `runtime/tests/parity/pyregex.golden.test.ts` (01 S3) |
+| Unit: lifecycle transitions | `engine/src/lifecycle/transitions.test.ts` (02 section 7.7 table) + `properties.test.ts` (02 section 9.5) |
+| Unit: token aggregation | `engine/src/tokens/aggregate.test.ts`, `worked-example.test.ts` (02 sections 6.4, 9.5) |
 | Unit: deduplication | `engine/src/ingest/dedupe.test.ts`; message-id dedupe across files in `engine/src/tokens/aggregate.test.ts` (02 section 6) |
 | Unit: transcript parsing | `engine/src/ingest/transcripts/normalize-record.test.ts` (fixture records 1-25 of transcript-survey section 8; 02 section 5) |
 | Unit: incremental offsets | `engine/src/ingest/tail/jsonl-tailer.test.ts` (ported `test_reader.py`; 02 section 5.3) |
-| Unit: filtering | `shared/src/filters/*.test.ts`, `web/src/lib/filters.test.ts` |
+| Unit: filtering | `shared/src/api/filters.test.ts` (03 section 23 S3), `web/src/lib/filters.test.ts` (04) |
 | Unit: instance routing | `shared/src/protocol/routes.test.ts` (`matchRoutes`, 02 T-HK-05 unit part) |
 | Unit: retention calculations | `engine/src/maintenance/retention.test.ts` (03 section 3.8) |
 | Integration: hook payload to database | `engine/test/hook-to-db.int.test.ts` (handler process -> spool -> drain -> rows) |
@@ -472,7 +487,9 @@ Playwright only.
 ```
 runtime/tests/
   tsconfig.json
-  isolation/   (the isolation-project tests of 01 T-ISO-*, grouped by brief bullet, 4.8)
+  isolation/   _setup.ts  (this design, S9: shared two-instance setup; the only file of this folder owned here, 4.8)
+               the isolation-project tests of 01 T-ISO-* grouped by brief bullet; each file belongs to the 01 slice that implements
+               its rows, hook-routing-isolation.test.ts to 02 (T-HK-05) (4.8, critic N-07):
                read-isolation.test.ts  config-write-isolation.test.ts  token-isolation.test.ts  search-isolation.test.ts
                lifecycle-isolation.test.ts  restart-isolation.test.ts  ownership-isolation.test.ts  upgrade-isolation.test.ts
                hook-routing-isolation.test.ts  db-identity.test.ts
@@ -482,6 +499,8 @@ runtime/tests/
   security/    host-origin.test.ts  csrf.test.ts  limits.test.ts  headers.test.ts  path-containment.test.ts  privacy-canaries.test.ts
                terminal-output.test.ts  subprocess.test.ts  logger-allowlist.test.ts  hook-ingest.test.ts  secrets-never-read.test.ts
   parity/      projections.ts  normalize.ts  run-python.ts                                  (this design, slice S8)
+               pyjson.golden.test.ts  pyregex.golden.test.ts                                 (design 01, slices S2/S3; the golden
+                                                  JSON stays in tests/legacy-parity/{pyjson,regex}/, where @mcs/* does not resolve, C-3)
                reference-usage.ts  legacy-trees.parity.test.ts  vectors.parity.test.ts       (design 06, slice PP4)
                sessions|events|search|attempts|panels|tokens|config-regex|workspace-files|diffs.parity.test.ts
                                                                                              (design 06, slice PP8; field matrix 06 5.4)
@@ -507,10 +526,12 @@ export interface TempDir { readonly path: string; remove(): void }
 export function makeTempDir(purpose: string): TempDir;            // mkdtemp under os.tmpdir(), writes FIXTURE.md
 export function useTempDirs(): (purpose: string) => TempDir;      // registers afterEach cleanup (vitest), returns a factory
 
-// ports.ts  (ranges in 4.5)
+// ports.ts  (ranges in 4.5; the only free-port helper, registry C32: 01 3.5 and 04 11.4 call it instead of a findFreePort)
 export type PortRange = readonly [min: number, max: number];
 export const VITEST_PORTS: PortRange;                             // [18000, 18499]
-export function allocatePort(range?: PortRange): Promise<number>; // block per VITEST_POOL_ID, exclusive listen probe on 127.0.0.1
+export function allocatePort(range?: PortRange): Promise<number>; // default VITEST_PORTS: block of 50 per VITEST_POOL_ID; another range
+                                                                  // (Playwright: allocatePort([18500, 18599])) is scanned from its start;
+                                                                  // exclusive listen probe on 127.0.0.1; throws when the range is full
 export function assertPortClosed(port: number): Promise<void>;    // throws if something still listens
 
 // wait.ts  (the only sanctioned polling)
@@ -518,7 +539,8 @@ export function waitFor<T>(probe: () => T | Promise<T>, opts?: { timeoutMs?: num
   Promise<NonNullable<T>>;                                        // default 5000 / 25 ms; error names `what` and last value
 export function eventLoopLagProbe(): { stop(): { maxMs: number; p99Ms: number } }; // perf_hooks.monitorEventLoopDelay
 
-// clock.ts
+// clock.ts  (the interface is 01's: packages/shared/src/time.ts, registry C27; testkit declares only the fake)
+import type { Clock } from '@mcs/shared';
 export class FakeClock implements Clock { constructor(startMs: number); now(): number; advance(ms: number): void; set(ms: number): void }
 export const FIXTURE_EPOCH_MS: number;                            // Date.UTC(2026, 0, 1)
 
@@ -528,6 +550,19 @@ export function spawnTracked(file: string, args: readonly string[], opts?: { cwd
 export function killAllTracked(): Promise<void>;                  // afterAll; taskkill /F semantics on Windows
 export function runCli(args: readonly string[], opts: { mcsHome: string; cwd?: string; env?: Record<string, string> }):
   Promise<{ code: number; stdout: string; stderr: string }>;      // node packages/cli/dist/main.js; MCS_HOOK_DISABLE=1 always
+
+// isolation.ts  (the fixtures 01 section 3.5 names, registry C33; 01's tempRoot = makeTempDir, snapshotWorkspace = snapshotTree with
+// the runtime-mutable paths excluded, makeWorkspace = runCli(['init', ...]))
+export function hermeticEnv(root: string): Record<string, string>;
+  // minimal env: PATH, win32 SystemRoot/TEMP/TMP, HOME and USERPROFILE -> <root>/home, MCS_HOME=<root>/mcs-home,
+  // CLAUDE_CONFIG_DIR=<root>/claude-home, MCS_HOOK_DISABLE=1, TZ=UTC; nothing else inherited (no MCS_*, CLAUDE_* of the parent)
+export interface StartedInstance { readonly repo: string; readonly slug: string; readonly port: number; readonly pid: number; stop(): Promise<void> }
+export function startInstance(ws: { repo: string; slug: string; env: Record<string, string> }, opts: { port: number }):
+  Promise<StartedInstance>;                                       // real `$MCS start` through runCli; waits for /api/v3/health 200;
+                                                                  // stop() = `$MCS stop` + assertPortClosed (also run by killAllTracked)
+export function spawnImpostor(argv: readonly string[]): TrackedProcess; // idle Node child whose command line ends with argv (pid reuse)
+export function makeJunction(link: string, target: string): void; // win32 fs.symlinkSync(target, link, 'junction') (no shell, no
+                                                                  // privilege needed); elsewhere a 'dir' symlink
 
 // http.ts  (agent: false on every request: E8 showed a reused keep-alive socket reset under Vitest)
 export function httpRequest(port: number, path: string, opts?: { method?: string; host?: string; origin?: string;
@@ -599,15 +634,20 @@ export function buildTaskWorkspace(repo: string, opts: { slug: string; config: R
 export function snapshotTree(dir: string, opts?: { exclude?: readonly string[] }): string;          // sha256 of rel path + bytes
 
 // demo.ts  (04 section 11.5 owns the letter list and the result contract; testkit hosts the builder; 06 6.1)
+// Contract verbatim from 04 section 11.5 (registry C34; DemoSession and DemoResult are declared there, without a runtimeJson field):
+export type DemoLetter = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
+export interface DemoOptions { root: string; nowMs: number; letters?: DemoLetter[] /* default all */; project?: string /* 'FIXTURE-demo' */ }
 export function buildDemo(o: DemoOptions): Promise<DemoResult>;
-// DemoOptions = { root: string; now: number; letters?: DemoLetter[]; project?: string }, DemoLetter and DemoResult exactly as 04 section
-// 11.5 declares them (sessions, expected, hook payloads, configJson, runtimeJson). Hook data in DemoResult are raw payloads for
-// `runHookHandler`, never hand-built envelopes (06 6.2; envelope type `HookEnvelopeV1` from `@mcs/shared/protocol`).
+// Hook data in DemoResult are raw payloads for `runHookHandler`, never hand-built envelopes (06 6.2; envelope type `HookEnvelopeV1`
+// from `@mcs/shared/protocol`).
 
 // canary.ts  (section 4.10)
 export const CANARY: { prompt: string; toolResult: string; thinking: string; key: string; envToken: string; attachment: string; query: string };
 export function scanForCanaries(paths: readonly string[], allowed: readonly (keyof typeof CANARY)[]): { file: string; canary: string }[];
 ```
+Subpath `@mcs/testkit/legacy` (A.21, registry C46) exposes design 06's legacy tree builders (`src/legacy/index.ts`: `buildLegacyFixtureHome`,
+`buildLegacyDemo`, `buildPanelsTree`, `buildRulesTree`, `buildRegistryHome`; 06 sections 5.3 and 6, slice PP3), so the core entry `.`
+carries no legacy-tree code.
 Testkit has its own unit tests (`packages/testkit/src/*.test.ts`): builders emit valid JSON per line, labelled content, deterministic
 output for the same inputs (no `Math.random` except `makeTempDir` names; ids passed in or derived from a seeded counter).
 
@@ -616,11 +656,11 @@ output for the same inputs (no `Math.random` except `makeTempDir` names; ids pas
 | Range | User | Rule |
 |---|---|---|
 | 18000-18499 | Vitest (integration, isolation, resilience, security, parity Node side) | `allocatePort()`: block of 50 per worker, `18000 + ((VITEST_POOL_ID - 1) * 50) % 500`, probe `listen({ host: '127.0.0.1', port, exclusive: true })` |
-| 18500-18599 | Playwright E2E (04 section 11.4) | `findFreePort(18500, 18599)`, workers 1 |
+| 18500-18599 | Playwright E2E (04 section 11.4) | `allocatePort([18500, 18599])` (registry C32); specs start instances with `$MCS start`, no Playwright `webServer` (04 W14 config); workers 1 |
 | 18760-18769 | `npm run dev` (default 18765 API, 18766 web) | never 8765/5173 by default |
 | 18800-18849 | `scripts/smoke.mjs` | |
 | 18850-18899 | parity: Python engine `serve --port`, Node engine | |
-| 18900-18999 | manual experiments | |
+| 18900-18999 | manual experiments, testkit `demo --port` (06 6.4), benchmarks in 18900-18949 (06 8.3) | never used by Vitest, Playwright or `ci` gates |
 Never 8765, 3000, 3100, 8080, 8089 (owner rule). Every test that starts a server or process stops it in `afterEach/afterAll` and calls
 `assertPortClosed`. Temp dirs: `useTempDirs()`; on Windows `rmSync` uses `maxRetries: 5` because SQLite WAL files and just-killed processes
 hold locks for tens of ms. Every test sets `MCS_HOME` to a temp dir, `CLAUDE_CONFIG_DIR` to a testkit Claude home, and never touches
@@ -656,9 +696,14 @@ after the whole suite, `secrets-never-read.test.ts`).
 One id per brief bullet (the traceability matrix uses ISO-n, 7.4); design 01 section 3.5 owns the individual tests (T-ISO-01..27, with
 setup and assertions) and design 02 owns T-HK-05. Placement rule: every T-ISO row whose 01 project is `isolation`, `integration` or
 `resilience` lives in the 4.3 file of its ISO row (Vitest project `isolation`, release-blocking, `pool: 'forks'`, one worker per file);
-rows marked `unit` in 01 live next to their module (01 slice table). Each file builds two instances A and B with testkit in separate temp
-repos (or two tasks in one repo where 01 says so), starts real servers on ports from `allocatePort()` through `runCli`, and stops both in
-`afterAll` (`assertPortClosed`). Test titles start with the T-ISO id, for example `it('T-ISO-09 token totals exclude the other instance')`.
+rows marked `unit` in 01 live next to their module (01 slice table). File ownership (critic N-07): each `runtime/tests/isolation/*.test.ts`
+belongs to the 01 slice that implements its T-ISO rows (01 "Phase 2+ task slices" table: for example S6 T-ISO-01/02/06/07/21, S9
+T-ISO-13/14/18/19/20/22, S12 T-ISO-24..27, S13a T-ISO-09..12, S15 T-ISO-23); a file with rows of several slices is created by the
+earliest of them and extended by the later ones; `hook-routing-isolation.test.ts` belongs to 02 (T-HK-05). This design (slice S9) owns only
+`runtime/tests/isolation/_setup.ts` and the project wiring: `_setup.ts` exports `twoInstances({ sameRepo? })`, which builds A and B with
+testkit (`makeTempDir`, `hermeticEnv`, `buildDemo` or `buildRepo`, `runCli(['init', ...])`) in separate temp repos (or two tasks in one
+repo where 01 says so), starts both with `startInstance` on ports from `allocatePort()`, and registers `afterAll` stops
+(`assertPortClosed`). Test titles start with the T-ISO id, for example `it('T-ISO-09 token totals exclude the other instance')`.
 
 | Id | Brief bullet | Implemented by | File (4.3) | Summary of what must hold (01 3.5 is normative) |
 |---|---|---|---|---|
@@ -733,7 +778,7 @@ matched, pending_tools, size, state, state_evidence, state_source, usage, usage_
 
 ```ts
 // projections.ts (base shapes; 06 PP8 adds the legacy-shape projections of its field matrix 5.4 in the same file)
-export type LegacyState = 'RUNNING' | 'IDLE' | 'COMPLETED' | 'FAILED' | 'UNKNOWN';
+import type { LegacyState } from '@mcs/shared';          // 03 section 5.5 owns the union (registry C36); no local declaration
 export interface SessionProjection {
   id: string; label: string | null; matched: boolean; legacyState: LegacyState; stateSource: string;
   usage: { input: number; output: number; cacheRead: number; cacheCreation: number } | null;
@@ -798,7 +843,7 @@ outside the output folder.
 |---|---|---|---|
 | PD1 | `'workflows' in p` tags agents under any path containing `workflows` (`sessions.py:138`) | FIX: test path segments | scenario `workflows-path` asserts the documented divergence exactly |
 | PD2 | `init_task` raises `ValueError` across drives (`tasks.py:86`) | FIX: store absolute path when no relative path exists | not projected (Windows-only CLI case; covered by `cli/test/init.int.test.ts`) |
-| PD3 | legacy flat config problems computed but never raised (`config.py:187,196`) | REPRODUCE acceptance, report as warnings (`mcs inspect` lists them) | `config-regex.parity` asserts same accept set + Node warnings present |
+| PD3 | legacy flat config problems computed but never raised (`config.py:187,196`) | N/A in Node: flat configs are served by the legacy engine (01 section 6.5 delegates every flat-config form to `$V`); `config migrate --from-legacy` (01 2.7) reports dropped keys and refuses untranslatable regexes (`REGEX_UNSUPPORTED`); no `configWarnings` field anywhere (critic N-05) | 06 R25 asserts those outcomes; `config-regex.parity` compares only the translator's accept set (01 2.8) |
 | PD4 | `usage_total` lacks `scanned_pct`/`models` | N/A (v3 API) | excluded from projection |
 | PD5 | `config_hash` is machine-specific | N/A | excluded |
 | PD6 | attempts rows keyed by `part`, fixed 24 h window, multiple rows per session | REPRODUCE until the attempts design changes it with an ADR | `attempts.parity` golden |
@@ -807,6 +852,8 @@ Design 06 section 5.8 (ADR 0055) is the detailed defect table: PD1 = D1, PD2 = D
 PD7 = D18. Any new divergence needs a row there (with decision) before the parity test is changed.
 
 ### 4.12 E2E conventions (specs owned by 04)
+The config file is 04's `packages/web/e2e/playwright.config.ts` (04 slice W14, section 11.4): no `webServer`, no port variable; each spec
+starts its instances with `$MCS init`/`start` on `allocatePort([18500, 18599])` ports and stops them (A.28 withdrawn, critic N-02).
 Playwright 1.64.0, `channel: 'chrome'` (no browser download), `workers: 1`, `retries: 0`, `forbidOnly: true`, `timezoneId: 'UTC'`,
 `locale: 'en-US'`, trace `retain-on-failure`, output under `packages/web/e2e/test-results/` (gitignored). Ports 18500-18599. Each spec uses
 `MCS_HOME` and `CLAUDE_CONFIG_DIR` temp dirs and stops every instance it started. Testkit is imported from `dist` (Playwright does not
@@ -906,9 +953,9 @@ Trust boundaries: (1) hook stdin -> handler, (2) browser -> server, (3) transcri
 
 **S-FS (paths)** in `packages/engine/src/security/paths.ts`:
 ```ts
-export const SESSION_ID_RE: RegExp;   // /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ (legacy rule)
-export const AGENT_ID_RE: RegExp;     // /^[0-9A-Za-z_-]{3,64}$/ (legacy rule)
-export const RUN_ID_RE: RegExp;       // /^wf_[A-Za-z0-9_-]{1,64}$/ (02 sections 2.4 and 5, 03 workflow_run; one pattern everywhere)
+// The id regexes are 02's (section 2.3.2, `shared/src/protocol/hook-envelope.ts`: SID_RE, AGENT_RE, RUN_ID_RE, legacy rules);
+// re-exported here for path code, never a second literal (critic I-26, registry C35).
+export { SID_RE, AGENT_RE, RUN_ID_RE } from '@mcs/shared/protocol';
 export function resolveContained(root: string, ...segments: string[]): string | null; // realpath(root) prefix check, case-insensitive on win32
 export function isContained(root: string, candidate: string): boolean;
 export function* walkNoLinks(dir: string, opts: { maxDepth: number; maxEntries: number }): Generator<string>; // lstat; skips symlinks/junctions
@@ -1000,7 +1047,8 @@ legacy-engine spawns with `file = process.execPath`, critic issue I-06). Rules 1
    diagnostics bundles or logs.
 2. Never open `~/.claude/sessions/*.key` (or any `*.key`); the registry reader filters by `.json` extension before opening; decoy test.
 3. Never read or record environment values of hook processes (names only, if ever).
-4. Diagnostics (`mcs doctor --report`) include versions, counts, error codes and paths inside the workspace; no env, no content.
+4. Diagnostics (`mcs diagnostics`, 01 section 6.3; registry C55) include versions, counts, error codes and paths inside the workspace;
+   no env, no content.
 
 **S-DEP (supply chain)**
 1. Exact pins, single lockfile, `npm ci` only (launcher and CI), `.npmrc ignore-scripts=true`.
@@ -1161,7 +1209,7 @@ our resilience/isolation tests; (5) explicitly not copied (non-goals D15). Rule:
 |---|---|---|
 | 1 | `git status --short` (skill root) | only intended changes; no untracked build output |
 | 2 | `npm ci` (`runtime/`), on Node 24 and, where available, 22.22.x and 26 | exit 0, lockfile unchanged (`git diff --exit-code package-lock.json`) |
-| 3 | `npm run ci` | every gate PASS (format, lint, typecheck, deps, text, docs, test incl. isolation/resilience/security, build, smoke, audit) |
+| 3 | `npm run ci -- --strict` | every gate PASS (format, lint, typecheck, deps, text, docs, test incl. isolation/resilience/security, build, smoke, audit); `--strict` turns a SKIPPED gate into a failure, so a release never ships with the smoke skipped |
 | 4 | `npm run test:coverage` | thresholds met |
 | 5 | `npm run test:stress` | 3 seeds pass |
 | 6 | `npm run test:parity` with `MCS_PARITY_LIVE=1` and in golden mode | pass; divergences only those in 4.11.5 |
@@ -1222,7 +1270,9 @@ migration; each design doc's "Requirements covered" list seeds the rows.
 Order: `format:check`, `lint`, `typecheck`, `check:deps`, (`check:text`, `check:docs` once S9/S10 land), `test` (unit, web, integration,
 isolation, resilience, security), `build`, `smoke`, `audit` (skipped with `--offline`). `--full` adds `test:parity` and `test:e2e`.
 Stops at the first failure unless `--keep-going`; prints a Markdown table `| gate | result | ms |` and lists gates not run; exit 0 only if
-every gate ran and passed. Measured on the scaffold: 35 s (cold), 54 s (machine busy), about 25 s warm; lint is the slowest gate
+every gate ran and passed or reported `SKIPPED (exit 77)`. Exit code 77 is the one way a gate says "cannot run yet" (today only the
+smoke before 01 S8/S9 are built, 3.2); the table shows it as `SKIPPED (exit 77)`, never as PASS, and `--strict` (release step 7.1-3)
+counts it as a failure. Measured on the scaffold: 35 s (cold), 54 s (machine busy), about 25 s warm; lint is the slowest gate
 (19.6-26.4 s cold, 5.6 s warm).
 
 ### 8.2 GitHub Actions (inactive)
@@ -1264,6 +1314,7 @@ UNVERIFIED: Chrome availability on the hosted runner image at activation time (P
 | E21 | Workflow file | PyYAML parse, Prettier | parses (2 jobs, 6-cell matrix); not run remotely |
 | E22 | Driver module rename (critic issue I-14) | `scaffold-check`: `db/sqlite.ts` -> `db/driver.ts`, eslint config paths updated, probe `src/probe-i14/other.ts` importing `better-sqlite3` | probe -> 1 error `no-restricted-imports` "Only engine/src/db/driver.ts opens the driver"; without the probe engine src+test lint exit 0, `tsc -p packages/engine` exit 0 |
 | E23 | Renaming a held log file (S-LOG-6) | `tooling-fix/rot/rot.mjs`: `renameSync('runtime.log', 'runtime.log.1')` while another process holds the source | Python `open(p)` or `open(p, 'a')` holder -> `EBUSY`, retry succeeds about 1.5 s later when the holder exits; Node `fs.openSync` holder -> rename succeeds at once (libuv opens with `FILE_SHARE_DELETE`) |
+| E24 | Revision 2 appendix files (N-02, I-34, C32, C45, C46) | `tooling-fix/rev2/runtime` = copy of `scaffold-check/runtime` with A.1, A.9, A.21, A.31, A.36, A.37, A.40 extracted from this document; `npm run ci -- --offline` (+ `--strict`); ESLint `lintFiles` probes; smoke against a fake CLI | `ci`: format, lint, typecheck, check:deps, test, build PASS, smoke `SKIPPED (exit 77)` (no `server/dist/boot.js`), exit 0; `--strict` exit 1. Probe `import os; process.platform; os.platform(); process.stdout.write` -> `engine/src/panels/x.ts` 3 errors (L2 properties, L3 syntax, L5 properties); `platform/x.ts`, `security/paths.ts` only L5; `log/logger.ts` L2, L3 (stdio allowed); `engine/src/panels/x.test.ts`, `server/src/x.ts`, `cli/src/x.ts` no platform error; `shared/src/protocol/x.ts` only the `node:os` import ban. Smoke with a fake `cli/dist/main.js` (init/start/stop of a detached host-checking server): `port 18800 health 200, foreign host 403, stop exit 0, port closed true`, exit 0; with 18800 occupied it used 18801; temp root removed. The real `init`/`start`/`stop` path is UNVERIFIED until 01 S9 |
 
 ---
 
@@ -1289,7 +1340,7 @@ places there (goldens, the generator tools and README, owned by design 06 PP2). 
 
 **C-4 (D6 "stamp of lockfile + sources" -> two stamps).** One combined stamp would run `npm ci` (7-16 s, E2/E3) after every source edit.
 Separate install and build stamps re-install only when the lockfile, `.npmrc`, platform or Node major change. Also: with
-`ignore-scripts=true` npm runs no root lifecycle scripts, so the launcher itself must write the install stamp (3.3.4 step 4).
+`ignore-scripts=true` npm runs no root lifecycle scripts, so the launcher itself must write the install stamp (3.3.4 item 2, 01 section 5.1 step 6e).
 
 Coordination notes for design 04 (not foundation challenges): (1) and (2) are resolved by critic issue I-13: 04 section 12.2 adopts
 Appendix A.27 (`MCS_DEV_API` default `http://127.0.0.1:18765`, `MCS_WEB_DEV_PORT` 18766, preview 18767, the `resolve.conditions`
@@ -1300,7 +1351,8 @@ Environment variables read by code this design owns (listed for 01 section 2.10,
 whose `tests/tooling/env-vars.test.ts` greps for unlisted names): `MCS_PARITY_LIVE` (parity live mode, 4.11.2), `MCS_GOLDEN_DIR`
 (golden folder override, 4.11.3), `MCS_DEV_API`, `MCS_WEB_DEV_PORT` (set by `scripts/dev.mjs`, read by `vite.config.ts`),
 `MCS_BUILD_ID` (`vite.config.ts` define), `MCS_LOG_LEVEL` (logger, S-LOG-1), `MCS_HOME` and `MCS_HOOK_DISABLE` (set by testkit and
-scripts, read by 01/02 code). `MCS_E2E_CLAUDE` gates 02's optional real-provider E2E.
+scripts, read by 01/02 code). `MCS_E2E_CLAUDE` gates 02's optional real-provider E2E. There is no `MCS_E2E_PORT`: it was read only by
+the withdrawn A.28 stub (critic N-02, I-27; 01 section 2.10 drops it).
 
 ---
 
@@ -1312,6 +1364,9 @@ Paths are relative to the skill root. A.39 (`terminal.ts`) and A.40 (`testkit/sr
 `shared/src/protocol/index.ts`, `engine/src/{index.ts,db/driver.ts,platform/exec.ts,log/logger.ts}` (`db/driver.ts` was `db/sqlite.ts` until E22; the rename is the only change), `server/src/{app,index,main}.ts`,
 `cli/src/{main,hook}.ts`, `cli/src/hook/hook.ts`, `web/src/{main,App}.tsx`, `web/src/components/icons.ts`, `web/src/test/setup.ts`, one
 test per layer, `web/e2e/specs/health.spec.ts`.
+Revision 2 (critic N-02, I-34, N-07, registry C32, C45, C46): A.9 (platform entries), A.21 (`./legacy` export), A.31 (Node floor
+comment), A.36 (exit 77 = SKIPPED, `--strict`), A.37 (CLI-driven smoke) and A.40 (`allocatePort(range)`) changed after the scaffold run;
+they were re-checked in a copy of the scaffold (E24, section 9). A.28 is withdrawn in favour of 04's config (04 W14).
 
 ### A.1 `runtime/package.json`
 
@@ -1383,6 +1438,10 @@ test per layer, `web/e2e/specs/health.spec.ts`.
   }
 }
 ````
+This is the slice S1 baseline. Scripts added later by the slice that adds their file (3.1): `check:text`, `test:stress`,
+`release-check` (S9), `check:docs` (S10), `test:security` and `--project security` in `test`, `parity:capture`, `parity:check` (S8),
+`test:tooling` (S1 with the tooling project), `schemas`, `schemas:check` (01 S16), `parity:shadow` (06 PP9), `bench` (06 PP10),
+`testkit` (06 PP6) (registry C45).
 
 ### A.2 `runtime/.npmrc`
 
@@ -1589,6 +1648,18 @@ const NO_STDIO = [
   { object: 'process', property: 'stderr', message: 'Write output through the CLI terminal module or the logger.' },
 ];
 
+/** Platform branching lives in engine/src/platform/** (06-panels-parity-platform.md section 4, critic I-34). */
+const PLATFORM_ENTRY = {
+  object: 'process',
+  property: 'platform',
+  message: 'Branch on the platform only in engine/src/platform/** (import hostPlatform from platform/host.ts).',
+};
+
+const OS_PLATFORM_SYNTAX = {
+  selector: "CallExpression[callee.object.name='os'][callee.property.name='platform']",
+  message: 'Branch on the platform only in engine/src/platform/** (import hostPlatform from platform/host.ts).',
+};
+
 const WEB_SYNTAX = [
   {
     selector: 'JSXAttribute[name.name=/^(href|src|srcDoc|formAction|action)$/] > JSXExpressionContainer',
@@ -1724,7 +1795,16 @@ export default defineConfig(
           ),
         ],
       }),
+      'no-restricted-properties': ['error', ...NO_STDIO, PLATFORM_ENTRY],
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX, OS_PLATFORM_SYNTAX],
+    },
+  },
+  {
+    // allow-list of the platform rule; re-declares the stdio and base syntax entries (a later block replaces rule options)
+    files: ['packages/engine/src/platform/**/*.ts', 'packages/engine/src/security/paths.ts'],
+    rules: {
       'no-restricted-properties': ['error', ...NO_STDIO],
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX],
     },
   },
   {
@@ -1750,7 +1830,7 @@ export default defineConfig(
   },
   {
     files: ['packages/engine/src/log/logger.ts'],
-    rules: { 'no-restricted-properties': 'off' },
+    rules: { 'no-restricted-properties': ['error', PLATFORM_ENTRY] },
   },
   // ---- server: HTTP over engine; never the driver, never processes
   {
@@ -2194,6 +2274,11 @@ export default defineConfig({
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./legacy": {
+      "@mcs/source": "./src/legacy/index.ts",
+      "types": "./dist/legacy/index.d.ts",
+      "default": "./dist/legacy/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -2356,35 +2441,12 @@ export default defineConfig(({ mode }) => {
 
 ### A.28 `runtime/packages/web/e2e/playwright.config.ts`
 
-````ts
-import { defineConfig } from '@playwright/test';
-
-const port = Number(process.env['MCS_E2E_PORT'] ?? '18900');
-
-export default defineConfig({
-  testDir: './specs',
-  outputDir: './test-results',
-  fullyParallel: false,
-  workers: 1,
-  retries: 0,
-  forbidOnly: true,
-  reporter: [['list']],
-  use: {
-    channel: 'chrome',
-    baseURL: `http://127.0.0.1:${String(port)}`,
-    trace: 'retain-on-failure',
-    timezoneId: 'UTC',
-    locale: 'en-US',
-  },
-  webServer: {
-    command: `node ../../server/dist/main.js --port ${String(port)}`,
-    url: `http://127.0.0.1:${String(port)}/api/v3/health`,
-    reuseExistingServer: false,
-    timeout: 20_000,
-    env: { MCS_HOOK_DISABLE: '1' },
-  },
-});
-````
+Replaced by 04 W14 `e2e/playwright.config.ts` (no `webServer`): 04 section 11.4 is authoritative for the file. The scaffold stub that
+started `server/dist/main.js --port N` with a port from `MCS_E2E_PORT` is withdrawn (critic N-02): that argv is not the server's (01 4.1),
+and the variable is not documented (01 2.10). Conventions this design still requires of 04's file (4.7, 4.12): `testDir: './specs'`,
+`workers: 1`, `retries: 0`, `forbidOnly: true`, `channel: 'chrome'`, `timezoneId: 'UTC'`, `locale: 'en-US'`, trace
+`retain-on-failure`, output under `e2e/test-results/`; the path `packages/web/e2e/playwright.config.ts` used by `test:e2e` and
+`ci.mjs --full` is unchanged.
 
 ### A.29 `runtime/packages/web/e2e/tsconfig.json`
 
@@ -2407,7 +2469,7 @@ export default defineConfig({
 ### A.31 `runtime/scripts/lib.mjs`
 
 ````js
-// Shared helpers for repository scripts. Zero dependencies; Node >= 22.12.
+// Shared helpers for repository scripts. Zero dependencies; Node >= 22.22.0 (the one floor, 01 section 5.1).
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -2748,7 +2810,10 @@ const args = new Set(process.argv.slice(2));
 const full = args.has('--full');
 const offline = args.has('--offline');
 const keepGoing = args.has('--keep-going');
+const strict = args.has('--strict'); // release-check: a SKIPPED gate fails
 const npmCli = process.env.npm_execpath;
+const SKIP_EXIT = 77; // a gate that cannot run yet (smoke before 01 S8/S9); shown as SKIPPED, never as PASS
+const SKIPPED = `SKIPPED (exit ${SKIP_EXIT})`;
 
 const steps = [
   ['format:check', binPath('prettier'), ['--check', '.', '--log-level', 'warn']],
@@ -2794,27 +2859,44 @@ for (const [name, script, stepArgs] of steps) {
   const started = Date.now();
   console.log(`\n=== ${name}`);
   const code = await runNode(script, stepArgs);
-  results.push([name, code === 0 ? 'PASS' : `FAIL (exit ${code})`, Date.now() - started]);
-  if (code !== 0 && !keepGoing) break;
+  const result = code === 0 ? 'PASS' : code === SKIP_EXIT ? SKIPPED : `FAIL (exit ${code})`;
+  results.push([name, result, Date.now() - started]);
+  if (result.startsWith('FAIL') && !keepGoing) break;
 }
 
 console.log('\n| gate | result | ms |\n|---|---|---|');
 for (const [name, result, ms] of results) console.log(`| ${name} | ${result} | ${ms} |`);
 const notRun = steps.slice(results.length).map(([name]) => name);
 if (notRun.length > 0) console.log(`not run: ${notRun.join(', ')}`);
-process.exitCode = results.every(([, r]) => r === 'PASS') && notRun.length === 0 ? 0 : 1;
+const ok = (r) => r === 'PASS' || (r === SKIPPED && !strict);
+process.exitCode = results.every(([, r]) => ok(r)) && notRun.length === 0 ? 0 : 1;
 ````
 
 ### A.37 `runtime/scripts/smoke.mjs`
 
 ````js
-// Post-build smoke: the built server starts on a test port, answers health, refuses a foreign Host, stops.
+// Post-build smoke (05 section 3.2, critic N-02): the real CLI creates a throw-away instance on a smoke port and starts it; the
+// server answers health and refuses a foreign Host; the CLI stops it and the port closes. Exit 77 (SKIPPED) until 01 S8/S9 are built.
 import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { RUNTIME_ROOT } from './lib.mjs';
+
+const SKIP_EXIT = 77;
+const CLI = join(RUNTIME_ROOT, 'packages/cli/dist/main.js');
+const READY = ['packages/server/dist/boot.js', 'packages/engine/dist/ops/lifecycle.js', 'packages/cli/dist/main.js'];
+
+const missing = READY.find((p) => !existsSync(join(RUNTIME_ROOT, p)));
+if (missing !== undefined) {
+  console.log(`smoke: SKIPPED (01 S8/S9 not built: ${missing})`);
+  process.exit(SKIP_EXIT);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function free(port) {
   return new Promise((resolve) => {
@@ -2824,10 +2906,21 @@ function free(port) {
   });
 }
 
-function get(port, host) {
+function closed(port) {
+  return new Promise((resolve) => {
+    const socket = connect({ host: '127.0.0.1', port });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => resolve(true));
+  });
+}
+
+function health(port, host) {
   return new Promise((resolve) => {
     const req = request(
-      { host: '127.0.0.1', port, path: '/api/v3/health', headers: { host }, timeout: 1000 },
+      { host: '127.0.0.1', port, path: '/api/v3/health', headers: { host }, timeout: 1000, agent: false },
       (res) => {
         res.resume();
         res.on('end', () => resolve(res.statusCode ?? 0));
@@ -2839,31 +2932,75 @@ function get(port, host) {
   });
 }
 
-let port = 18800;
-while (!(await free(port)) && port < 18899) port += 1;
-const child = spawn(process.execPath, [join(RUNTIME_ROOT, 'packages/server/dist/main.js'), '--port', String(port)], {
-  stdio: 'ignore',
-  shell: false,
-  windowsHide: true,
-  env: { ...process.env, MCS_HOOK_DISABLE: '1' },
-});
-async function probe() {
-  const deadline = Date.now() + 10_000;
-  let status = 0;
-  while (Date.now() < deadline && status !== 200) {
-    status = await get(port, `127.0.0.1:${port}`);
-    if (status !== 200) await new Promise((r) => setTimeout(r, 100));
+async function until(probe, ms) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await probe();
+    if (value || Date.now() >= deadline) return value;
+    await sleep(100);
   }
-  const foreign = await get(port, 'evil.example');
-  console.log(`smoke: port ${port} health ${status}, foreign host ${foreign}`);
-  return status === 200 && foreign === 403;
 }
-let ok;
+
+// `$MCS <args>` without the launcher's bootstrap; output is kept for the failure message only.
+function mcs(args, env) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [CLI, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+      windowsHide: true,
+      env,
+    });
+    let out = '';
+    child.stdout.on('data', (b) => (out += b));
+    child.stderr.on('data', (b) => (out += b));
+    child.once('error', (e) => resolve({ code: -1, out: String(e) }));
+    child.once('exit', (code) => resolve({ code: code ?? -1, out }));
+  });
+}
+
+let port = 18800;
+while (!(await free(port)) && port < 18849) port += 1;
+
+const root = mkdtempSync(join(tmpdir(), 'mcs-smoke-'));
+writeFileSync(join(root, 'FIXTURE.md'), 'Synthetic test data generated by runtime/scripts/smoke.mjs. Not real data.\n');
+const repo = join(root, 'repo');
+for (const dir of [repo, join(root, 'mcs-home'), join(root, 'claude-home')]) mkdirSync(dir, { recursive: true });
+const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(MCS_|CLAUDE_)/i.test(k)));
+Object.assign(env, {
+  MCS_HOME: join(root, 'mcs-home'),
+  CLAUDE_CONFIG_DIR: join(root, 'claude-home'),
+  MCS_HOOK_DISABLE: '1',
+});
+const task = ['--task', 'smoke', '--repo', repo];
+
+let ok = false;
+let started = false;
+let summary = `smoke: port ${port}`;
 try {
-  ok = await probe();
+  const init = await mcs(
+    ['init', '--slug', 'smoke', '--name', 'FIXTURE smoke', '--repo', repo, '--port', String(port)],
+    env,
+  );
+  if (init.code !== 0) throw new Error(`init exited ${init.code}: ${init.out.trim()}`);
+  const start = await mcs(['start', ...task], env);
+  started = true;
+  if (start.code !== 0) throw new Error(`start exited ${start.code}: ${start.out.trim()}`);
+  const own = await until(async () => ((await health(port, `127.0.0.1:${port}`)) === 200 ? 200 : 0), 10_000);
+  const foreign = await health(port, 'evil.example');
+  summary += ` health ${own}, foreign host ${foreign}`;
+  ok = own === 200 && foreign === 403;
+} catch (error) {
+  summary += ` error ${error instanceof Error ? error.message : String(error)}`;
 } finally {
-  child.kill();
+  if (started) {
+    const stop = await mcs(['stop', ...task], env);
+    const portClosed = await until(() => closed(port), 5_000);
+    summary += `, stop exit ${stop.code}, port closed ${portClosed}`;
+    ok = ok && stop.code === 0 && portClosed;
+  }
+  rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
+console.log(summary);
 process.exitCode = ok ? 0 : 1;
 ````
 
@@ -2967,20 +3104,23 @@ export function makeTempDir(purpose: string): TempDir {
   };
 }
 
-const PORT_MIN = 18000;
-const PORT_MAX = 18999;
+export type PortRange = readonly [min: number, max: number];
 
-/** Picks a free loopback port inside the test range 18000-18999. */
-export async function allocatePort(): Promise<number> {
-  const span = PORT_MAX - PORT_MIN + 1;
-  const start = PORT_MIN + ((process.pid * 7919 + Number(process.env['VITEST_POOL_ID'] ?? 0) * 101) % span);
+/** Real-process Vitest tests (4.5). The block-per-worker rule of 4.4 replaces the spread below in slice S2. */
+export const VITEST_PORTS: PortRange = [18000, 18499];
+
+/** Picks a free loopback port inside `range` (default VITEST_PORTS; Playwright passes [18500, 18599]). */
+export async function allocatePort(range: PortRange = VITEST_PORTS): Promise<number> {
+  const [min, max] = range;
+  const span = max - min + 1;
+  const start = min + ((process.pid * 7919 + Number(process.env['VITEST_POOL_ID'] ?? 0) * 101) % span);
   for (let i = 0; i < span; i += 1) {
-    const port = PORT_MIN + ((start - PORT_MIN + i) % span);
+    const port = min + ((start - min + i) % span);
     if (await isFree(port)) {
       return port;
     }
   }
-  throw new Error('no free port in 18000-18999');
+  throw new Error(`no free port in ${String(min)}-${String(max)}`);
 }
 
 function isFree(port: number): Promise<boolean> {
@@ -3100,7 +3240,7 @@ jobs:
 - Section 13 Phase 6 items "compare old and new detection/token aggregates, large files, simultaneous instances, reconnect, restart,
   clean install, upgrade": parity harness 4.11, resilience 4.9, isolation 4.8, release gates 7.1.
 - Section 14: unit, integration, E2E 1-14 mapping (4.2), "do not claim tests passed unless they ran; record skipped tests" (7.1, 7.2, 3.2
-  `ci.mjs` "not run" list).
+  `ci.mjs` "not run" list and `SKIPPED (exit 77)` rows, never PASS; `--strict` at release, 8.1).
 - Section 15: required docs and AI-readable rules (6.1-6.4), CCAM reference (6.5), decisions folder (ADRs).
 - Section 16 non-goals: no orchestration tool, no Docker/Electron/cloud CI dependency (8.2 inactive), no large frameworks.
 - Section 17 items 6-7, 12: smallest tests per change and broader at phase boundaries (layers + `ci`), no fabricated results (7.3 rule).
@@ -3121,18 +3261,21 @@ jobs:
 4. Expected values that come from other designs, by name: CLI flags (01: `--settings-file` for installer tests), identity exit code and
    error code (01/03: exit 11, `IDENTITY_MISMATCH`), ingestion thresholds for resilience assertions (02), API error codes (03 section 5.2
    `ErrorCode`, imported, never re-spelled). The test files and cases here do not change when those values do.
+5. UNVERIFIED until 01 S9: the smoke's real CLI path (`init --port`, `start`, `stop` exit 0 on an empty `CLAUDE_CONFIG_DIR` and a
+   non-git temp repo). Its mechanics and the SKIPPED path are verified (E24); the readiness markers `server/dist/boot.js` and
+   `engine/dist/ops/lifecycle.js` follow 01's slice file lists (S8, S9) and move with them.
 
 ## 13. Phase 2+ task slices (dependency order; each independently testable)
 
 | Slice | Files owned | Depends on | Done when (tests) |
 |---|---|---|---|
-| S1 Scaffold + gates | `runtime/{package.json,package-lock.json,.npmrc,.editorconfig,.prettierrc.json,.prettierignore,tsconfig.*.json,eslint.config.js,vitest.config.ts}`, `runtime/packages/*/{package.json,tsconfig*.json}` + one stub file each, `runtime/scripts/{lib,clean,typecheck,check-deps,build-stamp,ci,smoke,dev,set-version}.mjs`, `runtime/tests/tsconfig.json`, `runtime/tests/tooling/{lint-rules,check-deps,build-stamp,ci-script,env-vars}.test.ts` (env-vars allow-list = 01 section 2.10), `.gitignore` additions | nothing | `npm ci --offline` + `npm run ci` pass in a clean copy; `tests/tooling/{lint-rules,check-deps,build-stamp,ci-script}.test.ts` pass (probe tables of E6/E7/E18/E20) |
-| S2 Testkit core | `packages/testkit/src/{temp,ports,wait,clock,processes,http,canary}.ts` + tests; `packages/shared/src/clock.ts` (`Clock`, `systemClock`) | S1 | testkit unit tests; port blocks never overlap across 4 workers (test spawns 4 forks) |
-| S3 Testkit fixtures | `packages/testkit/src/{transcript,claude-home,hooks,workspace,demo}.ts` + tests | S2; 02 `INSTALLED_HOOK_EVENTS`/`ASYNC_HOOK_EVENTS` and stub `scripts/mcs-hook.mjs` (02 I-2); 01 `InstanceFileSchema`; 04 11.5 `DemoResult` | builders reproduce the 25 fixture shapes of transcript-survey section 8; `buildClaudeHome` equals the `make.py build_home` structure (file list compare); `HookEventName` has 21 members (type test); `runHookHandler` default and `direct` both write one spool line for a routed payload; `buildTaskWorkspace({instance: {}})` output parses with `InstanceFileSchema` |
+| S1 Scaffold + gates | `runtime/{package.json,package-lock.json,.npmrc,.editorconfig,.prettierrc.json,.prettierignore,tsconfig.*.json,eslint.config.js,vitest.config.ts}`, `runtime/packages/*/{package.json,tsconfig*.json}` + one stub file each, `runtime/scripts/{lib,clean,typecheck,check-deps,build-stamp,ci,smoke,dev,set-version}.mjs`, `runtime/tests/tsconfig.json`, `runtime/tests/tooling/{lint-rules,check-deps,build-stamp,ci-script,env-vars}.test.ts` (env-vars allow-list = 01 section 2.10), `.gitignore` additions; `eslint.config.js` includes the platform entries of 06 section 4 (I-34, 2.6); testkit manifest exports `.` and `./legacy` (the `./legacy` target is written by 06 PP3) | nothing | `npm ci --offline` + `npm run ci` pass in a clean copy, smoke `SKIPPED (exit 77)` until 01 S8/S9 and PASS after them, `--strict` fails while it is skipped; `tests/tooling/{lint-rules,check-deps,build-stamp,ci-script}.test.ts` pass (probe tables of E6/E7/E18/E20/E24; `ci-script.test.ts` covers exit 77 and `--strict`) |
+| S2 Testkit core | `packages/testkit/src/{temp,ports,wait,clock,processes,isolation,http,canary}.ts` + tests (`clock.ts` holds only `FakeClock`; `Clock`/`systemClock` are 01's `shared/src/time.ts`, I-36) | S1; 01 S1 (`shared/src/time.ts`) | testkit unit tests; port blocks never overlap across 4 workers (test spawns 4 forks); `allocatePort([18500, 18599])` stays in range; `hermeticEnv` contains no parent `MCS_*`/`CLAUDE_*`; `makeJunction` + `lstat` sees a link; `spawnImpostor` command line ends with its argv; `startInstance` is exercised by 01 S9's T-ISO rows |
+| S3 Testkit fixtures | `packages/testkit/src/{transcript,claude-home,hooks,workspace,demo}.ts` + tests | S2; 02 `INSTALLED_HOOK_EVENTS`/`ASYNC_HOOK_EVENTS` and stub `scripts/mcs-hook.mjs` (02 I-2); 01 `InstanceFileSchema`; 04 11.5 `DemoOptions`/`DemoResult` verbatim (`nowMs`, no `runtimeJson`) | builders reproduce the 25 fixture shapes of transcript-survey section 8; `buildClaudeHome` equals the `make.py build_home` structure (file list compare); `HookEventName` has 21 members (type test); `runHookHandler` default and `direct` both write one spool line for a routed payload; `buildTaskWorkspace({instance: {}})` output parses with `InstanceFileSchema` |
 | S4 Launcher stamp integration | (design 01 owns `scripts/mcs.mjs` and both copies of the mutex); this slice only ships `build-stamp.mjs` API tests from the launcher's perspective | S1, design 01 S4 (`mutex.ts`) | launcher test: missing `node_modules` -> install + build once; two concurrent launchers -> one bootstrap (`ProcessMutex`); a bootstrap killed with `taskkill /F` mid-build leaves no lock behind and the next launcher proceeds at once |
 | S5 CI workflow | `runtime/ci/github-actions-ci.yml` | S1 | YAML parses, Prettier clean, `ci.mjs` gate names match |
-| S6 Security primitives | `engine/src/security/paths.ts`, `engine/src/log/logger.ts` (incl. S-LOG-6 rotation), `cli/src/io/terminal.ts`, `server/src/http/guards.ts` + `guards.test.ts` (unless claimed by another design, 1.1) + unit tests 5.7. Not `platform/exec.ts`/`process.ts` (06 PP1) | S1; 03 `shared/src/api/errors.ts` (`ErrorCode`) | 5.7 tests and SEC-05/SEC-31 unit rows; lint probes still pass |
+| S6 Security primitives | `engine/src/security/paths.ts` (re-exports `SID_RE`, `AGENT_RE`, `RUN_ID_RE` from `@mcs/shared/protocol`, I-26), `engine/src/log/logger.ts` (incl. S-LOG-6 rotation), `cli/src/io/terminal.ts`, `server/src/http/guards.ts` + `guards.test.ts` (unless claimed by another design, 1.1) + unit tests 5.7. Not `platform/exec.ts`/`process.ts` (06 PP1) | S1; 03 `shared/src/api/errors.ts` (`ErrorCode`); 02 I-1 (`shared/src/protocol/hook-envelope.ts` regexes) | 5.7 tests and SEC-05/SEC-31 unit rows; lint probes still pass |
 | S7 Security suite | `runtime/tests/security/*` | S6, 06 PP1 (`exec.ts`), server + CLI MVP | SEC-01..SEC-25 tests pass; every expected code typed `ErrorCode` |
-| S8 Parity harness (Node side) | `runtime/tests/parity/{projections,normalize,run-python}.ts`, the parity project's `globalSetup` (live mode), `runtime/scripts/parity-capture.mjs`, `runtime/tests/tooling/parity-capture.test.ts`, `parity:capture`/`parity:check` scripts. Not `tests/legacy-parity/**` (06 PP2) and not the `*.parity.test.ts` files (06 PP4/PP8) | S3, 06 PP2 (`capture_golden.py`) | `parity-capture.test.ts`: argument validation, port-base range, missing Python -> exit 2 (PATH emptied), `--check` passes the tool's exit code; `npm run parity:check` prints `golden check: N files identical` on this machine; `normalizeValue` unit cases for every placeholder of 06 5.2.3; live mode runs 06 PP4's `legacy-trees.parity.test.ts` green against a fresh capture |
-| S9 Isolation + resilience suites, stress, release check, text gate | `runtime/tests/{isolation,resilience}/*` (the isolation files host 01's T-ISO rows per 4.8 placement rule; 01 S6/S9/S12/S13 write the row bodies with their features, this slice owns the files, setup helpers and wiring), `runtime/scripts/{stress,release-check,check-text}.mjs`, `check-text.allow` | S3, S6, CLI lifecycle (design 01), ingestion | ISO-1..9 (all listed T-ISO ids and 02 T-HK-05) and resilience files pass 3 shuffled seeds; `release-check` writes a report with no fabricated rows |
+| S8 Parity harness (Node side) | `runtime/tests/parity/{projections,normalize,run-python}.ts` (`LegacyState` imported from `@mcs/shared`, 03 S3), the parity project's `globalSetup` (live mode), `runtime/scripts/parity-capture.mjs`, `runtime/tests/tooling/parity-capture.test.ts`, `parity:capture`/`parity:check` scripts. Not `tests/legacy-parity/**` (06 PP2) and not the `*.parity.test.ts` files (06 PP4/PP8) | S3, 06 PP2 (`capture_golden.py`) | `parity-capture.test.ts`: argument validation, port-base range, missing Python -> exit 2 (PATH emptied), `--check` passes the tool's exit code; `npm run parity:check` prints `golden check: N files identical` on this machine; `normalizeValue` unit cases for every placeholder of 06 5.2.3; live mode runs 06 PP4's `legacy-trees.parity.test.ts` green against a fresh capture |
+| S9 Isolation setup + resilience suite, stress, release check, text gate | `runtime/tests/isolation/_setup.ts` only (critic N-07: every `runtime/tests/isolation/*.test.ts` belongs to the 01 slice implementing its T-ISO rows, `hook-routing-isolation.test.ts` to 02, 4.8), `runtime/tests/resilience/*`, `runtime/scripts/{stress,release-check,check-text}.mjs`, `check-text.allow` | `_setup.ts`: S2, S3 only, so it lands before the first 01 slice that adds an isolation file; the rest: S6, 01 S9 (CLI lifecycle), ingestion | `_setup.ts` self-test: `twoInstances()` starts two instances on distinct ports and its teardown leaves both ports closed; resilience files pass 3 shuffled seeds; the isolation files present at that time pass `test:stress`; `release-check` runs `ci --strict` and writes a report with no fabricated rows |
 | S10 Docs assembly | `docs/*.md` final set, `docs/legacy/` move (lead runs `git mv`), `docs/traceability.md`, `runtime/scripts/check-docs.mjs` | all designs implemented | `check-docs` and `check-text` pass; 11-question table satisfied |

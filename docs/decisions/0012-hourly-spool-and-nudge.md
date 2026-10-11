@@ -1,6 +1,6 @@
 # ADR 0012: Hourly append-only spool segments, offsets in the DB, and a data-free nudge
 
-Status: Proposed (Phase 1 design, 2026-10-11; revised the same day by the Phase 1 reconciliation, issues I-02, I-04, I-29). Design reference: sections 2.7, 2.8, 4.4, 4.6.
+Status: Proposed (Phase 1 design, 2026-10-11; revised the same day by the Phase 1 reconciliation, issues I-02, I-04, I-29, and by the second critic pass, registry C03, C49). Design reference: sections 2.7, 2.8, 4.4, 4.6.
 
 ## Context
 
@@ -17,15 +17,16 @@ handler must not wait for a slow server.
 - Soft cap 64 MiB per segment (minimal envelopes), hard cap 256 MiB (drop + handler log).
 - The server tails segments with the shared `JsonlTailer` (never consumes a partial line) and commits the cursor
   (`spool_cursor`: offset, size, inode, head hash, sealed) in the same transaction as the rows derived from those lines.
-  Segments are sealed after hour end + 120 s and deleted 24 h after sealing.
-- Dedupe: UNIQUE (`instance_id`, `event_uid`), exact natural keys for events with ids (`tool_use_id`, PostToolBatch id hash,
+  Segments are sealed after hour end + `spool.sealGraceMs` (120 s) and deleted when `now > hourEnd + spool.retainHours`
+  (24 h by default).
+- Dedupe: UNIQUE `event_uid` (one database per instance, so no `instance_id` column in the key), exact natural keys for events with ids (`tool_use_id`, PostToolBatch id hash,
   `task_id`), and a 2 s content-hash window for the rest.
 - After appending, the handler POSTs `{"instanceId"}` to `POST /api/v3/ingest/nudge` and exits on response, flush, error or 300 ms,
   whichever is first. The endpoint carries no data, needs no token, refuses requests with an `Origin` header
   (`403 origin_not_allowed`, codes from the shared `ErrorCode` catalogue of design 03), and only schedules a drain; a 500 ms poll
   makes the nudge an optimization.
-- Replay resets cursors in one `withWriteTx` (stopped instance: maintenance DB open; running: control operation through the
-  writer queue); the CLI command `mcs ingest replay --task S [--from SEGMENT] [--yes]` belongs to the CLI design.
+- Replay resets cursors in one `withWriteTx` (stopped instance: maintenance DB open, `planSpoolReplay` + `applySpoolReplay`;
+  running: control operation `ingest-replay` with `fromSegment`, executed through the writer queue); the CLI command `mcs ingest replay --task S [--from SEGMENT] [--yes]` belongs to the CLI design.
 
 ## Consequences
 

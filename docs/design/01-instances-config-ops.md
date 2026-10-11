@@ -5,6 +5,11 @@ Revision 2 (2026-10-11, after the cross-design review in `99-requirements-matrix
 (one Node floor), I-06 (one process helper, owned by 06), I-15 (server composition root, 4.4a), I-19 (`entriesBetween`), I-20
 (`ConfigInspection`), I-27 (complete environment list), I-36 (`Clock`); aligns with I-02 (`.ndjson` spool), I-08 (`explainCompletion`),
 I-12 (`db rebuild`), I-21, I-23, I-24, I-25, I-26, I-28 (`platform/fsx.ts`), I-29 (`ingest replay`), I-30, I-31, I-34.
+Revision 3 (2026-10-11, second critic and `98-contract-registry.md`, which arbitrates names): N-03 (01 S1 owns every `runtime.json`
+section module, 1.6), I-15 (4.4a adopts the owners' factory shapes: 02 4.10, 03 11.4, 03 12.1, 06 3.4), I-27 (`MCS_E2E_PORT` removed,
+2.10), I-32 (`import.maxLineBytes` removed, 1.6), N-04 (02 1.2 bounds adopted, 1.6); aligns with N-01 (`tickAttempts` timer, 4.4a),
+N-02, N-05, N-06 (2.4), N-07 (3.5, slices), N-08, N-11 (6.3), I-06 (`forceKill` via `taskkill`, 4.2), I-08 (6.4), I-19, I-29 (4.3,
+6.4), I-36, and the registry rows C04, C11, C12, C16, C19, C21-C23, C32, C33, C39, C48, C57.
 Inputs read: `00-foundations.md` (D1-D15), the owner's brief MEGA-PROMT-V3 sections 2, 4, 12, 13, 15, 17, 18,
 `docs/research/current-state-backend.md` (sections A-G), `claude-code-hooks.md` (sections 3, 6, 10), `stack-versions.md`,
 `ccam-*-analysis.md` (installer, retention, security), legacy `src/backend/{config,tasks,cli,__init__,proc}.py`, `SKILL.md`,
@@ -85,6 +90,7 @@ React UI (`04-ui.md`); build/test tooling, logger, stamps (`05-tooling-testing-s
     data/monitor.db (+ -wal, -shm)                             writer: node server only (D10)
     data/spool/          hook write-ahead log, segments hooks-<YYYYMMDD>T<HH>Z.ndjson  writer: hook handler (design 02 2.7; `SPOOL_SEGMENT_EXT = '.ndjson'` in `shared/src/protocol/hook-envelope.ts`, I-02)
     data/backups/<id>/   backups (5.6)                         writer: mcs backup/upgrade/restore
+    data/exports/        export temp DBs `.tmp-<random>.db`    writer: server export route (03 11.1); runtime-mutable; `cleanup --scope stale-state` deletes `.tmp-*` older than 10 min (C39)
     logs/runtime.log (+ .1 .. .5)                              writer: node server (logger owned by 05; rotation 05 S-LOG-6: `LOG_ROTATE_BYTES` 10 MiB, `LOG_KEEP` 5)
     logs/boot.log (+ .1) stdout/stderr of the detached server   writer: OS redirection at spawn (4.7)
     audit/changes.md     append-only, legacy format            writer: both engines
@@ -186,7 +192,7 @@ export type SectionKeys = Readonly<Record<string, KeySpec>>;
 export function sectionSchema(keys: SectionKeys): z.ZodType;           // z.strictObject({k: spec.schema.default(spec.default)}).prefault({})
 export function sectionOverridesSchema(keys: SectionKeys): z.ZodType;  // z.strictObject({k: spec.schema.optional()}).optional(); no defaults injected
 // each module, e.g. @mcs/shared/config/runtime/spool.ts:
-export const SpoolSectionKeys = { pollMs: { schema: z.number().int().min(50).max(60_000), default: 500 }, /* ... */ } satisfies SectionKeys;
+export const SpoolSectionKeys = { pollMs: { schema: z.number().int().min(100).max(10_000), default: 500 }, /* ... */ } satisfies SectionKeys;
 export const SpoolSectionSchema = sectionSchema(SpoolSectionKeys);
 ```
 
@@ -206,9 +212,10 @@ Sections owned by this document (complete):
 
 The `server` section has no `devOrigins` and no `bindHost` key: the Origin allow-list stays exactly the two loopback values (I-31, 05 5.4).
 
-Sections whose schema module this document's slice S1 writes from the owning design's table (I-01). The owning design keeps the
-semantics and the defaults; a change of a default there is a change of this table in the same commit (the contract test below fails
-otherwise). Ranges are validation bounds chosen here; the owning design may narrow them.
+Sections whose schema module this document's slice S1 writes from the owning design's table (I-01, N-03). The owning design's table is
+normative for semantics, type, range and default (02 1.2 for `hooks`, `ingest`, `spool`, `import`, `health`; N-04); the rows below are
+a copy, and a change there is a change here in the same commit (the contract test below fails otherwise). Only where the owner states no
+range (02 7.8 `lifecycle.*`) are the bounds chosen here; the owner may narrow them.
 
 | Key | Type | Default | Validation | Semantics owned by |
 |---|---|---|---|---|
@@ -224,36 +231,43 @@ otherwise). Ranges are validation bounds chosen here; the owning design may narr
 | `lifecycle.pidCheckIntervalMs` | int | 10000 | 1000..600000 | 02 7.8 |
 | `lifecycle.registryPollMs` | int | 5000 | 1000..600000 | 02 7.8 |
 | `lifecycle.jobsPollMs` | int | 15000 | 1000..600000 | 02 7.8 |
-| `hooks.spoolWhileStoppedHours` | int | 72 | 1..720 | 02 2.6 |
+| `hooks.spoolWhileStoppedHours` | int | 72 | 0..720 (0 = stop spooling at once) | 02 2.6.2 |
 | `ingest.queueMaxItems` | int | 5000 | 100..100000 | 02 4.7 |
 | `ingest.queueMaxBytes` | int | 33554432 (32 MiB) | 1 MiB..512 MiB | 02 4.7 |
-| `spool.pollMs` | int | 500 | 50..60000 | 02 2.7 |
-| `spool.sealGraceMs` | int | 120000 | 5000..3600000 | 02 2.7 |
+| `spool.pollMs` | int | 500 | 100..10000 | 02 2.7 |
+| `spool.sealGraceMs` | int | 120000 | 10000..3600000 | 02 2.7 |
 | `spool.retainHours` | int | 24 | 1..720 | 02 2.7 |
-| `import.lookbackHours` | number or null | `null` -> derived from `window_hours` | > 0, <= 8760 | 02 5.1.2 |
-| `import.tailWindowBytes` | int or null | `null` -> derived from `limits.event_window_mb` x 1 MiB | 65536..1 GiB | 02 5.5 |
-| `import.backfillMaxBytes` | int or null | `null` -> derived from `limits.usage_max_mb` x 1 MiB | 65536..64 GiB | 02 5.5 |
-| `import.headMaxBytes` | int | 16777216 (16 MiB) | 64 KiB..256 MiB | 02 5.2, 5.5 |
-| `import.maxLineBytes` | int | 67108864 (64 MiB) | 1 MiB..256 MiB | 02 4.8 |
+| `import.lookbackHours` | int or null | `null` -> derived from `window_hours` | 1..8760 | 02 5.1.2 |
+| `import.tailWindowBytes` | int or null | `null` -> derived from `limits.event_window_mb` x 1 MiB | 1 MiB..4 GiB | 02 5.5 |
+| `import.backfillMaxBytes` | int or null | `null` -> derived from `limits.usage_max_mb` x 1 MiB | 0..64 GiB | 02 5.5 |
+| `import.headMaxBytes` | int | 16777216 (16 MiB) | 1 MiB..256 MiB | 02 5.2, 5.5 |
 | `import.untrackAfterHours` | int | 48 | 1..8760 | 02 5.1.2 |
-| `import.discoveryIntervalMs` | int | 5000 | 500..600000 | 02 5.1.2, 5.4 |
-| `import.scanIntervalMs` | int | 1000 | 100..60000 | 02 5.4 |
+| `import.discoveryIntervalMs` | int | 5000 | 1000..600000 | 02 5.1.2, 5.4 |
+| `import.scanIntervalMs` | int | 1000 | 250..60000 | 02 5.4 |
 | `import.sliceMs` | int | 20 | 5..200 | 02 5.4 |
 | `import.backfillShare` | number | 0.25 | 0.05..1 | 02 5.4 |
 | `health.importLagWarnMs` | int | 30000 | 1000..3600000 | 02 8.2 |
 | `health.backlogWarnMs` | int | 10000 | 1000..3600000 | 02 8.2 |
 | `analytics.usageTrend` | boolean | `false` | boolean | 03 6.2 (`features.usageTrend`), 04 4.4.6 |
 
-Sections owned elsewhere (this document requires only: the `SectionKeys` pattern above, a default for every key, no secrets, no key
-starting with `_`, a top-level name that is not an L key; each exported as `<Name>SectionKeys` / `<Name>SectionSchema` from
-`@mcs/shared/config/runtime/<name>.ts`, file owned by the named design's slice):
+There is no `import.maxLineBytes` (I-32, registry C01): the line cap is the constant `MAX_LINE_BYTES` of
+`@mcs/shared/protocol/limits.ts` (02 1.1, 03 3.3), not configuration.
 
-| Section | Owner | Known keys (from that design) |
+Sections of the other designs (N-03). Slice S1 also writes these modules, `config/runtime/{board,panelOptions,retention,alerts,pricing}.ts`,
+each exporting `<Name>SectionKeys` / `<Name>SectionSchema` built with the `SectionKeys` pattern above and transcribed from the owner's
+key table, which stays normative (the same rule as for `spool`, `import` and `health` above). Every key is registered in
+`R_KEY_CATALOGUE` with its `owner` and `ref`. A change of a key, range or default is made in the owner's table and in the module in the
+same commit; the contract test fails on any difference with the registry (`98-contract-registry.md` section 6.2). The owners add no file
+of their own under `config/runtime/`; their slices read `ctx.config.runtime.<section>`. Requirements on every section: a default for
+every key, no secrets, no key starting with `_`, a top-level name that is not an L key.
+
+| Section (module) | Owner (normative table) | Keys, defaults and bounds (copied from the owner) |
 |---|---|---|
-| `board` | `02-ingestion-lifecycle.md` 7.11 | `items` (declared work items; `04-ui.md` S-8 `tasks[]` is renamed there) |
-| `panelOptions` | `06-panels-parity-platform.md` | `attemptsWindowHours` (default 24), `machineProcessIntervalMs` (06 asked for `attempts.windowHours` and `panels.machine.processIntervalMs`, which collide with the L keys `attempts` and `panels`; Open item 6) |
-| `retention` | `03-data-api-realtime.md` 3.8 | `eventsDays`, `sessionsDays`, `changesMaxAgeHours`, `changesMaxRows`, `ingestErrorsMaxRows`, `instanceReconciliationsDays`, `resolvedAlertsDays` |
-| `alerts`, `pricing` | `03-data-api-realtime.md` 10.1, 8 | `enabled`, `sweepSeconds`, `rules`; `models` (user-configured prices, D15: none shipped) |
+| `board` (`board.ts`) | 02 7.11 | `items`: `{key: string, title: string, match: {labels?: string[], labelPrefix?: string, sessionIds?: string[], attemptParts?: string[]}}[]`, default `[]` (`04-ui.md` S-8 `tasks[]` is renamed `board.items`) |
+| `panelOptions` (`panelOptions.ts`) | 06 3.5, 3.10.3 | `attemptsWindowHours` int, default 24 (bound 1..8760 chosen here until 06 states one); `machineProcessIntervalMs` int 10000..300000, default 20000. 06 asked for `attempts.windowHours` and `panels.machine.processIntervalMs`, which collide with the L keys `attempts` and `panels` (Open item 5) |
+| `retention` (`retention.ts`) | 03 3.8 | `changesMaxAgeHours` 1..720 (24); `changesMaxRows` 2000..1000000 (20000); `ingestErrorsMaxRows` 100..100000 (1000); `resolvedAlertsDays` 1..3650 (30); `instanceReconciliationsDays` 1..3650 (90); `sessionsDays`, `eventsDays` int 1..3650 or null (null = keep) |
+| `alerts` (`alerts.ts`) | 03 10.1 | `enabled` boolean (true); `sweepSeconds` 15..600 (60); `rules.<ruleId>` for `inactivity`, `ingest_errors`, `runtime_unavailable`, `token_threshold`, `import_lag`, `db_disk`, `hook_gap`, `hook_failing`, each a strict object with the defaults of 03 10.1 and `.prefault({})`, so a partial override (`alerts.rules.inactivity.minutes`) is completed by the schema in 2.3 step 6 (the merge of 2.2 stays one level deep) |
+| `pricing` (`pricing.ts`) | 03 8.3 | `currency` string (`USD`); `models` array of `{match, effectiveFrom, inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWrite5mPerMTok, cacheWrite1hPerMTok}`, default `[]` (no prices ship, D15) |
 
 Derived defaults: an R key whose built-in default is "the value of an L key" declares it in `R_DERIVED_DEFAULTS`; its Zod default is
 `null`, and `resolveConfig` step 6 replaces a `null` that no layer overrode:
@@ -270,7 +284,9 @@ export const R_DERIVED_DEFAULTS: Readonly<Record<string, DerivedDefault>> = {
 Derivation algorithm (per entry, in the order above): (1) read the merged L value at `from` (always present: the skill defaults define
 every one; legacy defaults `window_hours` 8, `limits.event_window_mb` 8, `limits.usage_max_mb` 512 give 8 h, 8 MiB and 512 MiB, equal to
 the 02 defaults); (2) apply `map`; (3) validate the result with the key's schema without its `null` branch; failure ->
-`CONFIG_INVALID` `runtime: <R key> derived from <from> (<value>): <zod message>`; (4) provenance of the R key = provenance of `from`.
+`CONFIG_INVALID` `runtime: <R key> derived from <from> (<value>): <zod message>; set <R key> in runtime.json`; (4) provenance of the
+R key = provenance of `from`. Consequence of the owner's bounds (N-04): a legacy `config.json` with a fractional `window_hours` or with
+`limits.event_window_mb` below 1 is refused by Node (legacy accepts it) unless the R key is set explicitly; listed in 2.4 and Open item 6.
 
 Composition (`@mcs/shared/config/runtime/index.ts`):
 ```ts
@@ -292,10 +308,12 @@ export const R_TOP_KEYS = ['logLevel', 'server', 'process', 'backup', 'lifecycle
   'analytics', 'board', 'panelOptions', 'retention', 'alerts', 'pricing'] as const;
 export const R_MERGED: ReadonlySet<string> = new Set(R_TOP_KEYS.filter((k) => k !== 'logLevel'));   // every object section merges per sub-key
 export const R_KEY_CATALOGUE: readonly { key: string; default: unknown; sample: unknown; owner: '01' | '02' | '03' | '06'; ref: string }[];
+  // one entry per leaf key of every section above (all written by slice S1); `ref` = the owner's normative section, e.g. '02 1.2', '03 3.8'
 ```
 The file on disk holds only overrides (partial sections); `RuntimeOverridesSchema` validates the file itself (unknown keys and wrong
 types are reported against the file, `unrecognized_keys`), and `RuntimeFileSchema` validates the merged result (2.3 step 6). E14
-(Zod 4.6.5): all 16 new keys of `spool`, `import`, `health`, `analytics` parse through the generated overrides schema, an unknown key or
+(Zod 4.6.5; run with the 16 keys of revision 2, one of them the since-removed `import.maxLineBytes`, I-32): all 15 new keys of `spool`,
+`import`, `health`, `analytics` parse through the generated overrides schema, an unknown key or
 section is rejected, the overrides output contains no injected defaults, `RuntimeFileSchema.parse({schema_version: 1})` returns every
 default, and the generated JSON Schema has `additionalProperties: false` per section.
 
@@ -308,12 +326,17 @@ Tests that prove 1.6 (`packages/shared/src/config/runtime/*.test.ts`, project `u
 - `runtime-sections.contract.test.ts`: (1) `RuntimeFileSchema.parse({schema_version: 1})` plus the derived defaults filled from the
   shipped `config/defaults.json` equals the `default` column of `R_KEY_CATALOGUE`; (2) every catalogue key parses through
   `RuntimeOverridesSchema` with its `sample` (every section, so every 02 and 03 key: the 12 `lifecycle`, 1 `hooks`, 2 `ingest`,
-  10 `import`, 3 `spool`, 2 `health`, 1 `analytics` keys of the table above plus the keys of `board`, `retention`, `alerts`, `pricing`
-  and `panelOptions` registered by their owners); (3) the leaf key set of the parsed default equals the catalogue key set (no undocumented
-  key); (4) one misspelled key per section and one unknown section are rejected with `unrecognized_keys`; (5) `R_TOP_KEYS` is disjoint
-  from the 22 L keys; (6) the generated `runtime.v1.schema.json` has `additionalProperties: false` on every section.
-- `derived-defaults.test.ts`: `event_window_mb` 0.5 -> `tailWindowBytes` 524288; `event_window_mb` 0.01 -> `CONFIG_INVALID` naming both
-  keys; an explicit `import.tailWindowBytes` in `runtime.json` wins over the derivation and has provenance `runtime`.
+  9 `import`, 3 `spool`, 2 `health`, 1 `analytics` keys of the table above plus the keys of `board`, `retention`, `alerts`, `pricing`
+  and `panelOptions` written by S1 from the owners' tables); (3) the leaf key set of the parsed default equals the catalogue key set (no
+  undocumented key; `import.maxLineBytes` is rejected as unknown); (4) one misspelled key per section and one unknown section are rejected
+  with `unrecognized_keys`; (5) `R_TOP_KEYS` is disjoint from the 22 L keys; (6) the generated `runtime.v1.schema.json` has
+  `additionalProperties: false` on every section; (7) every catalogue row equals the matching row of `98-contract-registry.md` 6.2
+  (key, default, range; the test parses the registry table); (8) range edges of the 02 keys: `spool.pollMs` 99 and 10001 rejected,
+  `hooks.spoolWhileStoppedHours` 0 accepted, `import.lookbackHours` 1.5 rejected.
+- `derived-defaults.test.ts`: `event_window_mb` 2 -> `tailWindowBytes` 2097152; `event_window_mb` 0.5 (524288 < 1 MiB) and
+  `window_hours` 1.5 (not an integer) -> `CONFIG_INVALID` naming both keys and the R key to set instead (2.4); an explicit
+  `import.tailWindowBytes` in `runtime.json` wins over the derivation and has provenance `runtime`.
+
 
 ### 1.7 `state.json` (runtime-only; written by whichever engine runs)
 Legacy writes exactly `{pid, url, port, started, version, task, config}` (types int, str, int, float, str, str|null, str|null;
@@ -504,7 +527,13 @@ Messages (golden, from `config.py`): `unknown key <pyRepr(k)>` (strict mode only
 texts cannot be reproduced for every case; the translator uses Python's wording for the errors it shares (2.8) and parity tests
 compare messages up to the opening parenthesis.
 Node-only additions (stricter, documented): non-finite numbers are rejected (`<key>: expected finite number`); a rule `label` that is
-present must be a string (`session_rules[i].label: expected string`); integers beyond 2^53-1 in numeric keys are rejected.
+present must be a string (`session_rules[i].label: expected string`); integers beyond 2^53-1 in numeric keys are rejected;
+`attempts.time_format` is checked by 06's `pyStrptimeValidate` (06 3.10.1, 3.10.4): `attempts.time_format: unsupported directive %X
+(supported: %Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%)`; on win32 a path value (`repo`, `transcripts_dir`, `chain_log`,
+`ledger`, `stop_file`, `live_log_globs[i]`) starting with `/<letter>/` is rejected: `<key>: use C:/... instead of /c/...` (06 4.1);
+an L value whose derived R key (1.6) falls outside the owner's bounds is rejected with the 1.6 derivation message. All of them are
+reported as `CONFIG_INVALID` problems (N-06, registry C42); 06 raises no codes of its own (`E_ATTEMPTS_TIME_FORMAT`, `E_MSYS_PATH` do
+not exist).
 
 R keys: Zod (`RuntimeOverridesSchema` on the file, `RuntimeFileSchema` on the merge); messages `runtime.json: <path>: <message>`.
 Cross-file rules: none in v1 (`server.port` and `port` are independent; the derived port is checked at bind).
@@ -555,7 +584,10 @@ it safely, which is the designed behaviour, research F.3).
 accepted by `$V --config FILE`) into a new or existing workspace:
 1. Read FILE (PyJson); if it has `schema_version` it must be 1.
 2. Keep L keys only; unknown keys are listed and dropped (the legacy flat mode ignored them); `repo` relative to FILE's folder is
-   rewritten to be relative to the new workspace (same target folder); validate strict + regex translation.
+   rewritten to be relative to the new workspace (same target folder); validate strict + regex translation. A pattern that does not
+   translate exactly refuses the import (`REGEX_UNSUPPORTED`, every failing pattern listed, nothing written); the dropped keys are listed
+   in the plan and in the audit summary. Node never loads a flat config leniently and has no `configWarnings` (N-05): flat configs are
+   served by `$V` (6.5) until imported.
 3. Dry run prints the resulting `config.json`; `--yes` runs `init` (4.12) with these keys (existing workspace: refuse unless its
    `config.json` already equals the result, `WORKSPACE_EXISTS_CONFIG_DIFFERS`), audit `config-import`. FILE is never modified.
 
@@ -703,13 +735,14 @@ Test and development variables (I-27). They never change configuration; producti
 | `MCS_GOLDEN_DIR` | parity harness (06 5.2, 5.4) | folder of golden captures instead of `tests/legacy-parity/golden` |
 | `MCS_PARITY_LIVE` | parity harness (05 4.11) | `1` = run the Python oracle live (needs Python >= 3.8) |
 | `MCS_E2E_CLAUDE` | E2E (02 3.7, 05) | `1` = run the optional real Claude Code E2E with a temp `--settings` file and temp `MCS_HOME` |
-| `MCS_E2E_PORT` | Playwright config (05) | E2E server port (default 18900, 05) |
 | `MCS_DEV_API` | `packages/web/vite.config.ts` (04 12, 05 3.1 `dev.mjs`) | API origin the dev server proxies to (05 default `http://127.0.0.1:18765`) |
 | `MCS_WEB_DEV_PORT` | `vite.config.ts` | Vite dev server port (05 default 18766) |
 | `MCS_WEB_PREVIEW_PORT` | `vite.config.ts` | Vite preview port |
 | `MCS_BUILD_ID` | `vite.config.ts` | build id injected as `VITE_BUILD_ID` (default `dev`) |
 
-No other `MCS_*` variable is read anywhere, and no variable changes configuration except `MCS_LOG_LEVEL` (D4). Enforcement: the list
+No other `MCS_*` variable is read anywhere, and no variable changes configuration except `MCS_LOG_LEVEL` (D4). There is no
+`MCS_E2E_PORT` (I-27, N-02; supersedes registry C31): the Playwright specs (04 W14 `e2e/playwright.config.ts`, no `webServer`) start
+their instances with `$MCS init`/`start` on ports from testkit `allocatePort([18500, 18599])` (05 4.5, 04 11.4). Enforcement: the list
 above is the constant `DOCUMENTED_ENV_VARS: readonly { name: string; scope: 'runtime' | 'test' | 'dev'; readers: readonly string[] }[]`
 in `packages/shared/src/env.ts` (slice S1); `runtime/tooling/env-vars.test.ts` (owned by 05 slice S1, project `unit`) greps
 `runtime/packages/*/src/**`, `runtime/scripts/**`, `runtime/tests/**`, `runtime/*.config.*`, `<skill>/scripts/*.mjs` for
@@ -763,12 +796,23 @@ A user can copy a workspace folder (same `instanceId`, wrong `slug`). Detection:
    id (02), audit `instances-repair`.
 
 ### 3.5 Isolation test matrix (brief section 4, release-blocking)
-Fixtures (`@mcs/testkit`): `tempRoot()` (mkdtemp + `hermeticEnv()` with `MCS_HOME`, `CLAUDE_CONFIG_DIR` in the temp root),
-`buildDemo()` (`04-ui.md` 11.5), `makeWorkspace({root, slug, config?, runtime?})` (calls the real `init`), `startInstance(ws, {port})`
-(real `$MCS start`, port from `findFreePort(18000, 18499)`, the range design 05 assigns to real-process integration tests), `snapshotWorkspace(dir, {excludeRuntimeMutable})` (sha256 per relative
-path), `spawnImpostor(argv)` (a sleeping Node process with chosen argv, to simulate pid reuse), `makeJunction(link, target)`
-(`cmd /c mklink /J`, Windows; symlink elsewhere). Vitest projects from the scaffold: `unit`, `integration`, `isolation`, `resilience`,
-`parity`. Isolation tests run real processes, one file per guarantee, `workers: 1`.
+Fixtures (`@mcs/testkit`, 05 4.4; names per registry C32/C33): `makeTempDir()` plus `hermeticEnv(root)` (`MCS_HOME`,
+`CLAUDE_CONFIG_DIR` in the temp root), `buildDemo()` (`04-ui.md` 11.5), `runCli(['init', '--slug', s, ...])` (the real `init`; config and
+`runtime.json` seeds through `--config FILE` and `configure`), `startInstance(ws, {port})` (real `$MCS start`, port from
+`allocatePort(VITEST_PORTS)`, the per-worker block design 05 4.5 assigns to real-process tests), `snapshotTree(dir, {exclude:
+RUNTIME_MUTABLE_PATHS})` (sha256 per relative path; the runtime-mutable list of 1.1), `spawnImpostor(argv)` (a sleeping Node process
+with chosen argv, to simulate pid reuse), `makeJunction(link, target)` (`cmd /c mklink /J`, Windows; symlink elsewhere). Vitest
+projects from the scaffold: `unit`, `integration`, `isolation`, `resilience`, `parity`. Isolation tests run real processes, one file
+per guarantee, `workers: 1`.
+Files (N-07): 05 S9 owns only `runtime/tests/isolation/_setup.ts` and the project wiring; each `runtime/tests/isolation/*.test.ts` of
+05 4.8 belongs to the 01 slice that implements its rows (created by the first slice listed, extended by the later ones):
+`config-write-isolation.test.ts` (T-ISO-06, 08: S7, extended by S12, S14), `db-identity.test.ts` (T-ISO-05: S9),
+`lifecycle-isolation.test.ts` (T-ISO-13, 14: S9; T-ISO-15: S12), `restart-isolation.test.ts` (T-ISO-16, 17: S9),
+`ownership-isolation.test.ts` (T-ISO-18..20, 22: S9; T-ISO-21: S6 helper, S9 file; T-ISO-23: S15), `read-isolation.test.ts`
+(T-ISO-03, 04), `token-isolation.test.ts` (T-ISO-09), `search-isolation.test.ts` (T-ISO-11, 12) (all S13a),
+`upgrade-isolation.test.ts` (T-ISO-24..26, 27 integration part: S12). Unit rows (T-ISO-01, 02, 07, 10, 27 unit part) sit next to the
+module they test (05 4.1).
+
 Traceability (I-23): design 05 4.8 keeps the brief-bullet ids ISO-1..9 and maps them to the rows below: ISO-1 = T-ISO-01..05,
 ISO-2 = T-ISO-06..08, ISO-3 = T-ISO-09/10, ISO-4 = T-ISO-11/12, ISO-5 = T-ISO-13..15, ISO-6 = T-ISO-16/17, ISO-7 = T-ISO-18..23,
 ISO-8 = T-ISO-24..27, ISO-9 = design 02 T-HK-05. Test file names follow 05 4.3.
@@ -852,7 +896,7 @@ owned by 06 slice PP1, which implements the additions this document needs (liste
 ```ts
 // exec.ts (06 3.6, owner 06 PP1): ChildSpec / ChildResult are authoritative; execFileText never throws, never rejects
 export function execFileText(spec: ChildSpec, signal?: AbortSignal): Promise<ChildResult>;   // { ok, code, stdout, stderr, error, truncated, durationMs }
-export function resolveExecutable(name: ExecutableName): Promise<string | null>;
+export function resolveExecutable(name: 'git' | 'docker' | 'powershell' | 'ps' | 'taskkill' | 'icacls' | 'node' | 'opener'): Promise<string | null>;  // 06's union (+ 'opener', C11); no 'python'
 export function childStats(): Record<ChildKind, { spawned: number; failed: number; timedOut: number; totalMs: number }>;
 // specified here, implemented in the same file by 06 PP1 (shell:false, windowsHide:true, argv array; no ChildKind, no semaphore: they start our own Node or Python)
 export function spawnDetached(file: string, args: readonly string[], o: { cwd: string; env: Record<string, string>; stdoutFd: number; stderrFd: number }): ChildProcess; // detached:true, stdio ['ignore', stdoutFd, stderrFd]
@@ -861,7 +905,7 @@ export function spawnForeground(file: string, args: readonly string[], o: { cwd:
 // process.ts (06 4.2, owner 06 PP1); killPid of 06 is replaced by forceKill + waitForExit
 export function pidAlive(pid: number): boolean;                         // never signals a live process; EPERM -> true, ESRCH -> false
 export function commandLineOf(pid: number): Promise<string | null>;     // 06 form: powershell.exe -EncodedCommand (kind 'powershell.cmdline'), 20 s timeout, 5 s cache per pid; Linux /proc/<pid>/cmdline; macOS `ps -o command= -p <pid>`
-export function forceKill(pid: number): Promise<void>;                  // Windows: process.kill(pid) (= TerminateProcess, same effect as `taskkill /F`, no spawn); POSIX: process.kill(pid, 'SIGKILL'); ESRCH ignored; pid validated /^[1-9][0-9]{0,9}$/
+export function forceKill(pid: number): Promise<void>;                  // 06 4.2 (I-06, C12): Windows `taskkill.exe /PID <pid> /F` via execFileText kind 'taskkill' (10 s, 64 KiB; exit 128 = already gone = success); POSIX process.kill(pid, 'SIGKILL'), ESRCH ignored; pid validated /^[1-9][0-9]{0,9}$/
 export function waitForExit(pid: number, timeoutMs: number, pollMs?: number /* 100 */): Promise<boolean>;   // true when pidAlive turned false within timeoutMs
 
 // markers.ts (owner 01 S4): command-line markers and the runtime listing; all process.platform branching stays in platform/** (I-34)
@@ -878,11 +922,12 @@ export function tryAcquireMutex(name: string): Promise<ProcessMutex | null>;    
 export function acquireMutex(name: string, o: { timeoutMs: number; onWait?: (waitedMs: number) => void }): Promise<ProcessMutex>; // polls every 25-50 ms (jitter); throws McsError on timeout
 export function mutexName(kind: 'task' | 'bootstrap' | 'settings', key: string): string;   // 'mcs-<kind>-' + sha256(key.toLowerCase() on win32).slice(0, 16)
 ```
-Additions this document needs from 06 PP1 (stated as requirements on 06 3.6, not as a second definition): `ChildKind` gains `'node'`
-(spawns of `process.execPath`, for example 02 3.7 `hooks verify` and test helpers), `'python'` (the 6.5 version probe), `'icacls'` (the
-`doctor` ACL check, 6.4) and `'opener'` (`start --open`, 4.7); `ExecutableName` gains `'python'` (`MCS_PYTHON`, then `python`, `python3`,
-`py`, resolved to an absolute `.exe` on PATH), `'icacls'` (`%SystemRoot%/System32/icacls.exe`) and `'opener'` (Windows
-`%SystemRoot%/explorer.exe`, macOS `/usr/bin/open`, else `xdg-open` on PATH). Every call site here uses `timeoutMs` and
+Additions this document needs from 06 PP1 (stated as requirements on 06 3.6, not as a second definition; registry C11): 06's
+`ChildKind` already has `'node'` (spawns of `process.execPath`, for example 02 3.7 `hooks verify` and test helpers), `'python'` (the 6.5
+version probe and `$V`) and `'icacls'` (the `doctor` ACL check, 6.4); 06 adds `'opener'` (`start --open`, 4.7) and
+`resolveExecutable('opener')` (Windows `%SystemRoot%/explorer.exe`, macOS `/usr/bin/open`, else `xdg-open` on PATH). There is no
+`ExecutableName` type and no `resolveExecutable('python')`: 6.5 probes `MCS_PYTHON`, `python`, `python3`, `py` itself and passes the
+accepted absolute path as `ChildSpec.file`. Every call site here uses `timeoutMs` and
 `maxOutputBytes` explicitly: python probe 5000 ms / 4 KiB, icacls 10000 ms / 64 KiB, `git check-ignore` 5000 ms / 4 KiB, opener
 10000 ms / 4 KiB, runtime listing 20000 ms / 1 MiB.
 
@@ -892,8 +937,9 @@ the launcher which has its own zero-dependency copy, 5.1). `windowsHide: true` o
 per command, immediately before the kill decision, so the 5 s cache of 06 never serves it an older value; the server never kills.
 Rationale and evidence: E1 (a detached server has no console; its `windowsHide:true` children get no console window; a child that
 inherited stdio or omitted `windowsHide` from a console-less parent would get a new visible console, per the Win32 `CreateProcess`
-rules; that case was deliberately not run, to avoid flashing a window on the owner's desktop). E3: `process.kill(pid)` on Windows
-terminates at once without handlers, exactly like `taskkill /F`, so `forceKill` needs no child process.
+rules; that case was deliberately not run, to avoid flashing a window on the owner's desktop). E3: `process.kill(pid)` and `taskkill /F`
+both terminate at once without handlers; `forceKill` uses `taskkill /F` through `execFileText` (06 4.2, ADR 0006) so that every kill
+goes through the one audited child-process path and its `childStats`.
 
 `ProcessMutex` implementation: Windows: `net.createServer().listen('\\.\pipe\<name>')`; `EADDRINUSE` -> held (E3, E10: five contenders,
 never more than one holder; the pipe is released immediately when the holder dies, even by `taskkill /F`). Linux: abstract socket
@@ -903,7 +949,9 @@ by `rename` to `<name>.stale-<nonce>` then re-check the nonce (documented narrow
 `realpath(workspace)`) around every write command (configure, decide, init, migrate, upgrade, db migrate, db rebuild, ingest replay,
 backup, restore, cleanup, repair, set-engine, hooks enable/disable); `bootstrap` mutex (key = `realpath(runtimeDir)`) in the launcher
 (its zero-dependency copy, 5.1; design 05 3.3.4 and ADR 0047 reference the same name, I-24); `settings` mutex (key = absolute settings
-file path) around the hook installer's read-modify-write (02 3.5 step 1, I-29).
+file path, `path.resolve(settingsPath)`, lower-cased on win32 by `mutexName`; registry C48) around the hook installer's
+read-modify-write (02 3.5 step 1, I-29).
+
 
 ### 4.3 Control channel (ADR 0005)
 Address: Windows `\\.\pipe\mcs-<instanceId>`; Linux abstract `\0mcs-<instanceId>`; other POSIX `<os.tmpdir()>/mcs-<uid>/<instanceId>.sock`
@@ -931,7 +979,9 @@ export type ControlResponse =
 (realpath of its folder) inside `<ws>/data/backups/`, must not exist, and its folder must end with `.partial`; otherwise
 `BAD_REQUEST`. The reply for `backup` is sent when the copy finished (client timeout for this op: 10 minutes). `ingest-replay`
 validates `fromSegment` against `SPOOL_SEGMENT_RE` (else `BAD_REQUEST`) and calls `runtime.ingestReplay(fromSegment)` (4.4a), which
-resets the selected cursors inside one writer transaction and nudges the drainer; reply after the commit (client timeout 30 s). A shutdown received in phase
+calls 02's `IngestService.replay(fromSegment)` (02 2.7, 4.10: `applySpoolReplay` run from the writer queue, so it never interleaves with
+a drain) and maps its `segmentsReset` to the reply field `segments` (I-29, registry C03/C04); reply after the commit (client timeout
+30 s). A shutdown received in phase
 `starting` is honoured after boot reaches a safe point (the server aborts boot, closes the DB if open, exits 0). Measured (E3):
 `identify` 69 ms round trip, `shutdown` reply 52 ms and the process gone 10 ms later; graceful handlers ran; wrong token -> FORBIDDEN,
 process kept running.
@@ -1000,7 +1050,7 @@ export interface InstanceContext {
   readonly clock: Clock;
   readonly db: InstanceDb;                 // 03 4.5, mode 'serve'
   readonly scope: RepoContext;             // { instanceId }; passed first to every repository and query call
-  readonly queries: EngineQueries & TranscriptQueries;   // createQueries(db, { config, now: () => clock.now(), process }) (03 12.1)
+  readonly queries: EngineQueries & TranscriptQueries;   // createQueries(db, { config, now, audit, process, childStats, panelStats }) (03 12.1; I-15, C09); see "Query deps" below
   readonly errors: ErrorRing;
   readonly exec: ExecApi;
   readonly logger: Logger;                 // 05 engine/src/log/logger.ts (allow-listed fields)
@@ -1021,22 +1071,33 @@ export interface InstanceRuntime {
   start(): Promise<void>;                                                 // idempotent; second call is a no-op
   stop(deadlineMs: number): Promise<{ completed: boolean; pendingComponent: string | null }>;   // deadlineMs = absolute clock.now() value
   ingestUntilIdle(o: { timeoutMs: number }): Promise<{ idle: boolean; waitedMs: number; stats: IngestStats }>;
-  ingestReplay(fromSegment: string | null): Promise<{ segments: number }>;   // control op 4.3; 02 replaySpool
+  ingestReplay(fromSegment: string | null): Promise<{ segments: number }>;   // control op 4.3; = { segments: (await ingest.replay(fromSegment)).segmentsReset } (02 4.10)
   health(): HealthReport;                                                 // = ctx.queries.health(ctx.scope) (03 6.2)
-  readonly panels: PanelService;                                          // 06 createPanelService(ctx); the panels route uses it
+  readonly panels: PanelService;                                          // 06 createPanelService(ctx, { writer: ingest.writer }) (N-01); the panels route uses it
 }
 export function createInstanceRuntime(ctx: InstanceContext): InstanceRuntime;
+// context.ts: late binding of the panel statistics (the panel service is created after the context)
+export function bindPanelStats(ctx: InstanceContext, get: () => PanelStats): void;   // called once by createInstanceRuntime; before it, panelStats() returns {}
 ```
+There is no `workspaceDir` field: every design reads the workspace as `ctx.instanceDir` (registry C07). `InstanceContext` lives in
+`engine/src/runtime/context.ts` and `createInstanceRuntime` in `engine/src/runtime/instance-runtime.ts` (registry C15).
+
+Query deps (03 12.1 shape, registry C09; I-15): `buildInstanceContext` calls `createQueries(db, { config, now: () => clock.now(),
+audit, process, childStats: exec.childStats, panelStats })`, all six present for the server: `audit` = `{ entriesBetween: (fromMs,
+toMs, limit) => entriesBetween(ws, fromMs, toMs, limit) }` (7.1, async `Promise<AuditRef[]>`, I-19; `ws` = the workspace resolved in
+the same call); `process` = the `RuntimeProcessInfo` above; `panelStats` = the late-bound getter of `bindPanelStats`. The DbReader (6.1)
+passes `{ config, now, audit }` only; 03 reports the process, children and panel fields as absent.
+
 Components and their owners (created by `createInstanceRuntime` in this order; started in this order; stopped in reverse order):
 
 | # | Component | Factory (owner) | Start | Stop |
 |---|---|---|---|---|
-| 1 | ingest service | `createIngestService(ctx) -> { start, stop, untilIdle, replay, stats }` (02, `engine/src/ingest/service.ts`) | drain the spool from stored cursors, start discovery and the scheduler (02 2.7, 5.4) | finish the current batch, persist cursors (02 4.6) |
-| 2 | lifecycle sweeper | `createLifecycleSweeper(ctx) -> { start, stop, tick }` (02 7.8) | timer every `lifecycle.sweepIntervalMs` | clear the timer, await a running tick |
-| 3 | maintenance scheduler | `createMaintenanceScheduler(ctx) -> RuntimeComponent` (03 11.4: liveness mark, health refresh, alert sweep, announcements, WAL checkpoint, optimize, bookkeeping retention) | timers of 03 11.4 | clear timers, await a running job |
-| 4 | panel service | `createPanelService(ctx)` (06 3.2) | nothing (panels sample on request) | abort in-flight sources (`SourceCache.abort`) |
+| 1 | ingest service | `ingest = createIngestService(ctx)` -> `IngestService { writer, start, stop(deadlineMs), untilIdle({timeoutMs}), nudge, replay(from), stats }` (02 4.10, `engine/src/ingest/service.ts`) | `ingest.start()`: drain the spool from stored cursors, start discovery, the import scheduler and the external pollers (02 2.7, 5.4) | `ingest.stop(deadlineMs)`: finish the current batch, persist cursors (02 4.6) |
+| 2 | lifecycle sweeper | `sweeper = createLifecycleSweeper(ctx, { writer: ingest.writer })` -> `{ start, stop(deadlineMs), tickNow }` (02 4.10, 7.8) | `sweeper.start()`: timer every `lifecycle.sweepIntervalMs` | `sweeper.stop(deadlineMs)`: clear the timer, await a running tick |
+| 3 | DB scheduler | `sched = createDbScheduler(ctx)` -> `{ start(): void; stop(): Promise<void> }` (03 11.4, `engine/src/maintenance/schedule.ts`: liveness mark, health refresh, alert sweep, announcements, WAL checkpoint, optimize, bookkeeping retention), wrapped as `{ name: 'db-scheduler', start: () => sched.start(), stop: () => sched.stop() }` (registry C08) | timers of 03 11.4 | clear timers, await a running job |
+| 4 | panel service | `panels = createPanelService(ctx, { writer: ingest.writer })` (06 3.4, N-01) | `bindPanelStats(ctx, () => panels.stats())`; one `panels.tickAttempts()` at start, then a timer every 2000 ms (an unref'd `setTimeout` chain re-armed after each tick) calling `panels.tickAttempts()` through one serializer `tickAttemptsOnce()` (a tick is skipped while the previous one runs; a rejection is logged `attempts_tick_failed` and pushed to `ctx.errors`, never thrown; registry C57) | clear the timer, await a running tick (raced against `deadlineMs`), then `panels.close()` (aborts in-flight sources) |
 | 5 | state watchdog | `createStateWatchdog(ctx, { stateFileBytes })` (01, `runtime/state-watchdog.ts`) | timer every `process.stateWatchdogMs` (4.6) | clear the timer |
-| 6 | route file | `writeRouteFile` (02 2.6.2) called by `start()` with `stoppedAt: null` after the transcripts folder is resolved | - | the main writes `stoppedAt: now` in 4.5 step 5 |
+| 6 | route file | `writeRouteFile` (02 2.6.2) called by `start()` with `stoppedAt: null` after the transcripts folder is resolved (02 4.10 `ingest.start()` step 2 writes the same content earlier; the write is idempotent) | - | the main writes `stoppedAt: now` in 4.5 step 5 |
 
 Algorithms:
 - `start()`: for each component in order `await c.start()`; a failure stops the already started ones in reverse order (deadline
@@ -1045,19 +1106,26 @@ Algorithms:
   the first component that misses the deadline is returned as `pendingComponent` and the remaining ones still get `stop` called without
   waiting. Errors are logged (`component_stop_failed`, component name only) and never thrown. The DB is closed by the caller (4.5 step 4),
   not by the runtime.
-- `ingestUntilIdle({timeoutMs})`: loop until `timeoutMs` elapsed: `await ingest.untilIdle(remaining)` (02 defines idle: every spool
-  segment cursor at its size, no P0..P3 work queued, the writer queue empty); then `await sweeper.tick()` once (derives that became due);
-  then `ingest.untilIdle(0)` must still be true, else loop. Returns `idle: false` on timeout (never throws); `stats` = `ingest.stats()`.
-- `health()`: delegates to 03; 03 reads `ctx.process` (pid, uptime, outdated, `previousRunUnclean`, ownership conflict), `ctx.errors`,
-  `ctx.exec.childStats()` (`HealthReport.children`, I-21) and `runtime.panels.stats()` (`HealthReport.panels`, I-21) through the deps
-  passed to `createQueries`. `deps.process` is optional: the DbReader (stopped instance, 6.1) has none and reports those fields as absent.
+- `ingestUntilIdle({timeoutMs})` (I-15, registry C06): `deadline = clock.now() + timeoutMs`; loop: `remaining = deadline - clock.now()`;
+  if `remaining <= 0` return `idle: false`; `await ingest.untilIdle({ timeoutMs: remaining })` (02 4.10 defines idle: every spool
+  segment cursor at its size, no discovery or import work pending, the writer queue empty with no transaction in progress); it rejects
+  with `IngestIdleTimeoutError { pending }`, which is caught and mapped to `{ idle: false, waitedMs, stats: ingest.stats() }` (any other
+  error is rethrown); then `await sweeper.tickNow()` once (derives that became due) and `await tickAttemptsOnce()` (the serializer of
+  component 4; external attempts events, N-01); then `ingest.untilIdle({ timeoutMs: 0 })` must resolve, else loop. Returns `{ idle: true, waitedMs, stats }`
+  on success; it never rejects for a timeout. Callers assert `.idle === true` (06 5.4 parity harness, integration tests).
+- `health()`: delegates to 03; 03 reads `deps.process` (pid, uptime, outdated, `previousRunUnclean`, ownership conflict), `ctx.errors`,
+  `deps.childStats()` (`HealthReport.children`, I-21) and `deps.panelStats()` (`HealthReport.panels`, I-21), the deps of "Query deps"
+  above. The DbReader (stopped instance, 6.1) has no `process`, `childStats` or `panelStats` and reports those fields as absent.
 
 Tests that prove 4.4a (slice S8): `instance-runtime.test.ts` (unit, fake components): start order, reverse stop order, a component that
 throws in `start` stops the earlier ones, a component that hangs in `stop` is reported as `pendingComponent` and the later ones still
 stop; `ingest-until-idle.int.test.ts` (integration, real engine on a testkit workspace and Claude home): returns `idle: true` after
 the fixture is fully imported and `idle: false` within `timeoutMs + 200 ms` when a fake producer keeps appending; `context.test.ts`:
 `buildInstanceContext` maps identity, config and DB failures to the 4.1 exit names, and `ctx.queries` returns the same `instanceId` as
-`ctx.instanceId`.
+`ctx.instanceId`; `instance-runtime.test.ts` also asserts (Vitest fake timers) that `tickAttempts` runs at start and every 2000 ms, never
+
+twice concurrently, and not after `stop`, and that `ingestUntilIdle` maps `IngestIdleTimeoutError` to `idle: false`.
+
 
 ### 4.5 Graceful shutdown (control `shutdown`, `SIGINT`, `SIGTERM`, `SIGBREAK`, `SIGHUP`)
 Deadline `server.shutdownGraceMs` (default 5000) from the first trigger; a second trigger is ignored.
@@ -1505,8 +1573,8 @@ scripts/mcs.mjs  ->  @mcs/cli main(argv)  ->  parse (node:util parseArgs, per-co
     sessions(q: SessionListQuery): Promise<Page<SessionSummary>>;          // types from the API design / 04-ui.md
     session(id: string): Promise<SessionDetail | null>;
     usage(q: UsageQuery): Promise<UsageReport>;
-    errors(q: { sinceMs?: number; limit: number }): Promise<ServerErrorItem[]>;
-    explainCompletion(t: CompletionTarget): Promise<CompletionEvidence>;    // 02 7.13: explainCompletion(queries, target) in engine/src/lifecycle/completion.ts (I-08)
+    errors(q: { sinceMs?: number; limit: number }): Promise<ErrorItem[]>;   // 03 6.2 ErrorItem (N-08, C21)
+    explainCompletion(t: CompletionTarget): Promise<CompletionEvidence>;    // 03 EngineQueries.explainCompletion -> 02 7.13 explainCompletion(lookup, target, now); rejects McsError USAGE / NOT_FOUND (I-08, C16)
     exportTo(q: ExportQuery, out: NodeJS.WritableStream): Promise<ExportSummary>;   // data design
     close(): Promise<void>;
   }
@@ -1516,7 +1584,7 @@ scripts/mcs.mjs  ->  @mcs/cli main(argv)  ->  parse (node:util parseArgs, per-co
   test runs every reader method against both modes on the same fixture and compares.
 - File layout: `packages/cli/src/main.ts` (dispatch), `commands/<name>.ts` (option table + render only), `render/{text,json,legacy}.ts`,
   `io/terminal.ts` (scaffold); `packages/engine/src/ops/{workspace,config,audit,lifecycle,instances,upgrade,backup,cleanup,diagnostics,
-  hooks,data,legacy}.ts`.
+  hooks,ingest,data,legacy}.ts`.
 
 ```ts
 export interface OpContext {
@@ -1549,11 +1617,12 @@ export interface OpContext {
 - `--json`: stdout carries exactly one JSON document, the envelope:
   ```ts
   export interface CliEnvelope<T> { schema: 'mcs.cli/1'; command: string; ok: boolean; exitCode: 0 | 1 | 2; data: T | null; error: CliError | null; warnings: string[] }
-  export interface CliError { code: ErrorCode; message: string; hint: string | null; details: Record<string, unknown> | null }
+  export interface CliError { code: CliErrorCode; message: string; hint: string | null; details: Record<string, unknown> | null }
   ```
   For the five legacy-JSON commands, `data` is the legacy object. Schema: `schemas/cli-envelope.v1.schema.json`; per-command `data`
   types live in `@mcs/shared/cli/results.ts`.
-- Error codes (`@mcs/shared/errors.ts`): `USAGE` (exit 2) and, all exit 1: `CONFIG_INVALID CONFIG_SCHEMA_MISSING CONFIG_SCHEMA_UNSUPPORTED
+- Error codes (`@mcs/shared/errors.ts`, union `CliErrorCode`; the name `ErrorCode` belongs to 03's HTTP codes in `@mcs/shared/api/errors.ts`,
+  registry C19): `USAGE` (exit 2) and, all exit 1: `CONFIG_INVALID CONFIG_SCHEMA_MISSING CONFIG_SCHEMA_UNSUPPORTED
   CONFIG_UNREADABLE REGEX_UNSUPPORTED SLUG_INVALID TASK_NOT_FOUND WORKSPACE_ESCAPE WORKSPACE_SYMLINK WORKSPACE_INVALID
   WORKSPACE_EXISTS_CONFIG_DIFFERS INSTANCE_NOT_INITIALIZED IDENTITY_MISMATCH INSTANCE_RUNNING INSTANCE_NOT_RUNNING ENGINE_CONFLICT
   LEGACY_ENGINE_UNAVAILABLE START_FAILED START_TIMEOUT PORT_EXHAUSTED STOP_FAILED NOT_OUR_PROCESS DB_NEWER_THAN_RUNTIME
@@ -1591,9 +1660,10 @@ export interface OpContext {
 | `db migrate` | `--task`, `--dry-run`, `--yes` | text | 5.4 | yes | integrity check | `ops.upgrade.migrateDb` |
 | `db rebuild` | `--task`, `--yes`, `--confirm SLUG` | plan / result text | running, legacy engine, move failed | yes (no DB left = nothing to move, reports it) | DB files absent from `data/`, present in the backup with matching sha256 | `ops.upgrade.rebuildDb` |
 | `ingest replay` | `--task`, `--from SEGMENT`, `--yes` | plan / result text | invalid segment name, DB or control failure | yes (dedupe by `event_uid`, 02 2.7) | cursors re-read after the reset | `ops.ingest.replay` |
-| `hooks install` | `--scope project-local\|user`, `--settings-file PATH`, `--task`, `--dry-run`, `--yes` | plan / result text | invalid settings, write failed | yes | settings re-read and verified | ingestion design `planHooksInstall` + `applyHooksPlan` via `ops.hooks.install` |
-| `hooks verify` | same selectors | report | not installed or broken | yes | handler path exists, node path exists, entries well-formed | `ops.hooks.verify` |
-| `hooks uninstall` | same + `--yes` | plan / result text | write failed | yes | entries absent after re-read | `ops.hooks.uninstall` |
+| `hooks install` | `--scope project-local\|user`, `--settings-file PATH`, `--task`, `--sync-tool-events`, `--yes`, `--json` (dry run without `--yes`) | plan / result text | invalid settings, write failed | yes | settings re-read and verified | `ops.hooks.install` -> 02 `planHooks` + apply in `engine/src/hooks/installer/` (N-11, C23) |
+| `hooks verify` | same selectors, `--json` | report | not installed or broken | yes | handler path exists, node path exists, entries well-formed | `ops.hooks.verify` |
+| `hooks uninstall` | same + `--yes`, `--json` (dry run without `--yes`) | plan / result text | write failed | yes | entries absent after re-read | `ops.hooks.uninstall` |
+| `hooks status` | `--task`, `--json` | installed scopes, handler log summary, last envelope per instance (02 3.1 `HooksStatusResult`) | never | yes | - | `ops.hooks.status` |
 | `hooks enable` / `hooks disable` | `--task` | text | invalid | yes | `instance.json` read back | `ops.hooks.setEnabled` |
 | `sessions list` | `--task`, `--state`, `--since`, `--limit`, `--all` | text table | reader failed | yes | - | `InstanceReader.sessions` |
 | `sessions show` | `--task`, `--session ID`, `--events N`, `--include-text` | text | not found | yes | - | `InstanceReader.session` |
@@ -1701,7 +1771,10 @@ the warning in `detail`; exit 1 iff an error-level check is false.
 the backup path, and this consent text: `Hook settings apply to every Claude Code session that reads this settings file, including
 sessions that are already running.` Safety guard (C3): when `process.env.VITEST` or `MCS_TEST` is set, the command refuses any target
 outside `os.tmpdir()` (`HOOKS_FAILED`). `--settings-file` selects an explicit file (tests). With `--task`, an audit entry is written to
-that task. Implementation of planning/applying/verifying belongs to the ingestion design. `hooks enable|disable --task` writes
+that task. Implementation of planning/applying/verifying/status belongs to the ingestion design, in engine modules
+`engine/src/hooks/installer/{plan,apply,verify,uninstall,status,settings-io}.ts` (02 1.1, I-9; N-11, C23) that `ops.hooks.*` calls; the
+engine never imports `@mcs/cli`, and `cli/src/commands/hooks/*.ts` keep only option tables and rendering (INV-12). `--json` prints one
+`CliEnvelope` whose `data` is 02's `HooksApplyResult` / `HooksVerifyResult` / `HooksStatusResult`. `hooks enable|disable --task` writes
 `instance.json.hooks.enabled`, rewrites the route file (02 `writeRouteFile`) and audits `hooks-enable|hooks-disable`.
 
 **sessions list / show**: table columns `id(8) label state basis last-activity tokens(in/out) errors`. `show` prints metadata, state with
@@ -1715,7 +1788,7 @@ basis and evidence lines, the agent tree, and the last N events as `time kind to
 `{schema: 'mcs.diagnostics/1', generatedAt, runtime: {version, codeStamp, node, platform, arch, buildCurrent}, instance: {instanceId,
 slug, engine, dbSchemaVersion}, config: {files: ConfigFileStatus[], provenance, safeValues}, doctor: DoctorCheck[], status: StatusReport,
 health: HealthReport | null (03 6.2 as served, including `runtime.rssBytes/heapUsedBytes/cpuUserMicros/cpuSystemMicros`, `children` and
-`panels`, I-21; its `errors[].message` texts pass the same path rewriting), hooks: HooksVerifyReport | null, logTail: LogRecord[] (last 200 records of runtime.log; the logger's
+`panels`, I-21; its `errors[].message` texts pass the same path rewriting), hooks: HooksVerifyResult | null (02 3.1, C22), logTail: LogRecord[] (last 200 records of runtime.log; the logger's
 allow-listed fields only), disk: {freeBytes}}`. Redaction: `safeValues` contains only numbers, booleans and enum values of config keys
 (no strings: regex patterns appear as `<pattern length=N>`, paths as `<path>`); absolute paths elsewhere are rewritten relative to
 `<repo>` or `<home>`; no transcript text, prompts, tokens, environment values, or `run/control.token`.
@@ -1729,7 +1802,7 @@ and the meaning of `--include-content` (off by default) come from the data desig
 
 | Scope | Requires | Deletes |
 |---|---|---|
-| `stale-state` | `--task` | `state.json` when `probeInstance` is `stale`/`foreign-pid`/`legacy-stale` (compare-and-delete); `run/control.token` when no runtime; `*.tmp` older than 10 min in the workspace |
+| `stale-state` | `--task` | `state.json` when `probeInstance` is `stale`/`foreign-pid`/`legacy-stale` (compare-and-delete); `run/control.token` when no runtime; `*.tmp` older than 10 min in the workspace; `data/exports/.tmp-*` older than 10 min (C39) |
 | `init-leftovers` | `--repo` | dead staging folders in the tasks root (4.12 step 3) |
 | `logs` | `--task`, `--yes` | rotated `logs/*.log.N`, `boot.log.1`, `diagnostics-*.json` older than `--older-than` (default 30d) |
 | `backups` | `--task`, `--yes` | backups beyond `--keep` (default `backup.keep`), oldest first, never the newest `upgrade` backup |
@@ -1748,21 +1821,29 @@ for subagent-derived rows) exactly as the analytics functions report them; cost 
 **verify-completion** (I-08): the flags build the 02 7.13 `CompletionTarget`: `--session ID` -> `{sessionId}`, `--label TEXT` ->
 `{label}`, `--attempt PART` -> `{attemptPart}` (exactly one, else usage error); resolution order and ambiguity rules are 02's.
 `InstanceReader.explainCompletion(target)` returns 02's `CompletionEvidence {outcome: 'completed' | 'failed' | 'not_terminal', state,
-basis, confidence, evidence[], sessionId, ruleId}`; `outcome` is terminal only when `basis === 'observed'` (D9: completion only from
+basis, confidence, evidence[], sessionId: string | null, ruleId, resolvedBy, candidates}` (02 7.13; 03 builds the `CompletionLookup` and
+passes `now`, I-08); `outcome` is terminal only when `basis === 'observed'` (D9: completion only from
 SessionEnd reasons, daemon job state, or external evidence such as the attempts table). Output: `COMPLETED (observed): session <id8>`
 / `FAILED (observed): session <id8>` / `NOT TERMINAL: state=<state> (<basis>, confidence <c>)`, then one evidence line per item
 (`<source> <ISO time> <text>`, untrusted text escaped by `io/terminal.ts`). Exit 0 iff the outcome matches `--expect` (default
-`completed`; `terminal` accepts completed or failed); a target that resolves to nothing -> `NOT_FOUND` exit 1.
+`completed`; `terminal` accepts completed or failed). Errors (registry C16): 02's `CompletionTargetError` `target_invalid` (bad session
+id, label length, `attemptPart` longer than 512) -> `USAGE` exit 2; `target_not_found` -> `NOT_FOUND` exit 1; through the API reader
+the same cases arrive as 400 `validation_failed` / 404 `completion_target_not_found` and map to the same CLI codes. `sessionId: null`
+(an attempt row without a matched session) prints `attempt <part>` instead of `session <id8>`; `candidates > 1` adds `(<n> candidates,
+newest decides)`.
 
 **ingest replay** (I-29; behaviour owned by 02 2.7): `mcs ingest replay --task S [--from SEGMENT] [--yes]`.
 1. `--from` must match `SPOOL_SEGMENT_RE` (`hooks-<YYYYMMDD>T<HH>Z.ndjson`) and exist in `data/spool/`, else `USAGE` exit 2 /
    `NOT_FOUND` exit 1. Without `--from` every retained segment is selected.
 2. Without `--yes`: print the selected segments with sizes and `warning: dry run; pass --yes to apply`; exit 0.
-3. Running instance (`probeInstance` = `running`): control op `ingest-replay` (4.3) with the token; stopped instance: take the task
-   mutex, open the DB with `openInstanceDb({mode: 'maintenance'})` and call 02's `replaySpool(db, scope, {fromSegment, nowMs})` (sets
-   `offset = 0`, `sealed = 0` for the selected `spool_cursors` rows in one transaction), close. Any other probe state ->
-   `INSTANCE_RUNNING` "wait until the runtime is ready or stopped".
-4. Print `replay scheduled for <n> segments (duplicates are ignored by event_uid)`; audit `ingest-replay` (7.2). The re-read happens on
+3. Running instance (`probeInstance` = `running`): control op `ingest-replay` (4.3) with the token; the reply's `segments` is the
+   server's `IngestService.replay(from).segmentsReset`. Stopped instance: take the task mutex, open the DB with
+   `openInstanceDb({mode: 'maintenance'})`, `plan = await planSpoolReplay(scope, { spoolCursors }, <ws>/data/spool, fromSegment)` and
+   `{ segmentsReset } = applySpoolReplay(db, scope, plan)` (02 2.7: one transaction resetting the selected `spool_cursors` rows; I-29,
+   registry C04), close; `<n>` = `segmentsReset`. The dry run of step 2 prints the same `plan` (`segments[]`, `totalBytes`). Any other
+   probe state -> `INSTANCE_RUNNING` "wait until the runtime is ready or stopped".
+4. Print `replay scheduled for <n> segments (duplicates are ignored by event_uid)`; audit `ingest-replay` with the 7.2 template (02 2.7
+   step 5 uses it verbatim, registry C05). The re-read happens on
    the next drain (running) or at the next start (stopped).
 
 **db rebuild**: 5.4.
@@ -1775,7 +1856,10 @@ SessionEnd reasons, daemon job state, or external evidence such as the attempts 
 - Instances with `instance.json.engine = 'legacy'`: `start`, `stop`, `status`, `verify`, `restart`, `serve`, `check`, `doctor --task`
   delegate to `$V <command> --task <slug> --repo <repo>`. `configure`, `inspect`, `audit`, `decide`, `init` stay in Node (byte-compatible
   files, INV-02).
-- Python discovery: `MCS_PYTHON`, then `python`, `python3`, `py -3`; each candidate is accepted only if
+- Python discovery: `MCS_PYTHON`, then `python`, `python3`, `py -3`; each name is resolved to an absolute file by a PATH (x PATHEXT on
+  win32) lookup in `ops/legacy.ts` (no shell; 06 has no `resolveExecutable('python')`, registry C11) and passed as `ChildSpec.file` with
+  kind `'python'`; each candidate is accepted only if
+
   `<exe> -c "import sys; print('%d.%d' % sys.version_info[:2])"` prints a version >= 3.8 within 5 s (rejects the Windows Store alias
   stub). None -> `LEGACY_ENGINE_UNAVAILABLE` exit 1 with hint `mcs instances set-engine --task <slug> node`.
 - Delegation runs `spawnForeground(python, [<skill>/template/viewer.py, ...args])` and returns its exit code unchanged.
@@ -2108,30 +2192,39 @@ From `<skill>/runtime`: `npm run ci` (typecheck, lint, format check, tests, buil
 | 8.9 / 8.10 (CLI, export, settings, retention) | CLI list incl. instances, init, health, sessions, state, errors, diagnostics, config validation, completion evidence (6.3; R-8.9.9 via 02 7.13 `explainCompletion`, I-08); export, backup, retention cleanup with scope + confirmation, version info, diagnostics report (6.4); configuration inspection as `ConfigInspection` for API and UI (6.4, R-8.10.1, I-20); recovery commands `db rebuild`, `ingest replay` (5.4, 6.4) |
 | 8.3 (session detail) | project/task audit references: `entriesBetween` (7.1) feeding 03 `SessionDetail.auditRefs` (R-8.3.11, I-19) |
 | 8.7 (analytics) | the trend gate `analytics.usageTrend` has a schema home with default `false` (1.6, R-8.7.10, R-13.3.2, I-01) |
-| 7 / 11 (architecture, no duplicated logic) | one composition root for the server, the parity harness and in-process tests (4.4a, I-15); one process helper (4.2, I-06); one file-write primitive (1.2, I-28); one clock type (4.4a, I-36); one schema home for every `runtime.json` key (1.6, I-01) |
+| 7 / 11 (architecture, no duplicated logic) | one composition root for the server, the parity harness and in-process tests (4.4a, I-15); one process helper (4.2, I-06); one file-write primitive (1.2, I-28); one clock type (4.4a, I-36); one schema home for every `runtime.json` key, written by S1 from the owners' normative tables (1.6, I-01, N-03) |
 
 ## Open items
 1. POSIX control channel and mutex (Linux abstract socket, macOS lock-file fallback) are UNVERIFIED on this Windows machine. Plan: the
    05 CI matrix runs T-LC-01..16 and T-SEC-01 on Linux and macOS before release.
 2. The negative control of E1 (a child spawned without `windowsHide` from a console-less parent shows a window) was deliberately not run.
    Plan: run it once on a CI Windows runner (T-LC-13b) where a window is harmless; the design does not depend on its outcome.
-3. Plug-in contracts this document names and other designs implement (each owner adds the named export; this document already
-   specifies the call site, so nothing here waits on a decision):
-   - 02: `createIngestService(ctx) -> { start, stop, untilIdle, replay, stats }`, `createLifecycleSweeper(ctx) -> { start, stop, tick }`,
-     `replaySpool(db, scope, { fromSegment, nowMs })`, `SPOOL_SEGMENT_RE` / `SPOOL_SEGMENT_EXT`, `explainCompletion(queries, target)` with
-     `CompletionTarget` / `CompletionEvidence` (02 7.13, I-08), `IngestStats`; 02 3.1 nests its hooks `--json` object as envelope `data`
-     and uses the 7.2 `hooks-install` template; 02 3.5 step 1 uses `acquireMutex(mutexName('settings', path))` (I-29).
-   - 03: `createQueries(db, { config, now, process? })` accepting `RuntimeProcessInfo` (4.4a) and reading `childStats()` / panel stats for
-     `HealthReport.children` / `.panels` (I-21); `createMaintenanceScheduler(ctx)` for the 11.4 timers; `LegacyHealth` adopts the C-4 key
-     list (I-30); `server.devOrigins` dropped (I-31); `GET /api/v3/config` serves `toConfigInspection(ctx.config, 'node')`.
-   - 06 PP1: `ChildKind` += `'node' | 'python' | 'icacls' | 'opener'`, `ExecutableName` += `'python' | 'icacls' | 'opener'`,
-     `spawnDetached`/`spawnForeground` as in 4.2, `forceKill` + `waitForExit` replacing `killPid`; 06 4.3 step 5 defers to
+3. Plug-in contracts this document calls with the owners' shapes (revision 3 adopts every owner's signature as listed in
+   `98-contract-registry.md` section 2; nothing here waits on a decision):
+   - 02: `createIngestService(ctx) -> IngestService { writer, start, stop(deadlineMs), untilIdle({timeoutMs}) (rejects
+     IngestIdleTimeoutError), nudge, replay(from) -> {segmentsReset}, stats }` and `createLifecycleSweeper(ctx, { writer }) -> { start,
+     stop(deadlineMs), tickNow }` (02 4.10); `planSpoolReplay` / `applySpoolReplay` (02 2.7); control op `ingest-replay` with
+     `fromSegment` and the 7.2 audit template (I-29, C03-C05); `SPOOL_SEGMENT_RE` / `SPOOL_SEGMENT_EXT`; `explainCompletion(lookup,
+     target, now)` with `CompletionTargetError` (02 7.13, I-08); `ctx.instanceDir`, not `workspaceDir` (C07); installer modules under
+     `engine/src/hooks/installer/` and `hooks status` (N-11, C23); 02 3.5 step 1 uses `acquireMutex(mutexName('settings',
+     path.resolve(settingsPath)))` (C48); lifecycle test ids `T-LF-*` (N-12, C37: `T-LC-*` stay this document's 4.16 ids).
+   - 03: `createQueries(db, { config, now, audit, process?, childStats?, panelStats? })` (03 12.1, C09) with `AuditReader.entriesBetween`
+     returning `Promise<AuditRef[]>` (I-19); `createDbScheduler(ctx)` (03 11.4, C08); `ErrorItem` for `InstanceReader.errors` (N-08);
+     `LegacyHealth` adopts the C-4 key list (I-30); `server.devOrigins` dropped (I-31); `GET /api/v3/config` serves
+     `toConfigInspection(ctx.config, 'node')`; no `configWarnings` (N-05).
+   - 06: `createPanelService(ctx, { writer })` with `tickAttempts()` driven by the 4.4a timer, events submitted after the attempts
+     transaction commits (N-01); `ChildKind` += `'opener'` and `resolveExecutable('opener')` (C11); `forceKill` by `taskkill /F` (C12);
+     `listRuntimeProcesses` stays in this document's `platform/markers.ts` (C13); `InstanceContext` cited from `runtime/context.ts`
+     (C15); `CONFIG_INVALID` messages instead of `E_ATTEMPTS_TIME_FORMAT` / `E_MSYS_PATH` (N-06, 2.4); 06 4.3 step 5 defers to
      `writePyJsonFile` (I-28); the 06 7.1/7.2 runbook uses `backup restore --id`, `db rebuild`, `cleanup --scope`, `export
      --include-content`, `backup.keep` and the HealthReport fields of 03 (I-12); the 06 lint rule on `process.platform` allows
      `platform/**` (I-34).
-   - 04: `ConfigInspection.entries[].source` (not `provenance`) and the `ConfigFileStatus` superset (6.4).
+   - 04: `ConfigInspection.entries[].source` (not `provenance`) and the `ConfigFileStatus` superset (6.4); E2E specs start instances
+     with `$MCS`, no `MCS_E2E_PORT` (I-27, N-02).
    - 05: S-LOG-6 rotation constants (I-25), ADR 0047 references the `bootstrap` mutex name (I-24), `tooling/env-vars.test.ts` (I-27),
-     npm script `migrate` = `node packages/cli/dist/main.js db migrate` (I-26).
+     npm script `migrate` = `node packages/cli/dist/main.js db migrate` (I-26); `Clock` only in `shared/src/time.ts` (I-36, C27);
+     testkit `makeTempDir`, `hermeticEnv`, `startInstance`, `spawnImpostor`, `makeJunction`, `snapshotTree`, `allocatePort` (C32, C33);
+     S9 owns only `tests/isolation/_setup.ts` (N-07); the smoke gate drives `$MCS init/start/stop` (N-02).
    Verification: the lead's Phase 1 reconciliation greps each named export in the owning design; Phase 2 contract tests
    (`instance-runtime.test.ts`, `runtime-sections.contract.test.ts`, T-CLI-05) fail on any mismatch.
 4. Lead annotations of foundations (no behaviour here depends on the outcome): D7 Node floor 22.12 -> 22.22.0 (I-05); D3/D8 spool
@@ -2144,7 +2237,13 @@ From `<skill>/runtime`: `npm run ci` (typecheck, lint, format check, tests, buil
      ctx).regex` / `.exec()`, `McsError` code `REGEX_UNSUPPORTED`], `initInstance(repo, slug, options)` [`ops.workspace.init(ctx, InitInput)`],
      "start adds runtime.json" [`runtime.json` is optional and created only by `configure`/`config migrate`];
    - `04-ui.md` S-8 `runtime.json tasks[]` vs design 02 `board.items` [`board.items`].
+6. Owner's bounds versus legacy configs (N-04, 1.6): 02 1.2 makes `import.lookbackHours` an integer >= 1 and `import.tailWindowBytes`
+   >= 1 MiB, so a legacy `config.json` with a fractional `window_hours` (e.g. 1.5) or `limits.event_window_mb` < 1 starts under `$V`
+   but is refused by Node with a message naming the R key to set. 01 adopts the bounds as required; if 02 wants such configs to keep
+   working, 02 1.2 widens the bounds (`number > 0`, 64 KiB) or asks 01 for a `ceil` derivation map, and both tables change in one
+   commit. Test: `derived-defaults.test.ts` (1.6) pins the current behaviour.
 No other open item: every other behaviour above is specified and has a test.
+
 
 ## Phase 2+ task slices (dependency order; each slice is independently testable; files are under `<skill>/runtime/` unless stated)
 
@@ -2153,21 +2252,22 @@ Global order (critic slicing notes, 99 section 3): 05 S1 -> 01 S1 -> {01 S2, 01 
 
 | # | Slice | Owns (files) | Depends on | Done when |
 |---|---|---|---|---|
-| S1 | Shared contracts | `packages/shared/src/{ids.ts,errors.ts,version.ts,time.ts,env.ts}`, `files/{instance,state,backup-manifest}.ts`, `config/runtime/{section,index,server,process,logging,backup,lifecycle,hooks,ingest,import,spool,health,analytics}.ts` (schema modules of 1.6, including the 02/03 sections, I-01), `cli/{envelope,results}.ts` (incl. `ConfigInspection`, `toConfigInspection`), `protocol/control.ts` | 05 S1 scaffold | `runtime-sections.contract.test.ts`, `derived-defaults.test.ts`, slug rules, `R_TOP_KEYS` disjoint from L keys, `RUNTIME_VERSION` = package version, `DOCUMENTED_ENV_VARS` complete (05's `env-vars.test.ts`) |
-| S2 | PyJson | `packages/engine/src/pyjson/*`, `tests/legacy-parity/pyjson/*` (generator + golden JSON) | S1 | E6 golden 0 mismatches; round-trip property tests |
-| S3 | Python-regex translator | `packages/shared/src/pyregex/*`, `tests/legacy-parity/regex/*` | S1 | goldens and rejects (2.8) pass; V9 replica + opt-in live check |
+| S1 | Shared contracts | `packages/shared/src/{ids.ts,errors.ts,version.ts,time.ts,env.ts}`, `files/{instance,state,backup-manifest}.ts`, `config/runtime/{section,index,server,process,logging,backup,lifecycle,hooks,ingest,import,spool,health,analytics,board,panelOptions,retention,alerts,pricing}.ts` (every schema module of 1.6, transcribed from the owners' normative tables with `R_KEY_CATALOGUE` owner/ref; I-01, N-03), `cli/{envelope,results}.ts` (incl. `ConfigInspection`, `toConfigInspection`), `protocol/control.ts` | 05 S1 scaffold | `runtime-sections.contract.test.ts`, `derived-defaults.test.ts`, slug rules, `R_TOP_KEYS` disjoint from L keys, `RUNTIME_VERSION` = package version, `DOCUMENTED_ENV_VARS` complete (05's `env-vars.test.ts`) |
+| S2 | PyJson | `packages/engine/src/pyjson/*`, `tests/parity/pyjson.golden.test.ts` (N-07: `@mcs/*` resolves only under `runtime/`), `<skill>/tests/legacy-parity/pyjson/*` (generator + golden JSON, data only) | S1 | E6 golden 0 mismatches; round-trip property tests |
+| S3 | Python-regex translator | `packages/shared/src/pyregex/*`, `tests/parity/pyregex.golden.test.ts` (N-07), `<skill>/tests/legacy-parity/regex/*` (golden JSON, data only) | S1 | goldens and rejects (2.8) pass; V9 replica + opt-in live check |
 | S4 | Platform: mutex and markers | `packages/engine/src/platform/{mutex,markers}.ts` (exec.ts and process.ts are 06 PP1, delivered in the same step with the 4.2 additions, I-06) | S1, 06 PP1 | mutex contention test (E10 as a test), `mutexName` table test, marker table test (backslashes, case, other instance id), `listRuntimeProcesses` finds a spawned test server and not an impostor, T-LC-16 |
 | S5 | Config resolution | `packages/engine/src/config/{defaults,merge,validate-legacy,resolve,provenance,migrations}.ts` | S2, S3 | 2.x unit tests, legacy validation message goldens, C-3 merge tests, derived defaults (1.6) |
-| S6 | Workspace + audit | `packages/engine/src/workspace/{fsio,paths,init,adopt,list,repair,snapshot}.ts`, `audit/{writer,reader}.ts` (`entriesBetween`, I-19) | S2, S4, S5, 06 PP1 `fsx.ts` | T-LC-10/11/12, T-AU-01..06, T-ISO-01/02/06/07/21, E5 retry cases as tests through `writeWorkspaceFile` |
-| S7 | Ops: config/audit commands | `packages/engine/src/ops/{config,audit}.ts`, `packages/cli/src/commands/{init,inspect,configure,decide,audit,check,discover}.ts`, `packages/cli/src/{main,render/*}.ts` | S5, S6 | T-CLI-01/03/04, `config-inspection.test.ts`, T-XE-01/02 |
-| S8 | Server lifecycle shell + composition root (I-15) | `packages/server/src/{main,boot,control-channel,shutdown,state-file}.ts`, `packages/engine/src/runtime/{context,instance-runtime,error-ring,state-watchdog,test-hooks}.ts` (+ the `/api/health` compat route if C-4 is accepted; owner of the route body is 03) | S4, S5, 03 S1 (DB open), 02/03/06 factories as stubs until their slices land | `instance-runtime.test.ts`, `context.test.ts`, `ingest-until-idle.int.test.ts` (with 02's service once I-4 lands; with a fake service before), T-LC-03/04/05/07/14 |
-| S9 | Ops: lifecycle | `packages/engine/src/ops/lifecycle.ts`, `probe.ts`, CLI `start stop status restart verify serve` | S7, S8, 06 PP1 (`forceKill`, `commandLineOf`) | T-LC-01/02/06/08/09/13/15, T-ISO-13/14/18/19/20/22 |
+| S6 | Workspace + audit | `packages/engine/src/workspace/{fsio,paths,init,adopt,list,repair,snapshot}.ts`, `audit/{writer,reader}.ts` (`entriesBetween`, I-19); unit rows T-ISO-01/02/07 next to their modules | S2, S4, S5, 06 PP1 `fsx.ts` | T-LC-10/11/12, T-AU-01..06, T-ISO-01/02/06/07/21, E5 retry cases as tests through `writeWorkspaceFile` |
+| S7 | Ops: config/audit commands | `packages/engine/src/ops/{config,audit}.ts`, `packages/cli/src/commands/{init,inspect,configure,decide,audit,check,discover}.ts`, `packages/cli/src/{main,render/*}.ts`, `tests/isolation/config-write-isolation.test.ts` (3.5, N-07) | S5, S6 | T-CLI-01/03/04, `config-inspection.test.ts`, T-XE-01/02 |
+| S8 | Server lifecycle shell + composition root (I-15) | `packages/server/src/{main,boot,control-channel,shutdown,state-file}.ts`, `packages/engine/src/runtime/{context,instance-runtime,error-ring,state-watchdog,test-hooks}.ts` (+ the `/api/health` compat route if C-4 is accepted; owner of the route body is 03) | S4, S5, S6 (`entriesBetween` for `deps.audit`), 03 S1 (DB open), 02/03/06 factories (`createIngestService`, `createLifecycleSweeper`, `createDbScheduler`, `createQueries`, `createPanelService`) as stubs with the owners' signatures until their slices land | `instance-runtime.test.ts`, `context.test.ts`, `ingest-until-idle.int.test.ts` (with 02's service once I-4 lands; with a fake service before), T-LC-03/04/05/07/14 |
+| S9 | Ops: lifecycle | `packages/engine/src/ops/lifecycle.ts`, `probe.ts`, CLI `start stop status restart verify serve`, `tests/isolation/{db-identity,lifecycle-isolation,restart-isolation,ownership-isolation}.test.ts` (3.5, N-07) | S7, S8, 06 PP1 (`forceKill`, `commandLineOf`) | T-LC-01/02/06/08/09/13/15, T-ISO-13/14/18/19/20/22 |
 | S10 | Launcher | `<skill>/scripts/mcs.mjs` (with its zero-dependency mutex, runtime listing and spawn copies, 5.1) | S9, 05 stamps | T-UP-01..04/10, `launcher-parity.test.ts` |
 | S11 | Instances, doctor, diagnostics | `ops/{instances,diagnostics}.ts`, CLI `instances doctor diagnostics errors version` | S9 | T-CLI-09, T-SEC-02, doctor checks |
-| S12 | Backup, upgrade, cleanup, db rebuild | `ops/{backup,upgrade,cleanup}.ts` (incl. `rebuildDb`), CLI `backup upgrade db config migrate cleanup` | S9, 03 migrations/backup | T-UP-05..09, T-ISO-24..27, T-CLI-06, T-CLI-12 |
-| S13a | Data readers | `ops/data.ts`, `reader/{api-reader,db-reader}.ts`, CLI `sessions usage export` | S9, 03 S5 queries | T-CLI-05 (all methods except `explainCompletion`), T-CLI-13, T-ISO-09..12 |
+| S12 | Backup, upgrade, cleanup, db rebuild | `ops/{backup,upgrade,cleanup}.ts` (incl. `rebuildDb`), CLI `backup upgrade db config migrate cleanup`, `tests/isolation/upgrade-isolation.test.ts` (+ rows in the S7/S9 files, 3.5) | S9, 03 migrations/backup | T-UP-05..09, T-ISO-24..27, T-CLI-06, T-CLI-12 |
+| S13a | Data readers | `ops/data.ts`, `reader/{api-reader,db-reader}.ts`, CLI `sessions usage export`, `tests/isolation/{read-isolation,token-isolation,search-isolation}.test.ts` (3.5, N-07) | S9, 03 S5 queries | T-CLI-05 (all methods except `explainCompletion`), T-CLI-13, T-ISO-09..12 |
 | S13b | Completion evidence | `reader/*` `explainCompletion` wiring, CLI `verify-completion` | S13a, 02 I-7b (`explainCompletion`, I-08) | T-CLI-08, T-CLI-05 for `explainCompletion` |
-| S14 | Hooks and ingest CLI wrappers | `ops/{hooks,ingest}.ts`, CLI `hooks *`, `ingest replay` | S8 (control op), 02 installer and `replaySpool` | T-CLI-10, T-CLI-11, hooks tests owned by 02 |
+| S14 | Hooks and ingest CLI wrappers | `ops/{hooks,ingest}.ts`, CLI `hooks install/verify/uninstall/status/enable/disable`, `ingest replay` | S8 (control op), 02 I-9 installer in `engine/src/hooks/installer/` (N-11), 02 `planSpoolReplay` / `applySpoolReplay` (I-29) |
+ T-CLI-10, T-CLI-11, hooks tests owned by 02 |
 | S15 | Legacy delegation + cross-engine | `ops/legacy.ts`, `tests/legacy-parity/cross-engine/*` | S9 | T-XE-03..07, T-ISO-23, T-CLI-07 |
 | S16 | Schemas + SKILL.md + docs | `runtime/scripts/gen-schemas.mjs`, `<skill>/schemas/*`, appendix A -> `<skill>/SKILL.md` (lead, Phase 6), operations/configuration/instance-isolation/migration doc sections | all | schema drift test, docs reviewed against the commands' `--help`, env docs test (2.10) |
 
