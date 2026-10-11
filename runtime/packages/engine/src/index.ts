@@ -51,6 +51,17 @@ export type { RuntimeProcess } from './platform/markers.ts';
 // @wp-end WP-07
 
 // @wp-begin WP-08
+export { AGENT_RE, RUN_ID_RE, SID_RE, isContained, resolveContained, walkNoLinks } from './security/paths.ts';
+export type { WalkOptions, WalkSummary } from './security/paths.ts';
+export {
+  LOG_FIELD_NAMES,
+  LOG_KEEP,
+  LOG_MAX_QUEUED_LINES,
+  LOG_ROTATE_BYTES,
+  LOG_ROTATE_RETRY_BUDGET_MS,
+  createLogger,
+} from './log/logger.ts';
+export type { LogFields, LogLevel, Logger, LoggerOptions, LoggerStats } from './log/logger.ts';
 // @wp-end WP-08
 
 // @wp-begin WP-09
