@@ -44,7 +44,10 @@
     "ci": "node scripts/ci.mjs",
     "ci:full": "node scripts/ci.mjs --full",
     "schemas": "node scripts/gen-schemas.mjs",
-    "schemas:check": "node scripts/gen-schemas.mjs --check"
+    "schemas:check": "node scripts/gen-schemas.mjs --check",
+    "pretest:int": "node scripts/lib.mjs require-build",
+    "pretest:isolation": "node scripts/lib.mjs require-build",
+    "pretest:resilience": "node scripts/lib.mjs require-build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
