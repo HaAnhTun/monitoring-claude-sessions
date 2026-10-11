@@ -1,0 +1,30 @@
+{
+  "name": "@mcs/shared",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@mcs/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./protocol": {
+      "@mcs/source": "./src/protocol/index.ts",
+      "types": "./dist/protocol/index.d.ts",
+      "default": "./dist/protocol/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  }
+}

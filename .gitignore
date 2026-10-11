@@ -6,3 +6,13 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.tmp
+
+# Node runtime (v3)
+runtime/node_modules/
+runtime/packages/*/dist/
+runtime/coverage/
+runtime/.mcs-build.json
+runtime/.dev/
+runtime/packages/web/e2e/test-results/
+runtime/packages/web/e2e/playwright-report/
+*.tsbuildinfo

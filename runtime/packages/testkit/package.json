@@ -1,0 +1,30 @@
+{
+  "name": "@mcs/testkit",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Test-only fixture builders and helpers. Every artefact it writes is a labelled synthetic fixture.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@mcs/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./legacy": {
+      "@mcs/source": "./src/legacy/index.ts",
+      "types": "./dist/legacy/index.d.ts",
+      "default": "./dist/legacy/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mcs/shared": "3.0.0"
+  }
+}

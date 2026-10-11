@@ -1,0 +1,26 @@
+{
+  "name": "@mcs/cli",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mcs": "dist/main.js"
+  },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mcs/engine": "3.0.0",
+    "@mcs/shared": "3.0.0"
+  },
+  "devDependencies": {
+    "@mcs/testkit": "3.0.0"
+  }
+}

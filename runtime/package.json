@@ -1,0 +1,67 @@
+{
+  "name": "@mcs/runtime",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Runtime workspace of the monitoring-claude-sessions skill (engine, server, CLI, web UI).",
+  "license": "UNLICENSED",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/engine",
+    "packages/server",
+    "packages/cli",
+    "packages/web",
+    "packages/testkit"
+  ],
+  "engines": {
+    "node": "^22.22.0 || ^24.0.0 || >=26.0.0"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "node scripts/clean.mjs && tsc -b tsconfig.build.json && npm run build -w @mcs/web && node scripts/build-stamp.mjs write",
+    "typecheck": "node scripts/typecheck.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:deps": "node scripts/check-deps.mjs",
+    "test": "vitest run --project unit --project web --project integration --project isolation --project resilience",
+    "test:unit": "vitest run --project unit --project web",
+    "test:int": "vitest run --project integration",
+    "test:isolation": "vitest run --project isolation",
+    "test:resilience": "vitest run --project resilience",
+    "test:parity": "vitest run --project parity",
+    "test:tooling": "vitest run --project tooling",
+    "test:coverage": "vitest run --coverage --project unit --project web --project integration",
+    "test:e2e": "playwright test -c packages/web/e2e/playwright.config.ts",
+    "dev": "node scripts/dev.mjs",
+    "start": "node packages/cli/dist/main.js start",
+    "migrate": "node packages/cli/dist/main.js db migrate",
+    "health": "node packages/cli/dist/main.js verify",
+    "init-instance": "node packages/cli/dist/main.js init",
+    "audit": "npm audit --audit-level=low",
+    "audit:prod": "npm audit --omit=dev --audit-level=low",
+    "ci": "node scripts/ci.mjs",
+    "ci:full": "node scripts/ci.mjs --full"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.0",
+    "@tsconfig/node24": "24.0.5",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.3",
+    "eslint": "10.12.0",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  },
+  "overrides": {
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
+    }
+  }
+}
