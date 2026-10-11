@@ -587,6 +587,65 @@ export type { EntryTextFailure, EntryTextOptions, TranscriptRef } from './ingest
 // @wp-end WP-34
 
 // @wp-begin WP-35
+export {
+  IngestIdleTimeoutError,
+  createIngestService,
+  importSettingsOf,
+  lifecycleCfgOf,
+  publishRouteFile,
+  sessionRulesOf,
+} from './ingest/service.ts';
+export type { IngestService, IngestServiceOptions, IngestStats } from './ingest/service.ts';
+export { createLifecycleSweeper } from './lifecycle/sweeper.ts';
+export type { LifecycleSweeper, SweeperContext, SweeperOptions, SweeperWriter } from './lifecycle/sweeper.ts';
+export { nodeExternalFs } from './external/fs.ts';
+export type { ExternalFs, ExternalPoll } from './external/fs.ts';
+export { createRegistryReader, REGISTRY_REPEAT_MS } from './external/registry.ts';
+export type { RegistryEvent, RegistryReader, RegistryReaderOptions } from './external/registry.ts';
+export { createJobsReader } from './external/jobs.ts';
+export type { JobEvent, JobsReader, JobsReaderOptions } from './external/jobs.ts';
+export { pidEvents } from './external/pid.ts';
+export type { PidEvent, PidTarget } from './external/pid.ts';
+export {
+  bindHealthSources,
+  computeIngestHealth,
+  createIngestHealthEvaluator,
+  healthContextOf,
+  ingestHealthEvaluatorOf,
+  parseHandlerLog,
+  percentile95,
+  thresholdsOf,
+} from './health/ingest-health.ts';
+export type {
+  HealthContext,
+  HealthSources,
+  HealthThresholds,
+  IngestHealthEvaluator,
+  IngestHealthFacts,
+  WriterFigures,
+} from './health/ingest-health.ts';
+export {
+  activeAlertConditions,
+  createAlertInputTracker,
+  emitAlertInputs,
+  subscribeAlertInputs,
+} from './health/alert-inputs.ts';
+export type {
+  AlertInput,
+  AlertInputCode,
+  AlertInputListener,
+  AlertInputSnapshot,
+  AlertInputTracker,
+  AlertPayload,
+} from './health/alert-inputs.ts';
+export { bindActivityFlush, createDbScheduler, createDbSchedulerWith } from './maintenance/schedule.ts';
+export type {
+  DbScheduler,
+  DbSchedulerHandle,
+  HealthRefresher,
+  SchedulerContext,
+  SchedulerSeams,
+} from './maintenance/schedule.ts';
 // @wp-end WP-35
 
 // @wp-begin WP-37
