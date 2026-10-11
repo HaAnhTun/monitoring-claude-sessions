@@ -96,6 +96,39 @@ export type { ChangeRecorder } from './db/changes.ts';
 // @wp-end WP-09
 
 // @wp-begin WP-12
+export {
+  checkSchemaVersion,
+  defaultSkillDir,
+  getEntry,
+  loadSkillDefaults,
+  parseLegacyConfig,
+  readConfigJson,
+  readOptionalConfigJson,
+  schemaVersionOf,
+  LegacyConfigSchema,
+} from './config/defaults.ts';
+export type { LegacyConfig, PyObject, SkillDefaults } from './config/defaults.ts';
+export { L_MERGED, isPlainObject, mergeLayer } from './config/merge.ts';
+export type { PlainObject } from './config/merge.ts';
+export {
+  FILE_MIGRATIONS,
+  applyMigrations,
+  assertMigrationRegistry,
+  latestFileVersion,
+  planFileMigrations,
+} from './config/migrations.ts';
+export type { FileMigration, MigratedFile } from './config/migrations.ts';
+export { leafPaths, legacyProvenance, runtimeProvenance } from './config/provenance.ts';
+export type { RuntimeLayer } from './config/provenance.ts';
+export { resolveConfig } from './config/resolve.ts';
+export type { ConfigWorkspace, ResolveInput, ResolvedConfig } from './config/resolve.ts';
+export {
+  LEGACY_KEYS,
+  LegacyConfigFileSchema,
+  compileConfigPatterns,
+  validateLegacy,
+} from './config/validate-legacy.ts';
+export type { CompiledPatterns, LegacyKeySpec, LegacyValidateOptions } from './config/validate-legacy.ts';
 // @wp-end WP-12
 
 // @wp-begin WP-13
