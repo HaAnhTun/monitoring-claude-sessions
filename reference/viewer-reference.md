@@ -20,4 +20,4 @@ Common options: `--repo` (default `.`), `--root` (tasks root), `--config`, `--ta
 Task: `<task>/state.json` (pid, url, port). Legacy: `<config>.state.json`. The real URL is there (the next free port is used if the configured one is busy).
 
 ## Cost
-About 50 MB RAM with 300+ transcripts known and a few percent of one core with a tab open; nothing runs when no tab polls. Readers idle for 30 minutes are dropped.
+About 30 MB RAM; 0.1% of one core with no tab, 3-4% with a tab open (measured 2026-10-11); nothing runs when no tab polls. Readers idle for 30 minutes are dropped.

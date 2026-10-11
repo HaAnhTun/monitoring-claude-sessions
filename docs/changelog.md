@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1 (2026-10-11)
+- **CPU:** the machine panel spawned `tasklist` on every poll (about 0.7 s of CPU per call, roughly a third of a core with one tab open); replaced by Win32 calls (about 16 ms). Git/overview results are cached 10 s instead of 4 s. Measured afterwards: no client 0.10% of one core (27 MB), one tab about 3-4% (33 MB), three tabs about 4.4%.
+- Helper processes no longer open console windows (CREATE_NO_WINDOW).
+
 ## 2.0.0 (2026-10-11)
 Second major version: reliability, task workspaces, new UI.
 

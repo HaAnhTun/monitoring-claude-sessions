@@ -206,7 +206,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif u.path == '/api/task':
                 self.send(200, json.dumps(mon.task_view()), J)
             elif u.path == '/api/overview':
-                self.send(200, mon.cached('overview', 4, lambda: panels.overview(mon.cfg)), J)
+                self.send(200, mon.cached('overview', 10, lambda: panels.overview(mon.cfg)), J)
             elif u.path == '/api/machine':
                 self.send(200, mon.cached('machine', 1.8, lambda: panels.machine(mon.cfg)), J)
             elif u.path == '/api/logs':

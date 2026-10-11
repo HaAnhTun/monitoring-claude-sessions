@@ -108,6 +108,55 @@ def cpu_pct_windows():
     return int(round(100.0 * (dk + du - di) / (dk + du))) if dk + du > 0 else None
 
 
+class PROCENTRY(ctypes.Structure):
+    _fields_ = [('dwSize', ctypes.c_ulong), ('cntUsage', ctypes.c_ulong), ('th32ProcessID', ctypes.c_ulong), ('th32DefaultHeapID', ctypes.c_size_t),
+                ('th32ModuleID', ctypes.c_ulong), ('cntThreads', ctypes.c_ulong), ('th32ParentProcessID', ctypes.c_ulong),
+                ('pcPriClassBase', ctypes.c_long), ('dwFlags', ctypes.c_ulong), ('szExeFile', ctypes.c_wchar * 260)]
+
+
+class PMC(ctypes.Structure):
+    _fields_ = [('cb', ctypes.c_ulong), ('PageFaultCount', ctypes.c_ulong), ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+                ('QuotaPeakPagedPoolUsage', ctypes.c_size_t), ('QuotaPagedPoolUsage', ctypes.c_size_t), ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
+                ('QuotaNonPagedPoolUsage', ctypes.c_size_t), ('PagefileUsage', ctypes.c_size_t), ('PeakPagefileUsage', ctypes.c_size_t)]
+
+
+def windows_process_memory(watched):
+    """name -> {name, count, mb} (working set) for the watched executables, through the Win32 API. Spawning `tasklist`
+    cost about 0.7 s of CPU per call; this takes a few milliseconds."""
+    from ctypes import wintypes
+    k = ctypes.WinDLL('kernel32', use_last_error=True)
+    k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    k.Process32FirstW.argtypes = k.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCENTRY)]
+    k.OpenProcess.restype = wintypes.HANDLE
+    k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
+    k.CloseHandle.argtypes = [wintypes.HANDLE]
+    procs = {}
+    snap = k.CreateToolhelp32Snapshot(0x2, 0)       # TH32CS_SNAPPROCESS
+    if snap in (None, wintypes.HANDLE(-1).value):
+        return procs
+    try:
+        e = PROCENTRY()
+        e.dwSize = ctypes.sizeof(PROCENTRY)
+        ok = k.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            if e.szExeFile.lower() in watched:
+                d = procs.setdefault(e.szExeFile, {'name': e.szExeFile, 'count': 0, 'mb': 0})
+                d['count'] += 1
+                h = k.OpenProcess(0x1000, False, e.th32ProcessID)      # PROCESS_QUERY_LIMITED_INFORMATION
+                if h:
+                    m = PMC()
+                    m.cb = ctypes.sizeof(PMC)
+                    if k.K32GetProcessMemoryInfo(h, ctypes.byref(m), m.cb):
+                        d['mb'] += int(m.WorkingSetSize // 1048576)
+                    k.CloseHandle(h)
+            ok = k.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k.CloseHandle(snap)
+    return procs
+
+
 def machine(cfg):
     procs, free, total, used, cpu = {}, 0.0, 0.0, 0, None
     watched = {w.lower() for w in cfg['watched_processes']}
@@ -117,14 +166,9 @@ def machine(cfg):
         ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s))
         free, total, used, cpu = s.ullAvailPhys / 1073741824, s.ullTotalPhys / 1073741824, int(s.dwMemoryLoad), cpu_pct_windows()
         try:
-            out = proc.run(['tasklist', '/fo', 'csv', '/nh'], capture_output=True, text=True, timeout=10).stdout
-            for row in csv.reader(out.splitlines()):
-                if len(row) >= 5 and row[0].lower() in watched:
-                    d = procs.setdefault(row[0], {'name': row[0], 'count': 0, 'mb': 0})
-                    d['count'] += 1
-                    d['mb'] += int(re.sub(r'[^0-9]', '', row[4]) or 0) // 1024
+            procs = windows_process_memory(watched)
         except Exception:
-            pass
+            procs = {}
     else:  # best effort on Linux and macOS (not verified on those systems)
         try:
             with open('/proc/meminfo') as f:
