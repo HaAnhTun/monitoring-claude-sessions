@@ -36,6 +36,7 @@ export * from './pyregex/index.ts';
 // @wp-end WP-05
 
 // @wp-begin WP-09
+export * from './db-constants.ts';
 // @wp-end WP-09
 
 // @wp-begin WP-29

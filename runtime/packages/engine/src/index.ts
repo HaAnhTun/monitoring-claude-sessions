@@ -9,6 +9,45 @@ export * from './pyjson/index.ts';
 // @wp-end WP-08
 
 // @wp-begin WP-09
+export {
+  openSqlite,
+  pragmaNumber,
+  pragmaValue,
+  toDbError,
+  type SqlDriver,
+  type SqlParams,
+  type SqlValue,
+  type Stmt,
+} from './db/driver.ts';
+export {
+  DB_ERROR_CODES,
+  DbError,
+  isDbError,
+  type DbConstraintKind,
+  type DbErrorCode,
+  type DbErrorDetails,
+} from './db/errors.ts';
+export {
+  DB_OPEN_EXIT_CODES,
+  openInstanceDb,
+  type InstanceDb,
+  type OpenInstanceDbOptions,
+  type OpenMode,
+  type RepoContext,
+} from './db/open.ts';
+export {
+  loadMigrationFiles,
+  migrateDb,
+  migrationStatus,
+  peekDbSchemaVersion,
+  planDbMigrations,
+  type MigrateDbOptions,
+  type MigrationFile,
+  type MigrationStatus,
+} from './db/migrations.ts';
+export { backupDb, type BackupOptions, type BackupSourcePath } from './db/backup.ts';
+export { onCommitted, withWriteTx, type WriteTx } from './db/write.ts';
+export type { ChangeRecorder } from './db/changes.ts';
 // @wp-end WP-09
 
 // @wp-begin WP-12
