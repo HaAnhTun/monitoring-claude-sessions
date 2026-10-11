@@ -268,6 +268,10 @@ export { testHook } from './runtime/test-hooks.ts';
 // @wp-end WP-16
 
 // @wp-begin WP-17
+export { createQueries, registerQueryPart } from './query/index.ts';
+export type { AuditQueries, AuditReader, EngineQueries, Queries, QueryDeps, QueryPart } from './query/index.ts';
+export { formatCommand, instanceCommands } from './ops/commands.ts';
+export type { InstanceCommandInput } from './ops/commands.ts';
 // @wp-end WP-17
 
 // @wp-begin WP-19

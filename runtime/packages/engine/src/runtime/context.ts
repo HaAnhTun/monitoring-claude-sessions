@@ -463,4 +463,13 @@ export const contextFactories: {
 
 // The block of WP-17, the owner of the real `createQueries` (see above). It is empty until that work package lands.
 // @wp-begin WP-17
+import { createQueries, type EngineQueries as QueryLayerEngineQueries } from '../query/index.ts';
+
+// The seed `EngineQueries` above is widened with the real interface of `query/index.ts`: an interface of the same name
+// merges, so every member that a later work package adds there is a member of `ctx.queries` without a change here. The
+// asynchronous `AuditQueries.sessionAuditRefs` is part of it, because the route handler of `getSession` awaits it on `ctx.queries` (03 6.3).
+export interface EngineQueries extends QueryLayerEngineQueries, AuditQueries {}
+
+// The real query layer replaces the stub of `contextFactories` (registry C09: the six deps are passed by `queryDepsOf`).
+contextFactories.createQueries = createQueries;
 // @wp-end WP-17
