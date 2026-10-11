@@ -1058,6 +1058,7 @@ Phase 3, W3.5, L; impl opus xhigh; verify fable; 02 I-8 (part), 02 I-10, 03 S11 
   `packages/engine/src/health/{ingest-health,alert-inputs}.ts`, `packages/engine/src/maintenance/schedule.ts` + colocated tests
   (`sweeper`, `ingest-health`, `schedule`, `external/*`), `packages/engine/src/ingest/config-keys.test.ts`, `packages/engine/test/ingest-service.int.test.ts`,
   fixture `packages/engine/test/fixtures/external.ts`.
+  Lead note 2026-10-12 (from the WP-32 verifier): WP-35 must (1) wire the per-writer `createActivityThrottle` from WP-10 so `ingest_health` is announced at most once per second and flushed from the 1 s timer (02 4.6 step 5), (2) accept the adaptive transaction cap of the WP-32 writer (documented deviation from '500 items or 8 ms'), (3) leave the `ingest-replay` audit entry and CLI dry-run to the deferred WP-38, and (4) recompute the sealed-segment rule only through the drainer (a line appended to a sealed segment is recovered by replay, not by the poll).
 - Blocks: `instance-runtime.ts` WP-35, `engine/src/index.ts` WP-35; creates `schedule.ts` with blocks WP-59, WP-60.
 - Produces: `createIngestService(ctx)` (`writer`, `start`, `stop`, `untilIdle`, `nudge`, `replay`, `stats`), `IngestIdleTimeoutError`,
   `createLifecycleSweeper(ctx, {writer})` (`tickNow`), external pollers, `IngestHealth` computation, alert inputs, `createDbScheduler(ctx)`.
