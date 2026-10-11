@@ -1,7 +1,7 @@
 """Optional side panels: machine load, git, live log tails, ledger, chain log and the attempts table."""
 import csv, ctypes, glob, os, re, subprocess, time
 
-from . import sessions, state
+from . import proc, sessions, state
 
 
 def repo_path(cfg):
@@ -117,7 +117,7 @@ def machine(cfg):
         ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s))
         free, total, used, cpu = s.ullAvailPhys / 1073741824, s.ullTotalPhys / 1073741824, int(s.dwMemoryLoad), cpu_pct_windows()
         try:
-            out = subprocess.run(['tasklist', '/fo', 'csv', '/nh'], capture_output=True, text=True, timeout=10).stdout
+            out = proc.run(['tasklist', '/fo', 'csv', '/nh'], capture_output=True, text=True, timeout=10).stdout
             for row in csv.reader(out.splitlines()):
                 if len(row) >= 5 and row[0].lower() in watched:
                     d = procs.setdefault(row[0], {'name': row[0], 'count': 0, 'mb': 0})
@@ -134,7 +134,7 @@ def machine(cfg):
         except Exception:
             pass
         try:
-            for line in subprocess.run(['ps', '-eo', 'comm,rss'], capture_output=True, text=True, timeout=10).stdout.splitlines()[1:]:
+            for line in proc.run(['ps', '-eo', 'comm,rss'], capture_output=True, text=True, timeout=10).stdout.splitlines()[1:]:
                 name, _, rss = line.strip().rpartition(' ')
                 base = os.path.basename(name.strip())
                 if base.lower() in watched:
@@ -145,7 +145,7 @@ def machine(cfg):
             pass
     if cfg['docker'] and time.time() - DOCKER['t'] > 10:
         try:
-            o = subprocess.run(['docker', 'ps', '--format', '{{.Names}} ({{.Status}})'], capture_output=True, text=True, timeout=8).stdout
+            o = proc.run(['docker', 'ps', '--format', '{{.Names}} ({{.Status}})'], capture_output=True, text=True, timeout=8).stdout
             DOCKER['v'] = [l for l in o.splitlines() if l.strip()]
         except Exception:
             DOCKER['v'] = ['(docker unavailable)']
@@ -168,7 +168,7 @@ def live_logs(cfg):
 
 def git(cfg, *a):
     try:
-        return subprocess.run(['git'] + list(a), capture_output=True, text=True, timeout=10, cwd=repo_path(cfg)).stdout.strip()
+        return proc.run(['git'] + list(a), capture_output=True, text=True, timeout=10, cwd=repo_path(cfg)).stdout.strip()
     except Exception:
         return ''
 

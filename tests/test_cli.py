@@ -124,6 +124,16 @@ class CliTest(unittest.TestCase):
             self.cli('stop', '--task', 'demo')
             self.cli('stop', '--task', 'second')
 
+    def test_06_children_never_open_console_windows(self):
+        """Every helper process goes through proc.run (CREATE_NO_WINDOW); a bare subprocess.run would flash cmd windows on Windows."""
+        src = os.path.join(HERE, '..', 'src', 'backend')
+        for n in os.listdir(src):
+            if n.endswith('.py') and n != 'proc.py':
+                with open(os.path.join(src, n), encoding='utf-8') as f:
+                    self.assertNotIn('subprocess.run(', f.read(), n)
+        with open(os.path.join(src, 'cli.py'), encoding='utf-8') as f:
+            self.assertNotIn('DETACHED_PROCESS', f.read().replace('(DETACHED_PROCESS would', ''))
+
     def test_05_legacy_flags_still_work(self):
         cfg = os.path.join(self.tmp, 'legacy.config.json')
         with open(cfg, 'w') as f:

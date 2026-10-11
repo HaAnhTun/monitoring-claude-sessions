@@ -5,7 +5,7 @@ the outcome was checked (start waits for /api/health; stop checks the process is
 """
 import argparse, glob, json, os, re, subprocess, sys, time, urllib.error, urllib.request, webbrowser
 
-from . import __version__, code_stamp, config as C, panels, sessions, state as st, tasks
+from . import __version__, code_stamp, config as C, panels, proc, sessions, state as st, tasks
 from .server import Monitor, bind
 
 
@@ -57,7 +57,7 @@ def http_json(url, timeout=3):
 
 def cmdline_of(pid):
     if os.name == 'nt':
-        return subprocess.run(['powershell', '-NoProfile', '-Command', "(Get-CimInstance Win32_Process -Filter 'ProcessId=%d').CommandLine" % pid],
+        return proc.run(['powershell', '-NoProfile', '-Command', "(Get-CimInstance Win32_Process -Filter 'ProcessId=%d').CommandLine" % pid],
                               capture_output=True, text=True, timeout=20).stdout
     try:
         with open('/proc/%d/cmdline' % pid) as f:
@@ -191,7 +191,7 @@ def cmd_start(a):
         cmd += ['--port', str(a.port)]
     kw = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL}
     if os.name == 'nt':
-        kw['creationflags'] = 0x00000008 | 0x00000200 | 0x08000000      # DETACHED_PROCESS | NEW_PROCESS_GROUP | NO_WINDOW
+        kw['creationflags'] = proc.NO_WINDOW | proc.NEW_GROUP      # hidden console, inherited by children (DETACHED_PROCESS would make every child open a visible window)
     else:
         kw['start_new_session'] = True
     subprocess.Popen(cmd, **kw)
@@ -289,7 +289,7 @@ def stop_target(sf):
         os.remove(sf)
         return 'pid %d is not a viewer process (already stopped or pid reused); removed the stale state file, nothing was killed' % pid, 0
     if os.name == 'nt':
-        subprocess.run(['taskkill', '/PID', str(pid), '/F'], capture_output=True)
+        proc.run(['taskkill', '/PID', str(pid), '/F'], capture_output=True)
     else:
         os.kill(pid, 15)
     for _ in range(25):
