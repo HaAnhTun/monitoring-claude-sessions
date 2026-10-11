@@ -1,4 +1,5 @@
 // @wp-begin WP-05
+export * from './pyjson/index.ts';
 // @wp-end WP-05
 
 // @wp-begin WP-07
