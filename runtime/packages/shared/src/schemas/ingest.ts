@@ -135,17 +135,18 @@ export const TranscriptRecordShape = z.looseObject({
 
 const reasonCode = z.string().min(1);
 
-export const IngestHealthSchema = z.object({
+/** Strict at every nesting level (03 5.1, 13 item 1): an undocumented field is a contract failure. */
+export const IngestHealthSchema = z.strictObject({
   evaluatedAt: timestampMs,
-  provider: z.object({
+  provider: z.strictObject({
     lastActivityAt: nullableTimestampMs,
     source: z.enum(['hook', 'transcript_mtime']).nullable(),
     status: z.enum(['active', 'quiet', 'silent', 'none']),
   }),
-  receiving: z.object({
-    hooks: z.object({
+  receiving: z.strictObject({
+    hooks: z.strictObject({
       installed: z.array(
-        z.object({
+        z.strictObject({
           scope: z.string(),
           settingsPath: z.string(),
           verifiedAt: nullableTimestampMs,
@@ -156,12 +157,12 @@ export const IngestHealthSchema = z.object({
       envelopes1h: count,
       duplicates1h: count,
       invalid1h: count,
-      handlerErrors: z.array(z.object({ code: z.string(), count, lastAt: timestampMs })),
+      handlerErrors: z.array(z.strictObject({ code: z.string(), count, lastAt: timestampMs })),
       transcriptHookFailures: count,
-      coverage: z.object({ full: count, partial: count, none: count }),
+      coverage: z.strictObject({ full: count, partial: count, none: count }),
       status: z.enum(['ok', 'not_installed', 'idle', 'gap', 'failing']),
     }),
-    spool: z.object({
+    spool: z.strictObject({
       segments: count,
       bytes: count,
       bytesBehind: count,
@@ -170,7 +171,7 @@ export const IngestHealthSchema = z.object({
       lastDrainAt: nullableTimestampMs,
       foreignFiles: count,
     }),
-    transcripts: z.object({
+    transcripts: z.strictObject({
       dir: z.string().nullable(),
       dirFound: z.boolean(),
       filesTracked: count,
@@ -185,19 +186,21 @@ export const IngestHealthSchema = z.object({
       status: z.enum(['ok', 'backfilling', 'lagging', 'errors', 'not_found']),
     }),
   }),
-  persisted: z.object({
+  persisted: z.strictObject({
     lastCommitAt: nullableTimestampMs,
     queueItems: count,
     queueBytes: count,
     commitP95Ms: z.number().nonnegative(),
     failures1h: count,
-    lastError: z.object({ code: z.string(), at: timestampMs }).nullable(),
+    lastError: z.strictObject({ code: z.string(), at: timestampMs }).nullable(),
     status: z.enum(['ok', 'backlog', 'failing', 'db_error']),
   }),
-  display: z.object({ headSeq: count, serverTime: timestampMs }),
-  runtime: z.object({ startedAt: timestampMs, eventLoopDelayP99Ms: z.number().nonnegative() }),
+  display: z.strictObject({ headSeq: count, serverTime: timestampMs }),
+  runtime: z.strictObject({ startedAt: timestampMs, eventLoopDelayP99Ms: z.number().nonnegative() }),
   status: z.enum(['ok', 'degraded', 'down']),
-  reasons: z.array(z.object({ code: reasonCode, severity: z.enum(['info', 'warn', 'error']), since: timestampMs })),
+  reasons: z.array(
+    z.strictObject({ code: reasonCode, severity: z.enum(['info', 'warn', 'error']), since: timestampMs }),
+  ),
 });
 
 export type IngestHealth = z.infer<typeof IngestHealthSchema>;

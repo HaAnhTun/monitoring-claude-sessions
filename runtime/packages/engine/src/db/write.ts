@@ -29,7 +29,7 @@ function publish(db: InstanceDb): void {
       // The data is committed: one failing listener must neither undo that nor starve the others. The name only: a
       // listener's message can carry request data.
       process.emitWarning(`an onCommitted listener threw ${error instanceof Error ? error.name : 'a non-error'}`, {
-        code: 'MCS_ON_COMMITTED_LISTENER',
+        code: 'ON_COMMITTED_LISTENER_FAILED',
       });
     }
   }

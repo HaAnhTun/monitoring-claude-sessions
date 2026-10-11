@@ -1,7 +1,9 @@
 // The platform branching rule of 06 section 4 (critic I-34): `process.platform` and `os.platform()` are allowed only in
 // packages/engine/src/platform/** and packages/engine/src/security/paths.ts. The test lints strings with the repository
-// configuration through ESLint's Node API; no fixture file is ever written under src/.
-import { existsSync } from 'node:fs';
+// configuration through ESLint's Node API; no fixture file is ever written under src/. A probe names a path that may or
+// may not exist (the logger and security/paths.ts are real modules): ESLint lints the given text as if it were that file
+// and never reads or writes the file, which the test checks by comparing the file system before and after.
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,11 +30,36 @@ beforeAll(() => {
 /** Rule messages of `code` linted as if it were the file `relativePath` of the runtime workspace. */
 async function lint(relativePath: string, code: string): Promise<string[]> {
   const filePath = path.join(runtimeDir, ...relativePath.split('/'));
+  const existedBefore = existsSync(filePath);
   const [result] = await eslint.lintText(code, { filePath });
-  expect(existsSync(filePath), `${relativePath} must not exist: the test writes no fixture`).toBe(false);
+  expect(existsSync(filePath), `${relativePath}: the probe must not create or remove a file`).toBe(existedBefore);
   return (result?.messages ?? [])
     .filter((m) => m.ruleId === 'no-restricted-properties' || m.ruleId === 'no-restricted-syntax')
     .map((m) => `${String(m.ruleId)}: ${m.message}`);
+}
+
+const PLATFORM_MESSAGE = 'Branch on the platform only in engine/src/platform/**';
+
+/** `path: message` for every platform-branching report of the given files (path relative to the runtime workspace). */
+async function platformViolations(files: ReadonlyMap<string, string>): Promise<string[]> {
+  const found: string[] = [];
+  for (const [file, code] of files) {
+    for (const message of await lint(file, code)) {
+      if (message.includes(PLATFORM_MESSAGE)) found.push(`${file}: ${message}`);
+    }
+  }
+  return found;
+}
+
+/** Every production source file of the engine (tests are exempt by the rule), as workspace-relative POSIX paths. */
+function engineSources(dir = 'packages/engine/src'): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(path.join(runtimeDir, ...dir.split('/')), { withFileTypes: true })) {
+    const relative = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...engineSources(relative));
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) found.push(relative);
+  }
+  return found.sort();
 }
 
 describe('process.platform is confined to engine/src/platform/** and engine/src/security/paths.ts', () => {
@@ -67,6 +94,33 @@ describe('process.platform is confined to engine/src/platform/** and engine/src/
     const messages = await lint('packages/engine/src/log/logger.ts', PLATFORM_CODE);
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain('no-restricted-properties');
+  }, 120_000);
+});
+
+describe('the rule on the real engine sources', () => {
+  it('reports nothing in the production files that exist (allowed files may branch, no other file does)', async () => {
+    const files = new Map(
+      engineSources().map((file) => [file, readFileSync(path.join(runtimeDir, ...file.split('/')), 'utf8')] as const),
+    );
+    expect(files.size).toBeGreaterThan(0);
+    expect(await platformViolations(files)).toEqual([]);
+  }, 120_000);
+
+  it('still fails on a real violation: the same check reports a branch in any file outside the allow-list', async () => {
+    const violations = await platformViolations(
+      new Map([
+        ['packages/engine/src/panels/x.ts', PLATFORM_CODE],
+        ['packages/engine/src/log/logger.ts', PLATFORM_CODE],
+        ['packages/engine/src/security/other.ts', OS_PLATFORM_CODE],
+        ['packages/engine/src/platform/x.ts', PLATFORM_CODE],
+        ['packages/engine/src/security/paths.ts', OS_PLATFORM_CODE],
+      ]),
+    );
+    expect(violations.map((v) => v.slice(0, v.indexOf(':')))).toEqual([
+      'packages/engine/src/panels/x.ts',
+      'packages/engine/src/log/logger.ts',
+      'packages/engine/src/security/other.ts',
+    ]);
   }, 120_000);
 });
 

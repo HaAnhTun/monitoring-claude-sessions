@@ -30,6 +30,25 @@ export type SectionOverridesSchema<K extends SectionKeys> = z.ZodOptional<
 >;
 
 /**
+ * Deep copy of a JSON-like default (null, boolean, number, string, arrays and plain objects). `structuredClone` is not
+ * available here: the shared build config has no lib that declares it, and shared must not import `node:*`. A value
+ * outside that set (undefined, function, bigint, symbol, Date, Map, class instance) is a defect of the key table and
+ * throws instead of being copied wrongly. An own `__proto__` key stays a plain data key.
+ */
+export function cloneDefault(value: unknown): unknown {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string')
+    return value;
+  if (Array.isArray(value)) return value.map(cloneDefault);
+  if (typeof value === 'object') {
+    const prototype: unknown = Object.getPrototypeOf(value);
+    if (prototype === Object.prototype || prototype === null) {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneDefault(item)]));
+    }
+  }
+  throw new TypeError(`cloneDefault: not a JSON-like default: ${typeof value}`);
+}
+
+/**
  * `z.strictObject({k: spec.schema.default(spec.default)}).prefault({})`. `.prefault({})` and not `.default({})`: the
  * latter returns `{}` without the inner defaults (E12). The default is a factory returning a deep clone: zod's plain
  * `.default(value)` clones one level only, so nested defaults (the alert rules) would be shared between parses.
@@ -37,8 +56,7 @@ export type SectionOverridesSchema<K extends SectionKeys> = z.ZodOptional<
 export function sectionSchema<K extends SectionKeys>(keys: K): SectionSchema<K>;
 export function sectionSchema(keys: SectionKeys): z.ZodType {
   const shape: Record<string, z.ZodType> = {};
-  for (const [name, spec] of Object.entries(keys))
-    shape[name] = spec.schema.default(() => structuredClone(spec.default));
+  for (const [name, spec] of Object.entries(keys)) shape[name] = spec.schema.default(() => cloneDefault(spec.default));
   return z.strictObject(shape).prefault({});
 }
 

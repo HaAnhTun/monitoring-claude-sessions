@@ -356,6 +356,67 @@ describe('route schemas', () => {
     expect(response.safeParse(body).success).toBe(false);
   });
 
+  it('healthIngest response is strict at every nesting level (03 5.1, 13 item 1: strictObject all the way down)', () => {
+    const response = routes.healthIngest.response;
+    const body = {
+      ...sampleIngestHealth(),
+      asOfSeq: 3,
+      reasons: [{ code: 'BACKFILLING', severity: 'info' as const, since: 1791727000000 }],
+    };
+    const hooks = {
+      ...body.receiving.hooks,
+      installed: [{ scope: 'user', settingsPath: 'x', verifiedAt: null, ok: null }],
+      handlerErrors: [{ code: 'SPOOL_FULL', count: 1, lastAt: 1791727100000 }],
+    };
+    const persisted = {
+      ...body.persisted,
+      lastError: { code: 'SQLITE_FULL', at: 1791727199000 },
+      status: 'db_error' as const,
+    };
+    const full = { ...body, receiving: { ...body.receiving, hooks }, persisted };
+    expect(response.safeParse(full).success).toBe(true);
+
+    const withExtra = (patch: Record<string, unknown>): boolean => response.safeParse({ ...full, ...patch }).success;
+    const receivingWith = (patch: Record<string, unknown>): Record<string, unknown> => ({
+      ...full.receiving,
+      ...patch,
+    });
+    const hooksWith = (patch: Record<string, unknown>): Record<string, unknown> =>
+      receivingWith({ hooks: { ...hooks, ...patch } });
+    const extra = { extra: 1 };
+    expect(withExtra({ provider: { ...full.provider, ...extra } }), 'provider').toBe(false);
+    expect(withExtra({ receiving: receivingWith(extra) }), 'receiving').toBe(false);
+    expect(withExtra({ receiving: receivingWith({ hooks: { ...hooks, ...extra } }) }), 'receiving.hooks').toBe(false);
+    expect(
+      withExtra({ receiving: hooksWith({ installed: [{ ...hooks.installed[0], ...extra }] }) }),
+      'receiving.hooks.installed[0]',
+    ).toBe(false);
+    expect(
+      withExtra({ receiving: hooksWith({ handlerErrors: [{ ...hooks.handlerErrors[0], ...extra }] }) }),
+      'receiving.hooks.handlerErrors[0]',
+    ).toBe(false);
+    expect(
+      withExtra({ receiving: hooksWith({ coverage: { ...hooks.coverage, ...extra } }) }),
+      'receiving.hooks.coverage',
+    ).toBe(false);
+    expect(
+      withExtra({ receiving: receivingWith({ spool: { ...full.receiving.spool, ...extra } }) }),
+      'receiving.spool',
+    ).toBe(false);
+    expect(
+      withExtra({ receiving: receivingWith({ transcripts: { ...full.receiving.transcripts, ...extra } }) }),
+      'receiving.transcripts',
+    ).toBe(false);
+    expect(withExtra({ persisted: { ...persisted, ...extra } }), 'persisted').toBe(false);
+    expect(
+      withExtra({ persisted: { ...persisted, lastError: { ...persisted.lastError, ...extra } } }),
+      'persisted.lastError',
+    ).toBe(false);
+    expect(withExtra({ display: { ...full.display, ...extra } }), 'display').toBe(false);
+    expect(withExtra({ runtime: { ...full.runtime, ...extra } }), 'runtime').toBe(false);
+    expect(withExtra({ reasons: [{ ...full.reasons[0], ...extra }] }), 'reasons[0]').toBe(false);
+  });
+
   it('panel: key is one of the six, limit 1..200', () => {
     const params = routes.panel.params;
     expect(params.safeParse({ key: 'chainLog' }).success).toBe(true);

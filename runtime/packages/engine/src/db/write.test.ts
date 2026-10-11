@@ -255,6 +255,8 @@ describe('onCommitted (03 4.5, 9.2, T-PL-05)', () => {
     expect(later).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).not.toContain('SECRET-VALUE');
+    // A process-warning code, not an environment variable: the MCS_ prefix is reserved for the documented variables.
+    expect(warn.mock.calls[0]?.[1]).toEqual({ code: 'ON_COMMITTED_LISTENER_FAILED' });
     db.close();
   });
 

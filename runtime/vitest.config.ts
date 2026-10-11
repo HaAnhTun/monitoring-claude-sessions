@@ -3,7 +3,10 @@ import { defineConfig } from 'vitest/config';
 const SOURCE_CONDITION = '@mcs/source';
 
 export default defineConfig({
-  ssr: { resolve: { conditions: [SOURCE_CONDITION, 'node', 'import', 'default'] } },
+  // Only the custom condition: Vitest turns this list into `node --conditions ...` flags for its workers, and an `import`
+  // flag makes require() of a dual package (is-promise under Express 5) return the ES module namespace (CR-WP-08-1).
+  // Vite keeps its own default conditions for transforms.
+  ssr: { resolve: { conditions: [SOURCE_CONDITION] } },
   test: {
     // Determinism defaults for every project (05-tooling-testing-security.md section 3.6).
     restoreMocks: true,

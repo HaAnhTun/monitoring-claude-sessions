@@ -16,7 +16,7 @@ import { PanelOptionsSectionKeys, PanelOptionsSectionSchema } from './panelOptio
 import { PricingSectionKeys, PricingSectionSchema } from './pricing.ts';
 import { ProcessSectionKeys, ProcessSectionSchema } from './process.ts';
 import { RetentionSectionKeys, RetentionSectionSchema } from './retention.ts';
-import { MIB, type KeySpec, sectionOverridesSchema } from './section.ts';
+import { MIB, type KeySpec, cloneDefault, sectionOverridesSchema } from './section.ts';
 import { ServerSectionKeys, ServerSectionSchema } from './server.ts';
 import { SpoolSectionKeys, SpoolSectionSchema } from './spool.ts';
 
@@ -155,7 +155,7 @@ function entry(
   const derived = R_DERIVED_DEFAULTS[key];
   // Defaults shipped in config/defaults.json: window_hours 8, active_seconds 120, pending_tool_grace_seconds 900,
   // limits.event_window_mb 8, limits.usage_max_mb 512 (checked against the file by derived-defaults.test.ts).
-  const effective = derived === undefined ? structuredClone(spec.default) : DERIVED_EFFECTIVE[key];
+  const effective = derived === undefined ? cloneDefault(spec.default) : DERIVED_EFFECTIVE[key];
   return { key, default: effective, sample, owner, ref };
 }
 

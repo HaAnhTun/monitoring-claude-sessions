@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { HookEnvelopeV1 } from '../protocol/hook-envelope.ts';
 import type { HookRouteV1 } from '../protocol/routes.ts';
@@ -584,5 +584,99 @@ describe('IngestHealthSchema', () => {
       expect(IngestHealthSchema.safeParse(withTranscripts(status)).success, status).toBe(true);
     }
     expect(IngestHealthSchema.safeParse(withTranscripts('stuck')).success).toBe(false);
+  });
+});
+
+// 03 5.1 and 13 item 1: response schemas are strict objects all the way down, so that an undocumented field anywhere in
+// the report is a contract failure (CR-WP-03-7). Every object of a complete report is named by its path from the root.
+describe('IngestHealthSchema is strict at every nesting level', () => {
+  const OBJECT_PATHS: readonly (readonly (string | number)[])[] = [
+    [],
+    ['provider'],
+    ['receiving'],
+    ['receiving', 'hooks'],
+    ['receiving', 'hooks', 'installed', 0],
+    ['receiving', 'hooks', 'handlerErrors', 0],
+    ['receiving', 'hooks', 'coverage'],
+    ['receiving', 'spool'],
+    ['receiving', 'transcripts'],
+    ['persisted'],
+    ['persisted', 'lastError'],
+    ['display'],
+    ['runtime'],
+    ['reasons', 0],
+  ];
+
+  /** A report in which every object of OBJECT_PATHS exists (the sample of `health()` has `lastError: null`). */
+  function complete(): Record<string, unknown> {
+    const base = health();
+    const persisted = base['persisted'] as Record<string, unknown>;
+    return health({
+      persisted: { ...persisted, lastError: { code: 'SQLITE_FULL', at: 1791727199000 }, status: 'db_error' },
+    });
+  }
+
+  function child(node: unknown, key: string | number): unknown {
+    if (Array.isArray(node) && typeof key === 'number') return node[key];
+    if (typeof node === 'object' && node !== null && typeof key === 'string') return Reflect.get(node, key);
+    throw new Error(`no ${String(key)} in the sample report`);
+  }
+
+  function objectAt(root: unknown, path: readonly (string | number)[]): Record<string, unknown> {
+    let node = root;
+    for (const key of path) node = child(node, key);
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) throw new Error('not an object');
+    return node as Record<string, unknown>;
+  }
+
+  const label = (path: readonly (string | number)[]): string => (path.length === 0 ? '(root)' : path.join('.'));
+
+  it('accepts the complete report the probes start from', () => {
+    expect(IngestHealthSchema.safeParse(complete()).success).toBe(true);
+    for (const path of OBJECT_PATHS)
+      expect(Object.keys(objectAt(complete(), path)).length, label(path)).toBeGreaterThan(0);
+  });
+
+  it.each(OBJECT_PATHS.map((path) => [label(path), path] as const))(
+    'rejects an undocumented key in %s',
+    (_label, path) => {
+      const report = complete();
+      objectAt(report, path)['undocumented'] = 1;
+      const parsed = IngestHealthSchema.safeParse(report);
+      expect(parsed.success).toBe(false);
+      if (parsed.success) return;
+      expect(parsed.error.issues).toHaveLength(1);
+      expect(parsed.error.issues[0]).toMatchObject({ code: 'unrecognized_keys', keys: ['undocumented'], path });
+    },
+  );
+
+  it('keeps accepting arbitrary keys of the transcripts error counters, which are a record and not an object', () => {
+    const report = complete();
+    objectAt(report, ['receiving', 'transcripts'])['errors'] = { invalid_json: 1, some_future_code: 2 };
+    expect(IngestHealthSchema.safeParse(report).success).toBe(true);
+  });
+
+  it('has additionalProperties: false on every object of the generated JSON Schema, and the list above names them all', () => {
+    const json = z.toJSONSchema(IngestHealthSchema, { io: 'input' });
+    const open: string[] = [];
+    let objects = 0;
+    const visit = (node: unknown, where: string): void => {
+      if (Array.isArray(node)) {
+        node.forEach((item, index) => {
+          visit(item, `${where}[${String(index)}]`);
+        });
+        return;
+      }
+      if (typeof node !== 'object' || node === null) return;
+      const record = node as Record<string, unknown>;
+      if (record['type'] === 'object' && 'properties' in record) {
+        objects += 1;
+        if (record['additionalProperties'] !== false) open.push(where);
+      }
+      for (const [key, value] of Object.entries(record)) visit(value, `${where}.${key}`);
+    };
+    visit(json, '$');
+    expect(open).toEqual([]);
+    expect(objects).toBe(OBJECT_PATHS.length);
   });
 });

@@ -5,3 +5,5 @@
 **/playwright-report/
 .dev/
 package-lock.json
+# Byte-exact output of the legacy init-task, configure and decide commands (each entry ends with a blank line).
+packages/engine/test/fixtures/legacy-workspace/audit/
