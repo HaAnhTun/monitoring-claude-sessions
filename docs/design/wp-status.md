@@ -1,36 +1,36 @@
 # Work package status (walking skeleton)
 
-Generated from git history and the lead's overrides: 2026-10-12 03:00 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
+Generated from git history and the lead's overrides: 2026-10-12 06:30 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
 
 Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Python skill (SKILL.md and the Python code are untouched): transcript importer -> database -> query API -> web list page and detail page, started by the standard CLI.
 
 | WP | title | status | commit | date | notes |
 |---|---|---|---|---|---|
 | WP-14 | Engine ops: workspace, config, audit | committed (checks ran: see commit) | 7ceccd4 | 2026-10-12 02:11 |  |
-| WP-15 | CLI kernel and config commands | committed (checks ran: see commit) | 53ed1a4 | 2026-10-12 02:44 |  |
-| WP-17 | Server app, meta routes, static hosting | fix round 1 (verifier FAIL: 1 major, 7 minor) |  |  |  |
-| WP-18 | Server process shell | waiting for WP-17 |  |  |  |
-| WP-19 | Lifecycle ops and CLI | waiting for WP-18 |  |  |  |
+| WP-15 | CLI kernel and config commands | committed (checks ran: see commit) | 53ed1a4 | 2026-10-12 02:44 | `check` does not yet print the detected transcripts folder: the discovery/probe/route-file call sites are seams (CR-WP-15-2), wired by the owners later |
+| WP-17 | Server app, meta routes, static hosting | committed (checks ran: see commit) | 7f291d7 | 2026-10-12 03:38 |  |
+| WP-18 | Server process shell | committed (checks ran: see commit) | cd39696 | 2026-10-12 04:58 |  |
+| WP-19 | Lifecycle ops and CLI | committed (checks ran: see commit) | 4bbaca9 | 2026-10-12 06:04 | smoke gate PASS after a kit fix (build stamp); POSIX branches unverified |
 | WP-25 | Hook handler and stub | committed (checks ran: see commit) | be8d945 | 2026-10-12 02:33 |  |
 | WP-26 | Ingestion primitives: tailer and normalizers | committed (checks ran: see commit) | d61a93c | 2026-10-12 02:39 |  |
 | WP-27 | Token accounting | committed (checks ran: see commit) | c1a0cf7 | 2026-10-12 02:55 |  |
-| WP-28 | Lifecycle model | implementing |  |  |  |
-| WP-32 | Hook path to the database | waiting for WP-17, WP-28 |  |  |  |
-| WP-33 | Transcript entries, index, window, locate | waiting for WP-17 |  |  |  |
-| WP-30 | Query layer A: sessions, agents, events, tool calls | waiting for WP-17 |  |  |  |
-| WP-34 | Transcript importer | pending |  |  |  |
-| WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | pending |  |  |  |
-| WP-31 | Query layer B: overview, work items, alerts, errors | pending |  |  | stretch: only if time remains |
-| WP-36 | Stream: hub, hydration, SSE | pending |  |  | stretch: only if time remains (stream); if skipped WP-47 is built against a fake stream, not integrated |
+| WP-28 | Lifecycle model | committed (checks ran: see commit) | 794e4de | 2026-10-12 03:40 |  |
+| WP-32 | Hook path to the database | committed (checks ran: see commit) | dd0cb61 | 2026-10-12 04:42 | activity throttle and ingest-replay audit left to WP-35/WP-38 (see plan note) |
+| WP-33 | Transcript entries, index, window, locate | committed (checks ran: see commit) | 1ee78d0 | 2026-10-12 04:28 |  |
+| WP-30 | Query layer A: sessions, agents, events, tool calls | committed (checks ran: see commit) | de76878 | 2026-10-12 04:36 |  |
+| WP-34 | Transcript importer | committed (checks ran: see commit) | 62e480d | 2026-10-12 05:35 | KNOWN LIMITATION: usage applied after the cursor commit can be lost if the process is killed in between (CR-WP-34-1 accepted for the skeleton; follow-up: usage row kind in the WP-32 writer). readEntryText signature differs from the registry (CR-WP-34-3). |
+| WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | implementing |  |  |  |
+| WP-31 | Query layer B: overview, work items, alerts, errors | committed (checks ran: see commit) | 6de2418 | 2026-10-12 05:01 | stretch: only if time remains |
+| WP-36 | Stream: hub, hydration, SSE | committed (checks ran: see commit) | ba4097d | 2026-10-12 05:19 | stretch: only if time remains (stream); if skipped WP-47 is built against a fake stream, not integrated |
 | WP-44 | Web scaffold | committed (checks ran: see commit) | 695e4d6 | 2026-10-12 02:32 |  |
 | WP-45 | Pure lib port | committed (checks ran: see commit) | e3677ad | 2026-10-12 02:26 |  |
 | WP-46 | Data layer | committed (checks ran: see commit) | 397b4ec | 2026-10-12 02:56 |  |
-| WP-47 | Stream client and reconciliation | implementing |  |  |  |
-| WP-49 | Shell, sidebar, prefs | implementing |  |  |  |
-| WP-50 | Sessions explorer and list components | pending |  |  |  |
-| WP-51 | Transcript viewer and text primitives | implementing |  |  |  |
-| WP-52 | Session detail page | pending |  |  |  |
-| LF-2 | Walking-skeleton smoke test: fixture -> import -> list page -> detail page | pending |  |  |  |
+| WP-47 | Stream client and reconciliation | committed (checks ran: see commit) | 3a6ca83 | 2026-10-12 03:25 | built against a fake stream, not integrated (WP-36 server stream exists and is committed, but the client is not wired to it and the pages poll) |
+| WP-49 | Shell, sidebar, prefs | committed (checks ran: see commit) | 33ac6e9 | 2026-10-12 03:15 |  |
+| WP-50 | Sessions explorer and list components | committed (checks ran: see commit) | c9f6cd7 | 2026-10-12 03:48 |  |
+| WP-51 | Transcript viewer and text primitives | committed (checks ran: see commit) | 7d83148 | 2026-10-12 03:38 |  |
+| WP-52 | Session detail page | committed (checks ran: see commit) | 33cbe51 | 2026-10-12 04:00 |  |
+| LF-2 | Walking-skeleton smoke test: fixture -> import -> list page -> detail page | waiting for WP-35 |  |  |  |
 | WP-01 | Monorepo scaffold and gates | committed (foundation, before the scope change) | 46bead4 | 2026-10-11 19:22 |  |
 | WP-02 | Shared contracts: ids, time, files, runtime config sections, CLI results, control protocol | committed (foundation, before the scope change) | 5ac95a4 | 2026-10-11 19:59 |  |
 | WP-03 | Shared API and panel contracts | committed (foundation, before the scope change) | 8676f34 | 2026-10-11 21:25 |  |
