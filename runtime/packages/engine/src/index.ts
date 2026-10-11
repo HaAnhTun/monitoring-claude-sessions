@@ -286,6 +286,111 @@ export type { ClaudeLaunch } from './external/launch-claude.ts';
 // @wp-end WP-25
 
 // @wp-begin WP-28
+export {
+  AGENT_KINDS,
+  AGENT_NOTIFICATION_STATUSES,
+  AgentFactsSchema,
+  BASES,
+  CONFIDENCES,
+  DEFAULT_LIFECYCLE_CFG,
+  EVIDENCE_FACTS,
+  EVIDENCE_SOURCES,
+  JOURNAL_STATES,
+  PRESENCES,
+  STALE_KINDS,
+  SessionFactsSchema,
+  START_SOURCES,
+  TURN_OUTCOMES,
+  ToolCallRowSchema,
+  WAIT_REASONS,
+  WorkflowFactsSchema,
+  agentFactsOfEvent,
+  agentFactsWith,
+  emptyAgentFacts,
+  emptySessionFacts,
+  emptyToolCallRow,
+  emptyWorkflowFacts,
+  parseAgentFacts,
+  parseSessionFacts,
+  parseToolCallRow,
+  parseWorkflowFacts,
+  sessionFactsOfEvent,
+  sessionFactsWith,
+  toolRowsOfEvent,
+  workflowFactsOfEvent,
+  workflowFactsWith,
+} from './lifecycle/facts.ts';
+export type {
+  AgentFactKind,
+  AgentFacts,
+  AgentNotificationStatus,
+  AttemptFact,
+  Basis,
+  Confidence,
+  EventOrigin,
+  EvidenceFact,
+  EvidenceSource,
+  JournalState,
+  LegacyFacts,
+  LifecycleCfg,
+  LifecycleEvidence,
+  LifecycleView,
+  Lww,
+  PermissionFact,
+  Presence,
+  RegistryFact,
+  SessionFacts,
+  StaleKind,
+  StartSource,
+  ToolCallRow,
+  TurnEndInfo,
+  TurnOutcome,
+  WaitReason,
+  WorkflowFacts,
+} from './lifecycle/facts.ts';
+export {
+  PERMISSIONS_KEPT,
+  agentFactsOf,
+  applyEvent,
+  emptyModel,
+  joinLww,
+  joinStamp,
+  mergeAgentFacts,
+  mergeFacts,
+  mergeModels,
+  mergeSessionFacts,
+  mergeToolCallRow,
+  mergeWorkflowFacts,
+  workflowFactsOf,
+} from './lifecycle/merge.ts';
+export type { LifecycleModel } from './lifecycle/merge.ts';
+export { deriveModel, deriveSession, isReopened } from './lifecycle/derive-session.ts';
+export type { ModelViews } from './lifecycle/derive-session.ts';
+export { deriveAgent } from './lifecycle/derive-agent.ts';
+export { deriveWorkflow } from './lifecycle/derive-workflow.ts';
+export { fmtAge, renderEvidence, toApiEvidence, viewChanged } from './lifecycle/rules.ts';
+export type { AgentRows, AgentSummary, SessionRows, WorkflowRows, WorkflowSummary } from './lifecycle/rules.ts';
+export {
+  classifyLegacy,
+  classifyLegacyAgent,
+  classifyLegacyOfFacts,
+  legacyAgentDone,
+  legacyDone,
+  legacyInputOfFacts,
+  legacyOfSession,
+  toLegacy,
+} from './lifecycle/legacy.ts';
+export type { LegacyClassification, LegacyClassifyInput, LegacyRows } from './lifecycle/legacy.ts';
+export { nextCheckAt } from './lifecycle/next-check.ts';
+export type { NextCheckInput } from './lifecycle/next-check.ts';
+export { deriveWorkItems } from './lifecycle/work-items.ts';
+export type {
+  DerivedWorkItem,
+  WorkItemAttempt,
+  WorkItemInput,
+  WorkItemMember,
+  WorkItemSession,
+} from './lifecycle/work-items.ts';
 // @wp-end WP-28
 
 // @wp-begin WP-29
