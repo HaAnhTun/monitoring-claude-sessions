@@ -675,6 +675,7 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_TEST_IGNORE_CONTROL` | test | control channel | ignore `shutdown` (T-LC-06) | 01 2.10 |
 | `MCS_TEST_BOOT_HANG` | test | server boot | stop before `ready` (T-LC-08) | 01 2.10 |
 | `MCS_TEST_INIT_CRASH` | test | `ops.workspace.init` | `before-rename` -> exit 70 (T-LC-10) | 01 2.10 |
+| `MCS_TEST_CASES` | test | lifecycle property tests (`engine/src/lifecycle/properties.test.ts`) | cases per scenario template, default 500; 1 replays one failing seed together with `MCS_TEST_SEED` | LF-3 |
 | `MCS_PERF_FACTOR` | test | performance tests | budget multiplier (default 1) | 01 2.10, 02 2.10 |
 | `MCS_GOLDEN_LIVE_CONFIG` | test | regex parity | path of a real `config.json` (counts only) | 01 2.8 |
 | `MCS_GOLDEN_DIR` | test | parity harness | golden folder override | 05 4.11.3, 06 5.2.6 |

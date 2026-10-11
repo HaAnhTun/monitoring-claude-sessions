@@ -1278,8 +1278,8 @@ migration; each design doc's "Requirements covered" list seeds the rows.
 ## 8. CI
 
 ### 8.1 Local (`npm run ci`, `scripts/ci.mjs`, Appendix A.36)
-Order: `format:check`, `lint`, `typecheck`, `check:deps`, (`check:text`, `check:docs` once S9/S10 land), `test` (unit, web, integration,
-isolation, resilience, security), `build`, `smoke`, `audit` (skipped with `--offline`). `--full` adds `test:parity` and `test:e2e`.
+Order: `format:check`, `lint`, `typecheck`, `check:deps`, (`check:text`, `check:docs` once S9/S10 land), `build`, `test` (unit, web, integration,
+isolation, resilience, security), `smoke`, `audit` (skipped with `--offline`). `build` runs before `test` because the integration, isolation and resilience tests spawn `dist/*` and read `.mcs-build.json` (LF-3, 2026-10-12; a clean-checkout run proved the old order wrong). `--full` adds `test:parity` and `test:e2e`.
 Stops at the first failure unless `--keep-going`; prints a Markdown table `| gate | result | ms |` and lists gates not run; exit 0 only if
 every gate ran and passed or reported `SKIPPED (exit 77)`. Exit code 77 is the one way a gate says "cannot run yet" (today only the
 smoke before 01 S8/S9 are built, 3.2); the table shows it as `SKIPPED (exit 77)`, never as PASS, and `--strict` (release step 7.1-3)

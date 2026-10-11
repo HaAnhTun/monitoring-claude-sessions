@@ -741,6 +741,7 @@ Test and development variables (I-27). They never change configuration; producti
 | `MCS_TEST_IGNORE_CONTROL` | server control channel (4.3), via `testHook` | `1` = the server ignores `shutdown` requests (T-LC-06) |
 | `MCS_TEST_BOOT_HANG` | server boot (4.4), via `testHook` | `1` = boot stops before phase `ready` and waits (T-LC-08) |
 | `MCS_TEST_INIT_CRASH` | `ops.workspace.init` (4.12), via `testHook` | `before-rename` = exit 70 between staging and rename (T-LC-10) |
+| `MCS_TEST_CASES` | `engine/src/lifecycle/properties.test.ts` only (a named test input, not a production hook) | cases per scenario template, default 500; `1` replays one failing seed together with `MCS_TEST_SEED` (LF-3) |
 | `MCS_PERF_FACTOR` | 02 T-HK-10, 06/05 performance tests | positive number multiplying time budgets (default 1) |
 | `MCS_GOLDEN_LIVE_CONFIG` | regex parity test (2.8) | path of a real `config.json` for the opt-in differential; prints counts only |
 | `MCS_GOLDEN_DIR` | parity harness (06 5.2, 5.4) | folder of golden captures instead of `tests/legacy-parity/golden` |
