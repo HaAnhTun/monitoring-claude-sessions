@@ -406,6 +406,23 @@ export type {
 // @wp-end WP-32
 
 // @wp-begin WP-33
+export { clipText, countEntries, displayEntries, recordTimestamp } from './transcript/entries.ts';
+export type { DisplayEntry } from './transcript/entries.ts';
+export { INDEX_CHUNK_BYTES, TranscriptError, createEntryIndexService } from './transcript/index-service.ts';
+export type {
+  EntryIndexOptions,
+  EntryIndexResult,
+  EntryIndexService,
+  TranscriptErrorCode,
+} from './transcript/index-service.ts';
+export { createTranscriptQueryPart, createTranscriptWindowService } from './transcript/window.ts';
+export type {
+  TranscriptLocateRequest,
+  TranscriptWindowQueries,
+  TranscriptWindowRequest,
+  TranscriptWindowService,
+  TranscriptWindowServiceOptions,
+} from './transcript/window.ts';
 // @wp-end WP-33
 
 // @wp-begin WP-34

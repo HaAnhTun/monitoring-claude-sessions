@@ -386,6 +386,15 @@ export function createQueries(db: InstanceDb, deps: QueryDeps): Queries {
 // @wp-end WP-31
 
 // @wp-begin WP-33
+// The transcript window and locate (03 7.3): `TranscriptQueries.window` and `locate`. The interface merges into `EngineQueries`
+// above, so `ctx.queries` has both; the part reads transcript files on demand and keeps no text (ADR 0016).
+import { createTranscriptQueryPart, type TranscriptWindowQueries } from '../transcript/window.ts';
+
+export interface EngineQueries {
+  window: TranscriptWindowQueries['window'];
+  locate: TranscriptWindowQueries['locate'];
+}
+registerQueryPart(createTranscriptQueryPart, ['window', 'locate']);
 // @wp-end WP-33
 
 // @wp-begin WP-57

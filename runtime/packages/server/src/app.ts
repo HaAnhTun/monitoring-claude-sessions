@@ -274,6 +274,9 @@ const ROUTE_MODULES: RouteModule[] = [metaRoutes, ingestRoutes];
 // @wp-end WP-31
 
 // @wp-begin WP-33
+import { transcriptRoutes } from './routes/transcript.ts';
+
+ROUTE_MODULES.push(transcriptRoutes);
 // @wp-end WP-33
 
 // @wp-begin WP-36
