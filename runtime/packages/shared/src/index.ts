@@ -1,4 +1,15 @@
 // @wp-begin WP-02
+export * from './ids.ts';
+export * from './errors.ts';
+export * from './version.ts';
+export * from './time.ts';
+export * from './env.ts';
+export * from './files/instance.ts';
+export * from './files/state.ts';
+export * from './files/backup-manifest.ts';
+export * from './config/runtime/index.ts';
+export * from './cli/envelope.ts';
+export * from './cli/results.ts';
 // @wp-end WP-02
 
 // @wp-begin WP-03
