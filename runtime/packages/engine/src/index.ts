@@ -405,6 +405,50 @@ export type { NotFoundCode, PathSessionOptions, RefusalCode } from './query/inde
 // @wp-end WP-31
 
 // @wp-begin WP-32
+export {
+  INGEST_ERROR_CODES,
+  INGEST_ERROR_DETAIL_MAX_CP,
+  IngestWriterClosedError,
+  SpoolSegmentNotFoundError,
+  ingestError,
+  isIngestErrorCode,
+} from './ingest/errors.ts';
+export type { IngestErrorCode, IngestErrorOrigin, IngestErrorRecord } from './ingest/errors.ts';
+export {
+  CONTENT_WINDOW_MS,
+  SOURCE_HOOK,
+  emptyDuplicateCounts,
+  judgeHookRow,
+  layerOfSilentInsert,
+  totalDuplicates,
+} from './ingest/dedupe.ts';
+export type { DedupeLookup, DedupeVerdict, DuplicateCounts, DuplicateLayer } from './ingest/dedupe.ts';
+export { createIngestWriter, envelopeItem } from './ingest/writer.ts';
+export type {
+  CursorUpdate,
+  IngestBatch,
+  IngestItem,
+  IngestWriter,
+  IngestWriterHandle,
+  IngestWriterOptions,
+  IngestWriterStats,
+  RowWrite,
+} from './ingest/writer.ts';
+export { readRouteFile, removeRouteFile, routeFilePath, routeOf, writeRouteFile } from './ingest/routes-file.ts';
+export type { RouteInstance, RouteState, RouteWriteOptions } from './ingest/routes-file.ts';
+export {
+  hourEndOf,
+  isSegmentName,
+  listSegments,
+  retentionExpired,
+  sealDecision,
+  segmentNameOf,
+} from './ingest/spool/segments.ts';
+export type { SealInput, SegmentFile, SegmentListing } from './ingest/spool/segments.ts';
+export { applySpoolReplay, planSpoolReplay } from './ingest/spool/replay.ts';
+export type { SpoolReplayPlan, SpoolReplaySegment } from './ingest/spool/replay.ts';
+export { createSpoolDrainer } from './ingest/spool/spool-drainer.ts';
+export type { SpoolDrainer, SpoolDrainerOptions, SpoolStats } from './ingest/spool/spool-drainer.ts';
 // @wp-end WP-32
 
 // @wp-begin WP-33
