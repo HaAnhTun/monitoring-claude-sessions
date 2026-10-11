@@ -435,6 +435,11 @@ def legacy_args(argv):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
+        if not argv or argv[0] in ('-h', '--help'):
+            build_parser().print_help()
+            print('
+legacy flags still work: --config FILE [--check|--stop], --discover [--repo PATH]')
+            return 0 if argv else 2
         if argv and not argv[0].startswith('-'):
             a = build_parser().parse_args(argv)
             if not getattr(a, 'fn', None):
