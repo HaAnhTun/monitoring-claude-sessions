@@ -54,8 +54,8 @@ export interface InitOptions {
   /** Test seam: the instance id. */
   readonly newId?: () => string;
   /**
-   * Called once the staging folder is complete and before it is renamed into place. The test hook
-   * `MCS_TEST_INIT_CRASH=before-rename` of 01 2.10 ends the process here (exit 70); the operations layer passes it.
+   * Called once the staging folder is complete and before it is renamed into place. The init crash test hook of 01 2.10
+   * (value `before-rename`) ends the process here (exit 70); the operations layer passes it.
    */
   readonly beforeRename?: () => void | Promise<void>;
   /** Longest wait for another command on the same workspace (default `TASK_MUTEX_TIMEOUT_MS`). */

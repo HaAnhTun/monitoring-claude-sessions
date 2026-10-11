@@ -410,7 +410,7 @@ export async function buildInstanceContextWith(i: BuildContextInput, deps: Conte
 
 // ---- the query layer of design 03, and a stub of it ----------------------------------------------------------------------------
 // `packages/engine/src/query/index.ts` (WP-17) does not exist yet. Until it does, `contextFactories.createQueries` is a stub
-// with the signature of 03 12.1 whose methods throw; the block of WP-17 at the end of this file registers the real one: an
+// with the signature of 03 12.1 that throws when called; the block of WP-17 at the end of this file registers the real one: an
 // import, then `contextFactories.createQueries = createQueries;`. The assignment is checked against the signature below. The
 // interfaces here are the part of 03 12.1 that WP-17 seeds (`instanceInfo`, `health`, `ingestHealth`, `hookProbe`); WP-17 widens
 // them with `export interface EngineQueries extends <the real interface> {}` in its block (an interface of the same name
@@ -452,13 +452,8 @@ const notBuilt = (): never => {
 export const contextFactories: {
   createQueries: (db: InstanceDb, deps: QueryDeps) => EngineQueries & TranscriptQueries & AuditQueries;
 } = {
-  createQueries: () => ({
-    instanceInfo: notBuilt,
-    health: notBuilt,
-    ingestHealth: notBuilt,
-    hookProbe: notBuilt,
-    sessionAuditRefs: notBuilt,
-  }),
+  // `notBuilt` returns `never`, so it has the signature without a stand-in object for the members that later blocks merge in.
+  createQueries: notBuilt,
 };
 
 // The block of WP-17, the owner of the real `createQueries` (see above). It is empty until that work package lands.

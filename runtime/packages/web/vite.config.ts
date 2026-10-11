@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => {
     base: '/',
     // Workspace packages resolve to their TypeScript sources: no prior `tsc -b` for dev or build (05 2.8, ADR 0040).
     resolve: { conditions: ['@mcs/source', ...defaultClientConditions] },
+    // The same for suites that run in the node environment (`// @vitest-environment node`): Vitest resolves those through the SSR
+    // conditions. Only the custom condition, as in the root vitest.config.ts (an `import` flag would reach the node workers).
+    ssr: { resolve: { conditions: ['@mcs/source'] } },
     build: {
       outDir: 'dist',
       assetsDir: 'assets',

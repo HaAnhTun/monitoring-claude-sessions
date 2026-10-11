@@ -200,6 +200,65 @@ describe('scripts/check-deps.mjs on a throw-away workspace', () => {
     expect(result.stderr).toContain('check-deps: package.json devDependencies: vitest@~5.0.3 is not an exact version');
   });
 
+  it('does not read a test title that ends in the word import as an import statement', () => {
+    const ws = cleanWorkspace();
+    ws.files['packages/engine/src/titles.test.ts'] = [
+      "import { describe, it } from 'vitest';",
+      "describe('malformed input never stops the import', () => {",
+      "  it('nothing is written when there is nothing to import', () => {",
+      '    expect(1).toBe(1);',
+      '  });',
+      "  it('a title with the word import', () => undefined);",
+      '});',
+      '',
+    ].join('\n');
+    materialize(ws);
+    const result = run();
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+  });
+
+  it('still reads side-effect, dynamic, multi-line and re-export imports, and reports the undeclared ones', () => {
+    const ws = cleanWorkspace();
+    ws.files['packages/engine/src/side-effect.ts'] = `import 'undeclared-side';
+import "undeclared-double";
+`;
+    ws.files['packages/engine/src/dynamic.ts'] = `export const load = () => import('undeclared-dynamic');
+`;
+    ws.files['packages/engine/src/multi.ts'] = `import {
+  a,
+  b,
+} from 'undeclared-multi';
+export { a, b };
+`;
+    ws.files['packages/engine/src/reexport.ts'] = `export { c } from 'undeclared-reexport';
+`;
+    materialize(ws);
+    const result = run();
+    expect(result.status).toBe(1);
+    for (const name of ['side', 'double', 'dynamic', 'multi', 'reexport']) {
+      expect(result.stderr).toContain(`imports 'undeclared-${name}'`);
+    }
+    expect(result.stderr).toContain('check-deps: 5 problem(s)');
+  });
+
+  it('treats the sources of the test-only testkit package as test code: vitest from the root is allowed, the rest is not', () => {
+    const ws = cleanWorkspace();
+    ws.files['packages/testkit/src/temp.ts'] = `import { afterEach } from 'vitest';
+export const hook = afterEach;
+`;
+    materialize(ws);
+    expect(run().status).toBe(0);
+
+    ws.files['packages/testkit/src/other.ts'] = `import 'undeclared-testkit';
+`;
+    materialize(ws);
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("check-deps: packages/testkit/src/other.ts: imports 'undeclared-testkit'");
+    expect(result.stderr).not.toContain('temp.ts');
+  });
+
   it('ignores node_modules and dist folders and declaration files', () => {
     const ws = cleanWorkspace();
     ws.files['packages/engine/node_modules/x/index.ts'] = "import 'undeclared-a';\n";

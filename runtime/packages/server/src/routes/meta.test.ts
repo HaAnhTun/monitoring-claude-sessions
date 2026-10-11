@@ -4,7 +4,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import path from 'node:path';
 
-import { defaultSkillDir, resolveConfig, type ResolvedConfig, type RuntimeProcessInfo } from '@mcs/engine';
+import {
+  defaultSkillDir,
+  resolveConfig,
+  type AuditQueries,
+  type EngineQueries,
+  type ResolvedConfig,
+  type RuntimeProcessInfo,
+} from '@mcs/engine';
 import {
   ConfigInspectionSchema,
   HealthReportSchema,
@@ -22,6 +29,14 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { bindRouteServices, type AppContext, type LegacyTask } from '../route-adapter.ts';
 import { metaRoutes, readLegacyTask } from './meta.ts';
+
+/** What the routes under test call: the meta part of the query layer (03 12.1), nothing else is built. */
+type MetaQueriesDouble = Pick<EngineQueries, 'instanceInfo' | 'health' | 'ingestHealth' | 'hookProbe'> & AuditQueries;
+
+/** The one place that widens the double to the layer; a member a route would call beyond the meta part is `undefined` and fails loudly. */
+function asQueries(double: MetaQueriesDouble): AppContext['queries'] {
+  return double as AppContext['queries'];
+}
 
 const makeTemp = useTempDirs();
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -261,7 +276,7 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
     slug: 'demo',
     clock,
     scope: { instanceId: ID },
-    queries: {
+    queries: asQueries({
       instanceInfo: () => {
         stubs.calls.push('instanceInfo');
         return info;
@@ -276,7 +291,7 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
       },
       hookProbe: () => null,
       sessionAuditRefs: () => Promise.resolve([]),
-    },
+    }),
     errors,
     logger: {
       debug: () => undefined,

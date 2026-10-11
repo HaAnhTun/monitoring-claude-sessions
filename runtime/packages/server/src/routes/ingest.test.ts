@@ -2,7 +2,14 @@
 // lookup (I-37). Fake instance context, real Express and sockets; the full guard matrix is in test/ingest.int.test.ts.
 import type { Server } from 'node:http';
 
-import { defaultSkillDir, resolveConfig, type ResolvedConfig, type RuntimeProcessInfo } from '@mcs/engine';
+import {
+  defaultSkillDir,
+  resolveConfig,
+  type AuditQueries,
+  type EngineQueries,
+  type ResolvedConfig,
+  type RuntimeProcessInfo,
+} from '@mcs/engine';
 import { ErrorEnvelopeSchema, HookProbeResultSchema, RUNTIME_VERSION, type InstanceFile } from '@mcs/shared';
 import { allocatePort, assertPortClosed, FakeClock, httpRequest } from '@mcs/testkit';
 import express, { type Express } from 'express';
@@ -10,6 +17,14 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { bindRouteServices, type AppContext } from '../route-adapter.ts';
 import { ingestRoutes } from './ingest.ts';
+
+/** What the routes under test call: the meta part of the query layer (03 12.1), nothing else is built. */
+type MetaQueriesDouble = Pick<EngineQueries, 'instanceInfo' | 'health' | 'ingestHealth' | 'hookProbe'> & AuditQueries;
+
+/** The one place that widens the double to the layer; a member a route would call beyond the meta part is `undefined` and fails loudly. */
+function asQueries(double: MetaQueriesDouble): AppContext['queries'] {
+  return double as AppContext['queries'];
+}
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '22222222-2222-4222-8222-222222222222';
@@ -82,7 +97,7 @@ async function start(o: Options = {}): Promise<Harness> {
     instanceId: ID,
     scope: { instanceId: ID },
     clock: new FakeClock(NOW),
-    queries: {
+    queries: asQueries({
       instanceInfo: () => {
         throw new Error('not used');
       },
@@ -97,7 +112,7 @@ async function start(o: Options = {}): Promise<Harness> {
         probes.push(id);
         return (o.probe ?? (() => null))(id);
       },
-    },
+    }),
     errors: {
       push: (entry) => {
         ring.push({ source: entry.source, code: entry.code, where: entry.where, message: entry.message });

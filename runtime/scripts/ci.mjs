@@ -30,6 +30,9 @@ const steps = [
   ['check:deps', 'scripts/check-deps.mjs', []],
   // @wp-begin WP-75
   // @wp-end WP-75
+  // `build` runs before `test`: about 150 tests spawn dist/main.js, dist/hook.js or dist/boot.js and read .mcs-build.json.
+  // The standalone `test:int`, `test:isolation` and `test:resilience` scripts need `npm run build` first as well.
+  ['build', npmCli, ['run', 'build']],
   [
     'test',
     binPath('vitest'),
@@ -49,7 +52,6 @@ const steps = [
       // @wp-end WP-72
     ],
   ],
-  ['build', npmCli, ['run', 'build']],
   ['smoke', 'scripts/smoke.mjs', []],
 ];
 if (!offline) steps.push(['audit', npmCli, ['audit', '--audit-level=low']]);
@@ -73,6 +75,11 @@ for (const [name, script, stepArgs] of steps) {
   const code = await runNode(script, stepArgs);
   const result = code === 0 ? 'PASS' : code === SKIP_EXIT ? SKIPPED : `FAIL (exit ${code})`;
   results.push([name, result, Date.now() - started]);
+  if (name === 'build' && result.startsWith('FAIL') && keepGoing) {
+    console.log(
+      'note: the build gate failed; tests that spawn dist/ fail because of that, not because of their own code.',
+    );
+  }
   if (result.startsWith('FAIL') && !keepGoing) break;
 }
 

@@ -20,6 +20,7 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_TEST_IGNORE_CONTROL', 'test'],
   ['MCS_TEST_BOOT_HANG', 'test'],
   ['MCS_TEST_INIT_CRASH', 'test'],
+  ['MCS_TEST_CASES', 'test'],
   ['MCS_PERF_FACTOR', 'test'],
   ['MCS_GOLDEN_LIVE_CONFIG', 'test'],
   ['MCS_GOLDEN_DIR', 'test'],
@@ -56,9 +57,12 @@ describe('DOCUMENTED_ENV_VARS', () => {
     }
   });
 
-  it('routes every MCS_TEST_* hook through test-hooks.ts only', () => {
+  it('routes every MCS_TEST_* hook through test-hooks.ts only; a test input is read by test files only', () => {
+    const inputs = new Map([['MCS_TEST_CASES', ['runtime/packages/engine/src/lifecycle/properties.test.ts']]]);
     for (const v of DOCUMENTED_ENV_VARS.filter((e) => e.name.startsWith('MCS_TEST_'))) {
-      expect(v.readers, v.name).toEqual(['runtime/packages/engine/src/runtime/test-hooks.ts']);
+      const input = inputs.get(v.name);
+      if (input === undefined) expect(v.readers, v.name).toEqual(['runtime/packages/engine/src/runtime/test-hooks.ts']);
+      else expect(v.readers, v.name).toEqual(input);
     }
   });
 

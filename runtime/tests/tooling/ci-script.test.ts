@@ -111,7 +111,8 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const GATES = ['format:check', 'lint', 'typecheck', 'check:deps', 'test', 'build', 'smoke', 'audit'];
+// `build` runs before `test`: about 150 tests spawn `dist/main.js`, `dist/hook.js` or `dist/boot.js` and read `.mcs-build.json`.
+const GATES = ['format:check', 'lint', 'typecheck', 'check:deps', 'build', 'test', 'smoke', 'audit'];
 
 describe('scripts/ci.mjs', () => {
   it('runs the gates of 05 section 8.1 in order and exits 0 when all pass', () => {
@@ -129,8 +130,8 @@ describe('scripts/ci.mjs', () => {
       'eslint . --max-warnings 0',
       'typecheck ',
       'check-deps ',
-      'vitest run --project unit --project web --project integration --project isolation --project resilience',
       'npm run build',
+      'vitest run --project unit --project web --project integration --project isolation --project resilience',
       'smoke ',
       'npm audit --audit-level=low',
     ]);
@@ -156,7 +157,7 @@ describe('scripts/ci.mjs', () => {
     const run = runCi([], { eslint: 1 });
     expect(run.order).toEqual(['format:check', 'lint']);
     expect(run.rows.get('lint')).toBe('FAIL (exit 1)');
-    expect(run.notRun).toBe('typecheck, check:deps, test, build, smoke, audit');
+    expect(run.notRun).toBe('typecheck, check:deps, build, test, smoke, audit');
     expect(run.status).toBe(1);
     expect(run.calls).toHaveLength(2);
   });
@@ -194,8 +195,26 @@ describe('scripts/ci.mjs', () => {
     expect(audit.status).toBe(1);
     const build = runCi([], { 'npm:run': 2 });
     expect(build.rows.get('build')).toBe('FAIL (exit 2)');
-    expect(build.notRun).toBe('smoke, audit');
+    expect(build.notRun).toBe('test, smoke, audit');
     expect(build.status).toBe(1);
+  });
+
+  it('builds before it tests: the tests that spawn dist/ need the build and its stamp', () => {
+    const run = runCi(['--offline']);
+    expect(run.order.indexOf('build')).toBeGreaterThan(-1);
+    expect(run.order.indexOf('build')).toBeLessThan(run.order.indexOf('test'));
+    expect(run.order.indexOf('test')).toBeLessThan(run.order.indexOf('smoke'));
+    const vitestCall = run.calls.findIndex((call) => call.startsWith('vitest run --project unit'));
+    expect(run.calls.indexOf('npm run build')).toBeLessThan(vitestCall);
+  });
+
+  it('under --keep-going a failed build is followed by a note that explains the dist-dependent test failures', () => {
+    const failed = runCi(['--keep-going', '--offline'], { 'npm:run': 2 });
+    expect(failed.rows.get('build')).toBe('FAIL (exit 2)');
+    expect(failed.rows.has('test')).toBe(true);
+    expect(failed.stdout).toMatch(/note: the build gate failed; tests that spawn dist\/ fail because of that/);
+    const passed = runCi(['--keep-going', '--offline']);
+    expect(passed.stdout).not.toMatch(/note: the build gate failed/);
   });
 });
 

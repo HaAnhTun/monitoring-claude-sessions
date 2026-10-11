@@ -1,8 +1,8 @@
 // Shared helpers for repository scripts. Zero dependencies; Node >= 22.22.0 (the one floor, 01 section 5.1).
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const RUNTIME_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -33,4 +33,32 @@ export function runNode(script, args, options = {}) {
     child.on('error', () => resolvePromise(127));
     child.on('close', (code) => resolvePromise(code ?? 1));
   });
+}
+
+/** What `npm run build` produces and the tests that spawn `dist/` need (relative to the runtime root). */
+export const BUILD_OUTPUTS = [
+  '.mcs-build.json',
+  'packages/cli/dist/main.js',
+  'packages/cli/dist/hook.js',
+  'packages/server/dist/boot.js',
+];
+
+/** The build outputs that are missing under `root` (empty when the runtime is built). */
+export function missingBuildOutputs(root = RUNTIME_ROOT) {
+  return BUILD_OUTPUTS.filter((rel) => !existsSync(join(root, rel)));
+}
+
+/**
+ * `node scripts/lib.mjs require-build`: exits 1 with a clear message when `npm run build` has not run. For the standalone test
+ * scripts (`test:int`, `test:isolation`, `test:resilience`) as a pre-script; `scripts/ci.mjs` builds before it tests and needs no guard.
+ */
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href && process.argv[2] === 'require-build') {
+  const missing = missingBuildOutputs();
+  if (missing.length > 0) {
+    console.error(
+      `build required: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing. ` +
+        'These tests spawn dist/ and need the build stamp: run `npm run build` first (no hidden auto-build).',
+    );
+    process.exitCode = 1;
+  }
 }

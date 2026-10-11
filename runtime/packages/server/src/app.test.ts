@@ -8,6 +8,8 @@ import {
   DbError,
   defaultSkillDir,
   resolveConfig,
+  type AuditQueries,
+  type EngineQueries,
   type InstanceRuntime,
   type ResolvedConfig,
   type RuntimeProcessInfo,
@@ -26,6 +28,14 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, createHttpServer, HTML_CSP, type AppDeps } from './app.ts';
 import { mountedRoutes } from './route-adapter.ts';
 import type { AppContext, RouteModule } from './route-adapter.ts';
+
+/** What the routes under test call: the meta part of the query layer (03 12.1), nothing else is built. */
+type MetaQueriesDouble = Pick<EngineQueries, 'instanceInfo' | 'health' | 'ingestHealth' | 'hookProbe'> & AuditQueries;
+
+/** The one place that widens the double to the layer; a member a route would call beyond the meta part is `undefined` and fails loudly. */
+function asQueries(double: MetaQueriesDouble): AppContext['queries'] {
+  return double as AppContext['queries'];
+}
 
 /** The reply of the HTTP helper of the testkit (its type is not exported). */
 type HttpReply = Awaited<ReturnType<typeof httpRequest>>;
@@ -122,7 +132,7 @@ async function start(over: Partial<AppDeps> = {}): Promise<Harness> {
     slug: 'demo',
     clock: new FakeClock(NOW),
     scope: { instanceId: ID },
-    queries: {
+    queries: asQueries({
       instanceInfo: () => {
         // the stub of the test decides what the query layer answers
         return holder.instanceInfo() as never;
@@ -131,7 +141,7 @@ async function start(over: Partial<AppDeps> = {}): Promise<Harness> {
       ingestHealth: () => ({}) as never,
       hookProbe: () => null,
       sessionAuditRefs: () => Promise.resolve([]),
-    },
+    }),
     errors: {
       push: (entry) => {
         ring.push({ source: entry.source, code: entry.code, where: entry.where, message: entry.message });

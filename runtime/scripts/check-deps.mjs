@@ -11,8 +11,10 @@ const root = readJson(join(RUNTIME_ROOT, 'package.json'));
 const EXACT = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 const ALIAS_EXACT = /^npm:[@a-z0-9/._-]+@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 const BUILTINS = new Set(builtinModules);
+// A statement starts a line (or follows `;` or `}`), and a specifier has no whitespace and starts like a path or a package name: a test
+// title that merely ends in the word "import" (`it('nothing to import', () => {`) is no import (its "specifier" would hold spaces).
 const IMPORT_RE =
-  /(?:^|[\s;])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;])import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/gm;
+  /(?:^|[;}])\s*(?:import|export)\s[^'"]*?from\s*['"]([\w@.:/~-][^'"\s]*)['"]|(?:^|[;}])\s*import\s*['"]([\w@.:/~-][^'"\s]*)['"]|\bimport\(\s*['"]([\w@.:/~-][^'"\s]*)['"]\s*\)/gm;
 
 function checkExact(owner, deps) {
   for (const [name, spec] of Object.entries(deps ?? {})) {
@@ -74,13 +76,15 @@ for (const pkg of PACKAGES) {
       rel.includes('/test/') ||
       rel.includes('/e2e/') ||
       rel.endsWith('test-setup.ts') ||
-      rel.endsWith('.config.ts');
+      rel.endsWith('.config.ts') ||
+      // @mcs/testkit is the test-only package (ADR 0040): its sources are test code, so vitest from the root devDependencies is allowed
+      rel.startsWith('packages/testkit/');
     const text = readFileSync(file, 'utf8');
     for (const match of text.matchAll(IMPORT_RE)) {
       const specifier = match[1] ?? match[2] ?? match[3];
       const name = packageOf(specifier);
       if (name === null || name === manifest.name) continue;
-      const typeOnly = /^\s*(import|export)\s+type\s/.test(match[0].trim());
+      const typeOnly = /^[\s;}]*(import|export)\s+type\s/.test(match[0]);
       const declared = prod.has(name) || (isTest || typeOnly ? dev.has(name) || rootDev.has(name) : false);
       if (!declared) {
         problems.push(

@@ -17,7 +17,7 @@ import {
 import { RUNTIME_VERSION } from '@mcs/shared';
 import { allocatePort, assertPortClosed, FakeClock, httpRequest, useTempDirs, waitFor } from '@mcs/testkit';
 import express from 'express';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp, createHttpServer } from '../src/app.ts';
 import { bindRouteServices } from '../src/route-adapter.ts';
@@ -39,6 +39,7 @@ const openServers: { server: Server; port: number }[] = [];
 const openReaders: StreamReader[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks(); // the timer spies of `watchHeartbeats`
   for (const reader of openReaders.splice(0)) reader.close();
   for (const { server, port } of openServers.splice(0)) {
     await new Promise<void>((resolve) => {
@@ -327,32 +328,62 @@ async function serveMini(ctx: InstanceContext, options: StreamRouteOptions): Pro
   return port;
 }
 
-/** The number of live timers of this process: the hub's heartbeat and stall timers show up here. */
-function timerCount(): number {
-  return process.getActiveResourcesInfo().filter((name) => name === 'Timeout').length;
+/**
+ * A heartbeat interval that no other timer of the process can have, and that never fires inside a test. The hub of a test gets it
+ * through `limits.heartbeatMs`, so the intervals that carry this delay are the hub's own, however busy the process is.
+ */
+const OWN_HEARTBEAT_MS = 86_400_123;
+
+interface HeartbeatWatch {
+  /** Heartbeat intervals the hub created and nobody cleared yet. */
+  live(): number;
+  /** Heartbeat intervals the hub created so far, cleared or not. */
+  created(): number;
+}
+
+/**
+ * Counts what this test owns: the heartbeat intervals of its hub. The first version compared `process.getActiveResourcesInfo()`
+ * with a baseline, which counts every timer of the worker (sockets, the wait helper, other files of a parallel run) and failed under
+ * load although the hub had cleaned up. This one wraps `setInterval` and `clearInterval` (calls pass through) and follows only
+ * the intervals with `OWN_HEARTBEAT_MS`.
+ */
+function watchHeartbeats(): HeartbeatWatch {
+  const created = vi.spyOn(globalThis, 'setInterval');
+  const cleared = vi.spyOn(globalThis, 'clearInterval');
+  const own = (): number[] =>
+    created.mock.calls.flatMap(([, delay], index) => (delay === OWN_HEARTBEAT_MS ? [index] : []));
+  return {
+    created: () => own().length,
+    live: () => {
+      const gone = new Set<unknown>(cleared.mock.calls.map(([handle]) => handle));
+      return own().filter((index) => !gone.has(created.mock.results[index]?.value)).length;
+    },
+  };
 }
 
 describe('disconnect cleanup (DA-T-RT-5)', () => {
   it('removes six aborted clients, clears their timers and stops listening for commits', async () => {
     const { ctx } = await openInstance();
     let hub: StreamHub | undefined;
+    const watch = watchHeartbeats();
     const port = await serveMini(ctx, {
+      limits: { heartbeatMs: OWN_HEARTBEAT_MS },
       onHub: (created) => {
         hub = created;
       },
     });
     const session = addSession(ctx, 1);
-    const baseline = timerCount();
+    expect(watch.live()).toBe(0);
 
     const readers: StreamReader[] = [];
     for (let i = 0; i < 6; i += 1) readers.push(await openStream(port));
     await waitFor(() => readers.every((reader) => reader.of('hello').length === 1));
     expect(hub?.size).toBe(6);
-    expect(timerCount()).toBeGreaterThan(baseline); // one heartbeat interval per client
+    expect(watch.live()).toBe(6); // one heartbeat interval per client
 
     for (const reader of readers) reader.close();
     await waitFor(() => hub?.size === 0, { what: 'the hub to forget its clients' });
-    await waitFor(() => timerCount() === baseline, { what: 'the timers of the clients to be cleared' });
+    await waitFor(() => watch.live() === 0, { what: 'the timers of the clients to be cleared' });
 
     // nothing listens any more: a commit after the last client left has no one to reach and breaks nothing
     appendEvents(ctx, session, 3);
@@ -362,13 +393,14 @@ describe('disconnect cleanup (DA-T-RT-5)', () => {
   it('survives an abort storm of 60 streams opened and cut at once', async () => {
     const { ctx } = await openInstance();
     let hub: StreamHub | undefined;
+    const watch = watchHeartbeats();
     const port = await serveMini(ctx, {
+      limits: { heartbeatMs: OWN_HEARTBEAT_MS },
       onHub: (created) => {
         hub = created;
       },
     });
     const session = addSession(ctx, 1);
-    const baseline = timerCount();
     for (let round = 0; round < 3; round += 1) {
       const opened = await Promise.all(Array.from({ length: 12 }, () => openStream(port, { query: 'since=0' })));
       for (const reader of opened) reader.close();
@@ -377,7 +409,8 @@ describe('disconnect cleanup (DA-T-RT-5)', () => {
       for (const reader of more) reader.close();
     }
     await waitFor(() => hub?.size === 0, { what: 'every aborted client to be removed' });
-    await waitFor(() => timerCount() === baseline, { what: 'every timer to be cleared' });
+    expect(watch.created()).toBeGreaterThan(0); // the storm did open streams, so the clean count below means something
+    await waitFor(() => watch.live() === 0, { what: 'every timer to be cleared' });
     // the server still serves a fresh client afterwards
     const fresh = await openStream(port);
     expect(fresh.status).toBe(200);
@@ -387,19 +420,21 @@ describe('disconnect cleanup (DA-T-RT-5)', () => {
   it('ends every stream when the server drops its connections (shutdown) and clears the timers', async () => {
     const { ctx } = await openInstance();
     let hub: StreamHub | undefined;
+    const watch = watchHeartbeats();
     const port = await serveMini(ctx, {
+      limits: { heartbeatMs: OWN_HEARTBEAT_MS },
       onHub: (created) => {
         hub = created;
       },
     });
-    const baseline = timerCount();
     const readers = [await openStream(port), await openStream(port)];
     await waitFor(() => readers.every((reader) => reader.of('hello').length === 1));
+    expect(watch.live()).toBe(2);
     const entry = openServers.find((known) => known.port === port);
     entry?.server.closeAllConnections();
     await waitFor(() => readers.every((reader) => reader.closed), { what: 'the streams to end' });
     await waitFor(() => hub?.size === 0);
-    await waitFor(() => timerCount() === baseline);
+    await waitFor(() => watch.live() === 0, { what: 'the timers of the ended streams to be cleared' });
   });
 });
 

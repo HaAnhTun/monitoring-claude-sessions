@@ -1,6 +1,6 @@
 // T-HK-01..14, T-HK-16 and T-HK-17 (02 2.12) against the real built handler, started through the installed stub
 // (`scripts/mcs-hook.mjs`) or directly (`dist/hook.js`). Every test runs with a temp `MCS_HOME`; none touches real
-// settings. The integration gate builds the runtime first.
+// settings. The runtime must be built first: `scripts/ci.mjs` builds before it tests; standalone runs need `npm run build`.
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -662,50 +662,81 @@ describe('T-HK-09 concurrency', () => {
   });
 });
 
-describe('T-HK-10 performance (budgets of 02 2.10, times MCS_PERF_FACTOR)', () => {
+describe('T-HK-10 performance (budgets of 02 2.10, times MCS_PERF_FACTOR, scaled by the node start of the moment)', () => {
   const RUNS = 30;
+  /**
+   * What a bare `node -e ""` takes on an idle development machine (15 runs on Windows 11 with Node 24: 38-44 ms; the handler's
+   * median of 65-70 ms in 02 2.10 is this plus 5-10 ms of its own work and its module load). A budget is "about 2x the measurement",
+   * so it only holds on an idle machine: a loaded one slows the node start itself, which says nothing about the handler.
+   */
+  const NODE_START_REFERENCE_MS = 40;
   const median = (values: number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 0;
   const p90 = (values: number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length * 0.9)] ?? 0;
 
-  async function measure(s: Setup, payload: Record<string, unknown>): Promise<number[]> {
+  /** Wall time of a bare node process that does nothing: the part of every budget that the handler does not control. */
+  function bareNodeStart(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const started = performance.now();
+      const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true });
+      child.once('error', reject);
+      child.once('close', () => {
+        resolve(performance.now() - started);
+      });
+    });
+  }
+
+  interface Measured {
+    readonly times: number[];
+    /** `max(1, median node start / reference)`, measured in the same loop and so under the same load as the handler runs. */
+    readonly scale: number;
+  }
+
+  /**
+   * 30 handler runs, each directly followed by one bare node start. The pairs see the same machine load, so the budget is the
+   * documented one times `scale`: 1 on an idle machine (the budget stays as strict as 02 2.10 says), larger only as far as
+   * the node start itself got slower. A handler that is slow by itself still fails: it is slower than its own node start allows.
+   */
+  async function measure(s: Setup, payload: Record<string, unknown>): Promise<Measured> {
     await runHookHandler(payload, { mcsHome: s.mcsHome });
     const times: number[] = [];
-    for (let i = 0; i < RUNS; i += 1) times.push((await runHookHandler(payload, { mcsHome: s.mcsHome })).durationMs);
-    return times;
+    const baseline: number[] = [];
+    for (let i = 0; i < RUNS; i += 1) {
+      times.push((await runHookHandler(payload, { mcsHome: s.mcsHome })).durationMs);
+      baseline.push(await bareNodeStart());
+    }
+    return { times, scale: Math.max(1, median(baseline) / NODE_START_REFERENCE_MS) };
+  }
+
+  function expectWithin(measured: Measured, medianMs: number, p90Ms: number): void {
+    const note = `node start scale ${measured.scale.toFixed(2)}, times ${measured.times.map(Math.round).join(',')}`;
+    expect(median(measured.times), `median: ${note}`).toBeLessThan(medianMs * PERF * measured.scale);
+    expect(p90(measured.times), `p90: ${note}`).toBeLessThan(p90Ms * PERF * measured.scale);
   }
 
   it('no route matches: 120 / 200 ms', async () => {
     const s = setup();
     const elsewhere = { ...s.base, transcriptPath: `${fwd(join(s.root, 'other'))}/${SID}.jsonl` };
-    const times = await measure(s, hookPayload('Stop', elsewhere));
-    expect(median(times)).toBeLessThan(120 * PERF);
-    expect(p90(times)).toBeLessThan(200 * PERF);
-  }, 60_000);
+    expectWithin(await measure(s, hookPayload('Stop', elsewhere)), 120, 200);
+  }, 90_000);
 
   it('route matches, server stopped: 120 / 200 ms', async () => {
     const s = setup();
-    const times = await measure(s, hookPayload('Stop', s.base));
-    expect(median(times)).toBeLessThan(120 * PERF);
-    expect(p90(times)).toBeLessThan(200 * PERF);
-  }, 60_000);
+    expectWithin(await measure(s, hookPayload('Stop', s.base)), 120, 200);
+  }, 90_000);
 
   it('route matches, server running: 150 / 250 ms', async () => {
     const s = setup();
     const server = await startNudgeServer('answer');
     nodeState(s, server.port);
-    const times = await measure(s, hookPayload('Stop', s.base));
-    expect(median(times)).toBeLessThan(150 * PERF);
-    expect(p90(times)).toBeLessThan(250 * PERF);
-  }, 60_000);
+    expectWithin(await measure(s, hookPayload('Stop', s.base)), 150, 250);
+  }, 90_000);
 
   it('server hung: 200 / 450 ms', async () => {
     const s = setup();
     const server = await startNudgeServer('hang');
     nodeState(s, server.port);
-    const times = await measure(s, hookPayload('Stop', s.base));
-    expect(median(times)).toBeLessThan(200 * PERF);
-    expect(p90(times)).toBeLessThan(450 * PERF);
-  }, 60_000);
+    expectWithin(await measure(s, hookPayload('Stop', s.base)), 200, 450);
+  }, 90_000);
 });
 
 describe('T-HK-11 runtime unavailable', () => {

@@ -51,14 +51,18 @@ import {
 
 export type { AuditQueries, AuditReader, QueryDeps, TranscriptQueries } from '../runtime/context.ts';
 
-/** The part of 03 12.1 `EngineQueries` that WP-17 owns; the blocks of later work packages merge the rest into it. */
-export interface EngineQueries {
+/** The part of 03 12.1 `EngineQueries` that WP-17 owns (the meta part); `metaQueries` returns exactly these members. */
+export interface MetaQueries {
   instanceInfo(ctx: RepoContext): InstanceInfo;
   health(ctx: RepoContext): HealthReport;
   ingestHealth(ctx: RepoContext): IngestHealth & { asOfSeq: number };
   /** Route `ingestProbe` (I-37): `null` = not committed yet, or never received. */
   hookProbe(ctx: RepoContext, probeSessionId: string): HookProbeResult | null;
 }
+
+/** The whole layer (03 12.1): the meta part here, the blocks of later work packages merge the rest into it (declaration merging). */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- the anchor of the declaration merging below: every block adds its members here
+export interface EngineQueries extends MetaQueries {}
 
 /** What `createQueries` returns (registry 2.7). */
 export type Queries = EngineQueries & TranscriptQueries & AuditQueries;
@@ -243,7 +247,7 @@ function fileSize(file: string): number {
   }
 }
 
-function metaQueries(db: InstanceDb, deps: QueryDeps): EngineQueries & AuditQueries {
+function metaQueries(db: InstanceDb, deps: QueryDeps): MetaQueries & AuditQueries {
   const ingestRepo = new IngestHealthRepo(db);
   const probeRepo = new HookProbesRepo(db);
   const alertRepo = new AlertsRepo(db);

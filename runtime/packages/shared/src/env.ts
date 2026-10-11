@@ -42,6 +42,9 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_TEST_IGNORE_CONTROL', scope: 'test', readers: [TEST_HOOKS] },
   { name: 'MCS_TEST_BOOT_HANG', scope: 'test', readers: [TEST_HOOKS] },
   { name: 'MCS_TEST_INIT_CRASH', scope: 'test', readers: [TEST_HOOKS] },
+  // Not a production hook: the number of generated cases per scenario template (default 500) of the lifecycle property tests;
+  // 1 replays one failing seed together with MCS_TEST_SEED. Only that test file reads it.
+  { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },
   { name: 'MCS_PERF_FACTOR', scope: 'test', readers: ['runtime/packages/cli/test/hook.int.test.ts'] },
   {
     name: 'MCS_GOLDEN_LIVE_CONFIG',
