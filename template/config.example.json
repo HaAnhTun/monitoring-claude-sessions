@@ -1,0 +1,21 @@
+{
+  "_comment": "Copy to .claude/monitor/<name>.config.json. Keys starting with _ are ignored. Paths are relative to 'repo'. Regexes use Python syntax; avoid backslashes (use [.] for a dot).",
+  "title": "Claude sessions monitor",
+  "port": 8765,
+  "repo": "../..",
+  "transcripts_dir": "auto",
+  "window_hours": 8,
+  "active_seconds": 120,
+  "include_unmatched": false,
+  "session_rules": [
+    { "match": "REPLACE-WITH-A-PHRASE-FROM-THE-FIRST-PROMPT([A-Z0-9]+)", "label": "my job {1}" }
+  ],
+  "panels": { "machine": true, "git": true, "logs": true, "ledger": false, "chain_log": false, "attempts": false },
+  "live_log_globs": [],
+  "chain_log": null,
+  "ledger": null,
+  "stop_file": null,
+  "attempts": null,
+  "watched_processes": ["claude.exe", "java.exe", "node.exe", "python.exe", "docker.exe", "chrome.exe", "Code.exe"],
+  "docker": true
+}
