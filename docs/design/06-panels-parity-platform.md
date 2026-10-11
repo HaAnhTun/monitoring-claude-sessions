@@ -366,6 +366,8 @@ export interface ChildSpec {
   maxOutputBytes: number;            // stdout+stderr cap; exceeded -> kill, result.truncated = true
   encoding: 'utf8' | 'latin1';
   extraEnv?: Readonly<Record<string, string>>;
+  stdin?: string;                    // kind 'node' only (02 3.7 `hooks verify` V6 probe payload, registry C60): written once to the child's
+                                     // stdin, then closed; at most 4096 bytes UTF-8, larger -> `SPAWN_FAILED` and nothing is spawned; never logged
 }
 export type ChildErrorCode = 'ENOENT' | 'EACCES' | 'TIMEOUT' | 'OUTPUT_LIMIT' | 'NONZERO_EXIT' | 'SPAWN_FAILED' | 'QUEUE_FULL' | 'ABORTED';
 export interface ChildResult {
@@ -381,7 +383,9 @@ export function spawnDetached(file: string, args: readonly string[], o: { cwd: s
 export function spawnForeground(file: string, args: readonly string[], o: { cwd: string; env: Record<string, string> }): ChildProcess;   // stdio:'inherit', windowsHide:true
 ```
 Rules (each has a test in 3.11):
-1. Implementation uses `spawn(file, args, { shell: false, windowsHide: true, detached: false, stdio: ['ignore', 'pipe', 'pipe'], cwd, env })`.
+1. Implementation uses `spawn(file, args, { shell: false, windowsHide: true, detached: false, stdio: ['ignore', 'pipe', 'pipe'], cwd, env })`;
+   stdin is `'pipe'` instead of `'ignore'` only when `spec.stdin` is defined (kind `node` only, any other kind with `stdin` is refused with
+   `SPAWN_FAILED`): the string is written once and the stream ended, and an `EPIPE` from a child that exits early is ignored.
    `windowsHide: true` is unconditional (E9 showed no window even without it, but libuv's behaviour is version dependent; the flag is free).
 2. `file` must be absolute and end in `.exe` or `.com` on Windows (a `.cmd`/`.bat` needs `cmd.exe` = a shell: refused with `SPAWN_FAILED`).
 3. `resolveExecutable`: Windows `powershell` -> `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` (fixed, existence-checked;
@@ -401,7 +405,10 @@ Rules (each has a test in 3.11):
    when `PATH` points at `...\Git\cmd\git.exe`: replace `\cmd\git.exe` with `\mingw64\bin\git.exe` if that file exists).
 6. Output cap: count bytes on both pipes; above `maxOutputBytes` kill, `truncated: true`, `error: 'OUTPUT_LIMIT'`.
 7. Concurrency: a per-process semaphore of 2 running children, FIFO queue of 8; a 9th waiting request returns `QUEUE_FULL` immediately.
-8. No argument is built from transcript or hook data. The only dynamic values: a validated integer pid (`/^[1-9][0-9]{0,9}$/`) for
+8. No argument or stdin is built from transcript or hook data (the one `stdin` user is 02 3.7 V6, a synthetic probe payload with a random
+   id, under 1 KiB). For kind `node` the `file` is `process.execPath`, except for `hooks verify` V4/V6 (02 3.7), which spawn the absolute
+   path of the installed hook entry's `command` after 02's checks V1-V3 (settings parse, entries complete, path exists): the point of
+   those checks is to run exactly what Claude Code will run. The only dynamic values: a validated integer pid (`/^[1-9][0-9]{0,9}$/`) for
    `powershell.cmdline`/`taskkill`, the configured repo directory as `cwd`, for kinds `node`/`python`/`icacls` the paths and
    validated CLI values that design 01 passes (script paths inside the skill, workspace paths, slugs matching the slug rule), and for
    `opener` the URL `http://127.0.0.1:<port>/` built from the validated integer port of the instance. Config
@@ -726,7 +733,7 @@ Placement (05 4.1, registry C47): unit tests sit next to their module (`engine/s
 | stale-while-revalidate + last good value | `source-cache.test.ts` | loader fails after a success -> old value with status `error`; next ttl retries with backoff `ttl*2^n` capped 300 s; `unavailable` waits `retryAfterUnavailableMs` |
 | no work without requests | `source-cache.test.ts` | fake clock advanced 1 h without reads -> 0 loader calls |
 | first wait | `source-cache.test.ts` | loader resolves after 50 ms with firstWait 3000 -> value; after 4000 -> `pending` |
-| child policy | `exec.test.ts` (extends 05's: kinds, stats, semaphore, resolution) | spawns `process.execPath -e` scripts: timeout kills (`TIMEOUT`), 3 MB output -> `OUTPUT_LIMIT`, exit 3 -> `NONZERO_EXIT`, missing file -> `ENOENT`, `.cmd` refused, env has `MCS_HOOK_DISABLE=1` and no `GIT_DIR`, 11 concurrent -> 2 running + 8 queued + 1 `QUEUE_FULL`; the shim-to-mingw64 git swap |
+| child policy | `exec.test.ts` (extends 05's: kinds, stats, semaphore, resolution) | spawns `process.execPath -e` scripts: timeout kills (`TIMEOUT`), 3 MB output -> `OUTPUT_LIMIT`, exit 3 -> `NONZERO_EXIT`, missing file -> `ENOENT`, `.cmd` refused, env has `MCS_HOOK_DISABLE=1` and no `GIT_DIR`, 11 concurrent -> 2 running + 8 queued + 1 `QUEUE_FULL`; `stdin` reaches a `process.execPath -e` child that echoes it, a 4097-byte `stdin` -> `SPAWN_FAILED` with no spawn, `stdin` with kind `git` refused; the shim-to-mingw64 git swap |
 | process list parsing | `proc-win32.test.ts` | NET output with CRLF, CLM output, garbage lines ignored, pid/ws non-numeric ignored, CLM switch on `core types` stderr, ENOENT -> unavailable |
 | watched matching | `machine.test.ts` | `Code.exe` vs `code`, `vmmemWSL` vs `vmmemWSL`, `com.docker.backend.exe` vs `com.docker.backend`, first config entry wins, floor-per-process sum, sort |
 | cpu contract | `machine.test.ts` | first sample null; mocked `os.cpus` deltas -> rounded percent; zero delta -> null |

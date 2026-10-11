@@ -23,6 +23,10 @@ output, take the git index lock, or be resolved to `.cmd` shims that need a shel
   directly as `file`): fixed `%SystemRoot%` paths for `powershell.exe`/`taskkill.exe`/`icacls.exe`, `process.execPath` for `node`,
   `opener` = `explorer.exe` (Windows) / `/usr/bin/open` (macOS) / `xdg-open` on PATH; PATH search for `git.exe`/`docker.exe`,
   with the Git `cmd\git.exe` shim swapped for `mingw64\bin\git.exe`; cached 10 min (null 5 min).
+- `ChildSpec.stdin?` (final verification, registry C60): an optional string for kind `node` only, written once and the stream closed,
+  at most 4096 bytes, never logged; its one user is `mcs hooks verify` V6 (02 3.7), which spawns the installed hook command with the
+  synthetic probe payload. For V4/V6 the `file` of kind `node` is the installed entry's `command` (checked by V1-V3), otherwise
+  `process.execPath`.
 - A per-process semaphore: 2 running children, FIFO queue of 8, beyond that `QUEUE_FULL`.
 - `childStats()` per kind (spawned, failed, timedOut, totalMs) exposed as `HealthReport.children` (design 03 6.2, critic I-21).
 - Environment: 05's allow-list + `MCS_HOOK_DISABLE=1`; git adds `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`; docker passes

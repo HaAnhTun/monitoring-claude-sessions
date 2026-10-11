@@ -1,7 +1,9 @@
 # 90 Implementation plan: work packages, DAG, gates and commit order (Phases 2-6)
 
 Status: planning artefact, written 2026-10-11 by the implementation planner from `00-foundations.md`, designs `01`-`06` (revision 3
-texts, as of 17:04), `98-contract-registry.md` and `99-requirements-matrix.md` (second review). It changes no design. Where a design and
+texts as of 17:04, refreshed the same day after the owners' reconciliation of the phase 1b residuals: 01 revision 4, 02 revision
+2026-10-11c, 03 reconciliation pass, 04, 05 revision 2, 06 revision 4), `98-contract-registry.md` (second pass: names, signatures and
+conflict status C01-C63) and `99-requirements-matrix.md` (second review). It changes no design. Where a design and
 this plan disagree on a name or a shape, the design (with the registry's authority order, 98 0.1) wins; this plan only decides who
 builds what, in which order, under which gates. Plan-level choices that move or split a design slice are listed in plan section 10 with the reason.
 
@@ -32,8 +34,9 @@ plan section 11 risk register; plan section 12 stop-the-line rules; plan section
    file, a needed contract change or a design gap is a change request (CR): write `D:/mvp/private/scratch/mcs-v3/cr/CR-<WP>-<n>.json`
    `{wp, doc, section, problem, proposal}` and continue with the rest of the WP; the lead answers and edits designs, the registry or this
    plan. Never change a name owned by another design (98 0.1) on your own.
-3. Read the design sections listed under Inputs before writing code, and the registry rows of every name you produce or consume. Where a
-   `Cnn` row of 98 section 15 still differs from the current design text, the registry's fix column wins.
+3. Read the design sections listed under Inputs before writing code, and the registry rows of every name you produce or consume. Where an
+   OPEN `Cnn` row of 98 section 17 still differs from the current design text (its owner has not edited the design yet), the exact fix
+   stated in that row wins and the CR protocol of rule 2 applies; a RESOLVED row needs no action.
 4. Test first: the tests named under Tests exist and fail before the code that makes them pass. Never weaken, skip or delete a test, a
    lint rule or a check to get green; `it.skip` only through the quarantine protocol of 05 4.7 plus a CR.
 5. Every CLI call in a test, probe or experiment passes `--repo <temp dir>` and, for `init`/`start`/`serve`, `--port <n>` from plan section 3.2.
@@ -107,10 +110,12 @@ code. Rules:
 | `packages/shared/src/protocol/index.ts` | WP-01 | WP-02, WP-04 |
 | `packages/shared/src/api/routes.ts` (route registry) | WP-03 | WP-29 (`explainCompletion` row) |
 | `packages/shared/src/cli/results.ts` | WP-02 | WP-37, WP-61, WP-62, WP-64 |
-| `packages/engine/src/index.ts` (the only engine entry, 05 2.2) | WP-01 | one block per engine WP: WP-05, 07, 08, 09, 12, 13, 14, 16, 17, 19, 22, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38, 40, 41, 57, 58, 59, 60, 61, 62, 63 |
+| `packages/engine/src/index.ts` (the only engine entry, 05 2.2) | WP-01 | one block per engine WP: WP-05, 07, 08, 09, 12, 13, 14, 16, 17, 19, 22, 25, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38, 40, 41, 57, 58, 59, 60, 61, 62, 63 |
 | `packages/engine/src/query/index.ts` (`createQueries`) | WP-17 | WP-29, WP-30, WP-31, WP-33, WP-57, WP-58 |
 | `packages/engine/src/query/overview.ts` | WP-31 | WP-58 (token and cost metrics of 03 8.1) |
-| `packages/engine/src/runtime/instance-runtime.ts` (stub factories replaced by real ones) | WP-16 | WP-17 (`createQueries`), WP-35 (`createIngestService`, `createLifecycleSweeper`, `createDbScheduler`), WP-41 (`createPanelService` + 2 s attempts timer), WP-59 (alerts service) |
+| `packages/engine/src/runtime/instance-runtime.ts` (stub factories replaced by real ones; the 2 s attempts timer, its serializer `tickAttemptsOnce` and the `ingestUntilIdle` mapping are WP-16's own code, 01 4.4a) | WP-16 | WP-35 (`createIngestService`, `createLifecycleSweeper`, `createDbScheduler`), WP-41 (`createPanelService(ctx, { writer })` replaces the stub), WP-59 (alerts service) |
+| `packages/engine/src/runtime/context.ts` (`buildInstanceContext`, `bindPanelStats`) | WP-16 | WP-17 (the real `createQueries(db, { config, now, audit, process, childStats, panelStats })` call replaces the stub: 01 4.4a "Query deps", registry C09, C61) |
+| `packages/engine/src/ops/config.ts` | WP-14 | WP-62 (`migrate`, `importLegacy`: `config migrate`, 01 2.7) |
 | `packages/engine/src/maintenance/schedule.ts` | WP-35 | WP-59 (alert sweep timer), WP-60 (bookkeeping retention timer) |
 | `packages/engine/src/ops/lifecycle.ts` | WP-19 | WP-63 (legacy-engine delegation branch) |
 | `packages/server/src/app.ts` (mounted route modules) | WP-17 | WP-29, WP-30, WP-31, WP-33, WP-36, WP-41, WP-57, WP-58, WP-60 |
@@ -183,7 +188,7 @@ working tree; a red gate in a file of a WP that is about to be committed stops t
 ## 7. Master DAG
 
 Dependencies are hard: a WP starts only when every listed WP is verified (plan section 6). Transitive dependencies are not repeated. `LS-*` rows are
-lead steps (plan section 13). Earliest waves: Phase 2 W2.1-W2.10, Phase 3 W3.1-W3.6, Phase 4 W4.1-W4.6, Phase 5 W5.1-W5.3, Phase 6 W6.1-W6.3. At most
+lead steps (plan section 13). Earliest waves: Phase 2 W2.1-W2.11, Phase 3 W3.1-W3.7, Phase 4 W4.1-W4.6, Phase 5 W5.1-W5.3, Phase 6 W6.1-W6.3. At most
 six implementers run at once (lock contention on `run`); a wave with more WPs is drained in the row order below.
 
 | WP | Title | Phase | Wave | Size | Depends on | Implementer | Verifier | Source slices |
@@ -198,25 +203,25 @@ six implementers run at once (lock contention on `run`); a wave with more WPs is
 | WP-06 | Testkit core and fixtures | 2 | W2.3 | L | WP-02, WP-04 | sonnet high | sonnet high | 05 S2, 05 S3 |
 | WP-07 | Platform layer, mutex and markers | 2 | W2.4 | L | WP-02, WP-03 | opus xhigh | fable | 06 PP1, 01 S4 |
 | WP-09 | DB core | 2 | W2.4 | L | WP-02, WP-03, WP-04 | opus xhigh | fable | 03 S1 |
-| WP-12 | Config resolution | 2 | W2.4 | M | WP-02, WP-05 | sonnet high | opus xhigh | 01 S5 |
+| WP-12 | Config resolution | 2 | W2.5 | M | WP-02, WP-05, WP-07 | sonnet high | opus xhigh | 01 S5 |
 | WP-23 | Tooling tests, JSON Schema generator, inactive CI | 2 | W2.4 | M | WP-01, WP-02, WP-03 | sonnet high | sonnet high | 05 S1 (tests), 05 S5, 01 S16 + 03 S3 (generator) |
 | WP-08 | Security primitives | 2 | W2.5 | M | WP-03, WP-04, WP-07 | opus xhigh | fable | 05 S6 |
 | WP-10 | Write-path repositories and change sink | 2 | W2.5 | L | WP-09 | opus xhigh | fable | 03 S2 (part) |
 | WP-11 | Entity and operations repositories | 2 | W2.5 | L | WP-09 | sonnet high | opus xhigh | 03 S2 (part) |
-| WP-13 | Workspace and audit | 2 | W2.5 | L | WP-05, WP-07, WP-12 | opus xhigh | fable | 01 S6 |
-| WP-14 | Engine ops: workspace, config, audit | 2 | W2.6 | M | WP-12, WP-13 | sonnet high | opus xhigh | 01 S7 (ops) |
-| WP-16 | Composition root | 2 | W2.6 | M | WP-07, WP-08, WP-09, WP-12, WP-13 | opus xhigh | fable | 01 S8 (engine part) |
-| WP-15 | CLI kernel and config commands | 2 | W2.7 | L | WP-08, WP-14 | sonnet high | sonnet high | 01 S7 (CLI) |
-| WP-17 | Server app, meta routes, static hosting | 2 | W2.7 | M | WP-03, WP-08, WP-11, WP-16 | opus xhigh | fable | 03 S4 |
-| WP-18 | Server process shell | 2 | W2.8 | M | WP-07, WP-13, WP-17 | opus xhigh | fable | 01 S8 (server part) |
-| WP-19 | Lifecycle ops and CLI | 2 | W2.9 | M | WP-15, WP-18 | opus xhigh | fable | 01 S9 (ops, CLI) |
-| WP-20 | Isolation setup and lifecycle isolation tests | 2 | W2.10 | M | WP-06, WP-19 | sonnet high | opus xhigh | 05 S9 (`_setup.ts`), 01 S9 (isolation files) |
-| WP-21 | Launcher | 2 | W2.10 | M | WP-01, WP-07, WP-19 | opus xhigh | fable | 01 S10, 05 S4 |
-| WP-22 | Instances, doctor, diagnostics | 2 | W2.10 | M | WP-15, WP-19 | sonnet high | opus xhigh | 01 S11 |
+| WP-13 | Workspace and audit | 2 | W2.6 | L | WP-05, WP-07, WP-12 | opus xhigh | fable | 01 S6 |
+| WP-14 | Engine ops: workspace, config, audit | 2 | W2.7 | M | WP-12, WP-13 | sonnet high | opus xhigh | 01 S7 (ops) |
+| WP-16 | Composition root | 2 | W2.7 | M | WP-07, WP-08, WP-09, WP-12, WP-13 | opus xhigh | fable | 01 S8 (engine part) |
+| WP-15 | CLI kernel and config commands | 2 | W2.8 | L | WP-08, WP-14 | sonnet high | sonnet high | 01 S7 (CLI) |
+| WP-17 | Server app, meta routes, static hosting | 2 | W2.8 | M | WP-03, WP-08, WP-11, WP-16 | opus xhigh | fable | 03 S4 |
+| WP-18 | Server process shell | 2 | W2.9 | M | WP-07, WP-13, WP-17 | opus xhigh | fable | 01 S8 (server part) |
+| WP-19 | Lifecycle ops and CLI | 2 | W2.10 | M | WP-15, WP-18 | opus xhigh | fable | 01 S9 (ops, CLI) |
+| WP-20 | Isolation setup and lifecycle isolation tests | 2 | W2.11 | M | WP-06, WP-19 | sonnet high | opus xhigh | 05 S9 (`_setup.ts`), 01 S9 (isolation files) |
+| WP-21 | Launcher | 2 | W2.11 | M | WP-01, WP-07, WP-19 | opus xhigh | fable | 01 S10, 05 S4 |
+| WP-22 | Instances, doctor, diagnostics | 2 | W2.11 | M | WP-15, WP-19 | sonnet high | opus xhigh | 01 S11 |
 | WP-25 | Hook handler and stub | 3 | W3.1 | M | WP-04, WP-06 | opus xhigh | fable | 02 I-2 |
 | WP-26 | Ingestion primitives: tailer and normalizers | 3 | W3.1 | L | WP-03, WP-04, WP-07 | opus xhigh | fable | 02 I-3, 02 I-5 |
 | WP-30 | Query layer A: sessions, agents, events, tool calls | 3 | W3.1 | L | WP-10, WP-11, WP-17 | sonnet high | opus xhigh | 03 S5 (part) |
-| WP-42 | Testkit legacy builders | 3 | W3.1 | M | WP-06, WP-24 | sonnet high | sonnet high | 06 PP3 |
+| WP-42 | Testkit legacy builders | 3 | W3.1 | M | WP-03, WP-06, WP-24 | sonnet high | sonnet high | 06 PP3 |
 | WP-27 | Token accounting | 3 | W3.2 | M | WP-26 | opus xhigh | fable | 02 I-6 |
 | WP-28 | Lifecycle model | 3 | W3.2 | L | WP-26 | opus xhigh | fable | 02 I-7 |
 | WP-31 | Query layer B: overview, work items, alerts, errors | 3 | W3.2 | M | WP-11, WP-30 | sonnet high | sonnet high | 03 S5 (part) |
@@ -227,11 +232,11 @@ six implementers run at once (lock contention on `run`); a wave with more WPs is
 | WP-32 | Hook path to the database | 3 | W3.3 | L | WP-10, WP-11, WP-16, WP-17, WP-25, WP-26, WP-28 | opus xhigh | fable | 02 I-4 |
 | WP-36 | Stream: hub, hydration, SSE | 3 | W3.3 | M | WP-09, WP-30, WP-31 | opus xhigh | fable | 03 S6 |
 | WP-34 | Transcript importer | 3 | W3.4 | M | WP-05, WP-26, WP-27, WP-32, WP-33 | opus xhigh | fable | 02 I-8 (part) |
-| WP-38 | Hooks and ingest CLI | 3 | W3.4 | M | WP-15, WP-18, WP-32, WP-37 | sonnet high | opus xhigh | 01 S14 |
+| WP-38 | Hooks and ingest CLI | 3 | W3.6 | M | WP-15, WP-18, WP-32, WP-35, WP-37 | sonnet high | opus xhigh | 01 S14 |
 | WP-40 | Attempts | 3 | W3.4 | M | WP-05, WP-07, WP-11, WP-26, WP-32, WP-43 | opus xhigh | opus xhigh | 06 PP5 |
 | WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | 3 | W3.5 | L | WP-16, WP-28, WP-32, WP-34 | opus xhigh | fable | 02 I-8 (part), 02 I-10, 03 S11 (schedule) |
 | WP-41 | Panels: samplers, service, route, runtime wiring | 3 | W3.5 | L | WP-07, WP-16, WP-17, WP-40 | sonnet high | opus xhigh | 06 PP7 |
-| WP-39 | Ingestion integration and ingestion isolation rows | 3 | W3.6 | M | WP-20, WP-25, WP-30, WP-35, WP-38 | sonnet high | opus xhigh | 02 I-11 |
+| WP-39 | Ingestion integration and ingestion isolation rows | 3 | W3.7 | M | WP-20, WP-25, WP-30, WP-35, WP-38 | sonnet high | opus xhigh | 02 I-11 |
 | WP-44 | Web scaffold | 4 | W4.1 | M | WP-01, WP-03 | sonnet high | sonnet high | 04 W1 |
 | WP-45 | Pure lib port | 4 | W4.1 | L | WP-01 (gate after WP-44) | sonnet high | sonnet high | 04 W2 |
 | WP-55 | Scenario catalogue and testkit CLI | 4 | W4.1 | M | WP-25, WP-42 | sonnet medium | sonnet high | 06 PP6 |
@@ -255,11 +260,11 @@ six implementers run at once (lock contention on `run`); a wave with more WPs is
 | WP-67 | Settings and health UI | 5 | W5.1 | M | WP-48 | sonnet high | sonnet medium | 04 W12 |
 | WP-61 | Readers, data CLI, verify-completion | 5 | W5.2 | M | WP-15, WP-19, WP-29, WP-30, WP-60 | sonnet high | opus xhigh | 01 S13a, 01 S13b, 03 S12 |
 | WP-62 | Backup, upgrade, DB migrate and rebuild, cleanup, config migrate | 5 | W5.2 | L | WP-09, WP-12, WP-19, WP-60 | opus xhigh | fable | 01 S12 |
-| WP-68 | Benchmarks | 5 | W5.2 | M | WP-17, WP-19, WP-41, WP-55 | sonnet medium | sonnet high | 06 PP10 |
+| WP-68 | Benchmarks | 5 | W5.2 | M | WP-17, WP-19, WP-35, WP-41, WP-55 | sonnet medium | sonnet high | 06 PP10 |
 | WP-64 | Read-only MCP server | 5 | W5.3 | M | WP-61 | sonnet high | fable | foundations open question 7, R-8.9.10 |
 | LS-6a | Legacy docs move (`git mv`) and banners | 6 | W6.1 | S | Phase 5 gate | lead | sonnet high | 05 6.4 |
 | WP-69 | Parity L2 A and ported-function vectors | 6 | W6.1 | L | WP-27, WP-28, WP-30, WP-33, WP-34, WP-35, WP-43, WP-55, WP-57 | sonnet high | opus xhigh | 06 PP8 (part), 06 PP4 (later vectors) |
-| WP-70 | Parity L2 B and shadow tool | 6 | W6.1 | L | WP-05, WP-13, WP-19, WP-40, WP-41, WP-43, WP-55 | sonnet high | opus xhigh | 06 PP8 (part), 06 PP9 |
+| WP-70 | Parity L2 B and shadow tool | 6 | W6.1 | L | WP-05, WP-13, WP-19, WP-35, WP-40, WP-41, WP-43, WP-55 | sonnet high | opus xhigh | 06 PP8 (part), 06 PP9 |
 | WP-71 | E2E completion and accessibility | 6 | W6.1 | M | WP-35, WP-56, WP-57, WP-65, WP-66, WP-67 | sonnet high | opus xhigh | 04 W14 (rest), 04 11.2 `a11y.test.tsx` |
 | WP-72 | Security suite | 6 | W6.1 | L | WP-07, WP-08, WP-17, WP-19, WP-25, WP-37, WP-57, WP-60, WP-61 | opus xhigh | fable | 05 S7 |
 | WP-73 | Data privacy and data isolation | 6 | W6.1 | M | WP-20, WP-57, WP-58, WP-60, WP-61 | sonnet high | fable | 03 S13, 01 S13a (isolation files) |
@@ -271,13 +276,14 @@ six implementers run at once (lock contention on `run`); a wave with more WPs is
 | WP-79 | SKILL.md candidate and skill verification | 6 | W6.2 | M | WP-21, WP-22, WP-38, WP-61, WP-62, WP-63 | sonnet high | opus xhigh | 01 Appendix A, 01 S16 |
 | LS-6b | Release gates, cutover evidence, marker cleanup, SKILL.md install | 6 | W6.3 | M | every WP | lead | opus xhigh | 05 section 7, 06 5.9 |
 
-Critical path (longest dependency chain, 16 nodes, computed from the table): LS-0 -> WP-01 -> WP-02 -> WP-05 -> WP-12 -> WP-13 ->
-WP-16 -> WP-17 -> WP-30 -> WP-31 -> WP-36 -> WP-56 -> WP-57 -> WP-71 -> WP-78 -> LS-6b. Two segments have an equally long twin, so both
-twins are critical too: WP-02 -> WP-03 -> WP-07 -> WP-08 -> WP-16 (instead of WP-05 -> WP-12 -> WP-13) and WP-57 -> WP-69 -> WP-78
-(instead of WP-71). Near-critical chains (one wave shorter): ingestion WP-26 -> WP-28 -> WP-32 -> WP-34 -> WP-35 -> WP-39, and UI WP-44 ->
-WP-46 -> WP-47 -> WP-50 -> WP-52 -> WP-56. Most critical WPs are L or opus-xhigh work (WP-03, WP-07, WP-13, WP-16, WP-17, WP-30, WP-36,
-WP-57, WP-69): the lead starts them as soon as their inputs are verified and gives their verifiers priority. WP-45's link to WP-44 is
-soft (it may start in parallel; only its gate waits for `tokens.css`).
+Critical path (longest dependency chain, 17 nodes, computed from the table; WP-12 waits for WP-07 because 01 2.4 validates
+`attempts.time_format` and `/c/...` paths through 06's `pyStrptimeValidate` and `hostPlatform`, and WP-38 waits for WP-35, plan section
+10 D-16): LS-0 -> WP-01 -> WP-02 -> WP-03 -> WP-07 -> WP-12 -> WP-13 -> WP-16 -> WP-17 -> WP-32 -> WP-34 -> WP-35 -> WP-38 -> WP-56 ->
+WP-57 -> WP-69 -> WP-78. Equally long twins: WP-33 instead of WP-32 (WP-17 -> WP-33 -> WP-34), and WP-71, WP-72 or WP-73 instead of WP-69
+(all depend on WP-57). Near-critical chains (one node shorter): WP-17 -> WP-30 -> WP-31 -> WP-36 -> WP-56, WP-17 -> WP-32 -> WP-40 ->
+WP-41 -> WP-56 and, in the UI, WP-44 -> WP-46 -> WP-47 -> WP-50 -> WP-52 -> WP-56. Most critical WPs are L or opus-xhigh work (WP-03,
+WP-07, WP-13, WP-16, WP-17, WP-32, WP-34, WP-35, WP-57, WP-69): the lead starts them as soon as their inputs are verified and gives their
+verifiers priority. WP-45's link to WP-44 is soft (it may start in parallel; only its gate waits for `tokens.css`).
 
 ## 8. Work-package catalogue
 
@@ -297,7 +303,7 @@ Phase 2, W2.1, L; impl sonnet medium; verify sonnet high; 05 S1 (files)
   98 section 13; 99 I-14, I-34, N-02, C54.
 - Creates: `package.json`, `package-lock.json`, `.npmrc`, `.editorconfig`, `.prettierrc.json`, `.prettierignore`, `tsconfig.base.json`,
   `tsconfig.check.json`, `tsconfig.build.json`, `eslint.config.js`, `vitest.config.ts` (projects `unit`, `web`, `integration`, `isolation`,
-  `resilience`, `parity`, `tooling`), `packages/{shared,engine,server,cli,testkit,web}/package.json`, `packages/*/tsconfig.json`,
+  `resilience`, `parity`, `tooling`), `packages/{shared,engine,server,cli,testkit,web}/package.json` (the testkit manifest exports `.` and `./legacy`, 05 2.2 and A.21; WP-42 writes the `./legacy` target), `packages/*/tsconfig.json`,
   `packages/*/tsconfig.build.json` (none for web), `packages/web/{vitest.config.ts,vite.config.ts}` (A.26, A.27 stubs),
   `packages/web/e2e/tsconfig.json` (A.29), stubs `packages/{shared,engine,server,testkit}/src/index.ts`, `packages/shared/src/protocol/index.ts`,
   `packages/cli/src/{main,hook}.ts`, `packages/web/src/main.tsx`, `scripts/{lib,clean,typecheck,check-deps,build-stamp,ci,smoke,dev,set-version}.mjs`,
@@ -349,7 +355,7 @@ Phase 2, W2.2, L; impl sonnet high; verify sonnet high; 01 S1
   control ops (incl. `ingest-replay` with `fromSegment`). Consumes: zod only.
 - Depends: WP-01.
 - Tests: 01 S1 done-when (`runtime-sections.contract.test.ts` incl. 9 `import` keys and rejection of `import.maxLineBytes`,
-  `derived-defaults.test.ts`, slug rules, `R_TOP_KEYS` disjoint from L keys, `RUNTIME_VERSION` = package version, env list).
+  `derived-defaults.test.ts` (data part only: every `R_DERIVED_DEFAULTS` entry names an existing L key and a known map; the behavioural cases of 01 1.6 need `resolveConfig` and run in WP-12), slug rules, `R_TOP_KEYS` disjoint from L keys, `RUNTIME_VERSION` = package version, env list).
 - Gate: `STD(shared)` + `UNIT packages/shared/src/ids.test.ts packages/shared/src/version.test.ts packages/shared/src/env.test.ts packages/shared/src/time.test.ts packages/shared/src/config packages/shared/src/cli`.
 - Verifier: every R key's type, range and default equals the owner table cited in 01 1.6 (02 keys from 02 1.2, N-04;
   `hooks.spoolWhileStoppedHours` min 0); no `import.maxLineBytes`; `CliErrorCode` name (C19); `Clock` only in `time.ts`; no `node:*` in
@@ -389,7 +395,7 @@ Phase 2, W2.3, L; impl sonnet high; verify opus xhigh; 03 S3, 06 PP0
   `TransitionItem`, `WorkItem`, `WorkItemBoard`, `EvidenceItem`, `HealthReport` (incl. `runtime` resources, `children`, `panels`),
   `InstanceInfo` (poll mapping C26), `ErrorItem`, `LegacyHealth` (13 keys), `IngestHealth` reference, `StreamChange` and frames, export
   line schemas, `defineRoute` and every 6.1 route except `explainCompletion`, `PanelKey`, `PanelResponse`, `PanelResponseSchema`,
-  `ChildKind` (incl. `node`, `taskkill`, `opener`), `ChildKindStats`, `PanelStats`. Consumes: WP-02 `ConfigInspection`.
+  `ChildKind` (the ten kinds of 06 3.6: `powershell.processes`, `powershell.cmdline`, `git`, `docker`, `ps`, `taskkill`, `node`, `python`, `icacls`, `opener`), `ChildKindStats`, `PanelStats`. Consumes: WP-02 `ConfigInspection`.
 - Depends: WP-02.
 - Tests: DA-T-API-7 (unit part), 03 S3 done-when (`routes.test.ts`, `filters.test.ts`, `cursor.test.ts`), 06 PP0 done-when
   (`panels.test.ts`); DA-T-API-2 round trip is WP-23's.
@@ -440,7 +446,7 @@ Phase 2, W2.3, L; impl sonnet high; verify sonnet high; 05 S2, 05 S3
 - Gate: `STD(testkit)` + `UNIT packages/testkit/src`.
 - Verifier: every user-content string starts with `FIXTURE`; temp roots contain `FIXTURE.md`; the real `~/.claude` is never read;
   `DemoOptions = {root, nowMs, letters?, project?}` (C34); `runHookHandler` spawns `<skill>/scripts/mcs-hook.mjs` by default and
-  `dist/hook.js` with `direct` (I-26); no `findFreePort` (C32); port blocks non-overlapping with 4 forks.
+  `dist/hook.js` with `direct` (I-26); no `findFreePort` (C32); `makeJunction` is `fs.symlinkSync(target, link, 'junction')` on win32, no shell (05 4.4; registry C62 records that 01 3.5 still says `cmd /c mklink /J`); port blocks non-overlapping with 4 forks.
 - Cut line: `demo.ts` + `claude-home.ts` move to WP-06b (deps WP-06).
 
 #### WP-07 Platform layer, mutex and markers
@@ -466,7 +472,7 @@ Phase 2, W2.4, L; impl opus xhigh; verify fable; 06 PP1, 01 S4
 - Verifier: no `shell: true`, no `.cmd`, `windowsHide: true` on every spawn; `forceKill` = `taskkill /PID n /F` via kind `taskkill`
   (C12); `listRuntimeProcesses` in `markers.ts` (C13); kind `opener` (C11); PowerShell `-EncodedCommand`; atomic replace budget 3000 ms
   (I-28); `process.platform` only under `platform/**`; adversarial: kill a pid whose command line lacks the marker, hold a file open
-  during replace, spawn argv with quotes and metacharacters.
+  during replace, spawn argv with quotes and metacharacters. `ChildSpec.stdin` (02 3.7 V6 and X-3, registry C60, adopted by 06 3.6 in the final verification): implemented and tested here (optional string, written once then closed, at most 4096 bytes, kind `node` only, no shell; the 06 3.11 `exec.test.ts` row).
 - Cut line: `glob.ts`, `pytime.ts`, `watch-hint.ts` move to WP-07b.
 
 #### WP-09 DB core
@@ -492,16 +498,16 @@ Phase 2, W2.4, L; impl opus xhigh; verify fable; 03 S1
 - Cut line: `backup.ts` + DA-T-E-3 move to WP-09b.
 
 #### WP-12 Config resolution
-Phase 2, W2.4, M; impl sonnet high; verify opus xhigh; 01 S5
+Phase 2, W2.5, M; impl sonnet high; verify opus xhigh; 01 S5
 - Goal: Resolve the effective configuration from built-in, skill, instance, env and CLI layers with the legacy merge rule, legacy-exact
   validation messages and per-key provenance. Add the explicit config migrations registry.
-- Inputs: 01 1.4, section 2.1-2.7, section 2.10; `<skill>/config/defaults.json` (read-only input); ADR 0002; 98 6.1, section 6.2, C42; 99 N-05, N-06.
+- Inputs: 01 1.4, section 1.6 (derived defaults), section 2.1-2.7 (2.4 Node-only additions), section 2.10; 06 3.10.4, section 4.1 (`pyStrptimeValidate`, `hostPlatform`); `<skill>/config/defaults.json` (read-only input); ADR 0002; 98 6.1, section 6.2, C02, C42; 99 N-04, N-05, N-06.
 - Creates: `packages/engine/src/config/{defaults,merge,validate-legacy,resolve,provenance,migrations}.ts` + colocated tests;
   `<skill>/runtime/defaults.json` (`{"schema_version": 1}`).
 - Blocks: `engine/src/index.ts` WP-12.
 - Produces: `resolveConfig`, `ResolvedConfig`, provenance tags `builtin|skill|config|runtime|env|cli`, legacy validation, config
-  migration steps. Consumes: WP-02 sections, WP-05 `compilePyRegex`.
-- Depends: WP-02, WP-05.
+  migration steps. Consumes: WP-02 sections, WP-05 `compilePyRegex`, WP-07 `pyStrptimeValidate` and `hostPlatform` (the `attempts.time_format` and `/c/...` checks report `CONFIG_INVALID`).
+- Depends: WP-02, WP-05, WP-07.
 - Tests: 01 S5 done-when (2.x unit tests, legacy validation message goldens, C-3 merge tests, derived defaults).
 - Gate: `STD(engine)` + `UNIT packages/engine/src/config`.
 - Verifier: precedence D4 with env only for documented variables between layers 3 and 4; per-sub-key merge only for `panels|ui|poll|limits`;
@@ -519,7 +525,8 @@ Phase 2, W2.4, M; impl sonnet high; verify sonnet high; 05 S1 (tests), 05 S5, 01
 - Produces: `npm run schemas`, `npm run schemas:check`, JSON Schemas with the `$id` prefix of 98 9.3. Consumes: WP-02, WP-03 schemas.
 - Depends: WP-01, WP-02, WP-03.
 - Tests: 05 S1 tooling tests; DA-T-API-2; `env-vars.test.ts` (every `MCS_*` read under `packages/*/src` and `scripts/` is in
-  `DOCUMENTED_ENV_VARS` and every listed name is read, I-27); YAML parses and its gate names match `ci.mjs`.
+  `DOCUMENTED_ENV_VARS`; every listed name is read by one of its `readers` files once such a file exists, and a name whose reader files do not exist yet
+  is printed as `pending` and does not fail, so the test is green from this WP on; the Phase 6 gate requires zero `pending` names, I-27, D-18); YAML parses and its gate names match `ci.mjs`.
 - Gate: `STD(tests)` + `TOOL tests/tooling` + `cd $R && npm run schemas:check`.
 - Verifier: probes assert exact rule ids and are deleted in `finally`; generated files carry the "generated; do not edit" marker;
   workflow actions SHA-pinned and inactive; the env test is a real grep, not a fixed list.
@@ -581,7 +588,7 @@ Phase 2, W2.5, L; impl sonnet high; verify opus xhigh; 03 S2 (part)
 - Cut line: the nine operations repositories (`cost-states` .. `changes`) move to WP-11b.
 
 #### WP-13 Workspace and audit
-Phase 2, W2.5, L; impl opus xhigh; verify fable; 01 S6
+Phase 2, W2.6, L; impl opus xhigh; verify fable; 01 S6
 - Goal: Implement workspace resolution, atomic and Python-compatible file writes, the init transaction with adoption and partial-init
   cleanup, listing, identity repair and snapshots, plus the legacy-compatible audit writer and reader with `entriesBetween`.
 - Inputs: 01 1.1-1.8, section 3.1-3.4, section 4.12, section 7.1-7.3, section 8.2; ADR 0001, 0058; 98 2.1, section 9.1, C14, C39; 99 I-19, I-28.
@@ -603,15 +610,15 @@ Phase 2, W2.5, L; impl opus xhigh; verify fable; 01 S6
 - Cut line: `audit/{writer,reader}.ts` + T-AU tests move to WP-13b.
 
 #### WP-14 Engine ops: workspace, config, audit
-Phase 2, W2.6, M; impl sonnet high; verify opus xhigh; 01 S7 (ops part)
+Phase 2, W2.7, M; impl sonnet high; verify opus xhigh; 01 S7 (ops part)
 - Goal: Implement the engine operations behind `discover`, `init`, `inspect`, `configure`, `decide`, `audit` and `check`, with typed
   results and `ConfigInspection` as a pure projection of `inspect`. The CLI and the server call these functions only.
 - Inputs: 01 6.1 (`OpContext`, INV-12), section 6.3 rows, section 6.4 (discover, init, inspect, configure, decide, audit, check), section 7.2, section 3.5
   (T-ISO-07); ADR 0008; 98 2.1, section 8.
 - Creates: `packages/engine/src/ops/{workspace,config,audit}.ts` (with `OpContext` where 01 6.1 places it) + colocated tests
   `ops/{config,audit}.test.ts`, `ops/config-inspection.test.ts`.
-- Blocks: `engine/src/index.ts` WP-14.
-- Produces: `ops.workspace.{discover,init}`, `ops.config.{inspect,configure,check}`, `ops.audit.{recordDecision,check}`, `OpContext`.
+- Blocks: `engine/src/index.ts` WP-14; creates `ops/config.ts` with block WP-62 (`migrate`, `importLegacy`).
+- Produces: `ops.workspace.{discover,init}`, `ops.config.{inspect,configure,check}`, `ops.audit.{recordDecision,check}`, `ops.version` (01 6.3 names no module: placed in `ops/workspace.ts`, registry N14), `OpContext`.
   Consumes: WP-12, WP-13, WP-02.
 - Depends: WP-12, WP-13.
 - Tests: `config-inspection.test.ts`, T-CLI-04 (unit part), T-ISO-07.
@@ -620,24 +627,25 @@ Phase 2, W2.6, M; impl sonnet high; verify opus xhigh; 01 S7 (ops part)
   demand; isolation snapshot reported; legacy JSON keys of `inspect` in legacy order.
 
 #### WP-16 Composition root
-Phase 2, W2.6, M; impl opus xhigh; verify fable; 01 S8 (engine part)
-- Goal: Implement `InstanceContext` and `createInstanceRuntime` with the owners' factory signatures as stubs, the error ring, the state
-  watchdog and the test hooks. Every server-side service, the parity harness and the benchmarks build the runtime through it.
-- Inputs: 01 4.4a, section 4.6, section 4.13, section 5.3; 02 4.10; 03 11.4, section 12.1; 06 3.2, section 3.4; 98 2.2, C06-C09, C15, C57; 99 I-15, N-01.
+Phase 2, W2.7, M; impl opus xhigh; verify fable; 01 S8 (engine part)
+- Goal: Implement `InstanceContext`, `buildInstanceContext` and `createInstanceRuntime` with the owners' factory signatures as stubs,
+  the error ring, the state watchdog, the test hooks, the `ingestUntilIdle` mapping and the serialized 2 s attempts timer of component 4
+  (the real panel service arrives with WP-41). Every server-side service, the parity harness and the benchmarks build the runtime through it.
+- Inputs: 01 4.4a, section 4.6, section 4.13, section 5.3; 02 4.10; 03 11.4, section 12.1; 06 3.2, section 3.4; 98 2.2, C06-C09, C15, C57, C61; 99 I-15, N-01.
 - Creates: `packages/engine/src/runtime/{context,instance-runtime,error-ring,state-watchdog,test-hooks}.ts`; tests
   `packages/engine/src/runtime/{instance-runtime,context,error-ring}.test.ts`, `packages/engine/test/ingest-until-idle.int.test.ts` (fake service).
-- Blocks: `engine/src/index.ts` WP-16; creates `instance-runtime.ts` with blocks WP-17, WP-35, WP-41, WP-59.
-- Produces: `InstanceContext`, `BuildContextInput`, `buildContext`, `RuntimeProcessInfo`, `ErrorRing`, `createErrorRing`,
+- Blocks: `engine/src/index.ts` WP-16; creates `instance-runtime.ts` with blocks WP-35, WP-41, WP-59 and `context.ts` with block WP-17.
+- Produces: `InstanceContext`, `BuildContextInput`, `buildInstanceContext`, `bindPanelStats`, `RuntimeProcessInfo`, `ErrorRing`, `createErrorRing`,
   `createInstanceRuntime` (`start`, `stop(deadlineMs)`, `ingestUntilIdle({timeoutMs})`, `health()`, `ingestReplay`). Consumes: WP-07,
-  WP-08 `Logger`, WP-09 `openInstanceDb`, WP-12, WP-13 `entriesBetween`, WP-03 types.
+  WP-08 `Logger`, WP-09 `openInstanceDb`, WP-12, WP-13 `entriesBetween`, WP-03 types (`PanelStats`, `ChildKindStats`, `HealthReport`).
 - Depends: WP-07, WP-08, WP-09, WP-12, WP-13.
-- Tests: `instance-runtime.test.ts`, `context.test.ts`, `ingest-until-idle.int.test.ts` (01 S8 done-when, fake service).
+- Tests: `instance-runtime.test.ts`, `context.test.ts`, `ingest-until-idle.int.test.ts` (01 S8 done-when, fake service); with fake timers `tickAttempts` runs at start and every 2000 ms, never twice at once and not after `stop`.
 - Gate: `STD(engine)` + `UNIT packages/engine/src/runtime` + `INT packages/engine/test/ingest-until-idle.int.test.ts`.
 - Verifier: stub signatures equal 02 4.10, 03 11.4, section 12.1, 06 3.4 exactly (C06-C09); `IngestIdleTimeoutError` maps to `{idle: false}`;
   attempts timer 2 s, serialized, cleared on stop (C57); `ctx.instanceDir` (C07); test hooks inert unless the test env enables them.
 
 #### WP-15 CLI kernel and config commands
-Phase 2, W2.7, L; impl sonnet high; verify sonnet high; 01 S7 (CLI part)
+Phase 2, W2.8, L; impl sonnet high; verify sonnet high; 01 S7 (CLI part)
 - Goal: Implement the `mcs` dispatcher with per-command option tables, the three renderers and the `mcs.cli/1` envelope, and the thin
   commands `discover`, `init`, `inspect`, `configure`, `decide`, `audit`, `check`, `version`, `help`. Start the config-write isolation file.
 - Inputs: 01 6.1-6.5 (rows of this WP), section 7.2, section 3.5 (T-ISO-06, 08), section 6.7, section 8.3; 05 5.3 S-OUT; ADR 0008, 0046; 98 8.
@@ -650,35 +658,37 @@ Phase 2, W2.7, L; impl sonnet high; verify sonnet high; 01 S7 (CLI part)
   38, 39, 62.
 - Produces: `main(argv, {launcherPath, skillDir, runtimeDir})`, command registry, renderers. Consumes: WP-14, WP-08 terminal.
 - Depends: WP-08, WP-14.
-- Tests: T-CLI-01, 02, 03 (config commands), 04, T-XE-01, 02, T-AU-01, T-SEC-04, T-ISO-06 (these commands).
+- Tests: T-CLI-01, 02, 03 (config commands), 04, T-XE-01, 02, T-AU-01, T-SEC-04, T-ISO-06 (these commands). The T-ISO-06 rows of `init`, `configure` and `decide` build their two workspaces with testkit (`makeTempDir`, `hermeticEnv`, `runCli(['init', ...])`) and start no instance, so they do not wait for `_setup.ts` (WP-20; plan section 10 D-15).
 - Gate: `STD(cli, tests)` + `INT packages/cli/test/cli-config.int.test.ts` + `PAR tests/parity/cli-config.parity.test.ts` + `ISO tests/isolation/config-write-isolation.test.ts`.
 - Verifier: commands contain option tables and rendering only; all output through `io/terminal.ts`; exit codes 0/1/2; legacy JSON shape
   parity on keys and values; parity tests skip with a recorded reason when Python >= 3.8 is missing (never pass silently).
 - Cut line: `discover` and `audit`/`check` commands move to WP-15b.
 
 #### WP-17 Server app, meta routes, static hosting
-Phase 2, W2.7, M; impl opus xhigh; verify fable; 03 S4
+Phase 2, W2.8, M; impl opus xhigh; verify fable; 03 S4
 - Goal: Implement the Express app with guards, limits, headers, the error envelope, response validation through the route registry,
   the meta and ingest routes and the static hosting of the web build. Seed the query layer with `createQueries` and its health part.
 - Inputs: 03 5.1, section 5.2, section 6.1 (meta rows), section 6.2, section 6.3, section 12.1, section 13, section 14; 04 3.1 (HTML fallback), section 12.2, ADR 0039; 02 2.8; 05 5.3
-  S-NET; 98 section 3, section 7.1, N3, C26; 99 I-30, I-31, I-37.
+  S-NET; 01 6.6 (`formatCommand`, D-17); 98 section 3, section 7.1, N3, C26; 99 I-30, I-31, I-37.
 - Creates: `packages/server/src/{app,errors,route-adapter}.ts`, `packages/server/src/routes/{meta,ingest}.ts`,
-  `packages/engine/src/query/{index,health}.ts`; tests `packages/server/test/{meta,ingest,errors-envelope,static}.int.test.ts`
+  `packages/engine/src/query/{index,health}.ts`, `packages/engine/src/ops/commands.ts` + `commands.test.ts` (`formatCommand`, the
+  `InstanceInfo.commands` strings of 01 6.6, plan-assigned: no slice listed it, D-17); tests `packages/server/test/{meta,ingest,errors-envelope,static}.int.test.ts`
   (`static` plan-assigned).
-- Blocks: `engine/src/index.ts` WP-17, `instance-runtime.ts` WP-17 (real `createQueries`); creates `app.ts` with blocks WP-29, 30, 31,
+- Blocks: `engine/src/index.ts` WP-17, `runtime/context.ts` WP-17 (real `createQueries` with the six deps of 03 12.1 `QueryDeps`); creates `app.ts` with blocks WP-29, 30, 31,
   33, 36, 41, 57, 58, 60 and `query/index.ts` with blocks WP-29, 30, 31, 33, 57, 58.
 - Produces: `createApp`, `registerRoute`, routes `legacyHealth`, `health`, `healthIngest`, `instance`, `config`, `ingestNudge`,
-  `ingestProbe`; `createQueries`, `EngineQueries.{instanceInfo,health,ingestHealth,hookProbe}`. Consumes: WP-03, WP-08 guards, WP-11
+  `ingestProbe`; `createQueries`, `EngineQueries.{instanceInfo,health,ingestHealth,hookProbe}`, `QueryDeps`, `AuditReader`, `AuditQueries`, `formatCommand`. Consumes: WP-03, WP-08 guards, WP-11
   (`MetaRepo`, `IngestHealthRepo`, `HookProbesRepo`), WP-16.
 - Depends: WP-03, WP-08, WP-11, WP-16.
-- Tests: DA-T-API-3, 4, 5, 10, 11, 13, 14, 16; static and history-fallback rules of 04 12.2.
+- Tests: DA-T-API-3, 4, 5, 10, 11, 13, 14, 16; static and history-fallback rules of 04 12.2; `commands.test.ts` (the six strings of 01 6.6: quoting only when a value
+  contains a space, `export` writes `<ws>/logs/export.ndjson`, never `.jsonl`).
 - Gate: `STD(server, engine)` + `INT packages/server/test/meta.int.test.ts packages/server/test/ingest.int.test.ts packages/server/test/errors-envelope.int.test.ts packages/server/test/static.int.test.ts`.
 - Verifier: Origin allow-list of two; no CORS; `/api/health` exactly the 13 keys (I-30); nudge <= 256 bytes and refused with `Origin`;
   probe id regex; `.vite/` never served; CSP of 04 12.2; response validation behaviour decided per N3 and recorded in a CR if unset;
   adversarial: Host/Origin matrix, oversized bodies, path traversal on static paths.
 
 #### WP-18 Server process shell
-Phase 2, W2.8, M; impl opus xhigh; verify fable; 01 S8 (server part)
+Phase 2, W2.9, M; impl opus xhigh; verify fable; 01 S8 (server part)
 - Goal: Implement the server process: argv contract, boot sequence with exit codes, port scan and bind on 127.0.0.1, the named-pipe
   control channel with token, graceful shutdown and the atomic `state.json` lifecycle. It wires `createApp` and `createInstanceRuntime`.
 - Inputs: 01 4.1, section 4.3, section 4.4, section 4.5, section 4.6, section 4.11, section 4.13, section 8; 03 3.2 (open exit codes); ADR 0004, 0005; 98 7.3, section 9.1, section 9.3.
@@ -696,7 +706,7 @@ Phase 2, W2.8, M; impl opus xhigh; verify fable; 01 S8 (server part)
   written atomically after bind; token never logged; wrong token -> FORBIDDEN and process alive; graceful order of 01 4.5.
 
 #### WP-19 Lifecycle ops and CLI
-Phase 2, W2.9, M; impl opus xhigh; verify fable; 01 S9 (ops and CLI)
+Phase 2, W2.10, M; impl opus xhigh; verify fable; 01 S9 (ops and CLI)
 - Goal: Implement `start`, `stop`, `status`, `restart`, `verify` and `serve` with liveness probing, marker-verified kills and
   cross-engine ownership rules. After this WP the smoke gate turns from SKIPPED to PASS.
 - Inputs: 01 4.7-4.10, section 4.14, section 4.15, section 6.3-6.4 (rows), section 4.16; ADR 0004, 0006; 98 8.
@@ -713,9 +723,9 @@ Phase 2, W2.9, M; impl opus xhigh; verify fable; 01 S9 (ops and CLI)
   (engine=legacy)" and blocks a second engine; `start` idempotent; no console window (T-LC-13); every test passes `--port` and `--repo`.
 
 #### WP-20 Isolation setup and lifecycle isolation tests
-Phase 2, W2.10, M; impl sonnet high; verify opus xhigh; 05 S9 (`_setup.ts`), 01 S9 (isolation files)
+Phase 2, W2.11, M; impl sonnet high; verify opus xhigh; 05 S9 (`_setup.ts`), 01 S9 (isolation files)
 - Goal: Provide the shared two-instance setup and the release-blocking isolation files for identity, stopping and ownership. Each test
-  title starts with its T-ISO id.
+  title starts with its T-ISO id. `_setup.ts` lands here, after `start` exists, because its self-test starts two real instances (plan section 10 D-15).
 - Inputs: 05 4.3, section 4.5, section 4.8; 01 3.2, section 3.5 (T-ISO-05, 13, 14, 18-22); 98 C32, C33; 99 N-07.
 - Creates: `tests/isolation/_setup.ts`, `tests/isolation/setup-selftest.test.ts` (plan-assigned), `tests/isolation/db-identity.test.ts`,
   `tests/isolation/lifecycle-isolation.test.ts`, `tests/isolation/ownership-isolation.test.ts`.
@@ -727,7 +737,7 @@ Phase 2, W2.10, M; impl sonnet high; verify opus xhigh; 05 S9 (`_setup.ts`), 01 
 - Verifier: assertions equal 01 3.5 (no weakened assertion); every started process stopped and port closed; hermetic env; one worker per file.
 
 #### WP-21 Launcher
-Phase 2, W2.10, M; impl opus xhigh; verify fable; 01 S10, 05 S4
+Phase 2, W2.11, M; impl opus xhigh; verify fable; 01 S10, 05 S4
 - Goal: Implement the zero-dependency launcher with the Node floor check, stamp-based staleness, the mutex-serialized bootstrap with the
   `RUNTIME_IN_USE` guard, and in-process CLI execution. Prove its mutex and marker copies match the engine's.
 - Inputs: 01 5.1-5.3, section 4.2; 05 3.3, S4; ADR 0007, 0047; 98 9.3, C29, C30; 99 I-05, I-24.
@@ -742,7 +752,7 @@ Phase 2, W2.10, M; impl opus xhigh; verify fable; 01 S10, 05 S4
   `npm ci --offline`, never on the real runtime folder; floor message exact (22.22.0); launcher never touches workspaces.
 
 #### WP-22 Instances, doctor, diagnostics
-Phase 2, W2.10, M; impl sonnet high; verify opus xhigh; 01 S11
+Phase 2, W2.11, M; impl sonnet high; verify opus xhigh; 01 S11
 - Goal: Implement `instances list|set-engine|repair`, `doctor` and the privacy-safe `diagnostics` bundle. Doctor keeps the legacy JSON
   shape and adds Node checks.
 - Inputs: 01 3.4, section 6.3-6.4 (rows), section 8.2; 98 C22, C55.
@@ -764,14 +774,15 @@ Phase 3, W3.1, M; impl opus xhigh; verify fable; 02 I-2
   routes them to matching instance spools and nudges the server, always silent and always exit 0. Prove it never blocks Claude Code.
 - Inputs: 02 1.1, section 2.1-2.12, CHALLENGES C1; 05 2.6 (hook lint block), section 4.4 (`runHookHandler`); ADR 0010-0013; 98 1.7, section 9.2, section 10.1.
 - Creates: `<skill>/scripts/mcs-hook.mjs`, `packages/cli/src/hook.ts` (replaces the stub), `packages/cli/src/hook/{main,routes-reader,spool-writer,nudge,handler-log}.ts`,
-  `packages/cli/test/hook.int.test.ts`.
-- Blocks: none.
+  `packages/cli/test/hook.int.test.ts`, `packages/engine/src/external/launch-claude.ts` + `launch-claude.test.ts` (`claudeArgsWithoutHooks`, 02 2.9 and
+  T-HK-15; plan-assigned: no slice listed the file, D-17; WP-35 adds its own files to the same folder).
+- Blocks: `engine/src/index.ts` WP-25 (`launch-claude.ts` only).
 - Produces: installed command `node --no-warnings <skill>/scripts/mcs-hook.mjs --mcs-hook <Event> [--async]`, `runHook(argv)`, spool
   segments `data/spool/hooks-<YYYYMMDD>T<HH>Z.ndjson`, nudge POST, `$MCS_HOME/logs/hook-handler.jsonl`, `HANDLER_UNAVAILABLE`.
-  Consumes: WP-04 protocol, WP-06 `hookPayload`, `runHookHandler`.
+  `claudeArgsWithoutHooks`. Consumes: WP-04 protocol, WP-06 `hookPayload`, `runHookHandler`.
 - Depends: WP-04, WP-06.
-- Tests: T-HK-01..17 (T-HK-16 parity part with Python); 05 S3 row "runHookHandler default and direct both write one spool line".
-- Gate: `STD(cli)` + `INT packages/cli/test/hook.int.test.ts`.
+- Tests: T-HK-01..17 (T-HK-16 parity part with Python; T-HK-15 in `launch-claude.test.ts`); 05 S3 row "runHookHandler default and direct both write one spool line".
+- Gate: `STD(cli, engine)` + `UNIT packages/engine/src/external/launch-claude.test.ts` + `INT packages/cli/test/hook.int.test.ts`.
 - Verifier: nothing on stdout in any path; exit 0 when the runtime is not built, the spool dir is missing, stdin is malformed or the
   server is down; `MCS_HOOK_DISABLE` checked first; imports only `node:*`, `@mcs/shared/protocol`, `./`; nudge timeout about 300 ms
   and no event data in its body; never opens the DB or reads settings; timing budget with `MCS_PERF_FACTOR`.
@@ -807,12 +818,12 @@ Phase 3, W3.1, L; impl sonnet high; verify opus xhigh; 03 S5 (part)
   `packages/engine/test/query-plans.int.test.ts` (DA-T-DB-14, plan-assigned name).
 - Blocks: `query/index.ts` WP-30, `app.ts` WP-30, `engine/src/index.ts` WP-30; creates `routes/sessions.ts` with block WP-58.
 - Produces: `EngineQueries.{listSessions,getSession,sessionSummaries,sessionAgents,listAgents,agentNode,workflowRun,listEvents,getEvent,eventsByIdRange,listToolCalls,toolCallsByIds,sessionTransitions}`
-  and their routes. Consumes: WP-10, WP-11, WP-17.
+  and their routes, plus `AuditQueries.sessionAuditRefs` (awaited after the snapshot by the route handler and by the DbReader). Consumes: WP-10, WP-11, WP-17.
 - Depends: WP-10, WP-11, WP-17.
 - Tests: DA-T-API-1 (these routes), 6, 7 (SQL part), 8, 9, 12, 17; DA-T-DB-14.
 - Gate: `STD(engine, server)` + `UNIT packages/engine/src/query` + `INT packages/server/test/contract packages/engine/test/query-plans.int.test.ts`.
 - Verifier: no gaps or duplicates under concurrent inserts; snapshot read in one synchronous step; `filter_requires_scope`; routes call
-  queries only; `getSession` returns `auditRefs: []` and the route attaches `entriesBetween` results (I-19).
+  queries only; `getSession` returns `auditRefs: []` and the route handler awaits `sessionAuditRefs(detail)` after the snapshot and attaches it (I-19; a rejected audit read gives `[]` and a 200).
 - Cut line: events and tool calls (`query/{events,tool-calls}.ts` + routes) move to WP-30b.
 
 #### WP-42 Testkit legacy builders
@@ -826,7 +837,7 @@ Phase 3, W3.1, M; impl sonnet high; verify sonnet high; 06 PP3
 - Produces: `pyDumps`, `pyIso`, `detUuidSequence`, `setAge`, `freezeUntouched`, `appendWithOpenHandle`, `treeManifest`, `UsageTotals`,
   `SessionExpectation`, `ScenarioExpectation`, `buildBigTranscript`, `buildLegacyFixtureHome`, `buildLegacyDemo`, `buildPanelsTree`,
   `buildRulesTree`, `buildRegistryHome`. Consumes: WP-06, WP-24 (vectors), `LegacyState` from WP-03.
-- Depends: WP-06, WP-24.
+- Depends: WP-03, WP-06, WP-24.
 - Tests: 06 6.5 rows `shapes`, `pyjson` (against `golden/vectors/pydumps.json`), `io`, `big`.
 - Gate: `STD(testkit)` + `UNIT packages/testkit/src`.
 - Verifier: `LegacyState` imported, not redeclared (C36); if `pyDumps` duplicates engine PyJson (WP-05) the WP re-exports or documents
@@ -911,7 +922,7 @@ Phase 3, W3.2, M; impl opus xhigh; verify fable; 02 I-9
 - Gate: `STD(engine, shared)` + `UNIT packages/engine/src/hooks/installer` + `INT packages/engine/test/hooks-installer.int.test.ts`.
 - Verifier: refuses real settings paths under `MCS_TEST`/`VITEST` (T-IN-07) and every test uses temp `--settings-file` paths; the real
   user and project settings files are byte-identical before and after the suite (hash them); `.claude/settings.json` refused; dry run
-  writes nothing; entries marked by script path; adversarial: concurrent installs, invalid JSON, foreign hooks preserved.
+  writes nothing; entries marked by script path; adversarial: concurrent installs, invalid JSON, foreign hooks preserved. V4 spawns through `execFileText` kind `node`; V6 passes the probe payload through `ChildSpec.stdin` (06 3.6, registry C60, built by WP-07); V6 never uses a second spawn path.
 
 #### WP-43 Parity harness base and L1 vectors
 Phase 3, W3.2, M; impl sonnet high; verify opus xhigh; 05 S8, 06 PP4
@@ -1000,7 +1011,7 @@ Phase 3, W3.4, M; impl opus xhigh; verify fable; 02 I-8 (part)
   copies; classification parity with legacy `classify` on the shared fixtures.
 
 #### WP-38 Hooks and ingest CLI
-Phase 3, W3.4, M; impl sonnet high; verify opus xhigh; 01 S14
+Phase 3, W3.6, M; impl sonnet high; verify opus xhigh; 01 S14
 - Goal: Wire `hooks install|verify|uninstall|status|enable|disable` and `ingest replay` as engine ops with thin CLI commands, dry run by
   default and audited. `hooks enable` writes the route file under `MCS_HOME`, never a settings file.
 - Inputs: 01 6.3 (rows hooks *, ingest replay), section 6.4, section 7.2; 02 3.1, section 3.6 (text formats), section 2.6.2, section 2.7; 98 C03, C04, C23.
@@ -1008,8 +1019,8 @@ Phase 3, W3.4, M; impl sonnet high; verify opus xhigh; 01 S14
   `packages/cli/src/commands/ingest-replay.ts`; tests `packages/engine/src/ops/hooks.test.ts` (T-CLI-10), `packages/cli/test/hooks.int.test.ts`
   (T-IN-10, 02 9.5 name), `packages/cli/test/ingest-replay.int.test.ts` (T-CLI-11, plan-assigned).
 - Blocks: `cli/src/main.ts` WP-38, `engine/src/index.ts` WP-38, `config-write-isolation.test.ts` WP-38 (`hooks enable`, `ingest replay` rows).
-- Produces: `ops.hooks.{install,verify,uninstall,status,setEnabled}`, `ops.ingest.replay`. Consumes: WP-37, WP-32, WP-18 (control op), WP-15.
-- Depends: WP-15, WP-18, WP-32, WP-37.
+- Produces: `ops.hooks.{install,verify,uninstall,status,setEnabled}`, `ops.ingest.replay`. Consumes: WP-37, WP-32, WP-35 (`IngestService.start` and `.replay`: T-CLI-11 re-reads after `start` and replays through the running service), WP-18 (control op), WP-15.
+- Depends: WP-15, WP-18, WP-32, WP-35, WP-37.
 - Tests: T-CLI-10, T-CLI-11, T-IN-10, T-ISO-06 rows.
 - Gate: `STD(engine, cli)` + `UNIT packages/engine/src/ops/hooks.test.ts` + `INT packages/cli/test/hooks.int.test.ts packages/cli/test/ingest-replay.int.test.ts` + `ISO tests/isolation/config-write-isolation.test.ts`.
 - Verifier: dry run without `--yes`; `--settings-file <temp>` in every test; JSON nested in the `mcs.cli/1` envelope; replay audit template of 01 7.2.
@@ -1057,7 +1068,8 @@ Phase 3, W3.5, L; impl opus xhigh; verify fable; 02 I-8 (part), 02 I-10, 03 S11 
 #### WP-41 Panels: samplers, service, route, runtime wiring
 Phase 3, W3.5, L; impl sonnet high; verify opus xhigh; 06 PP7
 - Goal: Implement the machine, git, ledger, chain-log and logs samplers behind a single-flight cache, the panel service with the attempts
-  tick, the panel route, and the runtime component with its 2 s attempts timer. Fill `HealthReport.panels` and `.children`.
+  tick (`tickAttempts`, driven by the 2 s timer that WP-16 already built), the panel route, and the runtime wiring that replaces WP-16's
+  panel-service stub. Fill `HealthReport.panels` and `.children`.
 - Inputs: 06 3.1-3.9, section 3.10.8, section 3.11, section 8.2; 01 4.4a (component 4); 03 6.1 (row panel), section 6.2; ADR 0050, 0051, 0052, 0057; 98 2.8, C57.
 - Creates: `packages/engine/src/panels/{source-cache,machine,proc-win32,proc-posix,git,files,service,constants}.ts`, `packages/server/src/routes/panels.ts`;
   colocated tests `packages/engine/src/panels/{source-cache,machine,proc-win32,proc-posix,docker,git,files,service}.test.ts`,
@@ -1070,22 +1082,24 @@ Phase 3, W3.5, L; impl sonnet high; verify opus xhigh; 06 PP7
 - Gate: `STD(engine, server)` + `UNIT packages/engine/src/panels/source-cache.test.ts packages/engine/src/panels/machine.test.ts packages/engine/src/panels/proc-win32.test.ts packages/engine/src/panels/proc-posix.test.ts packages/engine/src/panels/docker.test.ts packages/engine/src/panels/git.test.ts packages/engine/src/panels/files.test.ts packages/engine/src/panels/service.test.ts`
   + `INT packages/engine/test/panels`.
 - Verifier: no sampling without requests; git commands lock-free (no `index.lock`); child processes only through `execFileText` with
-  kinds and caps; the attempts timer is serialized and cleared on stop (C57).
+  kinds and caps; WP-16's attempts timer drives the real `tickAttempts` (a call while a tick runs returns that tick's promise, 06 3.4; cleared on stop, C57).
 - Cut line: `machine.ts`, `proc-win32.ts`, `proc-posix.ts` move to WP-41b.
 
 #### WP-39 Ingestion integration and ingestion isolation rows
-Phase 3, W3.6, M; impl sonnet high; verify opus xhigh; 02 I-11
+Phase 3, W3.7, M; impl sonnet high; verify opus xhigh; 02 I-11
 - Goal: Prove the whole ingestion path end to end with real handler processes, real files and a real runtime, and add the isolation and
   crash rows that need ingestion. This WP closes Phase 3's correctness claims.
 - Inputs: 02 9.2, section 9.3, section 2.6 (routing); 01 3.5 (T-ISO-08, 16, 17), section 4.16 (T-LC-14); 05 4.2, section 4.8 (ISO-9).
-- Creates: `packages/engine/test/import-tokens.int.test.ts`, `tests/isolation/hook-routing-isolation.test.ts` (T-HK-05, 02-owned),
+- Creates: `packages/engine/test/import-tokens.int.test.ts`, `packages/engine/test/real-provider.int.test.ts` (02 9.3 optional real-provider E2E, the one reader of
+  `MCS_E2E_CLAUDE`: `describe.skipIf(process.env.MCS_E2E_CLAUDE !== '1')`, one `claude -p` with a temp `--settings` file from `planHooks` and a temp `MCS_HOME`, D-18),
+  `tests/isolation/hook-routing-isolation.test.ts` (T-HK-05, 02-owned),
   `tests/isolation/restart-isolation.test.ts` (T-ISO-16, 17), `packages/server/test/crash-recovery.int.test.ts` (T-LC-14 replay part,
   plan-assigned).
 - Blocks: `hook-to-db.int.test.ts` WP-39 (handler-process scenarios), `config-write-isolation.test.ts` WP-39 (T-ISO-08).
 - Produces: tests only. Consumes: WP-20 `twoInstances`, WP-25, WP-30, WP-35, WP-38.
 - Depends: WP-20, WP-25, WP-30, WP-35, WP-38.
-- Tests: 02 9.3 scenarios; T-HK-05; T-ISO-08, 16, 17; T-LC-14 (no duplicate events after replay).
-- Gate: `STD(engine, server, tests)` + `INT packages/engine/test/hook-to-db.int.test.ts packages/engine/test/import-tokens.int.test.ts packages/server/test/crash-recovery.int.test.ts`
+- Tests: 02 9.3 scenarios (the real-provider one runs only when `MCS_E2E_CLAUDE=1` and is reported SKIPPED with that reason otherwise); T-HK-05; T-ISO-08, 16, 17; T-LC-14 (no duplicate events after replay).
+- Gate: `STD(engine, server, tests)` + `INT packages/engine/test/hook-to-db.int.test.ts packages/engine/test/import-tokens.int.test.ts packages/engine/test/real-provider.int.test.ts packages/server/test/crash-recovery.int.test.ts`
   + `ISO tests/isolation/hook-routing-isolation.test.ts tests/isolation/restart-isolation.test.ts tests/isolation/config-write-isolation.test.ts`.
 - Verifier: each test uses real processes and temp homes; counts are exact (no "at least"); `PRAGMA integrity_check` asserted for both
   instances; force-kill uses `forceKill` only on the test's own pid.
@@ -1291,13 +1305,13 @@ Phase 4, W4.6, M; impl sonnet high; verify opus xhigh; 04 11.3, 04 W14 (part)
   99 I-02, I-11, I-27, N-02.
 - Creates: `packages/server/test/{api-to-web,stream-reconnect,panels.contract}.int.test.ts`, `packages/web/e2e/playwright.config.ts`
   (replaces the withdrawn A.28; no `webServer`), `packages/web/e2e/global-setup.ts`, `packages/web/e2e/specs/lifecycle.spec.ts`,
-  `packages/web/e2e/specs/transcript-perf.spec.ts` (O-2, plan-assigned).
+  `packages/web/e2e/specs/perf.spec.ts` (04 O-2's own name).
 - Blocks: creates `lifecycle.spec.ts` with blocks WP-57 (step 7) and WP-71 (steps 13-14).
 - Produces: E2E harness. Consumes: WP-19, WP-25, WP-30, WP-31, WP-33, WP-36, WP-38, WP-41, WP-48, WP-52, WP-53, WP-54, WP-06 `buildDemo`.
 - Depends: WP-19, WP-25, WP-30, WP-31, WP-33, WP-36, WP-38, WP-41, WP-48, WP-52, WP-53, WP-54.
 - Tests: brief 14 "API to frontend data model", "realtime reconnect and reconciliation"; DA-T-RT-12; E2E steps 1-6, 8-12; O-2 measured.
 - Gate: `STD(server, e2e)` + `INT packages/server/test/api-to-web.int.test.ts packages/server/test/stream-reconnect.int.test.ts packages/server/test/panels.contract.int.test.ts`
-  + `E2E specs/lifecycle.spec.ts specs/transcript-perf.spec.ts`.
+  + `E2E specs/lifecycle.spec.ts specs/perf.spec.ts`.
 - Verifier: specs start instances with `$MCS init`/`start` (04 11.4) on `allocatePort([18500, 18599])` ports, never `MCS_E2E_PORT`; hook payloads go through
   `runHookHandler` (never a settings file); `MCS_LAUNCHER_NO_BOOTSTRAP=1` in every spawned env; every instance stopped and port closed;
   `.ndjson` spool glob (C25); `workers: 1`, `retries: 0`.
@@ -1437,7 +1451,7 @@ Phase 5, W5.2, M; impl sonnet high; verify opus xhigh; 01 S13a, 01 S13b, 03 S12
 - Depends: WP-15, WP-19, WP-29, WP-30, WP-60.
 - Tests: T-CLI-05, T-CLI-08, T-CLI-13, DA-T-CLI-1, CE-17.
 - Gate: `STD(engine, cli)` + `INT packages/engine/test/readers.int.test.ts packages/cli/test/export.int.test.ts packages/cli/test/verify-completion.int.test.ts`.
-- Verifier: identical JSON in both modes except `asOfSeq` and time-relative fields; the DB reader never writes (sha256 and mtime);
+- Verifier: identical JSON in both modes except `asOfSeq` and time-relative fields (the DbReader awaits `sessionAuditRefs(detail)` and attaches `auditRefs`, 03 12.2); the DB reader never writes (sha256 and mtime);
   `export --out <ws>/logs/x.jsonl` refused; `CompletionTargetError` mapping to `USAGE`/`NOT_FOUND` (C16).
 
 #### WP-62 Backup, upgrade, DB migrate and rebuild, cleanup, config migrate
@@ -1449,9 +1463,9 @@ Phase 5, W5.2, L; impl opus xhigh; verify fable; 01 S12
 - Creates: `packages/engine/src/ops/{backup,upgrade,cleanup}.ts`, `packages/cli/src/commands/{backup,upgrade,db,cleanup,config-migrate}.ts`;
   tests `packages/engine/src/ops/upgrade.test.ts`, `packages/cli/test/{backup,upgrade,db-rebuild,cleanup}.int.test.ts` (plan-assigned),
   `tests/isolation/upgrade-isolation.test.ts`; fixture `packages/cli/test/fixtures/workspaces/older-runtime/**`.
-- Blocks: `cli/src/main.ts` WP-62, `shared/src/cli/results.ts` WP-62, `engine/src/index.ts` WP-62, `config-write-isolation.test.ts`
+- Blocks: `cli/src/main.ts` WP-62, `shared/src/cli/results.ts` WP-62, `engine/src/index.ts` WP-62, `ops/config.ts` WP-62 (`migrate`, `importLegacy`), `config-write-isolation.test.ts`
   WP-62 (T-ISO-06 rows), `lifecycle-isolation.test.ts` WP-62 (T-ISO-15).
-- Produces: `ops.backup.*`, `ops.upgrade.{run,migrateDb,rebuildDb}`, `ops.cleanup.run`, `config migrate` command. Consumes: WP-09, WP-12, WP-19, WP-60.
+- Produces: `ops.backup.*`, `ops.upgrade.{run,migrateDb,rebuildDb}`, `ops.cleanup.run`, `ops.config.{migrate,importLegacy}`, `config migrate` command. Consumes: WP-09, WP-12, WP-19, WP-60.
 - Depends: WP-09, WP-12, WP-19, WP-60.
 - Tests: T-UP-05..09, T-ISO-15, 24, 25, 26, 27 (integration part), T-CLI-06, T-CLI-12, T-ISO-06 rows.
 - Gate: `STD(engine, cli, tests)` + `UNIT packages/engine/src/ops/upgrade.test.ts` + `INT packages/cli/test/backup.int.test.ts packages/cli/test/upgrade.int.test.ts packages/cli/test/db-rebuild.int.test.ts packages/cli/test/cleanup.int.test.ts`
@@ -1469,8 +1483,8 @@ Phase 5, W5.2, M; impl sonnet medium; verify sonnet high; 06 PP10
 - Creates: `bench/*.mjs` with the script names of 06 8.3 (`bench-first-import.mjs`, `bench-idle.mjs`, `bench-api.mjs` and the rest of
   its table); results go to `bench/results/`, whose `.gitignore` line the lead adds (plan section 4.4, D-13).
 - Blocks: `pkg:` `bench`.
-- Produces: `npm run bench`. Consumes: WP-17, WP-19, WP-41, WP-55.
-- Depends: WP-17, WP-19, WP-41, WP-55.
+- Produces: `npm run bench`. Consumes: WP-17, WP-19, WP-35 (the first-import and idle benchmarks need a running ingest service), WP-41, WP-55.
+- Depends: WP-17, WP-19, WP-35, WP-41, WP-55.
 - Tests: B1-B7 evaluated (pass/fail per budget in the JSON).
 - Gate: `STD(tests)` for the scripts (Prettier, ESLint) + `cd $R && node $K/mcslock.mjs run -- sh -c "npm run build && npm run bench"`.
 - Verifier: ports 18900-18949 only; every started instance stopped; results under `bench/results/` (gitignored); numbers come from
@@ -1519,8 +1533,8 @@ Phase 6, W6.1, L; impl sonnet high; verify opus xhigh; 06 PP8 (part), 06 PP9
 - Inputs: 06 5.4, section 5.6, section 5.7, section 5.8, section 5.9 (G2), section 5.10; 01 2.8; 98 section 13 (`parity:shadow`).
 - Creates: `tests/parity/{attempts,panels,config-regex,workspace-files,diffs}.parity.test.ts`, `scripts/parity-shadow.mjs`, `tests/parity/shadow.test.ts`.
 - Blocks: `pkg:` `parity:shadow`.
-- Produces: L2 comparisons B, `npm run parity:shadow`. Consumes: WP-43, WP-55, WP-40, WP-41, WP-05, WP-13, WP-19.
-- Depends: WP-05, WP-13, WP-19, WP-40, WP-41, WP-43, WP-55.
+- Produces: L2 comparisons B, `npm run parity:shadow`. Consumes: WP-43, WP-55, WP-40, WP-41, WP-05, WP-13, WP-19, WP-35 (the harness runs `ingestUntilIdle` through the real service; attempts rows are matched against imported sessions).
+- Depends: WP-05, WP-13, WP-19, WP-35, WP-40, WP-41, WP-43, WP-55.
 - Tests: L2 matrix rows for these projections; `diffs.parity.test.ts`; `shadow.test.ts` (`unexplained == 0` on a testkit tree, no label
   text in output, ports 18850-18899, temp removed).
 - Gate: `STD(tests)` + `PAR tests/parity/attempts.parity.test.ts tests/parity/panels.parity.test.ts tests/parity/config-regex.parity.test.ts tests/parity/workspace-files.parity.test.ts tests/parity/diffs.parity.test.ts tests/parity/shadow.test.ts`.
@@ -1682,7 +1696,7 @@ Phase 6, W6.2, M; impl sonnet high; verify opus xhigh; 01 Appendix A, 01 S16
 | Phase | Commit sequence (after each WP's verification) | Closing commits and tag |
 |---|---|---|
 | 2 | WP-01, WP-24 (tools), WP-02, WP-04, WP-03, WP-05, WP-06, WP-07, WP-09, WP-12, WP-23, WP-08, WP-10, WP-11, WP-13, WP-14, WP-16, WP-15, WP-17, WP-18, WP-19, WP-20, WP-21, WP-22 | goldens (WP-24 output), schemas regeneration if drift, tag `v3-phase-2` |
-| 3 | WP-25, WP-26, WP-30, WP-42, WP-27, WP-28, WP-31, WP-33, WP-37, WP-43, WP-29, WP-32, WP-36, WP-34, WP-38, WP-40, WP-35, WP-41, WP-39 | schemas regeneration, tag `v3-phase-3` |
+| 3 | WP-25, WP-26, WP-30, WP-42, WP-27, WP-28, WP-31, WP-33, WP-37, WP-43, WP-29, WP-32, WP-36, WP-34, WP-40, WP-35, WP-41, WP-38, WP-39 | schemas regeneration, tag `v3-phase-3` |
 | 4 | WP-44, WP-45, WP-55, WP-46, WP-47, WP-49, WP-51, WP-48, WP-50, WP-54, WP-52, WP-53, WP-56 | tag `v3-phase-4` |
 | 5 | WP-57, WP-58, WP-59, WP-60, WP-63, WP-65, WP-66, WP-67, WP-61, WP-62, WP-68, WP-64 (+ ADR 0060) | schemas regeneration, tag `v3-phase-5` |
 | 6 | LS-6a (move, then banners), WP-75, WP-69, WP-70, axe-core barrier, WP-71, WP-72, WP-73, WP-74, WP-76, WP-77, WP-78, WP-79 (candidate stays in scratch) | LS-6b: refreshed goldens if the legacy code changed (it must not), schemas, marker cleanup, migration verification report, ADR statuses, `SKILL.md` install only after G10, tag `v3-phase-6` |
@@ -1709,9 +1723,9 @@ node $K/wp-gate.mjs markers --check --root $Q && node $K/wp-gate.mjs ports --che
 |---|---|---|
 | 2 | `npm run test:isolation`, `npm run test:parity` (PyJson and regex goldens, T-XE-01/02 when Python is present), `PYTHONDONTWRITEBYTECODE=1 python -B tests/legacy-parity/tools/capture_golden.py --check`, `MCS_LAUNCHER_NO_BOOTSTRAP=1 node ../scripts/mcs.mjs version` | ci table: every gate PASS and `smoke` PASS (not SKIPPED); 0 failing tests; golden check identical; launcher prints the version without bootstrapping |
 | 3 | `npm run test:isolation`, `npm run test:resilience`, `npm run test:parity`, `npm run parity:check`, `npm run test:coverage` (recorded, not yet blocking) | all PASS; L1 vectors green; ISO rows of WP-20 and WP-39 green; coverage numbers recorded in the phase report |
-| 4 | `npm run build` (bundle budget), `npx playwright test -c packages/web/e2e/playwright.config.ts specs/lifecycle.spec.ts specs/transcript-perf.spec.ts` | build within budget; E2E steps 1-6 and 8-12 pass on Chrome; O-2 number recorded |
+| 4 | `npm run build` (bundle budget), `npx playwright test -c packages/web/e2e/playwright.config.ts specs/lifecycle.spec.ts specs/perf.spec.ts` | build within budget; E2E steps 1-6 and 8-12 pass on Chrome; O-2 number recorded |
 | 5 | `node scripts/ci.mjs --offline --full` (adds parity and E2E incl. step 7), `npm run build && npm run bench` | all PASS; B1-B7 JSON produced and deviations reported to the owner (not silently accepted) |
-| 6 | `npm run release-check -- --out D:/mvp/private/scratch/mcs-v3/release/report.md` (05 7.1 steps 2-9), then `node scripts/ci.mjs --offline --strict`, `npm run test:coverage`, `npm run test:stress`, `MCS_PARITY_LIVE=1 CI=true npm run test:parity`, `npm run test:e2e`, `npm run check:docs`, `npm run check:text` | every row PASS or an explicit SKIPPED row with reason that the owner accepts; coverage thresholds of 05 4.13 met; 3 seeds green; parity divergences only PD1-PD7 / D-rows; quarantine table empty for release-blocking layers; steps 10-12 of 05 7.1 reviewed |
+| 6 | `npm run release-check -- --out D:/mvp/private/scratch/mcs-v3/release/report.md` (05 7.1 steps 2-9), then `node scripts/ci.mjs --offline --strict`, `npm run test:coverage`, `npm run test:stress`, `MCS_PARITY_LIVE=1 CI=true npm run test:parity`, `npm run test:e2e`, `npm run check:docs`, `npm run check:text` | every row PASS or an explicit SKIPPED row with reason that the owner accepts; `env-vars.test.ts` prints zero `pending` names; coverage thresholds of 05 4.13 met; 3 seeds green; parity divergences only PD1-PD7 / D-rows; quarantine table empty for release-blocking layers; steps 10-12 of 05 7.1 reviewed |
 
 A phase gate failure: the lead files the failure against the WP that owns the failing file, resumes that WP's implementer, re-verifies,
 re-runs the full phase gate. No phase N+1 commit lands before the gate is green (plan section 12 rule 10).
@@ -1730,10 +1744,14 @@ re-runs the full phase gate. No phase N+1 commit lands before the gate is green 
 | D-08 | Vector tests of ported functions moved | 06 PP4 "added by the porting slice": `classify_state`, `classify_rules`, `events_of`, `clip` -> WP-69 | the ingestion WPs do not wait on the parity harness; `external_state` stays in WP-40 as 06 PP5 lists it |
 | D-09 | Scenario catalogue in Phase 4 | 06 PP6 (3-4) -> WP-55 | needs the handler (WP-25) and the legacy builders (WP-42) |
 | D-10 | Data isolation files moved to Phase 6 | 01 S13a `read-`, `token-`, `search-isolation.test.ts` -> WP-73 | T-ISO-11/12 need search (WP-57); grouped with 03 S13 |
-| D-11 | Rows moved between WPs | T-ISO-08 -> WP-39 (needs a running ingesting instance); T-LC-10/11/12 at engine level in WP-13 (CLI-level `init` cases in WP-15); T-LC-14 boot part WP-18, replay part WP-39; T-LF-50 model part WP-28, sweeper part WP-35; 05 S3 "`runHookHandler` writes one spool line" -> WP-25 | each row runs only when its inputs exist |
+| D-11 | Rows moved between WPs | T-ISO-08, T-ISO-16 and T-ISO-17 -> WP-39 (01 3.5 lists them under S9, but they need a running, ingesting instance); T-LC-10/11/12 at engine level in WP-13 (CLI-level `init` cases in WP-15); T-LC-14 boot part WP-18, replay part WP-39; T-LF-50 model part WP-28, sweeper part WP-35; 05 S3 "`runHookHandler` writes one spool line" -> WP-25 | each row runs only when its inputs exist |
 | D-12 | Paths corrected per critic notes | cross-engine tests in `runtime/tests/parity/cross-engine.parity.test.ts` (N-07); `platform-branching.test.ts` next to its module (C47; the integration project includes only `*.int.test.ts`) | executable tests must resolve `@mcs/*` |
-| D-13 | Unowned items assigned | static web hosting (04 12.2, ADR 0039) -> WP-17; MCP (foundations Q7) -> WP-64 with ADR 0060; `security` project and `test:security` -> WP-72 (05 2.8 names S8, which has no security files); `runtime/bench/results/` gitignore line -> lead (98 9.3) | no design slice owned them |
-| D-14 | Plan-assigned test file names | `engine/test/{workspace-init,audit-concurrency,query-plans}.int.test.ts`; `cli/test/{cli-config,ingest-replay,export,verify-completion,backup,upgrade,db-rebuild,cleanup}.int.test.ts`; `server/test/{static,boot,control,shutdown,state-file,crash-recovery,stream-replay,stream-limits,stream-lifecycle}.int.test.ts`; `tests/parity/{cli-config,cross-engine}.parity.test.ts`; `tests/resilience/process-lifecycle.test.ts`; `tests/isolation/{setup-selftest,data-crash-isolation}.test.ts`; `tests/tooling/{launcher-bootstrap,schemas-drift,check-text,check-docs,release-check}.test.ts`; `web/e2e/{global-setup.ts,specs/transcript-perf.spec.ts}`; `web/src/pages/overview/OverviewPage.test.tsx` | the designs name test ids, not these files; the lead adds them to 98 section 12 when this plan is accepted |
+| D-13 | Unowned items assigned | static web hosting (04 12.2, ADR 0039) -> WP-17; MCP (foundations Q7) -> WP-64 with ADR 0060; `security` project and `test:security` -> WP-72 (05 2.8 names S8, which has no security files); `runtime/bench/results/` gitignore line -> lead (98 9.3); `ops.version` -> WP-14 and `ops.config.{migrate,importLegacy}` -> WP-62 through a block in `ops/config.ts` (01 6.3 names no module, registry N14) | no design slice owned them |
+| D-14 | Plan-assigned test file names (now registered in 98 section 12.4) | `engine/test/{workspace-init,audit-concurrency,query-plans}.int.test.ts`; `cli/test/{cli-config,ingest-replay,export,verify-completion,backup,upgrade,db-rebuild,cleanup}.int.test.ts`; `server/test/{static,boot,control,shutdown,state-file,crash-recovery,stream-replay,stream-limits,stream-lifecycle}.int.test.ts`; `tests/parity/{cli-config,cross-engine}.parity.test.ts`; `tests/resilience/process-lifecycle.test.ts`; `tests/isolation/{setup-selftest,data-crash-isolation}.test.ts`; `tests/tooling/{launcher-bootstrap,schemas-drift,check-text,check-docs,release-check}.test.ts`; `web/e2e/global-setup.ts`; `web/src/pages/overview/OverviewPage.test.tsx` | the designs name test ids and folders, not these files; 98 section 12.4 holds the table, so a design change that renames a folder changes it in the same commit. `perf.spec.ts` is 04 O-2's own name and is not plan-assigned |
+| D-15 | `_setup.ts` after the lifecycle ops, T-ISO-06 rows of WP-15 without it | 05 S9 (`tests/isolation/_setup.ts`, listed there as depending on S2 and S3 only) and 01 S7 (lists 05 S9 as a dependency) -> WP-20 | the `_setup.ts` self-test starts two real instances, which needs 01 S9 (WP-19), and WP-19 depends on WP-15; the T-ISO-06 rows of `init`, `configure` and `decide` start no instance and use testkit directly, so WP-15 has no edge to WP-20 (no cycle) |
+| D-16 | WP-38, WP-68 and WP-70 wait for the ingest service | 01 S14 (depends on S8, 02 I-9 and the replay functions only) -> WP-38 depends on WP-35 | T-CLI-11 re-reads the spool after `start` and replays through `IngestService.replay`, which exist only from WP-35; WP-39 and the Phase 3 waves move by one (W3.6, W3.7). WP-68 (first-import and idle benchmarks) and WP-70 (the L2 harness runs `ingestUntilIdle`) also consume the real service; the earlier tables listed no edge to WP-35 for them (phase order made it implicit) |
+| D-17 | Orphaned items assigned (final verification) | `formatCommand` (`engine/src/ops/commands.ts`, 01 6.6, registry 2.1) -> WP-17; `claudeArgsWithoutHooks` (`engine/src/external/launch-claude.ts`, 02 2.9, T-HK-15) -> WP-25 | neither file is in any slice list of 01 or 02, so no WP would have built them; WP-17 needs the first for `InstanceInfo.commands`, WP-25 needs the second for T-HK-15 |
+| D-18 | Staged env-var gate and the reader of `MCS_E2E_CLAUDE` (final verification) | `env-vars.test.ts` (01 2.10: "a documented name is never read" fails) -> `pending` names until their reader files exist, zero `pending` required at the Phase 6 gate; the optional real-provider E2E (02 9.3, I-11) -> WP-39 | the test is created in WP-23 (W2.4) while most readers arrive in W2.5-W6; as written it would fail every gate until the last reader landed, and `MCS_E2E_CLAUDE` had no reader at all |
 
 ## 11. Risk register (top 10)
 
@@ -1777,6 +1795,6 @@ re-runs the full phase gate. No phase N+1 commit lands before the gate is green 
 
 | Step | When | Content | Done when |
 |---|---|---|---|
-| LS-0 | before Phase 2 | create `D:/mvp/private/scratch/mcs-v3/kit/`: `mcslock.mjs` (named-pipe locks and semaphores, plan section 3.1), `wp-gate.mjs` (`tsc`, `build`, `end`, `markers --check`, `ports --check`, `stage`), `wp/WP-xx.json` manifests generated from plan section 8 Creates/Blocks lines, `ports.json` (12 manual slots), `cr/` folder; accept this plan and file the CR that adds the D-14 test names to 98 section 12 | self-tests: two `run` holders serialize; a killed holder releases at once; `wp-gate tsc` passes with a foreign error and fails with an own one; `stage` on a dummy repo stages only one block |
+| LS-0 | before Phase 2 | create `D:/mvp/private/scratch/mcs-v3/kit/`: `mcslock.mjs` (named-pipe locks and semaphores, plan section 3.1), `wp-gate.mjs` (`tsc`, `build`, `end`, `markers --check`, `ports --check`, `stage`), `wp/WP-xx.json` manifests generated from plan section 8 Creates/Blocks lines, `ports.json` (12 manual slots), `cr/` folder; accept this plan (the D-14 test names are already registered in 98 section 12.4) | self-tests: two `run` holders serialize; a killed holder releases at once; `wp-gate tsc` passes with a foreign error and fails with an own one; `stage` on a dummy repo stages only one block |
 | LS-6a | start of Phase 6 | `git mv docs/{api,architecture,changelog,configuration,development,troubleshooting,ui-decision-record}.md docs/legacy/` (move-only commit); banner line and `../../reference/` link fixes in the moved files (second commit); `reference/*` links unchanged unless the owner approves (05 6.4 step 4) | `check-docs` passes on `docs/legacy/` and `reference/` |
 | LS-6b | after every WP | Phase 6 gate (plan section 9.2); migration verification report in `docs/migration.md` (05 7.2) from real outputs; ADR statuses; cutover evidence G1-G9 (06 5.9; G2 shadow runs by the lead, read-only, 3 runs at least 1 h apart); marker cleanup (reformat-only commit, `grep -r "@wp-" runtime` empty); schemas regenerated; owner approval G10 requested; only then `SKILL.md` installed from the WP-79 candidate | release report has no fabricated row; G10 approval in an owner message |

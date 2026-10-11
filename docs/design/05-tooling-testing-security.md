@@ -991,7 +991,8 @@ legacy-engine spawns with `file = process.execPath`, critic issue I-06). Rules 1
 2. `file` is an absolute path to a `.exe` (or `.com`, 06 3.6 rule 2) on Windows (Node refuses `.cmd`/`.bat` without a shell and throws synchronously, E12, so the
    helper wraps `spawn` in try/catch and resolves a `ChildResult` with `ok: false`, `code: null`, `error: 'SPAWN_FAILED'`); executables used: `git`, `powershell.exe`
    (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`), `taskkill.exe` (also 01's `forceKill`, 01 4.2), `icacls.exe`, `docker`, `claude`,
-   `node` (`process.execPath`), `python` (absolute path probed by 01 6.5, never by `resolveExecutable`) and kind `opener` (`explorer.exe`,
+   `node` (`process.execPath`; `hooks verify` V4/V6 spawn the installed hook command, 06 3.6 rule 8, and V6 alone passes the probe payload as
+   `ChildSpec.stdin`, kind `node` only, at most 4096 bytes, registry C60), `python` (absolute path probed by 01 6.5, never by `resolveExecutable`) and kind `opener` (`explorer.exe`,
    `/usr/bin/open`, `xdg-open`); the kinds and their resolution are 06 section 3.6 `ChildKind`/`resolveExecutable` (critic I-06, registry C11).
 3. Environment: start from an allow-list (`PATH`, `SystemRoot`, `TEMP`, `TMP`, `HOME`, `USERPROFILE`, `LANG`) plus explicit additions;
    for `git` also `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0` (never take the index lock the user may need) and never pass `GIT_DIR`,

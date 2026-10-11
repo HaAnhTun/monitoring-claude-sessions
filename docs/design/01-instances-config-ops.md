@@ -757,7 +757,7 @@ their instances with `$MCS init`/`start` on ports from testkit `allocatePort([18
 above is the constant `DOCUMENTED_ENV_VARS: readonly { name: string; scope: 'runtime' | 'test' | 'dev'; readers: readonly string[] }[]`
 in `packages/shared/src/env.ts` (slice S1); `runtime/tooling/env-vars.test.ts` (owned by 05 slice S1, project `unit`) greps
 `runtime/packages/*/src/**`, `runtime/scripts/**`, `runtime/tests/**`, `runtime/*.config.*`, `<skill>/scripts/*.mjs` for
-`/\bMCS_[A-Z0-9_]+\b/` and fails when a name is not in `DOCUMENTED_ENV_VARS`, when a documented name is never read, or when a
+`/\bMCS_[A-Z0-9_]+\b/` and fails when a name is not in `DOCUMENTED_ENV_VARS`, when a documented name is never read by any of its `readers` files that exist (a name whose reader files do not exist yet is reported `pending` and passes; the Phase 6 gate requires zero `pending`, plan D-18), or when a
 `MCS_TEST_*` name appears in production sources outside `test-hooks.ts`; a docs test checks that `docs/configuration.md` lists every
 `runtime`-scope name. Tests must clear `CLAUDE_CONFIG_DIR`/`MCS_*` before setting their own (testkit helper `hermeticEnv()`).
 

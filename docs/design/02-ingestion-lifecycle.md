@@ -740,8 +740,8 @@ of the `hooks` key only; last line `dry run: nothing was written; re-run with --
 ### 3.7 Verification without touching real settings or starting Claude Code
 
 `mcs hooks verify` returns `{check, ok, detail}[]` (doctor style). V4 and V6 spawn through 06's `execFileText` with kind `node`
-(engine modules may not import `node:child_process`, 01 T-LC-16); V6 needs stdin, which `ChildSpec` lacks (request to 06 3.6,
-section 12 X-3). Checks in order:
+(engine modules may not import `node:child_process`, 01 T-LC-16); V6 passes the probe payload through the optional `ChildSpec.stdin`
+(06 3.6, kind `node`, at most 4096 bytes; adopted, registry C60, request X-3 of section 12). Checks in order:
 
 | # | Check | Pass condition |
 |---|---|---|

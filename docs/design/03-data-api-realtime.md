@@ -1484,6 +1484,8 @@ export interface ErrorEnvelope { error: { code: ErrorCode; message: string; requ
 
 `message` is fixed English per code (numbers allowed, never request values). The UI groups codes by HTTP status (`[04 5.1]`).
 
+Reserved codes (final verification, registry N11): `csrf_rejected` (step 5; the guard exists and is unit-tested) and `alert_not_found` (no v3 route raises it; kept for a later alert detail route) stay in the union, and the meta-tests of DA-T-API-3 and 13 item 6 exempt exactly these two. `query_too_short` is listed by every route definition that has a `q` filter (5.4).
+
 ### 5.3 Pagination and sorting
 
 ```ts
@@ -2523,8 +2525,8 @@ fixture and compares (DA-T-CLI-1).
 5. **Drift check**: `npm run schemas:check` regenerates into a temporary folder and diffs with the committed files (CI and the root `ci`).
 6. **Contract tests** (`packages/server/test/contract/*.test.ts`): a synthetic fixture DB from the testkit, the server on `listen(0)`; per
    route one valid request (status and strict parse), one request per listed error code (envelope and code), an unknown query key
-   (`validation_failed`), a repeated key (`param_repeated`); a meta-test asserts that every `ErrorCode` is listed by some route and
-   produced by some test.
+   (`validation_failed`), a repeated key (`param_repeated`); a meta-test asserts that every `ErrorCode` except the two reserved ones of 5.2 (`csrf_rejected`,
+   `alert_not_found`) is listed by some route definition and produced by some test.
 
 ## 14. Security and reliability mapping (brief 12, API parts)
 
@@ -2759,7 +2761,7 @@ section 23 names the files per slice (for example `engine/src/maintenance/retent
 |---|---|---|---|
 | DA-T-API-1 | contracts (DA-I13) | per route: valid request -> success status and strict response parse | I |
 | DA-T-API-2 | schema drift | `npm run schemas:check` passes; a changed schema without regeneration fails | U (CI) |
-| DA-T-API-3 | error envelope per code | one crafted request per `ErrorCode`; meta-test: every code listed and produced | I |
+| DA-T-API-3 | error envelope per code | one crafted request per `ErrorCode` except the two reserved ones (5.2: `csrf_rejected` is produced by 05 SEC-05 on a test app, `alert_not_found` by an error-mapper unit test); meta-test: every other code is listed by some route definition and produced | I |
 | DA-T-API-4 | guards (with `[05]` SEC-02..05) | Host `evil.example`, `127.0.0.1.evil.com`, empty, `0.0.0.0`, `[::1]:<port>`, another port -> 403; `localhost:<port>`, `127.0.0.1:<port>` -> 200; bad or `null` Origin, and a Vite dev origin such as `http://localhost:5173` -> 403 (exactly two allowed values, I-31); `Sec-Fetch-Site: cross-site` -> 403; 9000-char URL -> 414; repeated key -> 400 `param_repeated`; `OPTIONS` -> 405 without CORS headers; any `POST` other than the nudge -> 404/405 | I |
 | DA-T-API-5 | nudge | valid body -> 204 and a drain is scheduled; with `Origin` -> 403; 257-byte body -> 413; `text/plain` -> 415; another instance id -> 409 | I |
 | DA-T-API-6 | keyset pagination | walk all pages of sessions (every sort/dir) and events while inserting rows between requests: no duplicates, no gaps among rows that existed at the first page, total order respected; changed filter with an old cursor -> `cursor_invalid`; frozen window | I |
