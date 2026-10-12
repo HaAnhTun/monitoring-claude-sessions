@@ -2,7 +2,6 @@ import { Link } from 'react-router';
 
 import { Icon } from '../components/Icon.tsx';
 import type { IngestionView } from '../lib/connection-health.ts';
-// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
 import type { ChipView } from '../stream/freshness.ts';
 
 export interface IngestionChipProps {

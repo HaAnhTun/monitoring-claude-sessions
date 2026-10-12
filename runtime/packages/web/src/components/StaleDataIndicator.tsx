@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 
 import { fmtAge, fmtClock } from '../lib/format.ts';
-// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
 import { useFreshness } from '../stream/useFreshness.ts';
 import { Icon } from './Icon.tsx';
 import { useNow } from './RelativeTime.tsx';

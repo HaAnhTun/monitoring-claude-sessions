@@ -184,6 +184,15 @@ function liveRows(page: Page) {
   return page.getByRole('table', { name: 'Sessions' }).locator('tbody tr');
 }
 
+/** The two chips of the top bar (04 5.6, ADR 0033): what the client observes of its link, and what the server says of ingestion. */
+function connectionChip(page: Page) {
+  return page.getByRole('banner').locator('[data-chip="connection"]');
+}
+
+function ingestionChip(page: Page) {
+  return page.getByRole('banner').locator('[data-chip="ingestion"]');
+}
+
 /** Rows (their text) of the list page; polled with `expect.poll`. */
 async function rowTexts(page: Page): Promise<string[]> {
   return page.getByRole('table', { name: 'Sessions' }).locator('tbody tr').allInnerTexts();
@@ -210,6 +219,18 @@ test('the open list page follows the event stream: a new session and a new turn 
     const response = await request.response();
     expect(response?.status(), 'status of GET /api/v3/stream').toBe(200);
     expect(response?.headers()['content-type'] ?? '').toContain('text/event-stream');
+  });
+
+  await test.step('the shell shows the connection chip live and the ingestion chip as a separate signal', async () => {
+    await expect(connectionChip(page), 'the connection chip reads live once the stream is open').toHaveAttribute(
+      'data-status',
+      'live',
+      { timeout: LIVE_TIMEOUT_MS },
+    );
+    await expect(connectionChip(page)).toContainText('Live');
+    await expect(ingestionChip(page)).toBeVisible();
+    await expect(ingestionChip(page)).toContainText(/Ingestion|Hooks off/);
+    await expect(page.locator('[data-chip]')).toHaveCount(2);
   });
 
   // Everything after this marker happens in the same document: a reload or a navigation would erase it.
@@ -275,6 +296,8 @@ test('the open list page follows the event stream: a new session and a new turn 
 });
 
 test('after the instance stops the open page keeps its rows and its connections fail', async ({ page }) => {
+  // Three polled windows (live before the stop, the chip leaving live, the failed calls) may each take up to LIVE_TIMEOUT_MS.
+  test.setTimeout(3 * LIVE_TIMEOUT_MS);
   const failedCalls: string[] = [];
   page.on('requestfailed', (request) => {
     const { pathname } = new URL(request.url());
@@ -284,8 +307,22 @@ test('after the instance stops the open page keeps its rows and its connections 
   await page.goto(`${env.baseUrl}/sessions`);
   await expect(liveRows(page)).toHaveCount(env.expected.sessions.length + 1);
 
+  await test.step('before the stop the connection chip is live', async () => {
+    await expect(connectionChip(page)).toHaveAttribute('data-status', 'live', { timeout: LIVE_TIMEOUT_MS });
+  });
+
   await test.step('stop the instance while the page is open', async () => {
     await haltSkeletonInstance(env.paths);
+  });
+
+  await test.step('the connection chip leaves live and the ingestion chip stops claiming health (UI-I4)', async () => {
+    // The stream breaks at once and the polls fail after it: the chip must read reconnecting (or connection lost) inside the
+    // documented window, which is shorter than the test timeout (instance.staleAfterMs plus the first retry).
+    await expect(connectionChip(page)).toHaveAttribute('data-status', /^(reconnecting|offline)$/, {
+      timeout: LIVE_TIMEOUT_MS,
+    });
+    await expect(ingestionChip(page)).toContainText('Ingestion unknown');
+    await expect(ingestionChip(page)).not.toContainText('Ingestion OK');
   });
 
   await test.step('the stream and the polls fail, and the rows stay (UI-I5)', async () => {

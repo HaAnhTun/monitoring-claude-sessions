@@ -9,7 +9,16 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-const NODE_BUILTINS = [...builtinModules.filter((m) => !m.startsWith('_')), 'node:*'];
+/**
+ * Matches the Node built-in modules and nothing else: `node:*`, or a built-in name at the start of the specifier, optionally with
+ * a subpath (`stream`, `stream/web`, `fs/promises`). A gitignore-style group would also match any path with a segment of that name
+ * (a web folder `src/stream`, CR-WP-48-1), so this is an anchored regex.
+ */
+const NODE_BUILTIN_BASES = [
+  ...new Set(builtinModules.filter((m) => !m.startsWith('_') && !m.startsWith('node:')).map((m) => m.split('/')[0])),
+];
+const NODE_BUILTIN_REGEX = `^(?:node:|(?:${NODE_BUILTIN_BASES.join('|')})(?:/|$))`;
+const nodeBuiltins = (message) => ({ regex: NODE_BUILTIN_REGEX, message });
 
 /** Packages that must never be added (stack-versions.md section 9, ADR-0041). */
 const BANNED_PACKAGES = [
@@ -118,7 +127,7 @@ function webImports({ lucide = false, extra = [] } = {}) {
   return restrictImports({
     paths: [{ name: 'react-router-dom', message: 'Use react-router (v8 single package).' }],
     patterns: [
-      forbid(NODE_BUILTINS, 'web runs in the browser.'),
+      nodeBuiltins('web runs in the browser.'),
       forbid(
         ['@mcs/engine', '@mcs/server', '@mcs/cli', '@mcs/testkit', 'express', 'better-sqlite3', 'zod'],
         'web imports only @mcs/shared (schemas come from shared).',
@@ -202,7 +211,7 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': restrictImports({
         patterns: [
-          forbid(NODE_BUILTINS, 'shared is isomorphic: no Node built-ins.'),
+          nodeBuiltins('shared is isomorphic: no Node built-ins.'),
           forbid(['@mcs/*', 'express', 'better-sqlite3', 'react', 'react-*'], 'shared depends only on zod.'),
         ],
       }),
@@ -213,10 +222,8 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': restrictImports({
         patterns: [
-          forbid(
-            [...NODE_BUILTINS, '@mcs/*', 'zod', 'express', 'better-sqlite3', 'react'],
-            'protocol is dependency-free.',
-          ),
+          nodeBuiltins('protocol is dependency-free.'),
+          forbid(['@mcs/*', 'zod', 'express', 'better-sqlite3', 'react'], 'protocol is dependency-free.'),
           { regex: '^\\.\\./', message: 'protocol must not import the zod-based part of shared.' },
         ],
       }),

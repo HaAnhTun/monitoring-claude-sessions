@@ -4,9 +4,7 @@ import { Button } from '../components/Button.tsx';
 import { InstanceIdContext, useInstance } from '../data/hooks/useInstance.ts';
 import { useHealth } from '../data/hooks/useHealth.ts';
 import { fmtAge } from '../lib/format.ts';
-// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
 import { useStreamControls } from '../stream/StreamProvider.tsx';
-// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
 import { useFreshness } from '../stream/useFreshness.ts';
 import { useAnnounce } from '../state/announcer.tsx';
 import { ConnectionChip } from './ConnectionChip.tsx';

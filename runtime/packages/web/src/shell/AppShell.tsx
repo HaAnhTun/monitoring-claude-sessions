@@ -11,21 +11,10 @@ import { applyDisplayPrefs, resolveDisplay, usePrefs } from '../state/prefs-stor
 import { ShortcutRegistryProvider, useShortcut, useShortcutRegistry } from '../state/shortcuts-registry.tsx';
 import { useToasts } from '../state/toast-store.ts';
 import { InstanceChangedNotice } from './InstanceChangedNotice.tsx';
-import { PrefsControls } from './PrefsControls.tsx';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { MAIN_ID, SkipLinks } from './SkipLinks.tsx';
-
-const FALLBACK_TITLE = 'Claude session monitor';
-
-function Header({ instance }: { instance: InstanceInfo | undefined }) {
-  return (
-    <header className="topbar">
-      <p className="topbar__title">{instance?.title ?? FALLBACK_TITLE}</p>
-      {instance === undefined ? null : <PrefsControls />}
-    </header>
-  );
-}
+import { TopBar } from './TopBar.tsx';
 
 function ToastRegion() {
   const { toasts, dismiss } = useToasts();
@@ -52,7 +41,7 @@ function ToastRegion() {
   );
 }
 
-/** The frame once the instance is known: header, sidebar, the routed page, dialogs and notices. */
+/** The frame once the instance is known: top bar, sidebar, the routed page, dialogs and notices. */
 function Frame({ instance }: { instance: InstanceInfo }) {
   const { prefs } = usePrefs();
   const { setHelpOpen } = useShortcutRegistry();
@@ -70,7 +59,7 @@ function Frame({ instance }: { instance: InstanceInfo }) {
   return (
     <div className="shell">
       <SkipLinks />
-      <Header instance={instance} />
+      <TopBar />
       <InstanceChangedNotice />
       <div className="shell__body">
         <Sidebar />
@@ -88,7 +77,7 @@ function BootFrame({ children }: { children: ReactNode }) {
   return (
     <div className="shell">
       <SkipLinks />
-      <Header instance={undefined} />
+      <TopBar />
       <div className="shell__body shell__body--boot">
         <main id={MAIN_ID} className="main" tabIndex={-1} aria-busy="true">
           {children}
@@ -130,7 +119,7 @@ function ConnectedShell() {
 }
 
 /**
- * The layout route of every page (04-ui.md 4.1, 4.4): skip links, header, sidebar, `main#main` with the routed page, the one live
+ * The layout route of every page (04-ui.md 4.1, 4.4): skip links, top bar (title, chips, age, Retry now, details), sidebar, `main#main` with the routed page, the one live
  * region, toasts, the shortcuts dialog and the instance-changed notice. Until the instance is known only the frame and a skeleton
  * show (no 700 ms hide, layout is visible from the first paint); a failed load shows a page-size error with a retry.
  * Without an API client in the tree (isolated route tests) it degrades to the bare `main` landmark.

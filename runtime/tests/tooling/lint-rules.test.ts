@@ -358,6 +358,29 @@ const PROBES: readonly Probe[] = [
       [7, IMPORTS, 'never imports test code'],
     ],
   },
+  // CR-WP-48-1: the Node builtin ban matches the module only; a web folder named `stream` (04-ui.md 4.2) stays importable
+  {
+    file: 'packages/web/src/probe/stream-folder.ts',
+    lines: [
+      "import { a } from '../stream/x.ts';",
+      "import { b } from './stream/y.ts';",
+      "import { c } from '../../stream/z.ts';",
+      "import { d } from 'node:stream';",
+      "import { e } from 'stream';",
+      "import { f } from 'stream/web';",
+      "import { g } from 'node:stream/promises';",
+      "import { h } from 'path';",
+      "import { i } from '../path/x.ts';",
+      'export const all = [a, b, c, d, e, f, g, h, i];',
+    ],
+    expect: [
+      [4, IMPORTS, 'browser'],
+      [5, IMPORTS, 'browser'],
+      [6, IMPORTS, 'browser'],
+      [7, IMPORTS, 'browser'],
+      [8, IMPORTS, 'browser'],
+    ],
+  },
   {
     file: 'packages/web/src/components/icons.ts',
     lines: ["import { Check } from 'lucide-react';", 'export const icon = Check;'],

@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { usePageChrome } from '../app/usePageChrome.ts';
+import { StaleDataIndicator } from '../components/StaleDataIndicator.tsx';
 import { qk } from '../data/query-keys.ts';
 import { createPrefs } from '../lib/prefs.ts';
 import { AnnouncerProvider, useAnnounce } from '../state/announcer.tsx';
@@ -39,6 +40,16 @@ function Page({ title }: { title: string }) {
   );
 }
 
+/** A page whose own refresh fails: it shows the stale line, which marks the shell's `main` (UI-I5). */
+function StalePage() {
+  return (
+    <>
+      <Page title="Stale" />
+      <StaleDataIndicator asOf={null} fetchFailing scope="sessions" />
+    </>
+  );
+}
+
 function Pages() {
   return (
     <Routes>
@@ -47,6 +58,7 @@ function Pages() {
         <Route path="/sessions" element={<Page title="Sessions" />} />
         <Route path="/sessions/:sessionId" element={<Page title="Session" />} />
         <Route path="/settings" element={<Page title="Settings" />} />
+        <Route path="/stale" element={<StalePage />} />
       </Route>
     </Routes>
   );
@@ -107,6 +119,42 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
     expect(main).toHaveAttribute('tabindex', '-1');
     expect(within(main).getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
     expect(screen.getAllByRole('main')).toHaveLength(1);
+  });
+
+  it('shows the TopBar: title, task, both chips and the refresh button, and no second heading (CR-WP-48-2)', async () => {
+    renderShell();
+    const banner = screen.getByRole('banner');
+    await waitFor(() => {
+      expect(banner).toHaveTextContent('FIXTURE monitor');
+    });
+    expect(banner.querySelector('[data-chip="connection"]')).not.toBeNull();
+    expect(banner.querySelector('[data-chip="ingestion"]')).not.toBeNull();
+    expect(within(banner).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(within(banner).getByRole('button', { name: 'Details' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(banner).queryByRole('heading')).toBeNull();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('shows the chips and the fallback title while the instance is still loading', () => {
+    const api = createFakeApi({ instance: () => new Promise<InstanceInfo>(() => undefined) });
+    renderShell({ api, instanceId: null });
+    const banner = screen.getByRole('banner');
+    expect(banner).toHaveTextContent('Claude session monitor');
+    expect(banner.querySelector('[data-chip="connection"]')).toHaveTextContent('Connecting...');
+    expect(banner.querySelector('[data-chip="ingestion"]')).not.toBeNull();
+    expect(within(banner).queryByRole('button', { name: /^Theme:/ })).toBeNull();
+  });
+
+  it('marks the main region data-stale while a page shows a stale line, and only then', async () => {
+    const quiet = renderShell();
+    await screen.findByRole('complementary');
+    expect(screen.getByRole('main')).not.toHaveAttribute('data-stale');
+    quiet.unmount();
+
+    renderShell({ route: '/stale' });
+    await screen.findByRole('complementary');
+    expect(screen.getByRole('main')).toHaveAttribute('data-stale', 'true');
+    expect(within(screen.getByRole('main')).getByText(/sessions: refresh failing/)).toBeInTheDocument();
   });
 
   it('has one polite atomic live region', async () => {

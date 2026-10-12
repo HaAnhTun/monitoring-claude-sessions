@@ -8,7 +8,6 @@ import { useNow } from '../components/RelativeTime.tsx';
 import { InstanceIdContext, useApi } from '../data/hooks/useInstance.ts';
 import { qk } from '../data/query-keys.ts';
 import { fmtAge, fmtClock } from '../lib/format.ts';
-// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
 import { useStreamSnapshot } from '../stream/StreamProvider.tsx';
 
 type StreamSnapshot = ReturnType<typeof useStreamSnapshot>;
