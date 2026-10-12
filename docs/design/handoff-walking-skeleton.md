@@ -1,6 +1,6 @@
 # Handoff: V3 walking skeleton
 
-Written 2026-10-12 for the owner. Branch `feat/v3-node-runtime` (74 commits after the rollback tag `pre-v3-python`). Everything below
+Written 2026-10-12 for the owner. Branch `feat/v3-node-runtime`, now also `main` (76 commits after the rollback tag `pre-v3-python`). Everything below
 that claims a result comes from a command that was run in this session; the sources are named in each section.
 
 ## What exists
@@ -96,8 +96,9 @@ settings file. Test instances used ports from the 18000-18999 range and were sto
 
 ## Decisions for the owner
 
-1. Merge `feat/v3-node-runtime` into `main`? It is additive and the legacy trees are unchanged, but `SKILL.md` still describes only the
-   Python engine; nothing tells an agent to use the Node CLI yet. Rollback is `git checkout main` (tag `pre-v3-python`).
+1. Merged (the owner decided on 2026-10-12): `main` was fast-forwarded to `feat/v3-node-runtime` (local only, nothing pushed to `origin`).
+   `SKILL.md` still describes only the Python engine; nothing tells an agent to use the Node CLI yet. To go back to the old state, check out
+   the tag `pre-v3-python`, or move `main` back with `git branch -f main pre-v3-python` while another branch is checked out.
 2. Whether to continue with the deferred list. A sensible order: WP-21 launcher and WP-22 diagnostics (daily use), WP-20 isolation suite,
    WP-37/38 hooks (needs consent: hooks change settings for every session), then the Phase 5 features.
 3. A documentation sync that folds the change requests into the registry and the design documents.
