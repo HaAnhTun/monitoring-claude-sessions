@@ -132,3 +132,16 @@ describe('walking skeleton, API level', () => {
     expect(reply.body).toContain('<div id="root"');
   });
 });
+
+describe('skeleton harness option portRange', () => {
+  it('allocates the instance port inside the requested range', async () => {
+    const ranged = await startSkeletonInstance({ portRange: [18490, 18499] });
+    try {
+      expect(ranged.port).toBeGreaterThanOrEqual(18490);
+      expect(ranged.port).toBeLessThanOrEqual(18499);
+      expect((await ranged.getJson(routes.health.path)).status).toBe(200);
+    } finally {
+      await ranged.stop();
+    }
+  }, 180_000);
+});

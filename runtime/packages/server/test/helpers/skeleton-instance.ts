@@ -14,6 +14,7 @@ import {
   makeTempDir,
   runCli,
   waitFor,
+  type PortRange,
   type SessionSpec,
   type TranscriptBuilder,
 } from '@mcs/testkit';
@@ -308,9 +309,13 @@ function expectedOf(
 
 // ---- the instance --------------------------------------------------------------------------------------------------------
 
+const DEFAULT_PORT_RANGE: PortRange = [18000, 18499];
+
 export interface SkeletonOptions {
   /** Budget of the wait for the importer, in ms (default 60 000). */
   readonly importTimeoutMs?: number;
+  /** Inclusive range the instance port is allocated from (default `[18000, 18499]`, the Vitest range of plan 3.2). */
+  readonly portRange?: PortRange;
 }
 
 export interface SkeletonInstance {
@@ -344,6 +349,7 @@ const Files = z.object({ files: z.array(z.looseObject({ behindBytes: z.number(),
 
 export async function startSkeletonInstance(options: SkeletonOptions = {}): Promise<SkeletonInstance> {
   const importTimeoutMs = options.importTimeoutMs ?? 60_000;
+  const portRange = options.portRange ?? DEFAULT_PORT_RANGE;
   const root = makeTempDir('skeleton');
   let started = false;
   let stopped = false;
@@ -394,7 +400,7 @@ export async function startSkeletonInstance(options: SkeletonOptions = {}): Prom
       buildClaudeHome(claudeDir, { sessions: sessionSpecs(nowMs), nowMs });
     });
     const projectDir = join(claudeDir, 'projects', PROJECT);
-    const wanted = await step('allocate-port', () => allocatePort([18000, 18499]));
+    const wanted = await step('allocate-port', () => allocatePort(portRange));
     const instanceDir = join(repoDir, '.claude', 'monitor', 'tasks', SLUG);
 
     await step('init', async () => {
