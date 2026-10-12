@@ -7,7 +7,6 @@ import { ErrorState } from '../components/ErrorState.tsx';
 import { createApiClient } from '../data/api-client.ts';
 import { ApiContext } from '../data/hooks/useInstance.ts';
 import { createQueryClient } from '../data/query-client.ts';
-// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
 import { StreamProvider } from '../stream/StreamProvider.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 

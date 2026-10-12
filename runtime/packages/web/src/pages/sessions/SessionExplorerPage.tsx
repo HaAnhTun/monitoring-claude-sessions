@@ -12,9 +12,9 @@ import { TagBadge } from '../../components/TagBadge.tsx';
 import { ApiError } from '../../data/api-errors.ts';
 import { toSessionFilter } from '../../data/endpoints.ts';
 import { useHealth } from '../../data/hooks/useHealth.ts';
-import { ApiContext, InstanceIdContext, useInstance } from '../../data/hooks/useInstance.ts';
+import { ApiContext, InstanceIdContext, useIid, useInstance } from '../../data/hooks/useInstance.ts';
 import { SESSIONS_PAGE_LIMIT, useSessions } from '../../data/hooks/useSessions.ts';
-import type { ApiQuery } from '../../data/query-keys.ts';
+import { qk, type ApiQuery } from '../../data/query-keys.ts';
 import {
   formatUrlState,
   sessionsSpec,
@@ -23,6 +23,7 @@ import {
   type Spec,
 } from '../../lib/url-state.ts';
 import { useShowToast } from '../../state/toast-store.ts';
+import { ListChangedNotice } from './ListChangedNotice.tsx';
 import { SessionFilterBar } from './SessionFilterBar.tsx';
 import { SessionTable } from './SessionTable.tsx';
 
@@ -130,9 +131,9 @@ function Explorer() {
   const showToast = useShowToast();
 
   const query = useMemo(() => sessionQuery(state), [state]);
-  // STREAM SEAM: while the stream is live `useSessions` stops polling (StreamLiveContext) and the stream provider patches or
-  // invalidates this query key. The explorer needs no code for that; the "List changed" notice of 04 5.5 rule R3 attaches here
-  // once the stream is integrated. Until then the list refetches at `poll.sessionsMs` (and on a filter change).
+  // While the stream is live `useSessions` stops polling (StreamLiveContext) and the stream provider patches rows in place. A
+  // session that is new to the list joins it by itself only when the list is one unscrolled page; otherwise the reconciler counts
+  // it and `ListChangedNotice` offers "Refresh" (04 5.5 rule R3). Without a stream the list refetches at `poll.sessionsMs`.
   const list = useSessions(query, {
     onCursorReset: () => {
       showToast('The list changed; reloaded from the top');
@@ -140,6 +141,7 @@ function Explorer() {
   });
   const { items, capped } = list;
   const result = list.query;
+  const listKey = qk.sessions(useIid(), query);
 
   const activeCount = countActive(spec, state);
   const onSort = useCallback(
@@ -235,6 +237,12 @@ function Explorer() {
         onClearAll={clearAll}
       />
       {Array.from(state.q).length === 1 ? <p className="muted">Type at least 2 characters to search.</p> : null}
+      <ListChangedNotice
+        queryKey={listKey}
+        onRefresh={() => {
+          void result.refetch();
+        }}
+      />
       {refreshFailing ? (
         <ErrorState
           kind="refresh"

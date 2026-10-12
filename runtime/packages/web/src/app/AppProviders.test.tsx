@@ -1,6 +1,6 @@
 import type { SessionSummary, StreamChange, StreamHello } from '@mcs/shared';
 import { QueryClient, useQueryClient } from '@tanstack/react-query';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLocation } from 'react-router';
 
@@ -279,6 +279,74 @@ describe('AppProviders with the realtime stream', () => {
     expect(polls()).toBeGreaterThan(before);
     await expectRow('FIXTURE second session');
     expect(screen.getAllByText('FIXTURE first session').length).toBeGreaterThan(0);
+  });
+
+  describe('a list the user has scrolled away from (rule R3, LF-10)', () => {
+    afterEach(() => {
+      Reflect.deleteProperty(window, 'scrollY');
+      const main = document.querySelector('main');
+      if (main !== null) main.scrollTop = 0;
+    });
+
+    function scrollWindowTo(top: number): void {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top });
+    }
+
+    /** The sidebar is a live list by design; the explorer table is the one R3 keeps stable. */
+    function inTable(text: string): boolean {
+      return within(screen.getByTestId('explorer-results')).queryAllByText(text).length > 0;
+    }
+
+    async function addSecondSession(): Promise<SessionSummary> {
+      const added = makeSession({ id: ROW_B, seq: 6, label: 'FIXTURE second session' });
+      sessions = [added, ...sessions];
+      act(() => {
+        sources.last().emit('change', sessionChange(12, added));
+      });
+      await flush(2500);
+      return added;
+    }
+
+    it('keeps the table as it is and offers Refresh once the page is scrolled 8 px or more', async () => {
+      await mount();
+      await expectRow('FIXTURE first session');
+      await openStream();
+      scrollWindowTo(8);
+      const before = polls();
+      await addSecondSession();
+      expect(polls()).toBe(before);
+      expect(inTable('FIXTURE second session')).toBe(false);
+      const notice = screen.getByRole('status', { name: 'List changed' });
+      expect(notice).toHaveTextContent('1 session changed');
+      fireEvent.click(within(notice).getByRole('button', { name: 'Refresh' }));
+      await flush(50);
+      expect(inTable('FIXTURE second session')).toBe(true);
+      expect(screen.queryByRole('status', { name: 'List changed' })).toBeNull();
+      expect(polls()).toBeGreaterThan(before);
+    });
+
+    it('treats a main region scrolled 8 px or more like a scrolled page', async () => {
+      await mount();
+      await expectRow('FIXTURE first session');
+      await openStream();
+      const main = document.querySelector('main');
+      if (main === null) throw new Error('the shell has no main region');
+      main.scrollTop = 20;
+      await addSecondSession();
+      expect(inTable('FIXTURE second session')).toBe(false);
+      expect(screen.getByRole('status', { name: 'List changed' })).toBeInTheDocument();
+    });
+
+    it('still follows the stream when the page is scrolled less than 8 px', async () => {
+      await mount();
+      await expectRow('FIXTURE first session');
+      await openStream();
+      scrollWindowTo(7);
+      await addSecondSession();
+      await flush(50);
+      expect(inTable('FIXTURE second session')).toBe(true);
+      expect(screen.queryByRole('status', { name: 'List changed' })).toBeNull();
+    });
   });
 
   it('refetches the snapshot when the server sends a reset', async () => {
