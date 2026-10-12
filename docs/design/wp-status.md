@@ -1,6 +1,6 @@
 # Work package status (walking skeleton)
 
-Generated from git history and the lead's overrides: 2026-10-12 08:55 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
+Generated from git history and the lead's overrides: 2026-10-12 08:51 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
 
 Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Python skill (SKILL.md and the Python code are untouched): transcript importer -> database -> query API -> web list page and detail page, started by the standard CLI.
 
