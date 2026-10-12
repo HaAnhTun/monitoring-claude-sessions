@@ -26,10 +26,15 @@ import { z } from 'zod';
 export const FIXTURE_SESSION_A = 'f1f1f1f1-0000-4000-8000-00000000000a';
 export const FIXTURE_SESSION_B = 'f1f1f1f1-0000-4000-8000-00000000000b';
 export const FIXTURE_AGENT_A = 'agentfixture0001';
-const PROJECT = '-FIXTURE-skeleton-project';
-const SLUG = 'skeleton';
-const LABEL_A = 'Skeleton alpha';
-const LABEL_B = 'Skeleton beta';
+/** The session the live helpers add while the instance runs (skeleton-live.ts); the instance has a label rule for it. */
+export const FIXTURE_SESSION_C = 'f1f1f1f1-0000-4000-8000-00000000000c';
+export const FIXTURE_PROJECT = '-FIXTURE-skeleton-project';
+export const SKELETON_SLUG = 'skeleton';
+export const LABEL_A = 'Skeleton alpha';
+export const LABEL_B = 'Skeleton beta';
+export const LABEL_C = 'Skeleton gamma';
+const PROJECT = FIXTURE_PROJECT;
+const SLUG = SKELETON_SLUG;
 
 /** Age of the newest write of each fixture session, in ms before the harness started. */
 const AGE_A_MS = 20 * 60_000;
@@ -282,7 +287,7 @@ function agentIdOfFile(file: string): string {
   return name.slice('agent-'.length, -'.jsonl'.length);
 }
 
-function expectedOf(
+export function expectedOf(
   projectDir: string,
   id: string,
   label: string,
@@ -318,8 +323,19 @@ export interface SkeletonOptions {
   readonly portRange?: PortRange;
 }
 
+/** The folders and names of a running instance: what the live helpers need to feed it or stop it from another process. */
+export interface SkeletonPaths {
+  readonly mcsHome: string;
+  readonly claudeDir: string;
+  readonly repoDir: string;
+  /** The transcripts folder the instance watches (`transcripts_dir`). */
+  readonly projectDir: string;
+  readonly slug: string;
+}
+
 export interface SkeletonInstance {
   readonly baseUrl: string;
+  readonly paths: SkeletonPaths;
   readonly port: number;
   readonly repoDir: string;
   readonly instanceDir: string;
@@ -411,6 +427,7 @@ export async function startSkeletonInstance(options: SkeletonOptions = {}): Prom
       const rules = [
         { match: 'FIXTURE alpha', label: LABEL_A },
         { match: 'FIXTURE beta', label: LABEL_B },
+        { match: 'FIXTURE gamma', label: LABEL_C },
       ];
       const result = await cli([
         'configure',
@@ -492,7 +509,16 @@ export async function startSkeletonInstance(options: SkeletonOptions = {}): Prom
       );
     });
 
-    return { baseUrl: `http://127.0.0.1:${String(port)}`, port, repoDir, instanceDir, expected, getJson: get, stop };
+    return {
+      baseUrl: `http://127.0.0.1:${String(port)}`,
+      paths: { mcsHome, claudeDir, repoDir, projectDir, slug: SLUG },
+      port,
+      repoDir,
+      instanceDir,
+      expected,
+      getJson: get,
+      stop,
+    };
   } catch (error) {
     await stop().catch(() => undefined);
     throw error;

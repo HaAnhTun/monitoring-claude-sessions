@@ -16,7 +16,11 @@ const PLAYWRIGHT_PORT_RANGE: [number, number] = [18500, 18599];
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const instance = await startSkeletonInstance({ portRange: PLAYWRIGHT_PORT_RANGE });
-  process.env[SKELETON_ENV] = JSON.stringify({ baseUrl: instance.baseUrl, expected: instance.expected });
+  process.env[SKELETON_ENV] = JSON.stringify({
+    baseUrl: instance.baseUrl,
+    paths: instance.paths,
+    expected: instance.expected,
+  });
   // The harness keeps everything below one temp root: `<root>/repo` is the repository it created.
   const tempRoot = dirname(instance.repoDir);
 

@@ -30,8 +30,18 @@ export interface EnvSession {
   toolCalls: EnvToolCall[];
 }
 
+/** Where the running instance lives: what the live helpers of the harness need to feed it or stop it (LF-7). */
+export interface EnvPaths {
+  mcsHome: string;
+  claudeDir: string;
+  repoDir: string;
+  projectDir: string;
+  slug: string;
+}
+
 export interface SkeletonEnvValue {
   baseUrl: string;
+  paths: EnvPaths;
   expected: { sessions: EnvSession[] };
 }
 
@@ -115,6 +125,17 @@ function sessionAt(value: unknown, path: string): EnvSession {
   };
 }
 
+function pathsAt(value: unknown, path: string): EnvPaths {
+  const obj = objAt(value, path);
+  return {
+    mcsHome: strAt(obj, 'mcsHome', path),
+    claudeDir: strAt(obj, 'claudeDir', path),
+    repoDir: strAt(obj, 'repoDir', path),
+    projectDir: strAt(obj, 'projectDir', path),
+    slug: strAt(obj, 'slug', path),
+  };
+}
+
 /** Validates the parsed hand-over; the error names the first field that is missing or has the wrong type. */
 export function parseSkeletonEnv(value: unknown): SkeletonEnvValue {
   const root = objAt(value, 'root');
@@ -124,6 +145,7 @@ export function parseSkeletonEnv(value: unknown): SkeletonEnvValue {
     return bad('expected.sessions', 'an array of exactly 2 sessions');
   return {
     baseUrl: strAt(root, 'baseUrl', 'root'),
+    paths: pathsAt(root['paths'], 'paths'),
     expected: {
       sessions: sessions.map((session: unknown, index) => sessionAt(session, `expected.sessions[${index}]`)),
     },

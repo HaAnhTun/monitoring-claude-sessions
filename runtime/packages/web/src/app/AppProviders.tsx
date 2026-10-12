@@ -7,7 +7,19 @@ import { ErrorState } from '../components/ErrorState.tsx';
 import { createApiClient } from '../data/api-client.ts';
 import { ApiContext } from '../data/hooks/useInstance.ts';
 import { createQueryClient } from '../data/query-client.ts';
+// eslint-disable-next-line no-restricted-imports -- the Node builtin pattern `stream` also matches the web folder src/stream (CR-WP-48-1)
+import { StreamProvider } from '../stream/StreamProvider.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
+
+/** Rule R3 exception (04 5.5): a list the user has not scrolled follows the stream, so the default view stays current. */
+const AT_TOP_PX = 8;
+
+/** True while neither the page nor the main region is scrolled. Read at the moment a change arrives, never subscribed. */
+function viewIsAtTop(): boolean {
+  const main = document.querySelector('main');
+  const scrolled = Math.max(window.scrollY, document.scrollingElement?.scrollTop ?? 0, main?.scrollTop ?? 0);
+  return scrolled < AT_TOP_PX;
+}
 
 export interface AppProvidersProps {
   children: ReactNode;
@@ -38,7 +50,12 @@ export function AppProviders({ children, queryClient }: AppProvidersProps) {
     >
       <QueryClientProvider client={queryClient ?? fallbackClient}>
         <ApiContext value={apiClient}>
-          <BrowserRouter>{children}</BrowserRouter>
+          {/* The one realtime stream of the app (04 5.6): same-origin EventSource on /api/v3/stream, created once the
+              instance is known. It tells the data hooks to stop polling while it is live and patches or invalidates their
+              queries; the connection and ingestion indicators read its snapshot. Connectivity is not ingestion health. */}
+          <StreamProvider listAtTop={viewIsAtTop}>
+            <BrowserRouter>{children}</BrowserRouter>
+          </StreamProvider>
         </ApiContext>
       </QueryClientProvider>
     </ErrorBoundary>
