@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURE_INSTANCE_ID } from '../../../test/fixtures/hook-sequences.ts';
 import { dumpDatabase } from '../../../test/fixtures/spool.ts';
 import { openInstanceDb, type InstanceDb } from '../../db/open.ts';
+import { ChangesRepo } from '../../db/repos/changes.ts';
 import { SessionsRepo } from '../../db/repos/sessions.ts';
 import { withWriteTx } from '../../db/write.ts';
 import { TranscriptFilesRepo, type TranscriptFileRow } from '../../db/repos/transcript-files.ts';
@@ -430,6 +431,42 @@ describe('growth of a live file', () => {
     await r.importer.statTick();
     await drain(r);
     expect(count(r.db, 'events')).toBe(events);
+  });
+
+  it('announces the session and its agent again after the usage of a slice is committed (CR-LF-7-1)', async () => {
+    const builder = new TranscriptBuilder({ sessionId: S1, cwd: 'FIXTURE/x', startMs: NOW - 2 * HOUR });
+    builder.user('first').assistant({ messageId: 'm1', usage: { input_tokens: 5, output_tokens: 7 } });
+    const r = rig({ sessions: [{ id: S1, project: 'p1', mtimeAgeMs: HOUR, build: () => undefined }] });
+    const target = put(r, S1, builder);
+    await drain(r);
+
+    const more = new TranscriptBuilder({ sessionId: S1, cwd: 'FIXTURE/x', startMs: NOW - HOUR, uuidSeed: 'more' });
+    more.user('second').assistant({ messageId: 'm2', usage: { input_tokens: 11, output_tokens: 13 } });
+    appendFileSync(target, `${more.lines().join('\n')}\n`);
+    touch(target);
+    await r.importer.statTick();
+    await drain(r);
+
+    // the rollup of the new turn is committed, and the LAST announcement of the session and of its main agent comes after the
+    // last usage change: a frame hydrated for it carries the committed totals (03 9.3, DA-I6)
+    const session = sessionRow(r);
+    const log = new ChangesRepo(r.db).since(SCOPE, 0, 10_000);
+    const lastSeq = (kind: string, op: string): number =>
+      Math.max(
+        0,
+        ...log.filter((row) => row.kind === kind && row.op === op && row.sessionUid === S1).map((row) => row.seq),
+      );
+    const lastUsage = lastSeq('usage', 'invalidate');
+    expect(lastUsage).toBeGreaterThan(0);
+    expect(lastSeq('session', 'upsert')).toBeGreaterThan(lastUsage);
+    expect(lastSeq('agent', 'upsert')).toBeGreaterThan(lastUsage);
+    // the entities carry the seq of that announcement, so a client that applies a patch only when it is newer takes the frame
+    expect(session.updatedSeq).toBe(lastSeq('session', 'upsert'));
+    const main = rows(
+      r.db,
+      `SELECT updated_seq AS seq, tok_output AS output FROM agents WHERE session_id = ${String(session.id)}`,
+    );
+    expect(main).toEqual([{ seq: lastSeq('agent', 'upsert'), output: 20 }]);
   });
 });
 

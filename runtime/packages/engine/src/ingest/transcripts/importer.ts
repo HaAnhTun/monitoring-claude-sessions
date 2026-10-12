@@ -518,25 +518,63 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     return tryLink(file);
   }
 
+  /**
+   * The usage of a slice is committed after the batch that announced the session, so a frame hydrated for that announcement
+   * carries the old token totals (CR-LF-7-1). Once the usage is committed, the sessions and agents whose rollup columns changed
+   * are announced again and stamped with that seq (03 9.3, DA-I6: the frame data equals the committed rollups). One
+   * transaction per slice: `session/upsert` and `agent/upsert` coalesce, and a client takes a patch only when it is newer.
+   */
+  function announceRollups(sessionRowIds: ReadonlySet<number>, agentRowIds: ReadonlySet<number>): void {
+    const uids = sessions.uidsByRowIds(scope, [...sessionRowIds]);
+    withWriteTx(db, scope, (tx) => {
+      for (const [sessionRowId, sessionUid] of uids) {
+        const row = sessions.byUid(scope, sessionUid);
+        if (row === undefined) continue;
+        // the patch repeats a value the row holds: the write only stamps `updated_seq` (and `updated_at`)
+        const seq = tx.changes.reserve('session', 'upsert', { entityId: sessionRowId, sessionUid });
+        sessions.update(scope, tx, sessionRowId, { lastActivityAt: row.lastActivityAt }, seq);
+        for (const agent of agents.listBySession(scope, sessionRowId)) {
+          if (!agentRowIds.has(agent.id)) continue;
+          const agentSeq = tx.changes.reserve('agent', 'upsert', { entityId: agent.id, sessionUid });
+          agents.update(scope, tx, agent.id, { lastActivityAt: agent.lastActivityAt }, agentSeq);
+        }
+      }
+    });
+  }
+
   async function applyUsage(file: FileState, list: readonly RecordUsage[]): Promise<void> {
     if (list.length === 0) return;
     if (!(await ensureLinked(file))) {
       stats.usageFailed += list.length;
       return;
     }
+    const touchedSessions = new Set<number>();
+    const touchedAgents = new Set<number>();
     // short transactions with a turn of the event loop between them (a slice has about 150 records: one transaction for all
     // of them held the loop for up to 30 ms); every write is a per-field maximum, so the groups need not be atomic together
     for (let from = 0; from < list.length; from += USAGE_TX_RECORDS) {
       const group = list.slice(from, from + USAGE_TX_RECORDS);
       try {
         withWriteTx(db, scope, (tx) => {
-          for (const u of group) usage.applyRecord(scope, tx, file.id, u.messageKey, u.values);
+          for (const u of group) {
+            const applied = usage.applyRecord(scope, tx, file.id, u.messageKey, u.values);
+            for (const id of applied.touchedSessionIds) touchedSessions.add(id);
+            for (const id of applied.touchedAgentIds) touchedAgents.add(id);
+          }
         });
       } catch (error) {
         stats.usageFailed += group.length;
         options.logger?.warn('transcript_usage_failed', { code: error instanceof Error ? error.name : 'unknown' });
       }
       if (from + USAGE_TX_RECORDS < list.length) await yieldToLoop();
+    }
+    if (touchedSessions.size === 0) return;
+    try {
+      announceRollups(touchedSessions, touchedAgents);
+    } catch (error) {
+      options.logger?.warn('transcript_usage_announce_failed', {
+        code: error instanceof Error ? error.name : 'unknown',
+      });
     }
   }
 
