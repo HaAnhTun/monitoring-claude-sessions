@@ -1,6 +1,6 @@
 # Work package status (walking skeleton)
 
-Generated from git history and the lead's overrides: 2026-10-12 07:05 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
+Generated from git history and the lead's overrides: 2026-10-12 08:55 local. Checkpoint: **2026-10-12 12:00 local (moved from 06:00 to 09:00 to 12:00 by the owner)** (no new WP after it). Never PASS unless the checks ran: a `committed` row means an independent verifier passed the WP gates and the committer ran `wp-gate end`.
 
 Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Python skill (SKILL.md and the Python code are untouched): transcript importer -> database -> query API -> web list page and detail page, started by the standard CLI.
 
@@ -21,17 +21,23 @@ Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Pyt
 | WP-34 | Transcript importer | committed (checks ran: see commit) | 62e480d | 2026-10-12 05:35 | KNOWN LIMITATION: usage applied after the cursor commit can be lost if the process is killed in between (CR-WP-34-1 accepted for the skeleton; follow-up: usage row kind in the WP-32 writer). readEntryText signature differs from the registry (CR-WP-34-3). |
 | WP-35 | Ingest service, sweeper, external evidence, ingestion health, DB schedule | committed (checks ran: see commit) | 10041cb | 2026-10-12 06:58 |  |
 | WP-31 | Query layer B: overview, work items, alerts, errors | committed (checks ran: see commit) | 6de2418 | 2026-10-12 05:01 | stretch item, committed |
-| WP-36 | Stream: hub, hydration, SSE | committed (checks ran: see commit) | ba4097d | 2026-10-12 05:19 | stream hub + SSE (server side) committed; the web client is not wired to it |
+| WP-36 | Stream: hub, hydration, SSE | committed (checks ran: see commit) | ba4097d | 2026-10-12 05:19 | stream hub + SSE (server side); the web client is wired to it since LF-7, and LF-8, LF-9, LF-10 completed the live behaviour |
 | WP-44 | Web scaffold | committed (checks ran: see commit) | 695e4d6 | 2026-10-12 02:32 |  |
 | WP-45 | Pure lib port | committed (checks ran: see commit) | e3677ad | 2026-10-12 02:26 |  |
 | WP-46 | Data layer | committed (checks ran: see commit) | 397b4ec | 2026-10-12 02:56 |  |
-| WP-47 | Stream client and reconciliation | committed (checks ran: see commit) | 3a6ca83 | 2026-10-12 03:25 | built against a fake stream, not integrated (WP-36 server stream exists and is committed, but the client is not wired to it and the pages poll) |
+| WP-47 | Stream client and reconciliation | committed (checks ran: see commit) | 3a6ca83 | 2026-10-12 03:25 | stream client committed; mounted in the built app by LF-7 (no longer 'fake stream only') |
+| WP-48 | Connection and freshness UI | committed (checks ran: see commit) | 180cb50 | 2026-10-12 07:55 |  |
 | WP-49 | Shell, sidebar, prefs | committed (checks ran: see commit) | 33ac6e9 | 2026-10-12 03:15 |  |
 | WP-50 | Sessions explorer and list components | committed (checks ran: see commit) | c9f6cd7 | 2026-10-12 03:48 |  |
 | WP-51 | Transcript viewer and text primitives | committed (checks ran: see commit) | 7d83148 | 2026-10-12 03:38 |  |
 | WP-52 | Session detail page | committed (checks ran: see commit) | 33cbe51 | 2026-10-12 04:00 |  |
-| LF-5 | Walking-skeleton smoke at API level: fixture -> import -> list -> detail (harness) | implementing (API-level smoke harness) |  |  |  |
-| LF-2 | Walking-skeleton smoke in the browser: list page, detail page | waiting for LF-5 (browser spec) |  |  |  |
+| LF-5 | Walking-skeleton smoke at API level: fixture -> import -> list -> detail (harness) | committed (checks ran: see commit) | 2c47b26 | 2026-10-12 07:08 |  |
+| LF-2 | Walking-skeleton smoke in the browser: list page, detail page | committed (checks ran: see commit) | a47f7e1 | 2026-10-12 07:35 | browser smoke: fixture -> import -> list page -> detail page; found the ApiContext blocker (fixed by LF-6) |
+| LF-6 | Web wiring blocker: API client provided in the built app | committed (checks ran: see commit) | 71a4cc6 | 2026-10-12 07:27 |  |
+| LF-7 | Stream client mounted in the built app + live-update e2e | committed (checks ran: see commit) | 922126e | 2026-10-12 08:20 | process deviation accepted by the lead: the implementer ran git stash/pop (tree and stash list verified intact, no other uncommitted work existed) |
+| LF-8 | TopBar in the shell, eslint stream pattern, chip e2e | committed (checks ran: see commit) | 4006254 | 2026-10-12 08:33 |  |
+| LF-9 | Stream session/upsert frames carry the committed token totals | committed (checks ran: see commit) | 5e95a27 | 2026-10-12 08:35 |  |
+| LF-10 | Explorer list-changed notice while the stream is live | committed (checks ran: see commit) | 5452fb3 | 2026-10-12 08:29 | sticky styling of the notice left to a follow-up (CR-LF-10-1) |
 | WP-01 | Monorepo scaffold and gates | committed (foundation, before the scope change) | 46bead4 | 2026-10-11 19:22 |  |
 | WP-02 | Shared contracts: ids, time, files, runtime config sections, CLI results, control protocol | committed (foundation, before the scope change) | 5ac95a4 | 2026-10-11 19:59 |  |
 | WP-03 | Shared API and panel contracts | committed (foundation, before the scope change) | 8676f34 | 2026-10-11 21:25 |  |
@@ -62,7 +68,6 @@ Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Pyt
 | WP-41 | Panels: samplers, service, route, runtime wiring | DEFERRED |  |  | panels/samplers: out of scope (owner) |
 | WP-42 | Testkit legacy builders | DEFERRED |  |  | testkit legacy builders: out of scope (owner) |
 | WP-43 | Parity harness base and L1 vectors | DEFERRED |  |  | parity harness: out of scope (owner) |
-| WP-48 | Connection and freshness UI | DEFERRED |  |  | connection/freshness UI: needs the stream; not in the skeleton list |
 | WP-53 | Activity feed | DEFERRED |  |  | activity feed page: out of scope (owner) |
 | WP-54 | Overview page | DEFERRED |  |  | overview page: out of scope (owner) |
 | WP-55 | Scenario catalogue and testkit CLI | DEFERRED |  |  | scenario catalogue and testkit CLI: not needed by the skeleton |
@@ -72,4 +77,4 @@ Scope (owner decision, plan 90 section 9A): a walking skeleton alongside the Pyt
 
 ## Handoff
 
-(to be written at the checkpoint)
+Handoff note: `docs/design/handoff-walking-skeleton.md` (what exists, how to run it, what was verified on a clean checkout at 5e95a27, known limitations, deferred list, decisions for the owner). Change requests: `docs/design/change-requests.md`.
