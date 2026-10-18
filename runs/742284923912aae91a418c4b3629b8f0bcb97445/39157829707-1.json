@@ -1,0 +1,119 @@
+{
+  "schema": "mcs.ci-status/1",
+  "sha": "742284923912aae91a418c4b3629b8f0bcb97445",
+  "ref": "refs/heads/feat/v4-node-only",
+  "runId": "39157829707",
+  "runAttempt": "1",
+  "runUrl": "https://github.com/HaAnhTun/monitoring-claude-sessions/actions/runs/39157829707",
+  "finishedAt": "2026-10-18T19:17:47.670Z",
+  "result": "fail",
+  "jobs": [
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "22.22",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "24",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "26",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "gates",
+      "os": "Windows",
+      "arch": "X64",
+      "node": "24",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "macos",
+      "os": "macOS",
+      "arch": "ARM64",
+      "node": "24",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "build",
+          "result": "pass",
+          "ms": 0
+        },
+        {
+          "name": "platform",
+          "result": "fail",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "platform",
+      "tail": [
+        " ❯ packages/engine/src/platform/exec.test.ts:119:55",
+        "    117|     const dir = makeTemp('exec').path;",
+        "    118|     const result = await execFileText(node('process.stdout.write(proce…",
+        "    119|     expect(path.resolve(result.stdout).toLowerCase()).toBe(path.resolv…",
+        "       |                                                       ^",
+        "    120|   });",
+        "    121| });",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯",
+        "",
+        " FAIL   unit  packages/engine/src/platform/exec.test.ts > execFileText: limits > answers an oversize command line with a failed result, never an exception",
+        "AssertionError: expected true to be false // Object.is equality",
+        "",
+        "- Expected",
+        "+ Received",
+        "",
+        "- false",
+        "+ true",
+        "",
+        " ❯ packages/engine/src/platform/exec.test.ts:193:23",
+        "    191|   it('answers an oversize command line with a failed result, never an …",
+        "    192|     const result = await execFileText(node('0', {}, ['x'.repeat(200_00…",
+        "    193|     expect(result.ok).toBe(false);",
+        "       |                       ^",
+        "    194|     expect(['SPAWN_FAILED', 'NONZERO_EXIT']).toContain(result.error);",
+        "    195|   });",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯",
+        "",
+        "",
+        " Test Files  1 failed | 12 passed (13)",
+        "      Tests  2 failed | 352 passed | 3 skipped (357)",
+        "   Start at  19:15:20",
+        "   Duration  10.31s (tests 80%, import 13%, transform 6%)",
+        "",
+        "",
+        "::error file=/Users/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/src/platform/exec.test.ts,title=[unit] packages/engine/src/platform/exec.test.ts > execFileText%3A arguments%2C output and exit codes > runs in the given working directory,line=119,column=55::AssertionError: expected '/private/var/folders/n6/hn37q6pj7sj_9…' to be '/var/folders/n6/hn37q6pj7...",
+        "",
+        "::error file=/Users/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/src/platform/exec.test.ts,title=[unit] packages/engine/src/platform/exec.test.ts > execFileText%3A limits > answers an oversize command line with a failed result%2C never an exception,line=193,column=23::AssertionError: expected true to be false // Object.is equality%0A%0A- Expected%0A+ Re...",
+        ""
+      ]
+    }
+  ]
+}
