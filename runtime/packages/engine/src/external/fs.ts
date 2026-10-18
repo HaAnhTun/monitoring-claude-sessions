@@ -1,6 +1,6 @@
 // The two file system calls of the external evidence readers (02 7.10), behind one seam so that a test can spy on exactly
 // which files are opened (T-LF-53: a `.key` file is never opened). Nothing here walks a folder tree: `readdir` is one level.
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 
 import { readSmallFile } from '../platform/fsx.ts';
 
@@ -9,6 +9,8 @@ export interface ExternalFs {
   readdir(dir: string): Promise<readonly string[]>;
   /** The bytes of a file of at most `maxBytes`; `null` when it is missing, too large or unreadable. */
   readSmall(file: string, maxBytes: number): Promise<Buffer | null>;
+  /** The modification time of a file in epoch ms (a stat, the file is not opened); `null` when it cannot be read. */
+  mtimeMs?(file: string): Promise<number | null>;
 }
 
 export const nodeExternalFs: ExternalFs = {
@@ -22,6 +24,13 @@ export const nodeExternalFs: ExternalFs = {
   readSmall: async (file, maxBytes) => {
     try {
       return await readSmallFile(file, maxBytes);
+    } catch {
+      return null;
+    }
+  },
+  mtimeMs: async (file) => {
+    try {
+      return (await stat(file)).mtimeMs;
     } catch {
       return null;
     }

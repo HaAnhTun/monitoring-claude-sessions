@@ -441,6 +441,36 @@ describe('out-of-order input (T-PL-09)', () => {
   });
 });
 
+describe('external evidence and the first-seen time (ADR 0069 item 5)', () => {
+  it('an external.job event older than the first record of the session does not lower sessions.started_at', async () => {
+    const r = rig();
+    await ingest(r, labSequence());
+    const startedAt = (): number | undefined =>
+      r.db.driver
+        .prepare<{ at: number }>('SELECT started_at AS at FROM sessions WHERE session_uid = :uid')
+        .get({ uid: FIXTURE_SESSION_ID })?.at;
+    const before = startedAt();
+    expect(before).toBeLessThanOrEqual(SEQUENCE_START + 60_000);
+    const jobAt = SEQUENCE_START - 6 * 86_400_000;
+    const batch: IngestBatch = {
+      source: 'external',
+      items: [
+        {
+          kind: 'external',
+          events: [
+            { k: 'external.job', sessionId: FIXTURE_SESSION_ID, jobId: 'job-1', state: 'done', observedAt: jobAt },
+          ],
+          rows: [],
+        },
+      ],
+      bytes: 100,
+    };
+    expect(r.writer.submit(batch)).toBe(true);
+    await r.writer.flushNow();
+    expect(startedAt()).toBe(before);
+  });
+});
+
 describe('the facts cache', () => {
   it('rebuilds the facts of a session that left the cache from its rows (cache of one session, two interleaved)', async () => {
     const other = (): HookEnvelopeV1[] =>

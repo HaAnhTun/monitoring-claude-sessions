@@ -188,12 +188,15 @@ function itemCount(batch: IngestBatch): number {
   return Math.max(batch.items.length, 1);
 }
 
-/** The time an event happened, for the first-seen time of a session that this event creates. */
+/**
+ * The time an event happened, for the first-seen time of a session that this event creates. A job event carries the time of
+ * the job file, which may be older than the first record of the session: it opens with the write time (ADR 0069 item 5).
+ */
 function atOf(event: LogicalEvent, fallback: number): number {
+  if (event.k === 'external.job') return fallback;
   if (
     event.k === 'workflow.status' ||
     event.k === 'external.registry' ||
-    event.k === 'external.job' ||
     event.k === 'external.attempt' ||
     event.k === 'external.attempt_cleared'
   ) {

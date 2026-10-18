@@ -753,6 +753,52 @@ describe('P9 Stop is not SessionEnd', () => {
   });
 });
 
+describe('P2 and P7 with a daemon job fact (ADR 0069)', () => {
+  const HOUR = 3_600_000;
+  const JOB_AT = T0 + 30_000;
+  const started = hook('SessionStart', T0);
+  const earlier = [
+    ...hook('UserPromptSubmit', T0 + 5000),
+    ...hook('Stop', T0 + 20_000, {}, { background_task_count: 0 }),
+  ];
+  const job: Tagged[] = [
+    {
+      event: { k: 'external.job', sessionId: SID, jobId: 'job-1', state: 'done', observedAt: JOB_AT },
+      origin: 'external',
+    },
+  ];
+  const later = hook('UserPromptSubmit', JOB_AT + HOUR);
+
+  function permutations<T>(items: readonly T[]): T[][] {
+    if (items.length <= 1) return [[...items]];
+    return items.flatMap((item, index) =>
+      permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]),
+    );
+  }
+
+  it('P2: every order of {job done, later activity, earlier activity} gives the same facts and view', () => {
+    const now = JOB_AT + HOUR + 5000;
+    const orders = permutations([job, later, earlier]).map((groups) => fold([...started, ...groups.flat()]));
+    const views = deriveModel(orders[0] ?? emptyModel(), now, CFG);
+    expect(views.session).toMatchObject({ state: 'working', ruleId: 'S-7e' });
+    for (const model of orders) {
+      expect(model).toEqual(orders[0]);
+      expect(viewsEqual(deriveModel(model, now, CFG), views)).toBe(true);
+    }
+  });
+
+  it('P7: S-4a has no nextCheckAt and stays the same at any later time, in every order', () => {
+    for (const groups of permutations([job, earlier])) {
+      const model = fold([...started, ...groups.flat()]);
+      const view = deriveModel(model, JOB_AT + 10_000, CFG).session;
+      expect(view).toMatchObject({ ruleId: 'S-4a', nextCheckAt: null, since: JOB_AT });
+      for (const offset of OFFSETS_MS) {
+        expect(frozen(deriveModel(model, JOB_AT + 10_000 + offset, CFG).session)).toEqual(frozen(view));
+      }
+    }
+  });
+});
+
 // ---- T-LF-50 (model part) and T-LF-55 ------------------------------------------------------------------------------
 
 describe('T-LF-50 (model part): only rows past nextCheckAt are re-evaluated and an unchanged view publishes nothing', () => {

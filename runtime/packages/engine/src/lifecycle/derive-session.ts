@@ -34,7 +34,8 @@ import {
 
 export { isReopened };
 
-const JOB_FAILED_STATES: ReadonlySet<string> = new Set(['failed', 'error', 'killed', 'cancelled']);
+/** The job states that fail a session (S-4b); `done` completes it (S-4a). */
+export const JOB_FAILED_STATES: ReadonlySet<string> = new Set(['failed', 'error', 'killed', 'cancelled']);
 
 function waitReasonOfNotification(type: string): WaitReason {
   switch (type) {
@@ -74,7 +75,8 @@ function decideSession(facts: SessionFacts, s: SessionSignals, cfg: LifecycleCfg
   const quiet = ev('clock', 'quiet', s.lastEvidence);
   const attempt = facts.attempt?.value ?? null;
   const registry = facts.registry?.value ?? null;
-  const job = facts.job?.value ?? null;
+  // a job fact older than later activity is ignored (ADR 0069 item 4)
+  const job = s.jobSuperseded ? null : (facts.job?.value ?? null);
 
   // S-1: attempts evidence (a register holding null is a retraction, 7.3)
   if (attempt !== null) {

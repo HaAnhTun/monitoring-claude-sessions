@@ -6,7 +6,7 @@ import path from 'node:path';
 import { CANARY, useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
-import { jobState, registryEntry, writeJob, writeRegistry } from '../../test/fixtures/external.ts';
+import { JOB_FIXTURE_TIME, jobState, registryEntry, writeJob, writeRegistry } from '../../test/fixtures/external.ts';
 
 const tempDir = useTempDirs();
 const SESSION = '00000000-0000-4000-8000-0000000000e1';
@@ -50,6 +50,30 @@ describe('job fixture', () => {
     const state: unknown = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
     expect(state).toMatchObject({ state: 'working', backend: 'daemon', sessionId: SESSION });
     expect(existsSync(path.join(dir, 'tmp', 'work-1.txt'))).toBe(true);
+  });
+
+  it('writes ISO text and the terminal fields of an ended job by default (the shape of the real files)', () => {
+    const iso = new Date(JOB_FIXTURE_TIME).toISOString();
+    const done = jobState({ state: 'done', sessionId: SESSION, terminalAt: JOB_FIXTURE_TIME + 5000 });
+    expect(done).toMatchObject({
+      createdAt: iso,
+      updatedAt: iso,
+      firstTerminalAt: new Date(JOB_FIXTURE_TIME + 5000).toISOString(),
+      lastTerminalAt: new Date(JOB_FIXTURE_TIME + 5000).toISOString(),
+    });
+    const working = jobState({ state: 'working', sessionId: SESSION, updatedAt: JOB_FIXTURE_TIME + 1000 });
+    expect(working).toMatchObject({ createdAt: iso, updatedAt: new Date(JOB_FIXTURE_TIME + 1000).toISOString() });
+    expect(working).not.toHaveProperty('lastTerminalAt');
+    expect(working).not.toHaveProperty('firstTerminalAt');
+  });
+
+  it('writes epoch milliseconds with epochMs', () => {
+    expect(jobState({ state: 'failed', sessionId: SESSION, epochMs: true })).toMatchObject({
+      createdAt: JOB_FIXTURE_TIME,
+      updatedAt: JOB_FIXTURE_TIME,
+      firstTerminalAt: JOB_FIXTURE_TIME,
+      lastTerminalAt: JOB_FIXTURE_TIME,
+    });
   });
 
   it('keeps resumeSessionId apart from sessionId', () => {

@@ -15,7 +15,7 @@ import {
   type TurnEndInfo,
 } from './facts.ts';
 import { deriveSession, isReopened } from './derive-session.ts';
-import type { AgentSummary, SessionRows, WorkflowSummary } from './rules.ts';
+import { renderEvidence, type AgentSummary, type SessionRows, type WorkflowSummary } from './rules.ts';
 
 const NOW = 1_791_727_200_000;
 const SEC = 1000;
@@ -228,6 +228,38 @@ describe('S-4: daemon job state', () => {
   it.each(['failed', 'error', 'killed', 'cancelled'])('S-4b: %s fails the session', (state) => {
     const view = derive({ ...stoppedFacts(5 * MIN), job: lww(st(NOW - MIN), { jobId: 'j1', state }) });
     expect(view).toMatchObject({ state: 'failed', ruleId: 'S-4b', endReason: state });
+  });
+
+  it('S-4a: evidence and since carry the time of the job, rendered "daemon job done 6d ago" (ADR 0069)', () => {
+    const jobAt = NOW - 6 * 24 * 60 * MIN;
+    const view = derive({
+      ...stoppedFacts(6 * 24 * 60 * MIN + 10 * MIN),
+      job: lww(st(jobAt), { jobId: 'j1', state: 'done' }),
+    });
+    expect(view).toMatchObject({ ruleId: 'S-4a', since: jobAt, nextCheckAt: null });
+    expect(view.evidence[0]?.at).toBe(jobAt);
+    expect(view.evidence[0] === undefined ? '' : renderEvidence(view.evidence[0], NOW)).toBe('daemon job done 6d ago');
+  });
+
+  it.each(['done', 'failed'])('later activity past the tolerance skips S-4 for a %s job (falls through)', (state) => {
+    const jobAt = NOW - 2 * 60 * MIN;
+    const later = jobAt + CFG.reopenToleranceMs + 1;
+    const view = derive({ ...stoppedFacts(NOW - later), job: lww(st(jobAt), { jobId: 'j1', state }) });
+    expect(view.ruleId).toBe('S-8e');
+    expect(view.state).toBe('turn_ended');
+  });
+
+  it('activity exactly at the tolerance after the job still completes the session', () => {
+    const jobAt = NOW - 2 * 60 * MIN;
+    const facts = { ...stoppedFacts(5 * MIN), job: lww(st(jobAt), { jobId: 'j1', state: 'done' }) };
+    const at = jobAt + CFG.reopenToleranceMs;
+    const view = derive({
+      ...facts,
+      lastHookAt: at,
+      lastActivity: st(at, 20, 'a'),
+      lastTurnEndHook: lww(st(at, 60, 's'), info('stop')),
+    });
+    expect(view.ruleId).toBe('S-4a');
   });
 
   it('a running job is no evidence of an end', () => {

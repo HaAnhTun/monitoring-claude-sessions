@@ -60,10 +60,28 @@ export interface JobStateOptions {
   readonly state: 'working' | 'done' | 'failed';
   readonly sessionId?: string;
   readonly resumeSessionId?: string;
+  /** `createdAt` in epoch ms (default `JOB_FIXTURE_TIME`). */
+  readonly createdAt?: number;
+  /** `updatedAt` in epoch ms (default `createdAt`). */
+  readonly updatedAt?: number;
+  /** `firstTerminalAt` and `lastTerminalAt` of a `done` or `failed` job in epoch ms (default `updatedAt`). */
+  readonly terminalAt?: number;
+  /** Write the times as epoch milliseconds instead of ISO-8601 text (the shape of the V3 fixture). */
+  readonly epochMs?: boolean;
 }
 
-/** The `state.json` of a daemon job (`state, backend, sessionId, resumeSessionId, createdAt, updatedAt`). */
+/** The default time of a fixture job file (epoch ms). */
+export const JOB_FIXTURE_TIME = 1_790_000_000_000;
+
+/**
+ * The `state.json` of a daemon job in the shape of the real files (`state, backend, sessionId, resumeSessionId, createdAt,
+ * updatedAt`, and `firstTerminalAt`/`lastTerminalAt` once the job ended), times as ISO-8601 UTC text with milliseconds.
+ */
 export function jobState(o: JobStateOptions): Record<string, unknown> {
+  const createdAt = o.createdAt ?? JOB_FIXTURE_TIME;
+  const updatedAt = o.updatedAt ?? createdAt;
+  const terminalAt = o.terminalAt ?? updatedAt;
+  const time = (ms: number): string | number => (o.epochMs === true ? ms : new Date(ms).toISOString());
   return {
     state: o.state,
     backend: 'daemon',
@@ -71,8 +89,9 @@ export function jobState(o: JobStateOptions): Record<string, unknown> {
     ...(o.sessionId === undefined ? {} : { sessionId: o.sessionId }),
     ...(o.resumeSessionId === undefined ? {} : { resumeSessionId: o.resumeSessionId }),
     cwd: 'FIXTURE/project',
-    createdAt: 1_790_000_000_000,
-    updatedAt: 1_790_000_000_000,
+    createdAt: time(createdAt),
+    updatedAt: time(updatedAt),
+    ...(o.state === 'working' ? {} : { firstTerminalAt: time(terminalAt), lastTerminalAt: time(terminalAt) }),
   };
 }
 

@@ -192,6 +192,8 @@ export interface SessionSignals {
   readonly unrecoveredApiError: boolean;
   readonly reopened: boolean;
   readonly ended: boolean;
+  /** The job fact is older than later activity (`isJobSuperseded`): S-4a and S-4b are skipped. */
+  readonly jobSuperseded: boolean;
 }
 
 const ACTIVE_CHILD_STATES: ReadonlySet<LifecycleState> = new Set<LifecycleState>([
@@ -234,6 +236,17 @@ export function isReopened(facts: SessionFacts, cfg: LifecycleCfg): boolean {
     facts.lastActivity !== null &&
     facts.lastActivity.at > facts.end.stamp.at + cfg.reopenToleranceMs
   );
+}
+
+/**
+ * A daemon job fact is superseded by later activity (ADR 0069 item 4), the counterpart of `isReopened` for S-4: the newest
+ * of `lastActivity` and `lastHookAt` is later than the stamp of the job fact by more than `reopenToleranceMs`. Facts only, so
+ * S-4a stays time invariant. The single implementation: the session table and `explainCompletion` both call it.
+ */
+export function isJobSuperseded(facts: SessionFacts, cfg: LifecycleCfg): boolean {
+  if (facts.job === null) return false;
+  const newest = maxOf([facts.lastActivity?.at, facts.lastHookAt]);
+  return newest !== null && newest > facts.job.stamp.at + cfg.reopenToleranceMs;
 }
 
 /** Resolution time of the permission request with this input hash: the facts and the tool rows that ended or were batched. */
@@ -347,6 +360,7 @@ export function sessionSignals(facts: SessionFacts, rows: SessionRows, now: numb
       (facts.lastAssistantOk === null || compareStamp(facts.lastApiError, facts.lastAssistantOk) > 0),
     reopened,
     ended: facts.end !== null && !reopened,
+    jobSuperseded: isJobSuperseded(facts, cfg),
   };
 }
 

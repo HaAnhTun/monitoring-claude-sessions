@@ -30,6 +30,7 @@ import {
   type IngestServiceOptions,
 } from '../src/ingest/service.ts';
 import { nodeExternalFs } from '../src/external/fs.ts';
+import { renderEvidence } from '../src/lifecycle/rules.ts';
 import { createLifecycleSweeper } from '../src/lifecycle/sweeper.ts';
 import { createInstanceRuntime } from '../src/runtime/instance-runtime.ts';
 import { buildInstanceContext, type InstanceContext } from '../src/runtime/context.ts';
@@ -479,6 +480,66 @@ describe('external evidence', () => {
     expect(parsed.job.value).toEqual({ jobId: 'job-1', state: 'working' });
     // the entry of the unknown session did not create a session
     expect(h.one('SELECT count(*) AS n FROM sessions')).toBe(1);
+    await h.service.stop(NOW() + 2000);
+  });
+});
+
+describe('external evidence keeps its own time (ADR 0069, the live bug of 2026-10-18)', () => {
+  it('a job that finished six days ago completes its old session at the job time; a later session stays open', async () => {
+    const DAY = 86_400_000;
+    const jobAt = NOW() - 6 * DAY;
+    const LATER = '88888888-8888-4888-8888-888888888888';
+    const turn = (b: TranscriptBuilder): void => {
+      b.user('FIXTURE prompt');
+      b.assistant({ messageId: `msg_fixture_${String(b.lines().length)}`, stop: 'end_turn' });
+    };
+    const h = await harness({
+      runtime: { import: { lookbackHours: 24 * 30 }, lifecycle: { jobsPollMs: 1000 } },
+      sessions: (repo) => [
+        session(repo, jobAt - 10 * MIN, turn, { mtimeAgeMs: 6 * DAY }),
+        session(repo, jobAt + 60 * MIN, turn, { id: LATER, mtimeAgeMs: 6 * DAY - 2 * 60 * MIN }),
+      ],
+      registry: (home) => {
+        const times = { createdAt: jobAt - 20 * MIN, updatedAt: jobAt, terminalAt: jobAt };
+        writeJob(home, 'job-1', jobState({ state: 'done', sessionId: SESSION, ...times }));
+        writeJob(home, 'job-2', jobState({ state: 'done', sessionId: LATER, ...times }));
+      },
+    });
+    await h.service.start();
+    await h.service.untilIdle({ timeoutMs: 30_000 });
+    interface ViewRow {
+      readonly uid: string;
+      readonly state: string;
+      readonly rule: string;
+      readonly since: number | null;
+      readonly evidence: string;
+      readonly facts: string;
+    }
+    const rows = await waitFor(
+      () => {
+        const found = h.all<ViewRow>(
+          `SELECT session_uid AS uid, state, state_rule AS rule, state_since AS since, state_evidence AS evidence,
+                  facts_json AS facts FROM sessions ORDER BY session_uid`,
+        );
+        const withJob = found.filter((row) => (JSON.parse(row.facts) as { job?: unknown }).job);
+        return withJob.length === 2 ? found : null;
+      },
+      { what: 'job facts of both sessions', timeoutMs: 15_000 },
+    );
+    const old = rows.find((row) => row.uid === SESSION);
+    const later = rows.find((row) => row.uid === LATER);
+    expect(old).toMatchObject({ state: 'completed', rule: 'S-4a', since: jobAt });
+    const evidence = z
+      .array(
+        z.object({ source: z.string(), fact: z.string(), at: z.number().nullable(), value: z.string().optional() }),
+      )
+      .parse(JSON.parse(old?.evidence ?? '[]'));
+    expect(evidence[0]).toMatchObject({ source: 'job', fact: 'job_state', at: jobAt, value: 'done' });
+    const stored = { at: evidence[0]?.at ?? null, value: evidence[0]?.value ?? '' };
+    expect(renderEvidence({ source: 'job', fact: 'job_state', ...stored }, NOW())).toBe('daemon job done 6d ago');
+    // the transcript of the second session was written after the job: the job does not complete it
+    expect(later?.state).not.toBe('completed');
+    expect(later?.rule).not.toBe('S-4a');
     await h.service.stop(NOW() + 2000);
   });
 });

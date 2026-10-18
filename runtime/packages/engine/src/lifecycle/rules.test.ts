@@ -1,8 +1,15 @@
 // T-LF-56 (the evidence golden table of 02 7.1.1 and the viewChanged field list) and the invariants around them.
 import { describe, expect, it } from 'vitest';
 
-import { EVIDENCE_FACTS, EVIDENCE_SOURCES, type LifecycleEvidence, type LifecycleView } from './facts.ts';
-import { fmtAge, renderEvidence, toApiEvidence, viewChanged } from './rules.ts';
+import {
+  DEFAULT_LIFECYCLE_CFG,
+  EVIDENCE_FACTS,
+  EVIDENCE_SOURCES,
+  sessionFactsWith,
+  type LifecycleEvidence,
+  type LifecycleView,
+} from './facts.ts';
+import { fmtAge, isJobSuperseded, renderEvidence, toApiEvidence, viewChanged } from './rules.ts';
 
 const NOW = 1_791_727_200_000;
 const E_ACUTE = String.fromCodePoint(0xe9);
@@ -216,5 +223,28 @@ describe('viewChanged (T-LF-56, 02 7.8 field list)', () => {
   it.each(fields)('is true when only %s differs', (_name, patch) => {
     expect(viewChanged(view(), view(patch))).toBe(true);
     expect(viewChanged(view(patch), view())).toBe(true);
+  });
+});
+
+describe('isJobSuperseded (ADR 0069 item 4)', () => {
+  const TOL = DEFAULT_LIFECYCLE_CFG.reopenToleranceMs;
+  const JOB_AT = NOW - 3_600_000;
+  const job = { stamp: { at: JOB_AT, rank: 0, tie: '' }, value: { jobId: 'j1', state: 'done' } };
+  const at = (ms: number) => ({ at: ms, rank: 10, tie: 'a' });
+  const rows: readonly (readonly [string, Parameters<typeof sessionFactsWith>[0], boolean])[] = [
+    ['no job fact', { lastActivity: at(NOW), lastHookAt: NOW }, false],
+    ['a job and no activity', { job }, false],
+    ['activity before the job', { job, lastActivity: at(JOB_AT - 60_000), lastHookAt: JOB_AT - 60_000 }, false],
+    ['activity exactly at the tolerance', { job, lastActivity: at(JOB_AT + TOL) }, false],
+    ['activity past the tolerance', { job, lastActivity: at(JOB_AT + TOL + 1) }, true],
+    [
+      'a hook past the tolerance, activity before',
+      { job, lastActivity: at(JOB_AT - 1), lastHookAt: JOB_AT + TOL + 1 },
+      true,
+    ],
+    ['a hook exactly at the tolerance', { job, lastHookAt: JOB_AT + TOL }, false],
+  ];
+  it.each(rows)('%s', (_name, facts, expected) => {
+    expect(isJobSuperseded(sessionFactsWith(facts), DEFAULT_LIFECYCLE_CFG)).toBe(expected);
   });
 });

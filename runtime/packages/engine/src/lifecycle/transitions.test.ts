@@ -849,6 +849,23 @@ const C: readonly Row[] = (() => {
   ];
 })();
 
+/** ADR 0069 item 4: rows added after the design table (they keep the T-LF numbers of the table unchanged). */
+const ADR_0069_ROWS: readonly Row[] = [
+  {
+    id: 'F7',
+    title: 'a done job is superseded by a prompt an hour later: working again',
+    prior: [...stopped(), ...external.job('done', sec(30))],
+    steps: [
+      { input: [], now: sec(40), expect: { state: 'completed', rule: 'S-4a' } },
+      {
+        input: hook('UserPromptSubmit', sec(30) + HOUR),
+        now: sec(35) + HOUR,
+        expect: { state: 'working', rule: 'S-7e', presence: 'open' },
+      },
+    ],
+  },
+];
+
 const ROWS: readonly Row[] = [...N, ...F, ...D, ...M, ...L, ...O, ...C];
 const pad = (n: number): string => String(n).padStart(2, '0');
 
@@ -874,5 +891,13 @@ describe('transition table of 02 7.7 (T-LF-01..47)', () => {
   it('T-LF-48: every row ran in both delivery orders (and fully reversed)', () => {
     expect([...ran].sort()).toEqual(ROWS.map((row) => row.id).sort());
     expect(ran.size).toBe(47);
+  });
+});
+
+describe('rows added by ADR 0069 (both delivery orders, and fully reversed)', () => {
+  ADR_0069_ROWS.forEach((row) => {
+    it(`${row.id}: ${row.title}`, () => {
+      runRow(row);
+    });
   });
 });
