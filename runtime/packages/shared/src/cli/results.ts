@@ -110,6 +110,51 @@ export function toConfigInspection(r: ConfigInspectionSource, engine: 'node' | '
   return { entries, files: r.files.map((f) => ({ ...f })), effectivePort: r.effectivePort, engine };
 }
 
+// @wp-begin WP-22
+/** One row of `mcs instances list` (01 6.4): the Node identity of a workspace and what the probe says of its runtime. */
+export const InstanceRowSchema = z.strictObject({
+  slug: z.string(),
+  /** `node`: a usable `instance.json`; `missing`: none (not initialized); `broken`: unreadable, a link or a copied workspace. */
+  identity: z.enum(['node', 'missing', 'broken']),
+  /** A probe state of 01 4.8, or a quick one (`--no-probe`). */
+  state: z.string(),
+  url: z.string().nullable(),
+  pid: z.number().int().nullable(),
+  /** The runtime version of the live runtime, else the one `instance.json` names; `null` without either. */
+  version: z.string().nullable(),
+  /** A live runtime runs other code than the runtime folder holds now. */
+  outdated: z.boolean(),
+  /** Why the identity is `broken`; `null` otherwise. */
+  problem: z.string().nullable(),
+});
+
+export type InstanceRow = z.infer<typeof InstanceRowSchema>;
+
+export const DOCTOR_LEVELS = ['error', 'warn'] as const;
+
+/** One check of `mcs doctor`: `ok`, or a failure whose `level` says whether it fails the command (`error`). */
+export const DoctorCheckSchema = z.strictObject({
+  id: z.string(),
+  ok: z.boolean(),
+  level: z.enum(DOCTOR_LEVELS),
+  detail: z.string(),
+  /** What to do about a failed check; stable text, so tests and agents can match it. */
+  fix: z.string().optional(),
+});
+
+export type DoctorCheck = z.infer<typeof DoctorCheckSchema>;
+
+export const DoctorReportSchema = z.strictObject({
+  /** The task whose workspace checks ran; `null` when only the machine-wide checks ran. */
+  task: z.string().nullable(),
+  checks: z.array(DoctorCheckSchema),
+  /** No error-level check failed (the exit code is 1 otherwise). */
+  ok: z.boolean(),
+});
+
+export type DoctorReport = z.infer<typeof DoctorReportSchema>;
+// @wp-end WP-22
+
 // @wp-begin WP-37
 // @wp-end WP-37
 

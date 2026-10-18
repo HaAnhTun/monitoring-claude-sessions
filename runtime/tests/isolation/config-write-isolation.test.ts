@@ -105,6 +105,15 @@ describe('config write isolation (T-ISO-06): the commands of task A leave task B
   });
 
   // @wp-begin WP-22
+  it('instances repair --task a --yes', async () => {
+    const t = await twoTasks();
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    const before = t.snapshotB();
+    const run = await t.mcs(['instances', 'repair', '--task', 'a', '--yes']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain('repaired');
+    expect(t.snapshotB()).toBe(before);
+  });
   // @wp-end WP-22
 
   // @wp-begin WP-38

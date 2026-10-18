@@ -21,6 +21,7 @@ import {
   type CheckDeps,
   type ConfigureDeps,
   type DiscoverDeps,
+  type DoctorDeps,
   type InitDeps,
   type InspectDeps,
   type Logger,
@@ -86,7 +87,8 @@ export interface ParsedArgs {
  * hooks, the legacy engine, the route file). Their field names are the ones of the operations' own `*Deps` types, so a
  * command passes `ctx.deps` straight on. Without a provider the operations degrade as designed (01 6.4).
  */
-export interface OpDeps extends DiscoverDeps, VersionDeps, InspectDeps, CheckDeps, ConfigureDeps, InitDeps {}
+export interface OpDeps
+  extends DiscoverDeps, VersionDeps, InspectDeps, CheckDeps, ConfigureDeps, InitDeps, DoctorDeps {}
 
 export interface CommandCatalog {
   all(): Promise<readonly CommandDefinition[]>;
@@ -193,6 +195,15 @@ const REGISTRY: readonly RegistryEntry[] = [
   // @wp-end WP-19
 
   // @wp-begin WP-22
+  {
+    names: ['instances list'],
+    load: async () => ({ command: (await import('./commands/instances.ts')).listCommand }),
+  },
+  {
+    names: ['instances repair'],
+    load: async () => ({ command: (await import('./commands/instances.ts')).repairCommand }),
+  },
+  { names: ['doctor'], load: () => import('./commands/doctor.ts') },
   // @wp-end WP-22
 
   // @wp-begin WP-38
@@ -475,7 +486,16 @@ function withDerived(deps: OpDeps): OpDeps {
 
 function depsOf(op: OpContext): OpDeps {
   let merged: OpDeps = kernelDeps(op);
-  for (const entry of REGISTRY) if (isDepsEntry(entry)) merged = { ...merged, ...entry.deps(op) };
+  for (const entry of REGISTRY) {
+    if (!isDepsEntry(entry)) continue;
+    const next = entry.deps(op);
+    // every area adds its own doctor checks: the records are merged, not replaced (WP-22)
+    const extraChecks =
+      merged.extraChecks === undefined && next.extraChecks === undefined
+        ? undefined
+        : { ...merged.extraChecks, ...next.extraChecks };
+    merged = { ...merged, ...next, ...(extraChecks === undefined ? {} : { extraChecks }) };
+  }
   return withDerived(merged);
 }
 

@@ -341,6 +341,11 @@ export type {
 // @wp-end WP-19
 
 // @wp-begin WP-22
+export * as opsInstances from './ops/instances.ts';
+export * as opsDoctor from './ops/doctor.ts';
+export type { InstancesSeams, ListInput, ListResult, RepairIdentityResult, RepairInput } from './ops/instances.ts';
+export type { DoctorCheckProvider, DoctorDeps, DoctorInput } from './ops/doctor.ts';
+export type { CheckEnv, DoctorSeams } from './ops/doctor-checks.ts';
 // @wp-end WP-22
 
 // @wp-begin WP-25
