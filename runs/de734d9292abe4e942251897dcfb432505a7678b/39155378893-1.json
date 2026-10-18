@@ -1,0 +1,346 @@
+{
+  "schema": "mcs.ci-status/1",
+  "sha": "de734d9292abe4e942251897dcfb432505a7678b",
+  "ref": "refs/heads/feat/v4-node-only",
+  "runId": "39155378893",
+  "runAttempt": "1",
+  "runUrl": "https://github.com/HaAnhTun/monitoring-claude-sessions/actions/runs/39155378893",
+  "finishedAt": "2026-10-18T18:46:15.584Z",
+  "result": "fail",
+  "jobs": [
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "22.22",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 18393
+        },
+        {
+          "name": "lint",
+          "result": "fail",
+          "ms": 103293
+        },
+        {
+          "name": "typecheck",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "check:deps",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "build",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "test",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "lint",
+      "tail": [
+        "",
+        "<--- Last few GCs --->",
+        "",
+        "[2170:0x23ec4000]    77390 ms: Scavenge 2021.6 (2078.5) -> 2016.3 (2079.5) MB, pooled: 0 MB, 6.34 / 0.00 ms  (average mu = 0.354, current mu = 0.356) allocation failure; ",
+        "[2170:0x23ec4000]    77415 ms: Scavenge 2023.4 (2080.3) -> 2018.7 (2097.8) MB, pooled: 0 MB, 9.61 / 0.00 ms  (average mu = 0.354, current mu = 0.356) allocation failure; ",
+        "",
+        "",
+        "<--- JS stacktrace --->",
+        "",
+        "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory",
+        "----- Native stack trace -----",
+        "",
+        " 1: 0xe46bbe node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 2: 0x1243640 v8::Utils::ReportOOMFailure(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 3: 0x1243917 v8::internal::V8::FatalProcessOutOfMemory(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 4: 0x1472825  [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 5: 0x148c0b9 v8::internal::Heap::CollectGarbage(v8::internal::AllocationSpace, v8::internal::GarbageCollectionReason, v8::GCCallbackFlags) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 6: 0x14607b8 v8::internal::HeapAllocator::AllocateRawWithLightRetrySlowPath(int, v8::internal::AllocationType, v8::internal::AllocationOrigin, v8::internal::AllocationAlignment) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 7: 0x14616e5 v8::internal::HeapAllocator::AllocateRawWithRetryOrFailSlowPath(int, v8::internal::AllocationType, v8::internal::AllocationOrigin, v8::internal::AllocationAlignment) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 8: 0x143a2ee v8::internal::Factory::NewFillerObject(int, v8::internal::AllocationAlignment, v8::internal::AllocationType, v8::internal::AllocationOrigin) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        " 9: 0x189cbfc v8::internal::Runtime_AllocateInYoungGeneration(int, unsigned long*, v8::internal::Isolate*) [/opt/hostedtoolcache/node/22.22.3/x64/bin/node]",
+        "10: 0x7f7f93e6caf6 "
+      ]
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "24",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 19845
+        },
+        {
+          "name": "lint",
+          "result": "fail",
+          "ms": 117710
+        },
+        {
+          "name": "typecheck",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "check:deps",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "build",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "test",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "lint",
+      "tail": [
+        "",
+        "<--- Last few GCs --->",
+        "",
+        "[2277:0x1ce6b000]    94664 ms: Scavenge 2012.0 (2037.0) -> 2006.6 (2053.7) MB, pooled: 0 MB, 4.72 / 0.00 ms  (average mu = 0.329, current mu = 0.296) allocation failure; ",
+        "[2277:0x1ce6b000]    96377 ms: Mark-Compact (reduce) 2024.3 (2057.0) -> 1999.1 (2023.5) MB, pooled: 0 MB, 52.77 / 0.01 ms  (+ 1482.0 ms in 267 steps since start of marking, biggest step 21.6 ms, walltime since start of marking 1712 ms) (average mu = 0.325",
+        "FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory",
+        "----- Native stack trace -----",
+        "",
+        " 1: 0x931db0  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 2: 0x75968e node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 3: 0xc70d60  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 4: 0xc70e4f  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 5: 0xf14725  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 6: 0xf14752  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 7: 0xf14a4a  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 8: 0xf2574a  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        " 9: 0xf29af0  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]",
+        "10: 0x19c77d1  [/opt/hostedtoolcache/node/24.21.0/x64/bin/node]"
+      ]
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "26",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 21489
+        },
+        {
+          "name": "lint",
+          "result": "fail",
+          "ms": 116047
+        },
+        {
+          "name": "typecheck",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "check:deps",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "build",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "test",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "lint",
+      "tail": [
+        "",
+        "<--- Last few GCs --->",
+        "",
+        "[2257:0x8c4f000]    91592 ms: Scavenge 2016.0 (2054.4) -> 2003.5 (2055.7) MB, pooled: 0.0 MB, 4.73 / 0.00 ms (average mu = 0.384, current mu = 0.390) allocation failure; ",
+        "[2257:0x8c4f000]    93359 ms: Incremental Mark-Compact (reduce) 2021.8 (2057.9) -> 1986.9 (2016.9) MB, pooled: 0.0 MB, 78.90 / 0.00 ms (+ 1550.0 ms in 272 steps since start of marking, biggest step 9.0 ms, walltime since start of marking 1767 ms) (average",
+        "FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory",
+        "----- Native stack trace -----",
+        "",
+        " 1: 0x841e50  [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 2: 0x8420bd node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 3: 0xcd3d1b  [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 4: 0xf43655  [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 5: 0xf4185c  [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 6: 0xe840ef  [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 7: 0x13cd10e  [/opt/hostedtoolcache/node/26.12.0/x64/bin/node]",
+        " 8: 0x7fe6a3e3ea76 "
+      ]
+    },
+    {
+      "name": "gates",
+      "os": "Windows",
+      "arch": "X64",
+      "node": "24",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 21598
+        },
+        {
+          "name": "lint",
+          "result": "fail",
+          "ms": 128227
+        },
+        {
+          "name": "typecheck",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "check:deps",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "build",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "test",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "lint",
+      "tail": [
+        "",
+        "<--- Last few GCs --->",
+        "",
+        "[5600:000002BC5C5EF000]   125823 ms: Scavenge (interleaved) 2025.1 (2047.2) -> 2018.6 (2048.5) MB, pooled: 0 MB, 3.11 / 0.00 ms  (average mu = 0.352, current mu = 0.312) allocation failure; ",
+        "[5600:000002BC5C5EF000]   127383 ms: Mark-Compact (reduce) 2028.2 (2051.0) -> 2016.0 (2034.0) MB, pooled: 0 MB, 116.41 / 0.01 ms  (+ 1215.8 ms in 142 steps since start of marking, biggest step 83.7 ms, walltime since start of marking 1560 ms) (average mu ",
+        "FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory",
+        "----- Native stack trace -----",
+        "",
+        " 1: 00007FF7770F90C6 node::SetAbortHandler+54",
+        " 2: 00007FF7770F9604 node::OnFatalError+1284",
+        " 3: 00007FF775D03617 v8::Function::NewInstance+423",
+        " 4: 00007FF775B03E57 ***",
+        " 5: 00007FF775B07B64 ***",
+        " 6: 00007FF775B16ACC v8::internal::StrongRootAllocatorBase::deallocate_impl+16604",
+        " 7: 00007FF775B1630B v8::internal::StrongRootAllocatorBase::deallocate_impl+14619",
+        " 8: 00007FF777423BAD node::AsyncResource::CallbackScope::CallbackScope+2124541",
+        " 9: 00007FF775B01920 ***",
+        "10: 00007FF775B85709 v8::Unlocker::~Unlocker+9273",
+        "11: 00007FF7756F8F48 v8::CodeEvent::GetFunctionName+131144",
+        "12: 000002BC1FE775FA "
+      ]
+    },
+    {
+      "name": "macos",
+      "os": "macOS",
+      "arch": "ARM64",
+      "node": "24",
+      "result": "fail",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    }
+  ]
+}
