@@ -6809,7 +6809,7 @@ var init_errors$4 = __esmMin((() => {
 //#region packages/shared/src/version.ts
 var RUNTIME_VERSION;
 var init_version$1 = __esmMin((() => {
-	RUNTIME_VERSION = "3.0.0";
+	RUNTIME_VERSION = "4.0.0";
 }));
 
 //#endregion
@@ -17261,7 +17261,7 @@ var init_writer$1 = __esmMin((() => {
 //#region packages/engine/src/workspace/adopt.ts
 /** The instance file of a new instance, with the creation defaults of 01 1.5. */
 function newInstanceFile(slug, o) {
-	const runtimeVersion = o.runtimeVersion ?? "3.0.0";
+	const runtimeVersion = o.runtimeVersion ?? "4.0.0";
 	return {
 		schema_version: 1,
 		instanceId: o.instanceId ?? randomUUID(),
@@ -25419,7 +25419,7 @@ function metaQueries(db, deps) {
 	const createdAtMs = deps.now();
 	const proc = deps.process;
 	const startedAtMs = () => proc?.startedAtMs ?? createdAtMs;
-	const version = proc?.runtimeVersion ?? "3.0.0";
+	const version = proc?.runtimeVersion ?? "4.0.0";
 	const codeStamp = proc?.bootCodeStamp ?? UNKNOWN_STAMP;
 	/** The stored ingestion report of this instance, or `null` when there is none or it is damaged. */
 	function storedReport(ctx) {

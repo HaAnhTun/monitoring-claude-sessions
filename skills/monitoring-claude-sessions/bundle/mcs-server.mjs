@@ -6598,7 +6598,7 @@ var McsError = class extends Error {
 //#endregion
 //#region packages/shared/src/version.ts
 /** Equals `runtime/package.json` `version`. */
-const RUNTIME_VERSION = "3.0.0";
+const RUNTIME_VERSION = "4.0.0";
 
 //#endregion
 //#region packages/shared/src/time.ts
@@ -21692,7 +21692,7 @@ function metaQueries(db, deps) {
 	const createdAtMs = deps.now();
 	const proc = deps.process;
 	const startedAtMs = () => proc?.startedAtMs ?? createdAtMs;
-	const version = proc?.runtimeVersion ?? "3.0.0";
+	const version = proc?.runtimeVersion ?? "4.0.0";
 	const codeStamp = proc?.bootCodeStamp ?? UNKNOWN_STAMP;
 	/** The stored ingestion report of this instance, or `null` when there is none or it is damaged. */
 	function storedReport(ctx) {
@@ -63675,7 +63675,7 @@ async function readBuildStamp(runtimeDir, mode = "source") {
 		ok: false,
 		message: `${label} has no runtimeVersion and codeStamp: ${hint}`
 	};
-	if (parsed.data.runtimeVersion !== "3.0.0") return {
+	if (parsed.data.runtimeVersion !== "4.0.0") return {
 		ok: false,
 		message: `${label} was written for runtime ${parsed.data.runtimeVersion}, this code is ${RUNTIME_VERSION}: ${hint}`
 	};

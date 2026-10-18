@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "runtimeVersion": "4.0.0",
-  "buildStamp": "63f2321c3eaf9b37bdfc2fcba7032d7f493dae982c8679e69e43e98d42a92592",
-  "codeStamp": "63f2321c3e",
+  "buildStamp": "c592e165366ec4b8d270fc4a5c9abfca66308ca0c9131c9555003e05c59f2c81",
+  "codeStamp": "c592e16536",
   "files": {
     "THIRD-PARTY-NOTICES.txt": {
       "bytes": 93524,
@@ -10,7 +10,7 @@
     },
     "mcs-cli.mjs": {
       "bytes": 1423660,
-      "sha256": "293ef0ca0d34af8aba97ebae849b1136aa76104c0c19638d81000518f6cac90b"
+      "sha256": "483d523f86c1da012a149c9da9f90396e1a2853dc77c00afca7c256499ebdf5e"
     },
     "mcs-hook.mjs": {
       "bytes": 57828,
@@ -18,7 +18,7 @@
     },
     "mcs-server.mjs": {
       "bytes": 2095581,
-      "sha256": "21cf903cc92955e25e693919705a4ce8415e5c3a72607da3b6dabd88c7e219aa"
+      "sha256": "1c082f8819f18c5c2b3e8581bf8022f78c9432d483091ff1c9cf43e33378803a"
     },
     "migrations/0001_initial.sql": {
       "bytes": 44602,
