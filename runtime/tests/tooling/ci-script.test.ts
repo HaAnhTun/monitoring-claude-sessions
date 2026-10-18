@@ -1,6 +1,6 @@
 // `scripts/ci.mjs` (05 section 8.1) driven with stub tools in a throw-away workspace: gate order, `--offline`, `--full`,
-// `--keep-going`, the "cannot run yet" exit code 77 and `--strict`. The second half checks the inactive GitHub workflow
-// (05 section 8.2, A.41): it parses, its actions are pinned by commit SHA, and the commands it runs are the ones of `ci.mjs`.
+// `--keep-going`, the "cannot run yet" exit code 77, `--strict` and `--summary-json`. The second half checks the active GitHub
+// workflow (ADR 0065): triggers, matrix, timeouts, pinned actions, token permissions and the commands it runs.
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -227,7 +227,7 @@ describe('scripts/ci.mjs', () => {
   });
 });
 
-// ---- the inactive GitHub workflow ---------------------------------------------------------------------------------------
+// ---- the GitHub workflow ------------------------------------------------------------------------------------------------
 
 type Yaml = unknown;
 type YamlMap = Record<string, unknown>;
@@ -354,22 +354,46 @@ function asList(value: Yaml, what: string): Yaml[] {
   return value;
 }
 
-const WORKFLOW_IN_CI_FOLDER = join(RUNTIME, 'ci', 'github-actions-ci.yml');
-const WORKFLOW_ACTIVATED = join(SKILL, '.github', 'workflows', 'ci.yml');
-
-function workflowPath(): string {
-  return existsSync(WORKFLOW_IN_CI_FOLDER) ? WORKFLOW_IN_CI_FOLDER : WORKFLOW_ACTIVATED;
-}
+const WORKFLOW = join(SKILL, '.github', 'workflows', 'ci.yml');
+const ACTION_SHAS: Record<string, string> = {
+  'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
+  'actions/setup-node': '949feb2413d6458794dcd2491c4babbbce0c15c1',
+  'actions/upload-artifact': 'cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+  'actions/download-artifact': '9000827ccba6bdab643e8b6fd33ac0654aef8333',
+};
+const JOBS = ['gates', 'gates-full', 'macos', 'e2e', 'report'];
 
 function workflow(): YamlMap {
-  return asMap(parseYaml(readFileSync(workflowPath(), 'utf8')), 'workflow');
+  return asMap(parseYaml(readFileSync(WORKFLOW, 'utf8')), 'workflow');
+}
+
+function job(name: string): YamlMap {
+  return asMap(asMap(workflow()['jobs'], 'jobs')[name], name);
 }
 
 function allSteps(): { job: string; step: YamlMap }[] {
   const jobs = asMap(workflow()['jobs'], 'jobs');
-  return Object.entries(jobs).flatMap(([job, body]) =>
-    asList(asMap(body, job)['steps'], `${job}.steps`).map((step) => ({ job, step: asMap(step, `${job} step`) })),
+  return Object.entries(jobs).flatMap(([name, body]) =>
+    asList(asMap(body, name)['steps'], `${name}.steps`).map((step) => ({
+      job: name,
+      step: asMap(step, `${name} step`),
+    })),
   );
+}
+
+function matrixCells(name: string): { os: string; node: string }[] {
+  const strategy = job(name)['strategy'];
+  if (strategy === undefined) return [];
+  const matrix = asMap(asMap(strategy, 'strategy')['matrix'], 'matrix');
+  if (matrix['include'] !== undefined) {
+    return asList(matrix['include'], 'include').map((cell) => {
+      const map = asMap(cell, 'cell');
+      return { os: text(map['os']), node: text(map['node']) };
+    });
+  }
+  const oses = asList(matrix['os'], 'os').map(text);
+  const nodes = matrix['node'] === undefined ? [''] : asList(matrix['node'], 'node').map(text);
+  return oses.flatMap((os) => nodes.map((node) => ({ os, node })));
 }
 
 describe('the YAML subset parser used below', () => {
@@ -385,103 +409,230 @@ describe('the YAML subset parser used below', () => {
     ['a block scalar', 'a: |\n  text\n'],
     ['a duplicate key', 'a: 1\na: 2\n'],
     ['odd indentation', 'a:\n   b: 1\n'],
-  ])('rejects %s', (_label, text) => {
-    expect(() => parseYaml(text)).toThrow();
+  ])('rejects %s', (_label, source) => {
+    expect(() => parseYaml(source)).toThrow();
   });
 });
 
-describe('the inactive workflow (05 section 8.2, A.41)', () => {
-  it('parses and has the documented shape', () => {
+describe('the active workflow (ADR 0065)', () => {
+  it('lives in .github/workflows; the inactive draft below runtime/ci is gone', () => {
+    expect(existsSync(WORKFLOW)).toBe(true);
+    expect(existsSync(join(RUNTIME, 'ci', 'github-actions-ci.yml'))).toBe(false);
+  });
+
+  it('parses and has the documented jobs, a read-only default token and the hook switch', () => {
     const doc = workflow();
     expect(doc['name']).toBe('ci');
-    expect(Object.keys(asMap(doc['jobs'], 'jobs'))).toEqual(['gates', 'e2e-and-parity']);
+    expect(Object.keys(asMap(doc['jobs'], 'jobs'))).toEqual(JOBS);
     expect(asMap(doc['permissions'], 'permissions')).toEqual({ contents: 'read' });
     expect(asMap(doc['env'], 'env')).toEqual({ MCS_HOOK_DISABLE: '1', TZ: 'UTC' });
-    const on = asMap(doc['on'], 'on');
-    expect(Object.keys(on)).toEqual(['push', 'pull_request']);
-    expect(asMap(on['push'], 'push')['branches']).toEqual(['main', 'feat/**']);
-    const gates = asMap(asMap(doc['jobs'], 'jobs')['gates'], 'gates');
-    const matrix = asMap(asMap(gates['strategy'], 'strategy')['matrix'], 'matrix');
-    expect(matrix['os']).toEqual(['windows-latest', 'ubuntu-latest']);
-    expect(matrix['node']).toEqual(['22.22', '24', '26']);
-    expect(asMap(asMap(asMap(gates['defaults'], 'defaults')['run'], 'run'), 'run')['working-directory']).toBe(
-      'runtime',
+  });
+
+  it('runs on push to main and feat/** and on a manual dispatch with the boolean input full, never on pull requests', () => {
+    const on = asMap(workflow()['on'], 'on');
+    expect(Object.keys(on)).toEqual(['push', 'workflow_dispatch']);
+    expect(asMap(on['push'], 'push')).toEqual({ branches: ['main', 'feat/**'] });
+    const inputs = asMap(asMap(on['workflow_dispatch'], 'workflow_dispatch')['inputs'], 'inputs');
+    expect(Object.keys(inputs)).toEqual(['full']);
+    const full = asMap(inputs['full'], 'full');
+    expect(full['type']).toBe('boolean');
+    expect(full['default']).toBe(false);
+    const code = readFileSync(WORKFLOW, 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    expect(code).not.toMatch(/pull_request|schedule:|repository_dispatch|workflow_run/);
+  });
+
+  it('cancels superseded runs of a ref and bounds every job to 20 minutes', () => {
+    expect(asMap(workflow()['concurrency'], 'concurrency')).toEqual({
+      group: 'ci-${{ github.ref }}',
+      'cancel-in-progress': true,
+    });
+    for (const name of JOBS) expect(job(name)['timeout-minutes'], name).toBe(20);
+  });
+
+  it('has the matrix of each job: Ubuntu x Node 22.22/24/26 and Windows x 24 on push, the rest on demand', () => {
+    expect(matrixCells('gates')).toEqual([
+      { os: 'windows-latest', node: '24' },
+      { os: 'ubuntu-latest', node: '22.22' },
+      { os: 'ubuntu-latest', node: '24' },
+      { os: 'ubuntu-latest', node: '26' },
+    ]);
+    expect(matrixCells('gates-full')).toEqual([
+      { os: 'windows-latest', node: '22.22' },
+      { os: 'windows-latest', node: '26' },
+    ]);
+    expect(job('macos')['runs-on']).toBe('macos-latest');
+    expect(job('macos')['strategy']).toBeUndefined();
+    expect(matrixCells('e2e').map((cell) => cell.os)).toEqual(['windows-latest', 'ubuntu-latest']);
+    expect(job('report')['runs-on']).toBe('ubuntu-latest');
+  });
+
+  it('runs gates-full only on a full dispatch, e2e on a full dispatch or on main, report always but never for a pull request', () => {
+    expect(job('gates')['if']).toBeUndefined();
+    expect(job('macos')['if']).toBeUndefined();
+    expect(job('gates-full')['if']).toBe("github.event_name == 'workflow_dispatch' && inputs.full");
+    expect(job('e2e')['if']).toBe(
+      "(github.event_name == 'workflow_dispatch' && inputs.full) || github.ref == 'refs/heads/main'",
     );
+    expect(job('report')['if']).toBe(
+      "always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')",
+    );
+    expect(job('report')['needs']).toEqual(['gates', 'gates-full', 'macos', 'e2e']);
+    expect(job('report')['name']).toBe('ci-status');
   });
 
-  it('is shipped inactive: a draft below runtime/ci, not a workflow that GitHub would run', () => {
-    if (existsSync(WORKFLOW_IN_CI_FOLDER)) {
-      expect(existsSync(WORKFLOW_ACTIVATED)).toBe(false);
-      const firstLine = readFileSync(WORKFLOW_IN_CI_FOLDER, 'utf8').split('\n')[0] ?? '';
-      expect(firstLine).toMatch(/^# INACTIVE DRAFT\. Not executed remotely\./);
-      expect(firstLine).toContain('git mv runtime/ci/github-actions-ci.yml .github/workflows/ci.yml');
-    }
-  });
-
-  it('pins every action by a 40-hex commit SHA and never persists credentials', () => {
-    const steps = allSteps();
-    const uses = steps.filter(({ step }) => typeof step['uses'] === 'string');
-    expect(uses.length).toBeGreaterThanOrEqual(5);
-    for (const { job, step } of uses) {
+  it('pins every action by the verified 40-hex commit SHA and never persists credentials', () => {
+    const uses = allSteps().filter(({ step }) => typeof step['uses'] === 'string');
+    expect(uses.length).toBeGreaterThanOrEqual(10);
+    for (const { job: name, step } of uses) {
       const ref = text(step['uses']);
-      expect(ref, `${job}: ${ref}`).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
-      if (ref.startsWith('actions/checkout@')) {
-        expect(asMap(step['with'], 'with')['persist-credentials'], `${job} checkout`).toBe(false);
+      expect(ref, `${name}: ${ref}`).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
+      const [action, sha] = ref.split('@');
+      expect(ACTION_SHAS[action ?? ''], `${name}: ${ref}`).toBe(sha);
+      if (action === 'actions/checkout') {
+        expect(asMap(step['with'], 'with')['persist-credentials'], `${name} checkout`).toBe(false);
       }
     }
   });
 
-  it('keeps the token read-only and uses no secret, no write permission and no pull_request_target', () => {
-    const text = readFileSync(workflowPath(), 'utf8');
-    expect(text).not.toMatch(/pull_request_target/);
-    expect(text).not.toMatch(/secrets\./);
-    expect(text).not.toMatch(/:\s*write\b/);
-    expect(text.match(/^permissions:/gm)?.length ?? 0).toBe(1);
+  it('uses no secret and gives write access only to the report job (contents: write, nothing else)', () => {
+    const source = readFileSync(WORKFLOW, 'utf8');
+    expect(source).not.toMatch(/secrets\./);
+    expect(source.match(/:\s*write\b/g)).toEqual([': write']);
+    for (const name of JOBS) {
+      const permissions = job(name)['permissions'];
+      if (name === 'report') expect(asMap(permissions, 'permissions')).toEqual({ contents: 'write' });
+      else expect(permissions, name).toBeUndefined();
+    }
+    const publish = asList(job('report')['steps'], 'steps')
+      .map((step) => asMap(step, 'step'))
+      .find((step) => text(step['run']).includes('ci-status.mjs publish'));
+    expect(asMap(publish?.['env'], 'env')).toEqual({ GITHUB_TOKEN: '${{ github.token }}' });
   });
 
-  it('runs exactly the commands of ci.mjs: npm ci, npm run ci, npm run ci:full, and the legacy suites', () => {
-    const runs = allSteps().flatMap(({ job, step }) =>
-      typeof step['run'] === 'string' ? [[job, step['run']] as const] : [],
+  it('never expands an expression inside a run command (no script injection through refs or inputs)', () => {
+    for (const { job: name, step } of allSteps()) {
+      if (typeof step['run'] === 'string') expect(step['run'], name).not.toContain('${{');
+    }
+  });
+
+  it('runs exactly the documented node, npm and npx commands', () => {
+    const runs = allSteps().flatMap(({ job: name, step }) =>
+      typeof step['run'] === 'string' ? [`${name}: ${step['run']}`] : [],
     );
+    const summarizeGates = 'node scripts/ci-status.mjs summarize --in ci-summary.json --out ci-job.json';
+    const summarizeOnly = 'node scripts/ci-status.mjs summarize --out ci-job.json';
+    const gateRun = 'npm run ci -- --bundle --summary-json ci-summary.json';
     expect(runs).toEqual([
-      ['gates', 'npm ci'],
-      ['gates', 'npm run ci'],
-      ['e2e-and-parity', 'npm ci'],
-      ['e2e-and-parity', 'python -m unittest discover -s tests'],
-      ['e2e-and-parity', 'node --test "tests/frontend/*.test.mjs"'],
-      ['e2e-and-parity', 'npm run ci:full'],
+      'gates: npm ci',
+      `gates: ${gateRun}`,
+      `gates: ${summarizeGates}`,
+      'gates-full: npm ci',
+      `gates-full: ${gateRun}`,
+      `gates-full: ${summarizeGates}`,
+      'macos: npm ci',
+      'macos: npm run build',
+      'macos: npx vitest run --project unit packages/engine/src/platform',
+      'macos: node scripts/smoke.mjs --bundle',
+      `macos: ${summarizeOnly}`,
+      'e2e: npm ci',
+      'e2e: npx playwright install --with-deps chromium',
+      'e2e: npx playwright install chromium',
+      'e2e: npm run build',
+      'e2e: npm run test:e2e',
+      `e2e: ${summarizeOnly}`,
+      'report: node scripts/ci-status.mjs publish --dir ../ci-jobs',
     ]);
+    for (const run of runs) expect(run).toMatch(/^[\w-]+: (node|npm|npx) /);
     const scripts = (
       JSON.parse(readFileSync(join(RUNTIME, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     ).scripts;
     expect(scripts['ci']).toBe('node scripts/ci.mjs');
-    expect(scripts['ci:full']).toBe('node scripts/ci.mjs --full');
-  });
-
-  it('names the gates that ci.mjs defines: the full run adds exactly test:slow and test:e2e', () => {
-    const ciSource = readFileSync(join(RUNTIME, 'scripts', 'ci.mjs'), 'utf8');
-    expect(ciSource).toContain("'test:slow'");
-    expect(ciSource).not.toContain('parity');
-    expect(ciSource).toContain("'test:e2e'");
-    const scripts = (
-      JSON.parse(readFileSync(join(RUNTIME, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
-    ).scripts;
-    expect(scripts['test:slow']).toBe('vitest run --project slow');
-    expect(scripts['test:parity']).toBeUndefined();
     expect(scripts['test:e2e']).toBe('playwright test -c packages/web/e2e/playwright.config.ts');
   });
 
-  it('gives the legacy suites the skill root as working directory and the trace upload the gitignored e2e output', () => {
-    const steps = allSteps();
-    const legacy = steps.filter(({ step }) => typeof step['run'] === 'string' && !text(step['run']).startsWith('npm'));
-    expect(legacy.length).toBe(2);
-    for (const { step } of legacy) expect(step['working-directory']).toBe('.');
-    const upload = steps.find(
-      ({ step }) => typeof step['uses'] === 'string' && text(step['uses']).startsWith('actions/upload-artifact@'),
+  it('keeps macOS lean: no Playwright, only the platform tests and the bundle smoke', () => {
+    const steps = asList(job('macos')['steps'], 'steps').map((step) => asMap(step, 'step'));
+    expect(steps.some((step) => /playwright|test:e2e/.test(text(step['run'])))).toBe(false);
+  });
+
+  it('runs every job in the runtime folder and uploads one ci-job record per job for the report', () => {
+    for (const name of JOBS) {
+      const defaults = asMap(asMap(job(name)['defaults'], 'defaults')['run'], 'run');
+      expect(defaults['working-directory'], name).toBe('runtime');
+    }
+    const uploads = allSteps().filter(
+      ({ step }) =>
+        text(step['uses']).startsWith('actions/upload-artifact@') &&
+        text(asMap(step['with'], 'with')['name']).startsWith('ci-job-'),
     );
-    const target = asMap(upload?.step['with'], 'upload with')['path'];
-    expect(target).toBe('runtime/packages/web/e2e/test-results/');
+    expect(uploads.map(({ job: name }) => name)).toEqual(['gates', 'gates-full', 'macos', 'e2e']);
+    for (const { step } of uploads) {
+      expect(step['if']).toBe('always()');
+      expect(asMap(step['with'], 'with')['path']).toBe('runtime/ci-job.json');
+    }
+    const download = allSteps().find(({ step }) => text(step['uses']).startsWith('actions/download-artifact@'));
+    expect(download?.job).toBe('report');
+    expect(asMap(download?.step['with'], 'with')).toEqual({ pattern: 'ci-job-*', path: 'ci-jobs' });
+    const traces = allSteps().find(({ step }) =>
+      text(asMap(step['with'] ?? {}, 'with')['name']).startsWith('e2e-traces'),
+    );
+    expect(traces?.step['if']).toBe('failure()');
+    expect(asMap(traces?.step['with'], 'with')['path']).toBe('runtime/packages/web/e2e/test-results/');
     expect(readFileSync(join(SKILL, '.gitignore'), 'utf8')).toContain('runtime/packages/web/e2e/test-results/');
-    expect(upload?.step['if']).toBe('failure()');
+  });
+});
+
+// ---- ci.mjs --summary-json ----------------------------------------------------------------------------------------------
+
+describe('scripts/ci.mjs --summary-json (mcs.ci-run/1)', () => {
+  interface Summary {
+    schema: string;
+    result: string;
+    gates: { name: string; result: string; ms: number }[];
+    failedGate: string | null;
+    tail: string[];
+  }
+  const summary = (): Summary => JSON.parse(readFileSync(join(root, 'out', 'summary.json'), 'utf8')) as Summary;
+
+  it('writes a passing summary with every gate and its duration', () => {
+    const run = runCi(['--offline', '--summary-json', 'out/summary.json']);
+    expect(run.status).toBe(0);
+    const doc = summary();
+    expect(doc.schema).toBe('mcs.ci-run/1');
+    expect(doc.result).toBe('pass');
+    expect(doc.gates.map((gate) => gate.name)).toEqual(GATES.filter((gate) => gate !== 'audit'));
+    expect(doc.gates.every((gate) => gate.result === 'pass' && Number.isInteger(gate.ms))).toBe(true);
+    expect(doc.failedGate).toBeNull();
+    expect(doc.tail).toEqual([]);
+  });
+
+  it('writes a failing summary with the failing gate, the gates that did not run and the tail of its output', () => {
+    const run = runCi(['--offline', '--summary-json', 'out/summary.json'], { eslint: 1 });
+    expect(run.status).toBe(1);
+    const doc = summary();
+    expect(doc.result).toBe('fail');
+    expect(doc.failedGate).toBe('lint');
+    expect(doc.gates.slice(0, 3)).toEqual([
+      expect.objectContaining({ name: 'format:check', result: 'pass' }),
+      expect.objectContaining({ name: 'lint', result: 'fail' }),
+      { name: 'typecheck', result: 'not-run', ms: 0 },
+    ]);
+    expect(doc.tail.length).toBeLessThanOrEqual(40);
+    // the output is still teed to the console
+    expect(run.stdout).toContain('=== lint');
+  });
+
+  it('marks a skipped gate as skipped and keeps the run green', () => {
+    expect(runCi(['--offline', '--summary-json', 'out/summary.json'], { smoke: 77 }).status).toBe(0);
+    const doc = summary();
+    expect(doc.result).toBe('pass');
+    expect(doc.gates.find((gate) => gate.name === 'smoke')?.result).toBe('skipped');
+  });
+
+  it('refuses --summary-json without a path', () => {
+    expect(runCi(['--summary-json']).status).toBe(2);
   });
 });
