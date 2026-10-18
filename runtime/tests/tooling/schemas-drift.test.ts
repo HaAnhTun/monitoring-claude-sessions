@@ -92,15 +92,16 @@ describe('generateAll', () => {
     }
   });
 
-  it('describes the config schema as using Python regex syntax', () => {
-    const entry = generator.CONFIG_SCHEMAS.find((candidate) => candidate.file === 'config.v1.schema.json');
-    expect(entry).toBeDefined();
-    const text = generated.files.get('schemas/config.v1.schema.json');
-    if (text !== undefined) {
-      expect((JSON.parse(text) as { description: string }).description).toContain(
-        'Regexes use Python syntax (see docs/configuration.md, translator rules)',
-      );
-    }
+  it('has no config.json schema (docs/configuration.md describes it, with JavaScript regex syntax) and no schema says Python', () => {
+    expect(generator.CONFIG_SCHEMAS.map((entry) => entry.file)).not.toContain('config.v1.schema.json');
+    expect(generated.files.has('schemas/config.v1.schema.json')).toBe(false);
+    for (const entry of generator.CONFIG_SCHEMAS) expect(entry.description, entry.file).not.toMatch(/python/i);
+    for (const [path, content] of generated.files) expect(content, path).not.toContain('Python syntax');
+  });
+
+  it('reports no pending schema except the diagnostics bundle, whose source WP-22 exports', () => {
+    expect(generated.pending.filter((line) => !line.includes('DiagnosticsBundleSchema'))).toEqual([]);
+    if (Object.hasOwn(shared, 'DiagnosticsBundleSchema')) expect(generated.pending).toEqual([]);
   });
 
   it('describes a route params schema with exactly the :names of its path, all required', () => {

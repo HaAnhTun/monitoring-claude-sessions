@@ -120,8 +120,9 @@ describe('buildDemo result', () => {
     expect((written['poll'] as Rec)['stale_after_ms']).toBe(4000);
     expect(written['session_rules']).toBeInstanceOf(Array);
     expect(Object.keys(written['attempts'] as Rec)).toEqual(expect.arrayContaining(['start', 'end']));
-    for (const key of ['start', 'end'])
-      expect(() => new RegExp(String((written['attempts'] as Rec)[key]).replaceAll('(?P<', '(?<'))).not.toThrow();
+    for (const key of ['start', 'end']) {
+      expect(() => new RegExp(String((written['attempts'] as Rec)[key]), 'vy')).not.toThrow();
+    }
     expect(written['port']).toBeUndefined();
   });
 
@@ -275,6 +276,25 @@ describe('buildDemo result', () => {
     expect(log).toMatch(/STEP A START attempt 1/);
     expect(log).toMatch(/STEP A END exit=0 status=PASS/);
     expect(log).toMatch(/STEP B END exit=1 status=FAIL/);
+    // The attempts patterns are JavaScript regexes (ADR 0067): compiled directly with the attempts flags, they match the lines.
+    const attempts = demo.configJson['attempts'] as Rec;
+    const start = new RegExp(String(attempts['start']), 'vy');
+    const end = new RegExp(String(attempts['end']), 'vy');
+    const lines = log.split(String.fromCharCode(10)).filter((line) => line !== '');
+    const starts = lines.filter((line) => line.includes(' START '));
+    const ends = lines.filter((line) => line.includes(' END '));
+    expect(starts.length).toBeGreaterThan(0);
+    expect(ends.length).toBeGreaterThan(0);
+    for (const line of starts) {
+      start.lastIndex = 0;
+      expect(start.exec(line)?.groups, line).toMatchObject({ n: '1', effort: expect.any(String) as unknown });
+      end.lastIndex = 0;
+      expect(end.exec(line), line).toBeNull();
+    }
+    for (const line of ends) {
+      end.lastIndex = 0;
+      expect(end.exec(line)?.groups?.['status'], line).toMatch(/^(PASS|FAIL)$/);
+    }
     expect(readFileSync(join(demo.repo, 'docs', 'status.md'), 'utf8')).toMatch(/^\| Step \| Status/);
   });
 });

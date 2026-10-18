@@ -1,12 +1,19 @@
 // Validation of the legacy (L) keys (01 section 2.4): the predicate table of `config.py` `SCHEMA` with the legacy messages
 // (not Zod, so the strings stay byte for byte), plus the documented Node-only additions. The predicates run on the parsed
 // `PyJsonValue` so that, as in Python, `true` is not a number and `1.0` is not an integer.
-import { McsError, compilePyRegex, translatePyRegex, type CompiledPyRegex, type PyRegexContext } from '@mcs/shared';
+import { McsError } from '@mcs/shared';
 
 import { dumpPyJson, pyRepr, type PyJsonValue } from '../pyjson/index.ts';
 import { hostPlatform, type HostPlatform } from '../platform/host.ts';
 import { isMsysPath } from '../platform/paths.ts';
 import { pyStrptimeValidate } from '../platform/pytime.ts';
+import {
+  PYTHON_SYNTAX_HINT,
+  tryCompileRegex,
+  type CompiledRegex,
+  type RegexCompileError,
+  type RegexContext,
+} from '../regex/index.ts';
 
 export interface LegacyKeySpec {
   /** The legacy predicate. */
@@ -191,12 +198,18 @@ function nodeProblems(key: string, v: PyJsonValue, platform: HostPlatform): stri
   }
 }
 
-/** A pattern that Python itself rejects is a validation problem; the other translator failures belong to step 7. */
-function syntaxProblem(source: string, context: PyRegexContext): string | null {
-  const result = translatePyRegex(source, context);
-  if (result.ok || result.error.code !== 'SYNTAX') return null;
-  const at = result.error.position === null ? '' : ` at position ${String(result.error.position)}`;
-  return `${result.error.message}${at}`;
+/** The reason of a refused pattern, with the migration hint when it uses a Python-only construct. */
+function refusalText(error: RegexCompileError): string {
+  return error.pythonSyntax ? `${error.reason}; ${PYTHON_SYNTAX_HINT}` : error.reason;
+}
+
+/**
+ * A pattern that is not a JavaScript regular expression (or that V8 cannot compile, which is forced here) is a validation
+ * problem, so it is `CONFIG_INVALID` at check, configure and start time.
+ */
+function syntaxProblem(source: string, context: RegexContext): string | null {
+  const result = tryCompileRegex(source, context);
+  return result.ok ? null : refusalText(result.error);
 }
 
 function regexProblems(doc: Extract<PyJsonValue, { k: 'obj' }>): string[] {
@@ -251,9 +264,9 @@ export function validateLegacy(doc: PyJsonValue, options: LegacyValidateOptions)
 
 export interface CompiledPatterns {
   /** One compiled pattern per `session_rules[i].match`, same order (context `session_rule`: search, flag `s`). */
-  readonly sessionRules: readonly CompiledPyRegex[];
+  readonly sessionRules: readonly CompiledRegex[];
   /** `attempts.start` and `attempts.end` (context `attempts`: match at position 0), `null` when `attempts` is null. */
-  readonly attempts: { readonly start: CompiledPyRegex; readonly end: CompiledPyRegex } | null;
+  readonly attempts: { readonly start: CompiledRegex; readonly end: CompiledRegex } | null;
 }
 
 interface PatternSource {
@@ -263,41 +276,30 @@ interface PatternSource {
 
 interface PatternFailure {
   readonly where: string;
-  readonly code: string;
-  readonly position: number | null;
+  readonly pythonSyntax: boolean;
   readonly message: string;
 }
 
 function tryCompile(
   source: string,
-  context: PyRegexContext,
+  context: RegexContext,
   where: string,
   failures: PatternFailure[],
-): CompiledPyRegex | null {
-  try {
-    return compilePyRegex(source, context);
-  } catch (error) {
-    if (!(error instanceof McsError) || error.code !== 'REGEX_UNSUPPORTED') throw error;
-    const code = error.details?.['code'];
-    const position = error.details?.['position'];
-    failures.push({
-      where,
-      code: typeof code === 'string' ? code : 'SYNTAX',
-      position: typeof position === 'number' ? position : null,
-      message: error.message,
-    });
-    return null;
-  }
+): CompiledRegex | null {
+  const result = tryCompileRegex(source, context);
+  if (result.ok) return result.value;
+  failures.push({ where, pythonSyntax: result.error.pythonSyntax, message: refusalText(result.error) });
+  return null;
 }
 
 /**
- * Step 7 of `resolveConfig`: compiles every pattern. A pattern the translator cannot render exactly is
- * `REGEX_UNSUPPORTED`; the message lists every failing pattern as `session_rules[1]: <message>` or
- * `attempts.end: <message>` and never repeats a pattern text.
+ * Step 7 of `resolveConfig`: compiles every pattern. Validation already refuses an invalid pattern, so a failure here is a
+ * caller that skipped it; it is `CONFIG_INVALID` too, the message lists every failing pattern as
+ * `session_rules[1]: <reason>` or `attempts.end: <reason>` and never repeats a pattern text.
  */
 export function compileConfigPatterns(source: PatternSource): CompiledPatterns {
   const failures: PatternFailure[] = [];
-  const sessionRules: CompiledPyRegex[] = [];
+  const sessionRules: CompiledRegex[] = [];
   source.session_rules.forEach((rule, i) => {
     const compiled = tryCompile(rule.match, 'session_rule', `session_rules[${String(i)}]`, failures);
     if (compiled !== null) sessionRules.push(compiled);
@@ -309,9 +311,12 @@ export function compileConfigPatterns(source: PatternSource): CompiledPatterns {
     if (start !== null && end !== null) compiledAttempts = { start, end };
   }
   if (failures.length > 0) {
-    throw new McsError('REGEX_UNSUPPORTED', failures.map((f) => `${f.where}: ${f.message}`).join('; '), {
-      hint: 'Rewrite the pattern with plain groups, classes and quantifiers; the legacy engine still accepts it.',
-      details: { patterns: failures.map((f) => ({ where: f.where, code: f.code, position: f.position })) },
+    const python = failures.some((f) => f.pythonSyntax);
+    throw new McsError('CONFIG_INVALID', failures.map((f) => `${f.where}: invalid regex (${f.message})`).join('; '), {
+      hint: python
+        ? 'Run `mcs migrate-workspace --task <slug>` (dry run first) to convert Python regex syntax.'
+        : 'Write the pattern as a JavaScript regular expression (v flag rules; see docs/configuration.md).',
+      details: { patterns: failures.map((f) => ({ where: f.where, pythonSyntax: f.pythonSyntax })) },
     });
   }
   return { sessionRules, attempts: compiledAttempts };

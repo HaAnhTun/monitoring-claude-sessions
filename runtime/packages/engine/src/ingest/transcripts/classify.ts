@@ -3,11 +3,10 @@
 //
 // The head is the first 401 lines (indexes 0..400, an invalid or empty line consumes an index). Prompts are the user texts of
 // that head that are not harness boilerplate; the first prompt, or the first user text with boilerplate included, is what the
-// rules match (Python `re.search(..., re.S)` through `compilePyRegex(match, 'session_rule')`, registry C24). Only the label is
-// kept; a session is "matched" when a rule matched or the session is pinned.
-import { McsError, applyLabelTemplate, compilePyRegex, type CompiledPyRegex } from '@mcs/shared';
-
+// rules search (a JavaScript pattern compiled by `compileRegex(match, 'session_rule')`, flags `v` and `s`, registry C24). Only
+// the label is kept; a session is "matched" when a rule matched or the session is pinned.
 import { clipCodePoints } from '../../platform/fsx.ts';
+import { applyLabelTemplate, tryCompileRegex, type CompiledRegex } from '../../regex/index.ts';
 
 /** Number of head lines the classification may look at (legacy `i > 400` break). */
 export const CLASSIFY_LINE_LIMIT = 401;
@@ -23,7 +22,7 @@ const DEFAULT_RULE_LABEL = 'session';
 /** Harness text that is not a prompt (legacy `BOILER`). */
 const BOILER = /^\s*<(local-command|ide_|browser_instruction|system-reminder|command-|user-prompt)/;
 
-/** One rule of `session_rules`: `match` is a Python regular expression (the config schema keeps unknown keys, so `name` and `scope` are read loosely). */
+/** One rule of `session_rules`: `match` is a JavaScript regular expression (the config schema keeps unknown keys, so `name` and `scope` are read loosely). */
 export interface SessionRule {
   readonly match: string;
   readonly label?: string;
@@ -31,9 +30,9 @@ export interface SessionRule {
   readonly scope?: string;
 }
 
-/** A rule as the classifier runs it: `regex` is null when the translator cannot render the pattern (the legacy `re.error`: skipped). */
+/** A rule as the classifier runs it: `regex` is null when the pattern does not compile (the rule is skipped). */
 export interface CompiledRule {
-  readonly regex: CompiledPyRegex | null;
+  readonly regex: CompiledRegex | null;
   readonly template: string;
   readonly scopeAny: boolean;
 }
@@ -63,18 +62,17 @@ export interface ClassifyOptions {
 }
 
 /**
- * Compiles the rules in order. A rule whose pattern the translator rejects (`REGEX_UNSUPPORTED`) stays in the list with a null
- * regex, so the indexes are still those of the configuration and the rule is skipped, as the legacy `re.error`.
+ * Compiles the rules in order. A rule whose pattern does not compile (invalid JavaScript, Python syntax, a modifier group)
+ * stays in the list with a null regex, so the indexes are still those of the configuration and the rule is skipped.
  */
 export function compileSessionRules(rules: readonly SessionRule[]): CompiledRule[] {
   return rules.map((rule) => {
-    let regex: CompiledPyRegex | null = null;
-    try {
-      regex = compilePyRegex(rule.match, 'session_rule');
-    } catch (error) {
-      if (!(error instanceof McsError) || error.code !== 'REGEX_UNSUPPORTED') throw error;
-    }
-    return { regex, template: rule.label ?? rule.name ?? DEFAULT_RULE_LABEL, scopeAny: rule.scope === 'any' };
+    const result = tryCompileRegex(rule.match, 'session_rule');
+    return {
+      regex: result.ok ? result.value : null,
+      template: rule.label ?? rule.name ?? DEFAULT_RULE_LABEL,
+      scopeAny: rule.scope === 'any',
+    };
   });
 }
 

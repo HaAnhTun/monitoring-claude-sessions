@@ -2,6 +2,7 @@ import { McsError } from '@mcs/shared';
 import { describe, expect, it } from 'vitest';
 
 import { parsePyJson } from '../pyjson/index.ts';
+import { PYTHON_SYNTAX_HINT } from '../regex/index.ts';
 import {
   LEGACY_KEYS,
   LegacyConfigFileSchema,
@@ -31,7 +32,8 @@ interface Golden {
 }
 
 // Captured once from the legacy engine: `backend.config.validate(json.loads(input), strict)` of
-// src/backend/config.py, run with Python 3.14 against these inputs. The messages are the contract (01 2.4).
+// src/backend/config.py, run with Python 3.14 against these inputs. The messages are the contract (01 2.4). The reasons
+// inside an `invalid regex` message are the V8 reasons of the JavaScript dialect (ADR 0067); the rest of that line is legacy.
 const GOLDEN: readonly Golden[] = [
   { input: '{"unknown_one": 1}', strict: true, problems: ["unknown key 'unknown_one'"] },
   { input: '{"unknown_one": 1}', strict: false, problems: [] },
@@ -147,20 +149,17 @@ const GOLDEN: readonly Golden[] = [
   {
     input: '{"session_rules": [{"match": "("}]}',
     strict: true,
-    problems: ["session_rules: invalid regex '(' (missing ), unterminated subpattern at position 0)"],
+    problems: ["session_rules: invalid regex '(' (Unterminated group)"],
   },
   {
     input: '{"session_rules": [{"match": "ok"}, {"match": "[a-"}]}',
     strict: true,
-    problems: ["session_rules: invalid regex '[a-' (unterminated character set at position 0)"],
+    problems: ["session_rules: invalid regex '[a-' (Unterminated character class)"],
   },
   {
     input: '{"attempts": {"start": "(", "end": "a**"}}',
     strict: true,
-    problems: [
-      'attempts.start: invalid regex (missing ), unterminated subpattern at position 0)',
-      'attempts.end: invalid regex (multiple repeat at position 2)',
-    ],
+    problems: ['attempts.start: invalid regex (Unterminated group)', 'attempts.end: invalid regex (Nothing to repeat)'],
   },
   { input: '{"attempts": {"start": "a", "end": "b"}}', strict: true, problems: [] },
   {
@@ -168,8 +167,8 @@ const GOLDEN: readonly Golden[] = [
     strict: true,
     problems: [
       'port: expected integer 1-65535, got 0',
-      "session_rules: invalid regex '(' (missing ), unterminated subpattern at position 0)",
-      'attempts.start: invalid regex (unbalanced parenthesis at position 0)',
+      "session_rules: invalid regex '(' (Unterminated group)",
+      "attempts.start: invalid regex (Unmatched ')')",
     ],
   },
   { input: '[1]', strict: true, problems: ['config must be a JSON object'] },
@@ -280,8 +279,34 @@ describe('legacy behaviours that need a decision', () => {
     ]);
   });
 
-  it('a pattern that Python accepts but the translator cannot render exactly is not a validation problem', () => {
-    expect(check('{"session_rules": [{"match": "(?x)a"}], "attempts": {"start": "a*+", "end": "b"}}')).toEqual([]);
+  it('reports a pattern that is not JavaScript as a validation problem, with the migration hint for Python syntax', () => {
+    expect(
+      check('{"session_rules": [{"match": "(?P<n>a)"}], "attempts": {"start": "a*+", "end": "(?#note)b"}}'),
+    ).toEqual([
+      `session_rules: invalid regex '(?P<n>a)' (Invalid group; ${PYTHON_SYNTAX_HINT})`,
+      'attempts.start: invalid regex (Nothing to repeat)',
+      `attempts.end: invalid regex (Invalid group; ${PYTHON_SYNTAX_HINT})`,
+    ]);
+    expect(PYTHON_SYNTAX_HINT).toBe(
+      'this looks like Python regex syntax; run `mcs migrate-workspace --task <slug>` (dry run first)',
+    );
+  });
+
+  it('refuses an inline modifier group and a pattern V8 cannot compile at validation time', () => {
+    const huge = `(${'a?'.repeat(20000)})`;
+    const problems = check(
+      JSON.stringify({ session_rules: [{ match: '(?i:a)' }], attempts: { start: huge, end: 'b' } }),
+    );
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toContain("session_rules: invalid regex '(?i:a)' (inline modifier groups");
+    expect(problems[1]?.startsWith('attempts.start: invalid regex (')).toBe(true);
+    expect(problems[1]).not.toContain('a?a?');
+  });
+
+  it('accepts JavaScript patterns that the old Python dialect could not express', () => {
+    expect(
+      check('{"session_rules": [{"match": "(?<n>a)(?<m>b)?"}], "attempts": {"start": "(?<=x)a", "end": "b"}}'),
+    ).toEqual([]);
   });
 });
 
@@ -364,7 +389,7 @@ describe('Node-only additions (01 2.4; stricter than legacy, all CONFIG_INVALID 
       'repo: use C:/... instead of /c/...',
       'window_hours: expected finite number',
       'attempts.time_format: unsupported directive %X (supported: %Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%)',
-      "session_rules: invalid regex '(' (missing ), unterminated subpattern at position 0)",
+      "session_rules: invalid regex '(' (Unterminated group)",
     ]);
   });
 });
@@ -372,8 +397,8 @@ describe('Node-only additions (01 2.4; stricter than legacy, all CONFIG_INVALID 
 describe('compileConfigPatterns (step 7 of resolveConfig)', () => {
   it('compiles every session rule and both attempts patterns', () => {
     const out = compileConfigPatterns({
-      session_rules: [{ match: 'abc(?P<n>\\d+)' }, { match: 'x' }],
-      attempts: { start: '^start (?P<id>\\w+)', end: '^end' },
+      session_rules: [{ match: 'abc(?<n>\\d+)' }, { match: 'x' }],
+      attempts: { start: '^start (?<id>\\w+)', end: '^end' },
     });
     expect(out.sessionRules).toHaveLength(2);
     expect(out.sessionRules[0]?.exec('zzabc42')?.groupdict()).toEqual({ n: '42' });
@@ -385,14 +410,16 @@ describe('compileConfigPatterns (step 7 of resolveConfig)', () => {
     expect(compileConfigPatterns({ session_rules: [], attempts: null })).toEqual({ sessionRules: [], attempts: null });
   });
 
-  it('lists every failing pattern by position and never repeats a pattern text', () => {
+  it('lists every failing pattern by position as CONFIG_INVALID and never repeats a pattern text', () => {
     const e = failure(() =>
       compileConfigPatterns({
-        session_rules: [{ match: 'fine' }, { match: '(?x)secret-rule' }, { match: 'a*+' }],
+        session_rules: [{ match: 'fine' }, { match: '(?P<secret>rule)' }, { match: 'a*+' }],
         attempts: { start: 'ok', end: '(?>secret-end)' },
       }),
     );
-    expect(e.code).toBe('REGEX_UNSUPPORTED');
+    expect(e.code).toBe('CONFIG_INVALID');
+    expect(e.message).toContain(`session_rules[1]: invalid regex (Invalid group; ${PYTHON_SYNTAX_HINT})`);
+    expect(e.hint).toContain('mcs migrate-workspace');
     expect(e.message).toContain('session_rules[1]: ');
     expect(e.message).toContain('session_rules[2]: ');
     expect(e.message).toContain('attempts.end: ');

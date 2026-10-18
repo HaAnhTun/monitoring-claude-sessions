@@ -29,15 +29,9 @@ export const REFERENCE_FILE = 'docs/api/reference.md';
 const DRAFT = 'draft-2020-12';
 
 /** The schemas of 01 section 2.9: file, the `@mcs/shared` export that is its source, and the JSON Schema mode. */
+// The task configuration (config.json) has no generated schema: docs/configuration.md and CONFIG_KEY_SUPPORT describe it,
+// and its regexes are JavaScript patterns (ADR 0067).
 export const CONFIG_SCHEMAS = [
-  {
-    file: 'config.v1.schema.json',
-    source: 'LegacyConfigZodMirror',
-    io: 'input',
-    title: 'Monitor configuration (config.json, schema_version 1)',
-    description:
-      'Regexes use Python syntax (see docs/configuration.md, translator rules). A documentation mirror of the validation table of 01 section 2.4.',
-  },
   {
     file: 'runtime.v1.schema.json',
     source: 'RuntimeOverridesSchema',

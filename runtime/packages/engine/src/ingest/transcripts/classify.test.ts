@@ -1,6 +1,6 @@
 // Session classification (02 5.2, T-TR-14): the port of the legacy `classify` of `src/backend/sessions.py`. The table of
-// cases below is plain JavaScript on purpose: a scratch script runs the same table through the legacy Python module and
-// the expected labels in `EXPECTED` are what it printed (the Python oracle of T-TR-14), not hand-written guesses.
+// cases below is frozen: the expected labels in `EXPECTED` were recorded from the legacy implementation (the oracle of
+// T-TR-14), not hand-written guesses, and every pattern of the table is also a valid JavaScript pattern.
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -243,6 +243,20 @@ describe('classify results of the new engine', () => {
     expect(classify(head, compileSessionRules(rules), { pinned: false, linesSeen })).toMatchObject({
       label: 'one',
       matched: true,
+      ruleIndex: 1,
+      labelSource: 'rule',
+    });
+  });
+
+  it('skips a rule written in Python regex syntax like any invalid rule, and the next rule applies', () => {
+    const { head, linesSeen } = headOf([user('Fix the login bug')]);
+    const compiled = compileSessionRules([
+      { match: '(?P<area>login)', label: 'python {1}' },
+      { match: '(?<area>login)', label: 'javascript {1}' },
+    ]);
+    expect(compiled[0]?.regex).toBeNull();
+    expect(classify(head, compiled, { pinned: false, linesSeen })).toMatchObject({
+      label: 'javascript login',
       ruleIndex: 1,
       labelSource: 'rule',
     });

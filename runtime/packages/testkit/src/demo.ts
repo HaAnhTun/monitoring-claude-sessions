@@ -719,8 +719,8 @@ function build(o: DemoOptions): DemoResult {
     attempts: {
       label_prefix: 'build step ',
       time_format: '%Y-%m-%d %H:%M:%S',
-      start: String.raw`^(?P<time>\S+ \S+) STEP (?P<part>[A-Z]) START attempt (?P<n>[0-9]+) model (?P<model>[a-z]+) effort (?P<effort>[a-z]+)`,
-      end: String.raw`^(?P<time>\S+ \S+) STEP (?P<part>[A-Z]) END exit=(?P<exit>[0-9]+) status=(?P<status>[A-Z]+)`,
+      start: String.raw`^(?<time>\S+ \S+) STEP (?<part>[A-Z]) START attempt (?<n>[0-9]+) model (?<model>[a-z]+) effort (?<effort>[a-z]+)`,
+      end: String.raw`^(?<time>\S+ \S+) STEP (?<part>[A-Z]) END exit=(?<exit>[0-9]+) status=(?<status>[A-Z]+)`,
     },
     limits: { event_window_mb: 0.2 },
     poll: { stale_after_ms: 4000 },

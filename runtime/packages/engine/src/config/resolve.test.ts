@@ -186,29 +186,38 @@ describe('legacy layer: shared defaults, task.json and config.json', () => {
     );
   });
 
-  it('reports a pattern that Python rejects as a validation problem with the legacy wording', async () => {
+  it('reports a pattern that is not JavaScript as a validation problem with the legacy line', async () => {
     const f = fixture();
     put(f, 'task.json', {});
     put(f, 'config.json', taskConfig({ session_rules: [{ match: '(' }], attempts: { start: 'a', end: '[x' } }));
     const e = await failure(() => resolveConfig(input(f)));
     expect(e.code).toBe('CONFIG_INVALID');
-    expect(e.message).toContain("session_rules: invalid regex '(' (missing ), unterminated subpattern at position 0)");
-    expect(e.message).toContain('attempts.end: invalid regex (unterminated character set at position 0)');
+    expect(e.message).toContain("session_rules: invalid regex '(' (Unterminated group)");
+    expect(e.message).toContain('attempts.end: invalid regex (Unterminated character class)');
+    expect(e.message).not.toContain('migrate-workspace');
   });
 
-  it('reports a pattern the translator cannot render exactly as REGEX_UNSUPPORTED, listing every one', async () => {
+  it('reports Python regex syntax as CONFIG_INVALID with the migration hint, listing every pattern', async () => {
     const f = fixture();
     put(f, 'task.json', {});
     put(
       f,
       'config.json',
-      taskConfig({ session_rules: [{ match: 'ok' }, { match: '(?x)a' }], attempts: { start: 'a*+', end: 'fine' } }),
+      taskConfig({
+        session_rules: [{ match: 'ok' }, { match: '(?P<n>a)' }],
+        attempts: { start: '(?i)a', end: 'fine' },
+      }),
     );
     const e = await failure(() => resolveConfig(input(f)));
-    expect(e.code).toBe('REGEX_UNSUPPORTED');
-    expect(e.message).toContain('session_rules[1]: ');
-    expect(e.message).toContain('attempts.start: ');
-    expect(e.message).not.toContain('session_rules[0]');
+    expect(e.code).toBe('CONFIG_INVALID');
+    expect(e.message).toContain(
+      "session_rules: invalid regex '(?P<n>a)' (Invalid group; this looks like Python regex syntax; run",
+    );
+    expect(e.message).toContain(
+      'attempts.start: invalid regex (Invalid group; this looks like Python regex syntax; run',
+    );
+    expect(e.message).toContain('mcs migrate-workspace --task <slug>');
+    expect(e.message).not.toContain("'ok'");
     expect(e.message).not.toContain('attempts.end');
   });
 
@@ -219,8 +228,8 @@ describe('legacy layer: shared defaults, task.json and config.json', () => {
       f,
       'config.json',
       taskConfig({
-        session_rules: [{ match: 'job-(?P<n>\\d+)', label: 'Job {n}' }],
-        attempts: { start: '^begin (?P<id>\\w+)', end: '^done' },
+        session_rules: [{ match: 'job-(?<n>\\d+)', label: 'Job {n}' }],
+        attempts: { start: '^begin (?<id>\\w+)', end: '^done' },
       }),
     );
     const r = await resolveConfig(input(f));
