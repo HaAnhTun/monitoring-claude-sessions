@@ -164,6 +164,17 @@ describe('derived image', () => {
       expect(args.some((a) => a.startsWith('--network') || a.startsWith('--mount') || a.startsWith('-v='))).toBe(false);
     }
   });
+
+  it('scales the performance budgets on arm64 (emulated) and leaves amd64 at the default', () => {
+    const spec = { runId: 'r1', target: 'node24', quick: true, bundle: false, keep: false };
+    const arm = runArgs({ ...spec, platform: 'arm64' });
+    const at = arm.indexOf('MCS_PERF_FACTOR=8');
+    expect(at).toBeGreaterThan(0);
+    expect(arm[at - 1]).toBe('-e');
+    expect(arm.indexOf(imageTag('node24', 'arm64'))).toBeGreaterThan(at);
+    const amd = runArgs({ ...spec, platform: 'amd64' });
+    expect(amd.some((a) => a.startsWith('MCS_PERF_FACTOR'))).toBe(false);
+  });
 });
 
 describe('summary table parser', () => {

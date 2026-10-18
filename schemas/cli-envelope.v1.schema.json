@@ -65,8 +65,6 @@
                 "IDENTITY_MISMATCH",
                 "INSTANCE_RUNNING",
                 "INSTANCE_NOT_RUNNING",
-                "ENGINE_CONFLICT",
-                "LEGACY_ENGINE_UNAVAILABLE",
                 "START_FAILED",
                 "START_TIMEOUT",
                 "PORT_EXHAUSTED",

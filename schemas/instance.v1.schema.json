@@ -37,10 +37,7 @@
     },
     "engine": {
       "type": "string",
-      "enum": [
-        "node",
-        "legacy"
-      ]
+      "const": "node"
     },
     "hooks": {
       "type": "object",

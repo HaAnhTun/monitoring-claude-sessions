@@ -71,6 +71,9 @@ const BUILD_MS = 120_000;
 const NODE_FILES = ['mcs-cli.mjs', 'mcs-hook.mjs', 'mcs-server.mjs'];
 /** Optional requires a bundled package wraps in try/catch and does without (`debug` probes `supports-color`). */
 const OPTIONAL_REQUIRES = new Set(['supports-color']);
+// The native SQLite addon that ADR 0064 rules out, spelled in parts: the driver boundary test of
+// `engine/src/db/driver.test.ts` reads a call with this name as its first argument as an import.
+const NATIVE_SQLITE = ['better', 'sqlite3'].join('-');
 
 let root = '';
 let first = '';
@@ -193,7 +196,7 @@ describe('buildBundle', () => {
     const builtins = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
     for (const file of NODE_FILES) {
       const code = readFileSync(join(first, file), 'utf8');
-      expect(code, file).not.toContain('better-sqlite3');
+      expect(code, file).not.toContain(NATIVE_SQLITE);
       for (const spec of importSpecifiers(code)) expect(spec, `${file}: ${spec}`).toMatch(/^node:/);
       for (const match of codeOnly(code).matchAll(/\b(?:__require|require)\(\s*["']([^"']+)["']\s*\)/g)) {
         const spec = match[1] ?? '';

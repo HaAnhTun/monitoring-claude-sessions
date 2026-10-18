@@ -27,6 +27,11 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_WEB_DEV_PORT', 'dev'],
   ['MCS_WEB_PREVIEW_PORT', 'dev'],
   ['MCS_BUILD_ID', 'dev'],
+  ['MCS_CI_JOB', 'dev'],
+  ['MCS_CI_OS', 'dev'],
+  ['MCS_CI_ARCH', 'dev'],
+  ['MCS_CI_NODE', 'dev'],
+  ['MCS_CI_JOB_STATUS', 'dev'],
 ];
 
 describe('DOCUMENTED_ENV_VARS', () => {

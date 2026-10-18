@@ -87,10 +87,14 @@
       "maximum": 65535
     },
     "engine": {
-      "type": "string",
-      "enum": [
-        "node",
-        "legacy"
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "node"
+        },
+        {
+          "type": "null"
+        }
       ]
     }
   },

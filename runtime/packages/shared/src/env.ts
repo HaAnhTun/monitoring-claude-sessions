@@ -16,6 +16,7 @@ export interface DocumentedEnvVar {
 }
 
 const TEST_HOOKS = 'runtime/packages/engine/src/runtime/test-hooks.ts';
+const CI_STATUS = 'runtime/scripts/ci-status.mjs';
 
 export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_LOG_LEVEL', scope: 'runtime', readers: ['runtime/packages/engine/src/config/resolve.ts'] },
@@ -61,4 +62,10 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_WEB_DEV_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_WEB_PREVIEW_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_BUILD_ID', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
+  // The CI job record of `ci-status.mjs summarize` (WP-88): set by the workflow of each matrix job, read only there.
+  { name: 'MCS_CI_JOB', scope: 'dev', readers: [CI_STATUS] },
+  { name: 'MCS_CI_OS', scope: 'dev', readers: [CI_STATUS] },
+  { name: 'MCS_CI_ARCH', scope: 'dev', readers: [CI_STATUS] },
+  { name: 'MCS_CI_NODE', scope: 'dev', readers: [CI_STATUS] },
+  { name: 'MCS_CI_JOB_STATUS', scope: 'dev', readers: [CI_STATUS] },
 ];

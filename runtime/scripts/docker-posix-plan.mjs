@@ -120,6 +120,9 @@ export function buildArgs(target, platform) {
   return ['build', '--label', HARNESS_LABEL, '--platform', `linux/${platform}`, '-t', imageTag(target, platform), '-'];
 }
 
+/** Budget multiplier of the performance tests on arm64: the image runs under QEMU emulation on an amd64 host. */
+export const EMULATED_PERF_FACTOR = 8;
+
 /** Argument list of one target run. No volume, mount, port, host network, pid namespace or privilege flag, ever. */
 export function runArgs({ runId, target, platform, quick, bundle, keep }) {
   return [
@@ -145,6 +148,7 @@ export function runArgs({ runId, target, platform, quick, bundle, keep }) {
     'TZ=UTC',
     '-e',
     'MCS_HOOK_DISABLE=1',
+    ...(platform === 'arm64' ? ['-e', `MCS_PERF_FACTOR=${EMULATED_PERF_FACTOR}`] : []),
     imageTag(target, platform),
     'sh',
     '-c',
