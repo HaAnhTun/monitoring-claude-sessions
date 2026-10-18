@@ -1,6 +1,6 @@
 # 0040 npm workspaces with a `@mcs/source` export condition; tsc builds, sources everywhere else
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: tooling design (`docs/design/05-tooling-testing-security.md` sections 2.1-2.4).
+Status: Amended by 0063 (proposed Phase 1, 2026-10-11). Owner: tooling design (`docs/design/05-tooling-testing-security.md` sections 2.1-2.4).
 
 ## Context
 D1 fixes a `runtime/` workspace with packages shared, engine, server, cli, web. Type-checking, tests, dev mode and the Vite build all need

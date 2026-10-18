@@ -1,6 +1,6 @@
 # 0044 Cross-engine parity: the Python engine is the oracle (live dual-run and normalised goldens)
 
-Status: Proposed (Phase 1, 2026-10-11; revised the same day after the design review, critic issue I-09). Owner: tooling design (05
+Status: Superseded by 0066 (proposed Phase 1, 2026-10-11; revised the same day after the design review, critic issue I-09). Owner: tooling design (05
 section 4.11) for the Node side; the capture engine is ADR 0053 (design 06 section 5.2). Closes foundations open question 6 for the
 capture procedure and the latent-defect list together with ADR 0053 and ADR 0055.
 

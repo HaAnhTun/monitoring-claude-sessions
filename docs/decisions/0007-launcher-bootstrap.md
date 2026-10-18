@@ -1,6 +1,6 @@
 # 0007 Launcher `scripts/mcs.mjs`: stamp check, serialized bootstrap, in-process CLI
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` section 5.1).
+Status: Amended by 0062 and 0064 (proposed Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` section 5.1).
 Stamp formats and hash inputs: `docs/design/05-tooling-testing-security.md` (scaffold `runtime/scripts/build-stamp.mjs`).
 
 ## Context

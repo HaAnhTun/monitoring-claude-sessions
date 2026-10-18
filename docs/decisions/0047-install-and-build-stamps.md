@@ -1,6 +1,6 @@
 # 0047 Separate install and build stamps shared by the build and the launcher
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: tooling design (05 section 3.3); consumer: launcher `scripts/mcs.mjs` (design 01).
+Status: Amended by 0062 (proposed Phase 1, 2026-10-11). Owner: tooling design (05 section 3.3); consumer: launcher `scripts/mcs.mjs` (design 01).
 
 ## Context
 D6: the launcher runs `npm ci` + build once when `dist` is missing or stale (stamp of lockfile + sources). `npm ci` takes 7-16 s; a build

@@ -1,6 +1,6 @@
 # 0021 Forward-only, checksummed SQL migrations, applied explicitly after a verified backup; a newer DB is refused
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: data/API design (`docs/design/03-data-api-realtime.md` section 4). Consumers:
+Status: Amended by 0064 (proposed Phase 1, 2026-10-11). Owner: data/API design (`docs/design/03-data-api-realtime.md` section 4). Consumers:
 `01-instances-config-ops.md` 4.4, 4.7, 5.4.
 
 ## Context

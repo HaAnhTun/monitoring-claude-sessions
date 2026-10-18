@@ -1,6 +1,6 @@
 # 0002 Python-syntax regexes translated to JavaScript `v`-mode, accepted only when exact
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` section 2.8).
+Status: Amended by 0067 (proposed Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` section 2.8).
 
 ## Context
 `config.json` stores Python-syntax regexes (`session_rules[].match`, `attempts.start/end`) shared with the legacy engine (D5). The live

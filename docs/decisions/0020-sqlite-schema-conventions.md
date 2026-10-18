@@ -1,6 +1,6 @@
 # 0020 SQLite schema conventions: STRICT tables, epoch-ms time, owner-only foreign keys, enum CHECK policy, incremental auto-vacuum
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: data/API design (`docs/design/03-data-api-realtime.md` sections 3.2-3.5).
+Status: Amended by 0064 (proposed Phase 1, 2026-10-11). Owner: data/API design (`docs/design/03-data-api-realtime.md` sections 3.2-3.5).
 
 ## Context
 D10 fixes SQLite in WAL mode with foreign keys, one writer per instance and epoch-ms timestamps. The schema must be safe (constraints

@@ -1,6 +1,6 @@
 # 0039 Web build and serve: Vite base `/`, hashed assets, external pre-paint script, strict CSP, bundle budget, axe-core
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: UI design (`docs/design/04-ui.md` sections 11.4, 12).
+Status: Amended by 0063 (proposed Phase 1, 2026-10-11). Owner: UI design (`docs/design/04-ui.md` sections 11.4, 12).
 
 ## Context
 The server (`packages/server`) hosts the built SPA from `packages/web/dist` (D1). The page must load nothing from the network except

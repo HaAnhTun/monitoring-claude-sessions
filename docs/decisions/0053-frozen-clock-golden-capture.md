@@ -1,6 +1,6 @@
 # ADR 0053: Legacy goldens captured in-process under a frozen clock, stored raw, with a drift check
 
-Status: Proposed (Phase 1, 2026-10-11; amended after the critic review, issue I-09). Design reference:
+Status: Superseded by 0066 (proposed Phase 1, 2026-10-11; amended after the critic review, issue I-09). Design reference:
 `docs/design/06-panels-parity-platform.md` section 5.2. Relationship with ADR 0044 / design 05 4.11.4: this is the single golden-capture
 procedure; 05 adopts it, keeping its command `npm run parity:capture` (a wrapper), live mode and test-time projections, and dropping the
 10 s age buckets.

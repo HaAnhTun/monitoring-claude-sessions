@@ -1,6 +1,6 @@
 # 0049 Documentation layout: lowercase-kebab docs, legacy docs in `docs/legacy/`, AI-readable rules
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: documentation plan (05 section 6).
+Status: Amended by 0061 (proposed Phase 1, 2026-10-11). Owner: documentation plan (05 section 6).
 
 ## Context
 The brief (section 15) names upper-case files (`docs/ARCHITECTURE.md`, ...) and allows adapting names to the repository convention. The

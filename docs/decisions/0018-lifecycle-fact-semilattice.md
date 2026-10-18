@@ -1,6 +1,6 @@
 # ADR 0018: Lifecycle as a fact semilattice with priority decision tables
 
-Status: Proposed (Phase 1 design, 2026-10-11). Answers foundations open question 1. Design reference: section 7.
+Status: Amended by 0069 (proposed Phase 1 design, 2026-10-11). Answers foundations open question 1. Design reference: section 7.
 
 ## Context
 

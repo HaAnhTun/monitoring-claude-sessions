@@ -1,6 +1,6 @@
 # ADR 0055: Latent legacy defects: an explicit fix-or-reproduce table, asserted by parity tests
 
-Status: Proposed (Phase 1, 2026-10-11). Design reference: `docs/design/06-panels-parity-platform.md` section 5.8 (D1-D35). Maps design
+Status: Amended by 0066 (proposed Phase 1, 2026-10-11). Design reference: `docs/design/06-panels-parity-platform.md` section 5.8 (D1-D35). Maps design
 05's PD1-PD7: PD1 = D1, PD2 = D2, PD3 = D3, PD4 = D4, PD5 = D5, PD6 = D6 + D7 + D20 + D22, PD7 = D18.
 
 ## Context

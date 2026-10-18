@@ -1,6 +1,6 @@
 # ADR 0054: The TypeScript testkit reproduces the legacy fixture trees byte for byte
 
-Status: Proposed (Phase 1, 2026-10-11). Design reference: `docs/design/06-panels-parity-platform.md` sections 5.3, 6.2.
+Status: Superseded by 0066 (proposed Phase 1, 2026-10-11). Design reference: `docs/design/06-panels-parity-platform.md` sections 5.3, 6.2.
 
 ## Context
 Parity tests must run without Python in CI, yet sizes, byte offsets, `events_skipped_bytes` and `scanned_pct` depend on the exact bytes

@@ -1,6 +1,6 @@
 # 0006 Process identity before any kill: control-channel identity first, command-line marker as fallback
 
-Status: Proposed (Phase 1, 2026-10-11; revision 3 adopts design 06's `forceKill`). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` sections 4.1, 4.2, 4.8, 4.9).
+Status: Amended by 0062 (proposed Phase 1, 2026-10-11; revision 3 adopts design 06's `forceKill`). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` sections 4.1, 4.2, 4.8, 4.9).
 
 ## Context
 D12 requires `stop` to verify the pid's command line before killing (pids are reused; the legacy CLI checks for `viewer.py`). On this

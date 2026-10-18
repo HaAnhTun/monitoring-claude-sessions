@@ -1,6 +1,6 @@
 # 0003 Python-compatible JSON reader/writer for shared workspace files
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` section 1.9).
+Status: Amended by 0067 (proposed Phase 1, 2026-10-11). Owner: instances/config/ops design (`docs/design/01-instances-config-ops.md` section 1.9).
 
 ## Context
 Both engines rewrite `config.json` and write audit summaries. The legacy engine uses `json.load` and `json.dump(indent=2,

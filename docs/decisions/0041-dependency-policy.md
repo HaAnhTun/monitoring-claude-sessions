@@ -1,6 +1,6 @@
 # 0041 Dependency policy: exact pins, ignore-scripts, check-deps gate, avoid list
 
-Status: Proposed (Phase 1, 2026-10-11). Owner: tooling design (05 sections 2.2, 2.5, 3.2, 5.3 S-DEP).
+Status: Amended by 0063 and 0064 (proposed Phase 1, 2026-10-11). Owner: tooling design (05 sections 2.2, 2.5, 3.2, 5.3 S-DEP).
 
 ## Context
 The runtime processes sensitive transcripts on the user's machine and is installed by the launcher with `npm ci`. With npm workspaces,

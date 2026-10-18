@@ -1,6 +1,6 @@
 # ADR 0056: Cutover gates before the Node engine becomes primary; Python stays the documented fallback
 
-Status: Proposed (Phase 1, 2026-10-11). Design reference: `docs/design/06-panels-parity-platform.md` section 5.9.
+Status: Superseded by 0066 (proposed Phase 1, 2026-10-11). Design reference: `docs/design/06-panels-parity-platform.md` section 5.9.
 
 ## Context
 A live monitor runs on the legacy engine and SKILL.md tells agents to call `template/viewer.py`. The brief requires a fallback until the
