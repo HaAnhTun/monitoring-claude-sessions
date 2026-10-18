@@ -6556,8 +6556,6 @@ const CLI_ERROR_CODES = [
 	"IDENTITY_MISMATCH",
 	"INSTANCE_RUNNING",
 	"INSTANCE_NOT_RUNNING",
-	"ENGINE_CONFLICT",
-	"LEGACY_ENGINE_UNAVAILABLE",
 	"START_FAILED",
 	"START_TIMEOUT",
 	"PORT_EXHAUSTED",
@@ -6635,8 +6633,8 @@ const InstanceFileSchema = strictObject({
 	runtimeVersion: Semver,
 	/** Mirror of the DB value after the last upgrade; 0 = no DB yet; the DB is authoritative. */
 	dbSchemaVersion: number$1().int().min(0),
-	/** Which engine `mcs start` launches (01 6.5). */
-	engine: _enum(["node", "legacy"]),
+	/** Written by this runtime; the Node runtime is the only engine (ADR 0066). */
+	engine: literal("node"),
 	/** Whether the hook handler routes to this instance. */
 	hooks: strictObject({ enabled: boolean() }),
 	upgradedAt: IsoSecondsZ.nullable()
@@ -6666,8 +6664,6 @@ const StateFileSchema = object({
 		message: "node state needs instanceId, codeStamp, runtimeVersion"
 	});
 });
-/** A state file without `engine: 'node'` is a legacy file. */
-const stateEngine = (s) => s.engine === "node" ? "node" : "legacy";
 
 //#endregion
 //#region packages/shared/src/config/runtime/section.ts
@@ -7279,7 +7275,8 @@ const ConfigInspectionSchema = strictObject({
 	entries: array(ConfigInspectionEntrySchema),
 	files: array(ConfigFileStatusSchema),
 	effectivePort: number$1().int().min(1).max(65535),
-	engine: _enum(["node", "legacy"])
+	/** `null` for a workspace without `instance.json` (a pre-4.0 workspace). */
+	engine: literal("node").nullable()
 });
 const R_TOP$1 = new Set(R_TOP_KEYS);
 function isRecord$1(value) {
@@ -12427,10 +12424,6 @@ const real = createProcessHelpers({
 function pidAlive(pid) {
 	return real.pidAlive(pid);
 }
-/** The command line of a process, or null when unknown (gone, access denied, lookup failed). Cached 5 s per pid. */
-function commandLineOf(pid) {
-	return real.commandLineOf(pid);
-}
 
 //#endregion
 //#region packages/engine/src/platform/paths.ts
@@ -12926,7 +12919,6 @@ const BUNDLE_SERVER_ENTRY = `/${BUNDLE_SERVER_FILE}`;
 const RUNTIME_ENTRIES = [RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY];
 const INSTANCE_TOKEN = "--mcs-instance=";
 const DIR_TOKEN = "--instance-dir=";
-const LEGACY_MARKER = "viewer.py";
 const PID_RE = /^[1-9][0-9]{0,9}$/;
 const LIST_TIMEOUT_MS = 2e4;
 const LIST_MAX_OUTPUT_BYTES = 1048576;
@@ -12971,10 +12963,6 @@ function splitCommandLine(commandLine) {
 function normalize(text, caseInsensitive) {
 	const slashed = text.replaceAll("\\", "/");
 	return caseInsensitive ? slashed.toLowerCase() : slashed;
-}
-/** True when `commandLine` mentions `viewer.py`: the legacy rule of `cli.py` (a legacy viewer may be stopped). */
-function hasLegacyMarker(commandLine) {
-	return commandLine.includes(LEGACY_MARKER);
 }
 /** The instance id and the instance directory a runtime command line carries (first occurrence wins). */
 function parseRuntimeCommandLine(commandLine) {
@@ -13704,6 +13692,7 @@ function undoQuietly(raw, statements) {
 function openSqlite(path, opts) {
 	const { DatabaseSync: Database, backup } = loadSqlite();
 	if (opts.fileMustExist && !opts.readonly && path !== ":memory:" && !existsSync(path)) throw fromErrcode(14);
+	if (path !== ":memory:" && statSync(path, { throwIfNoEntry: false })?.isDirectory() === true) throw fromErrcode(14);
 	const raw = guard(() => new Database(path, {
 		readOnly: opts.readonly,
 		timeout: opts.timeoutMs
@@ -32097,7 +32086,7 @@ function recordOf$1(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : null;
 }
 const DEFAULT_TIMEOUT_MS = 2e3;
-const LEGACY_HEALTH_TIMEOUT_MS = 3e3;
+const UNMANAGED_HEALTH_TIMEOUT_MS = 3e3;
 const STATE_FILE_MAX_BYTES$1 = 65536;
 /** `state.json` as it is: the parsed file and its bytes, or nothing for a missing, damaged or foreign-shaped file. */
 async function readStateSnapshot(ws) {
@@ -32126,7 +32115,7 @@ async function readStateSnapshot(ws) {
 		};
 	}
 }
-/** `instance.json`, or `null` for a legacy workspace and for one whose identity cannot be read (the callers say why). */
+/** `instance.json`, or `null` for a pre-4.0 workspace and for one whose identity cannot be read (the callers say why). */
 async function readInstanceId(ws) {
 	try {
 		return (await readInstanceFile(ws))?.instanceId ?? null;
@@ -32199,10 +32188,10 @@ function createProbe(deps) {
 			}
 		}
 		if (stateFile === null) return fromState("stopped", null, "there is no usable state file");
-		if (stateEngine(stateFile) === "node") return deps.pidAlive(stateFile.pid) ? fromState("foreign-pid", "node", "the control channel is free but the pid of the state file is alive") : fromState("stale", "node", "the pid of the state file is gone");
-		if (!deps.pidAlive(stateFile.pid)) return fromState("legacy-stale", "legacy", "the pid of the state file is gone");
-		const health = await deps.httpGet(`${stateFile.url}/api/health`, { timeoutMs: LEGACY_HEALTH_TIMEOUT_MS });
-		return (health.ok && health.reply.status === 200 ? recordOf$1(jsonBodyOf(health.reply)) : null)?.["pid"] === stateFile.pid ? fromState("legacy-running", "legacy", "the legacy viewer answers /api/health with the pid of the state file") : fromState("legacy-stale", "legacy", "the pid of the state file does not answer /api/health as that pid");
+		if (stateFile.engine === "node") return deps.pidAlive(stateFile.pid) ? fromState("foreign-pid", "node", "the control channel is free but the pid of the state file is alive") : fromState("stale", "node", "the pid of the state file is gone");
+		if (!deps.pidAlive(stateFile.pid)) return fromState("stale", null, "the pid of the state file is gone");
+		const health = await deps.httpGet(`${stateFile.url}/api/health`, { timeoutMs: UNMANAGED_HEALTH_TIMEOUT_MS });
+		return (health.ok && health.reply.status === 200 ? recordOf$1(jsonBodyOf(health.reply)) : null)?.["pid"] === stateFile.pid ? fromState("unmanaged-running", null, "a monitor that this runtime did not start answers /api/health with the pid of the state file") : fromState("foreign-pid", null, "the pid of the state file is alive but does not answer /api/health as that pid");
 	};
 }
 /** 01 4.8 step 2: the state file when it is ours, else one listing of the runtime processes, else nobody. */
@@ -32234,8 +32223,8 @@ const realProbe = createProbe({
 	listRuntimeProcesses
 });
 /**
-* Classifies the instance of `ws` (01 4.8): `running`, `starting`, `stopping`, `unhealthy`, `stopped`, `stale`, `foreign-pid`,
-* `legacy-running` or `legacy-stale`. Fast path first: a control-channel round trip (about 60 ms) and one HTTP request; no
+* Classifies the instance of `ws` (01 4.8): `running`, `starting`, `stopping`, `unhealthy`, `stopped`, `stale`, `foreign-pid`
+* or `unmanaged-running`. Fast path first: a control-channel round trip (about 60 ms) and one HTTP request; no
 * PowerShell unless a hung runtime has to be found. Never throws for a state of the workspace.
 */
 function probeInstance(ws, o) {
@@ -63451,9 +63440,7 @@ function writeStateFile(file, built) {
 }
 const REAL_DEPS = {
 	selfPid: process.pid,
-	pidAlive,
-	commandLineOf,
-	hasLegacyMarker
+	pidAlive
 };
 function parseState(bytes) {
 	try {
@@ -63464,10 +63451,8 @@ function parseState(bytes) {
 	}
 }
 /**
-* Looks at `state.json` before this process writes its own. A live process is a conflict only when its command line carries
-* the legacy marker (`viewer.py`, 01 4.1): a pid alone proves nothing (INV-04), and Windows reuses pids quickly, so a stranger
-* that holds the pid of a run that crashed must not block the start. A command line that cannot be read is treated as a
-* stranger for the same reason.
+* Looks at `state.json` before this process writes its own. A live pid proves nothing (INV-04), and Windows reuses pids
+* quickly, so a stranger that holds the pid of a run that crashed must not block the start: it is `foreign_pid`.
 */
 async function readExistingState(file, deps = {}) {
 	const d = {
@@ -63496,11 +63481,6 @@ async function readExistingState(file, deps = {}) {
 	if (!d.pidAlive(state.pid)) return {
 		kind: "stale",
 		reason: "dead_pid"
-	};
-	const commandLine = await d.commandLineOf(state.pid);
-	if (commandLine !== null && d.hasLegacyMarker(commandLine)) return {
-		kind: "conflict",
-		pid: state.pid
 	};
 	return {
 		kind: "stale",
@@ -64128,11 +64108,8 @@ async function bootServer(input) {
 			nodeVersion: process.version,
 			control: address
 		});
-		if (existing.kind === "conflict") ctx.logger.warn("ownership_conflict", { pid: existing.pid });
-		else {
-			await writeStateFile(path.join(ctx.instanceDir, STATE_FILE_NAME), res.state);
-			res.stateWritten = true;
-		}
+		await writeStateFile(path.join(ctx.instanceDir, STATE_FILE_NAME), res.state);
+		res.stateWritten = true;
 		await runtime.start();
 		ready = true;
 		ctx.logger.info("runtime_ready", {

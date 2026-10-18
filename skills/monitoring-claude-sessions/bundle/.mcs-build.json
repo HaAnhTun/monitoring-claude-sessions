@@ -1,80 +1,80 @@
 {
   "schemaVersion": 1,
-  "runtimeVersion": "3.0.0",
-  "buildStamp": "76462d0177924f859298a240adea00ec6e2fabcf0b8bb348ee188ae2b6bc53ed",
-  "codeStamp": "76462d0177",
+  "runtimeVersion": "4.0.0",
+  "buildStamp": "63f2321c3eaf9b37bdfc2fcba7032d7f493dae982c8679e69e43e98d42a92592",
+  "codeStamp": "63f2321c3e",
   "files": {
     "THIRD-PARTY-NOTICES.txt": {
       "bytes": 93524,
       "sha256": "6d8d5b9669095a6e146559a2ca95dfd89eae2732b0d3f3e7570c18f34e3b111b"
     },
     "mcs-cli.mjs": {
-      "bytes": 1428603,
-      "sha256": "01c6e1fa4bdb04ab6eda8b60d32b7fc9c4950407848df434acaeb29bc36daaf4"
+      "bytes": 1423660,
+      "sha256": "293ef0ca0d34af8aba97ebae849b1136aa76104c0c19638d81000518f6cac90b"
     },
     "mcs-hook.mjs": {
       "bytes": 57828,
       "sha256": "b732c6d6c462215f0f6aee5e9c85bc7385c6975be29c185c67cb7bcd9636d125"
     },
     "mcs-server.mjs": {
-      "bytes": 2096440,
-      "sha256": "3f2d8c8842e2ae93244bff8f94dd9fa247aa18626327bfa51c276195d2f24490"
+      "bytes": 2095581,
+      "sha256": "21cf903cc92955e25e693919705a4ce8415e5c3a72607da3b6dabd88c7e219aa"
     },
     "migrations/0001_initial.sql": {
       "bytes": 44602,
       "sha256": "46f37fde62d11692f355e178419ee52d9d70ae8910d53e42cc0435f4f6b05da3"
     },
-    "web/assets/AppShell-CHfrxJLH.js": {
+    "web/assets/AppShell-C4xK4CnE.js": {
       "bytes": 22568,
-      "sha256": "36457a4d17fe2dc3cb381138d48a6bd534f703614f897089b329c8818a57f4a2"
+      "sha256": "affa83f7c7e04f861f72175ef2b025437826943b529d5c7c1f438895b734ab18"
     },
     "web/assets/LegacyHashRedirect-DQaYTgGH.js": {
       "bytes": 711,
       "sha256": "43dba7f9cb29bc0e5cffad90a96f7fc2459568daf5c20773cf5c2129c8ddd98b"
     },
-    "web/assets/SessionDetailPage-BWYqLhHq.js": {
+    "web/assets/SessionDetailPage-CJz_lOEX.js": {
       "bytes": 56554,
-      "sha256": "75cbfa1b65e12f279e0823ab300dc84c6a51610f982e5d573670c51300b7ddce"
+      "sha256": "31d891e2af3516ec88ab38049a01d4f5e88dfae9cb6d3ef749889e4ee1645b24"
     },
-    "web/assets/SessionExplorerPage-BdtNgXp8.js": {
+    "web/assets/SessionExplorerPage-DffcV08a.js": {
       "bytes": 10789,
-      "sha256": "70b32dbc1f1042049a38335ea6751df83fd885581650030f0fc6514d0475f3a7"
+      "sha256": "e668a93e83a6ad4ac7ab081ef8586730533c3bd0e9bd486558fc321075b8555f"
     },
-    "web/assets/TokenLine-DU4iMFDJ.js": {
+    "web/assets/TokenLine-CwenFaCO.js": {
       "bytes": 11798,
-      "sha256": "a7b9eb4a3583bcb279cc5ba183d668a1f0385b96f252fe753d9e7dba86324fa5"
+      "sha256": "ffa658c8046e4adb5081747b19dde0dda68ea7390cfcf6b7e77f94d2cb01a243"
     },
     "web/assets/hooks-B0OgSMP_.js": {
       "bytes": 29706,
       "sha256": "567cdb190789d416d18c27f61bcd71fcd2d68db4a67e20a8986d50a42e6b4216"
     },
-    "web/assets/index-B28LF3wR.js": {
-      "bytes": 455468,
-      "sha256": "947312440238f2cbf767ed6645046214c5f902aa405168003b7827ba9fc6ffdb"
+    "web/assets/index-BYuvqXKe.js": {
+      "bytes": 455469,
+      "sha256": "fae74474f9fb7fc2a8530ceb9d2acc2d729bb821be99a51630efbfaa5fd0f2ee"
     },
     "web/assets/index-BfFAwmp6.css": {
       "bytes": 25524,
       "sha256": "4b659909062d2254a0d6a0f97dcb97f5fd953e6d660af783ad5ae611ff729e61"
     },
-    "web/assets/lifecycle-display-R5VWlTAf.js": {
+    "web/assets/lifecycle-display-0VVT9ySK.js": {
       "bytes": 11635,
-      "sha256": "c30a764882e9f6614e9baf0845135126216d90b6ecbe431d3bf54c15ac9a28d5"
+      "sha256": "a95ff87c954bb62dd595277f74c8af09af8871186350756aac817588617460b9"
     },
     "web/assets/prefs-CCN80sbe.js": {
       "bytes": 1683,
       "sha256": "2e8109f0e9a9155cb9fbcf04d3a557167457f808d3445729934dea135b180b57"
     },
-    "web/assets/sessions-view-CB6EVMhR.js": {
+    "web/assets/sessions-view-fCxxS2vd.js": {
       "bytes": 2987,
-      "sha256": "198e2775a9af161071397818e437d03bd52e232730f2a3dc7e54fc5bb4227f8c"
+      "sha256": "67fc4b7ca50d102a59f8ffed8879736419a2067be69352c627724c282db46c19"
     },
-    "web/assets/useSessions-fkO6Sm4I.js": {
+    "web/assets/useSessions-ecVMGNVT.js": {
       "bytes": 1038,
-      "sha256": "af0c95969110831b3be5919596810a2de5fc8e4a92f18d92af1900ff8441104c"
+      "sha256": "dde1a2efc32bd58a89da37ad3f1d674ab8622b3bf30804ca160c46dd750d4742"
     },
     "web/index.html": {
       "bytes": 661,
-      "sha256": "7750098776f47b1f216ca86dfe94730fcdd5b41f12a3eafb5f478ebce0591e44"
+      "sha256": "d54c9523173c1e9c9c8245bd7d1639ff56ca5e73246a93ad101a2d8b30794a3b"
     },
     "web/theme-init.js": {
       "bytes": 956,

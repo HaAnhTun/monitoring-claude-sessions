@@ -3,7 +3,7 @@
 Verified on Claude Code 2.1.289 / 2.1.296, Windows, 2026-10-11. These are internal formats and can change: parse defensively.
 
 ## Where
-- Session: `~/.claude/projects/<project>/<sessionId>.jsonl`. `<project>` is the repo path with every non-alphanumeric character replaced by `-` (here `d--mvp`, lowercase on this machine; the viewer also matches by the recorded `cwd`).
+- Session: `~/.claude/projects/<project>/<sessionId>.jsonl`. `<project>` is the repo path with every non-alphanumeric character replaced by `-` (here `d--work`, lowercase on this machine; the viewer also matches by the recorded `cwd`).
 - Subagents and workflows of a session: `<sessionId>/subagents/**/agent-<id>.jsonl` (+ `agent-<id>.meta.json` with label and model), `<sessionId>/workflows/<wf>.json` (`workflowName`, `status`, `agentCount`, `durationMs`).
 - Live registry: `~/.claude/sessions/<pid>.json` has `status` (`busy`/`idle`), `kind` (`interactive`/`bg`), `entrypoint`, `name`, `updatedAt` for interactive and background sessions. **Unattended `claude -p` runs are not listed there** (checked: a running `-p` session had no file). Never read the `.key` files.
 - `claude agents` is reported to list only interactive and daemon sessions (not checked); `~/.claude/jobs/` exists only for daemon (`--bg`) sessions.

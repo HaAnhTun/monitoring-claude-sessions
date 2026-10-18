@@ -1,6 +1,6 @@
 {
   "name": "@mcs/cli",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -17,10 +17,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@mcs/engine": "3.0.0",
-    "@mcs/shared": "3.0.0"
+    "@mcs/engine": "4.0.0",
+    "@mcs/shared": "4.0.0"
   },
   "devDependencies": {
-    "@mcs/testkit": "3.0.0"
+    "@mcs/testkit": "4.0.0"
   }
 }

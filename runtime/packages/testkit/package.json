@@ -1,6 +1,6 @@
 {
   "name": "@mcs/testkit",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "description": "Test-only fixture builders and helpers. Every artefact it writes is a labelled synthetic fixture.",
   "type": "module",
@@ -20,6 +20,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@mcs/shared": "3.0.0"
+    "@mcs/shared": "4.0.0"
   }
 }

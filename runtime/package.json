@@ -1,6 +1,6 @@
 {
   "name": "@mcs/runtime",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "description": "Runtime workspace of the monitoring-claude-sessions skill (engine, server, CLI, web UI).",
   "license": "UNLICENSED",

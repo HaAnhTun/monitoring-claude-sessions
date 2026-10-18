@@ -6766,8 +6766,6 @@ var init_errors$4 = __esmMin((() => {
 		"IDENTITY_MISMATCH",
 		"INSTANCE_RUNNING",
 		"INSTANCE_NOT_RUNNING",
-		"ENGINE_CONFLICT",
-		"LEGACY_ENGINE_UNAVAILABLE",
 		"START_FAILED",
 		"START_TIMEOUT",
 		"PORT_EXHAUSTED",
@@ -6857,8 +6855,8 @@ var init_instance = __esmMin((() => {
 		runtimeVersion: Semver,
 		/** Mirror of the DB value after the last upgrade; 0 = no DB yet; the DB is authoritative. */
 		dbSchemaVersion: number$1().int().min(0),
-		/** Which engine `mcs start` launches (01 6.5). */
-		engine: _enum(["node", "legacy"]),
+		/** Written by this runtime; the Node runtime is the only engine (ADR 0066). */
+		engine: literal$1("node"),
 		/** Whether the hook handler routes to this instance. */
 		hooks: strictObject({ enabled: boolean() }),
 		upgradedAt: IsoSecondsZ.nullable()
@@ -6867,7 +6865,7 @@ var init_instance = __esmMin((() => {
 
 //#endregion
 //#region packages/shared/src/files/state.ts
-var StateFileSchema, stateEngine;
+var StateFileSchema;
 var init_state = __esmMin((() => {
 	init_zod();
 	init_ids$1();
@@ -6893,7 +6891,6 @@ var init_state = __esmMin((() => {
 			message: "node state needs instanceId, codeStamp, runtimeVersion"
 		});
 	});
-	stateEngine = (s) => s.engine === "node" ? "node" : "legacy";
 }));
 
 //#endregion
@@ -7768,7 +7765,8 @@ var init_results = __esmMin((() => {
 		entries: array(ConfigInspectionEntrySchema),
 		files: array(ConfigFileStatusSchema),
 		effectivePort: number$1().int().min(1).max(65535),
-		engine: _enum(["node", "legacy"])
+		/** `null` for a workspace without `instance.json` (a pre-4.0 workspace). */
+		engine: literal$1("node").nullable()
 	});
 	R_TOP$1 = new Set(R_TOP_KEYS);
 	InstanceRowSchema = strictObject({
@@ -14132,10 +14130,6 @@ function matchRuntimeMarker(commandLine, instanceId, caseInsensitive) {
 function hasRuntimeMarker(commandLine, instanceId) {
 	return matchRuntimeMarker(commandLine, instanceId, pathsCaseInsensitive);
 }
-/** True when `commandLine` mentions `viewer.py`: the legacy rule of `cli.py` (a legacy viewer may be stopped). */
-function hasLegacyMarker(commandLine) {
-	return commandLine.includes(LEGACY_MARKER);
-}
 /** The instance id and the instance directory a runtime command line carries (first occurrence wins). */
 function parseRuntimeCommandLine(commandLine) {
 	const tokens = splitCommandLine(commandLine);
@@ -14285,7 +14279,7 @@ async function scanProcFs() {
 function listRuntimeProcesses(runtimeDir) {
 	return realLister(runtimeDir);
 }
-var RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY, RUNTIME_ENTRIES, INSTANCE_TOKEN, DIR_TOKEN, LEGACY_MARKER, PID_RE, LIST_TIMEOUT_MS, LIST_MAX_OUTPUT_BYTES, RECORD_RE, LIST_RUNTIME_END, LIST_RUNTIME_SCRIPT, realLister;
+var RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY, RUNTIME_ENTRIES, INSTANCE_TOKEN, DIR_TOKEN, PID_RE, LIST_TIMEOUT_MS, LIST_MAX_OUTPUT_BYTES, RECORD_RE, LIST_RUNTIME_END, LIST_RUNTIME_SCRIPT, realLister;
 var init_markers = __esmMin((() => {
 	init_src$1();
 	init_exec();
@@ -14298,7 +14292,6 @@ var init_markers = __esmMin((() => {
 	RUNTIME_ENTRIES = [RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY];
 	INSTANCE_TOKEN = "--mcs-instance=";
 	DIR_TOKEN = "--instance-dir=";
-	LEGACY_MARKER = "viewer.py";
 	PID_RE = /^[1-9][0-9]{0,9}$/;
 	LIST_TIMEOUT_MS = 2e4;
 	LIST_MAX_OUTPUT_BYTES = 1048576;
@@ -14913,6 +14906,7 @@ function undoQuietly(raw, statements) {
 function openSqlite(path, opts) {
 	const { DatabaseSync: Database, backup } = loadSqlite();
 	if (opts.fileMustExist && !opts.readonly && path !== ":memory:" && !existsSync(path)) throw fromErrcode(14);
+	if (path !== ":memory:" && statSync(path, { throwIfNoEntry: false })?.isDirectory() === true) throw fromErrcode(14);
 	const raw = guard(() => new Database(path, {
 		readOnly: opts.readonly,
 		timeout: opts.timeoutMs
@@ -17276,7 +17270,7 @@ function newInstanceFile(slug, o) {
 		createdBy: `mcs ${runtimeVersion}`,
 		runtimeVersion,
 		dbSchemaVersion: 0,
-		engine: o.engine ?? "node",
+		engine: "node",
 		hooks: { enabled: false },
 		upgradedAt: null
 	};
@@ -17396,7 +17390,6 @@ function adoptWorkspace(ws, o = {}) {
 		const nowMs = (o.clock ?? systemClock).now();
 		const instance = newInstanceFile(ws.slug, {
 			nowMs,
-			...o.engine === void 0 ? {} : { engine: o.engine },
 			...o.newId === void 0 ? {} : { instanceId: o.newId() }
 		});
 		for (const folder of [
@@ -17735,7 +17728,6 @@ async function buildStaging(ws, staging, request, o, clock) {
 	const nowMs = clock.now();
 	const instance = newInstanceFile(ws.slug, {
 		nowMs,
-		...o.engine === void 0 ? {} : { engine: o.engine },
 		...o.newId === void 0 ? {} : { instanceId: o.newId() }
 	});
 	await mkdir(staging);
@@ -17836,7 +17828,6 @@ async function reuse(ws, request, o, clock) {
 	}
 	const adoption = await adoptWorkspace(ws, {
 		clock,
-		...o.engine === void 0 ? {} : { engine: o.engine },
 		...o.newId === void 0 ? {} : { newId: o.newId }
 	});
 	return {
@@ -17925,7 +17916,7 @@ var init_init$1 = __esmMin((() => {
 			end: string()
 		}).nullable().default(null)
 	});
-	README_NOTES = "- `task.json` identity, `config.json` overrides of the shared defaults (shared with the legacy engine), `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n";
+	README_NOTES = "- `task.json` identity, `config.json` overrides of the shared defaults, `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n";
 }));
 
 //#endregion
@@ -18113,7 +18104,7 @@ async function quickProbe(ws) {
 		url: null
 	};
 	if (!pidAlive(state.pid)) return {
-		state: stateEngine(state) === "node" ? "stale" : "legacy-stale",
+		state: "stale",
 		pid: state.pid,
 		url: state.url
 	};
@@ -18145,7 +18136,6 @@ async function init(ctx, input, deps = {}) {
 		...input.description === void 0 ? {} : { description: input.description },
 		...input.port === void 0 ? {} : { port: input.port },
 		...input.seedConfig === void 0 ? {} : { seedConfig: input.seedConfig },
-		...input.engine === void 0 ? {} : { engine: input.engine },
 		clock: ctx.clock,
 		...deps.beforeRename === void 0 ? {} : { beforeRename: deps.beforeRename }
 	});
@@ -18246,9 +18236,6 @@ async function discover(ctx, deps = {}) {
 	const buildStatus = deps.buildStatus;
 	const build = buildStatus === void 0 ? "unknown" : await optionalPiece(ctx, "build", buildStatus, "unknown");
 	lines.push(`runtime: mcs ${RUNTIME_VERSION} (build ${build})`);
-	const legacyEngine = deps.legacyEngine;
-	const legacy = legacyEngine === void 0 ? null : await optionalPiece(ctx, "legacy-engine", legacyEngine, null);
-	lines.push(legacy === null ? "legacy engine: not found" : `legacy engine: python ${legacy.version} at ${legacy.exe}`);
 	const hooksSummary = deps.hooksSummary;
 	const hooks = hooksSummary === void 0 ? null : await optionalPiece(ctx, "hooks", hooksSummary, null);
 	lines.push(`hooks: ${hooks ?? "not installed"}`);
@@ -18269,7 +18256,7 @@ async function discover(ctx, deps = {}) {
 		const state = probeState === void 0 ? probe.state : await optionalPiece(ctx, "probe", () => probeState(ws), "unknown");
 		instances.push({
 			slug: entry.slug,
-			engine: entry.instance?.engine ?? "legacy",
+			engine: entry.instance?.engine ?? "none",
 			state,
 			url: probe.url
 		});
@@ -18291,7 +18278,6 @@ async function discover(ctx, deps = {}) {
 			version: RUNTIME_VERSION,
 			build
 		},
-		legacyEngine: legacy,
 		hooks,
 		instances,
 		lines
@@ -18357,8 +18343,9 @@ function plainRecordOf(value, what) {
 async function defaultWorkspace(ctx) {
 	return (await listWorkspaceSlugs(ctx.root)).includes(DEFAULT_SLUG$1) ? resolveWorkspace(ctx.root, DEFAULT_SLUG$1) : null;
 }
+/** `null` for a workspace without `instance.json` (a pre-4.0 workspace): there is no other engine (ADR 0066). */
 function engineOf(instance) {
-	return instance?.engine ?? "legacy";
+	return instance?.engine ?? null;
 }
 function sortKeysDeep(value) {
 	if (Array.isArray(value)) return value.map((v) => sortKeysDeep(v));
@@ -19052,7 +19039,6 @@ async function nodeProblems(ws, problems) {
 	const state = await readStateFile(ws);
 	if (state === null) return;
 	if (state.instanceId !== void 0 && state.instanceId !== instance.instanceId) add("state.json instanceId does not match instance.json");
-	else if (stateEngine(state) === "node" && instance.engine === "legacy") add("state.json engine 'node' does not match instance.json engine 'legacy'");
 }
 async function auditOne(ctx, slug) {
 	const problems = [];
@@ -36147,13 +36133,13 @@ function jsonBodyOf(reply) {
 function recordOf$1(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : null;
 }
-/** A state that has a live process of an engine behind it. */
+/** A state that has a live monitor process behind it (ours or one this runtime did not start). */
 function isLiveState(state) {
-	return state === "running" || state === "starting" || state === "stopping" || state === "unhealthy" || state === "legacy-running";
+	return state === "running" || state === "starting" || state === "stopping" || state === "unhealthy" || state === "unmanaged-running";
 }
-/** A monitor that serves: a healthy Node runtime or a live legacy viewer (`status` exits 0 for these). */
+/** A monitor of this runtime that serves (`status` exits 0 for it). */
 function isRunningState(state) {
-	return state === "running" || state === "legacy-running";
+	return state === "running";
 }
 /** `state.json` as it is: the parsed file and its bytes, or nothing for a missing, damaged or foreign-shaped file. */
 async function readStateSnapshot(ws) {
@@ -36182,7 +36168,7 @@ async function readStateSnapshot(ws) {
 		};
 	}
 }
-/** `instance.json`, or `null` for a legacy workspace and for one whose identity cannot be read (the callers say why). */
+/** `instance.json`, or `null` for a pre-4.0 workspace and for one whose identity cannot be read (the callers say why). */
 async function readInstanceId(ws) {
 	try {
 		return (await readInstanceFile(ws))?.instanceId ?? null;
@@ -36255,10 +36241,10 @@ function createProbe(deps) {
 			}
 		}
 		if (stateFile === null) return fromState("stopped", null, "there is no usable state file");
-		if (stateEngine(stateFile) === "node") return deps.pidAlive(stateFile.pid) ? fromState("foreign-pid", "node", "the control channel is free but the pid of the state file is alive") : fromState("stale", "node", "the pid of the state file is gone");
-		if (!deps.pidAlive(stateFile.pid)) return fromState("legacy-stale", "legacy", "the pid of the state file is gone");
-		const health = await deps.httpGet(`${stateFile.url}/api/health`, { timeoutMs: LEGACY_HEALTH_TIMEOUT_MS });
-		return (health.ok && health.reply.status === 200 ? recordOf$1(jsonBodyOf(health.reply)) : null)?.["pid"] === stateFile.pid ? fromState("legacy-running", "legacy", "the legacy viewer answers /api/health with the pid of the state file") : fromState("legacy-stale", "legacy", "the pid of the state file does not answer /api/health as that pid");
+		if (stateFile.engine === "node") return deps.pidAlive(stateFile.pid) ? fromState("foreign-pid", "node", "the control channel is free but the pid of the state file is alive") : fromState("stale", "node", "the pid of the state file is gone");
+		if (!deps.pidAlive(stateFile.pid)) return fromState("stale", null, "the pid of the state file is gone");
+		const health = await deps.httpGet(`${stateFile.url}/api/health`, { timeoutMs: UNMANAGED_HEALTH_TIMEOUT_MS });
+		return (health.ok && health.reply.status === 200 ? recordOf$1(jsonBodyOf(health.reply)) : null)?.["pid"] === stateFile.pid ? fromState("unmanaged-running", null, "a monitor that this runtime did not start answers /api/health with the pid of the state file") : fromState("foreign-pid", null, "the pid of the state file is alive but does not answer /api/health as that pid");
 	};
 }
 /** 01 4.8 step 2: the state file when it is ours, else one listing of the runtime processes, else nobody. */
@@ -36284,14 +36270,14 @@ async function pidOfHungRuntime(deps, instanceId, stateFile, runtimeDir) {
 	}
 }
 /**
-* Classifies the instance of `ws` (01 4.8): `running`, `starting`, `stopping`, `unhealthy`, `stopped`, `stale`, `foreign-pid`,
-* `legacy-running` or `legacy-stale`. Fast path first: a control-channel round trip (about 60 ms) and one HTTP request; no
+* Classifies the instance of `ws` (01 4.8): `running`, `starting`, `stopping`, `unhealthy`, `stopped`, `stale`, `foreign-pid`
+* or `unmanaged-running`. Fast path first: a control-channel round trip (about 60 ms) and one HTTP request; no
 * PowerShell unless a hung runtime has to be found. Never throws for a state of the workspace.
 */
 function probeInstance(ws, o) {
 	return realProbe(ws, o);
 }
-var LF$2, NUL, BACKSLASH, CONTROL_REPLY_MAX_BYTES, BASE_RE, URL_RE, HTTP_BODY_MAX_BYTES, DEFAULT_TIMEOUT_MS, LEGACY_HEALTH_TIMEOUT_MS, STATE_FILE_MAX_BYTES, realProbe;
+var LF$2, NUL, BACKSLASH, CONTROL_REPLY_MAX_BYTES, BASE_RE, URL_RE, HTTP_BODY_MAX_BYTES, DEFAULT_TIMEOUT_MS, UNMANAGED_HEALTH_TIMEOUT_MS, STATE_FILE_MAX_BYTES, realProbe;
 var init_probe = __esmMin((() => {
 	init_src$1();
 	init_protocol();
@@ -36309,7 +36295,7 @@ var init_probe = __esmMin((() => {
 	URL_RE = /^(http:\/\/127\.0\.0\.1:[0-9]{1,5})(\/[^\s]*)$/;
 	HTTP_BODY_MAX_BYTES = 4194304;
 	DEFAULT_TIMEOUT_MS = 2e3;
-	LEGACY_HEALTH_TIMEOUT_MS = 3e3;
+	UNMANAGED_HEALTH_TIMEOUT_MS = 3e3;
 	STATE_FILE_MAX_BYTES = 65536;
 	realProbe = createProbe({
 		pidAlive,
@@ -36363,11 +36349,7 @@ function effects(deps) {
 		peekDb: deps.peekDb ?? peekDatabase,
 		sleep: deps.sleep ?? ((ms) => setTimeout$1(ms)),
 		now: deps.now ?? (() => performance.now()),
-		signals: deps.signals ?? process,
-		legacy: {
-			...LEGACY_DELEGATES,
-			...deps.legacy
-		}
+		signals: deps.signals ?? process
 	};
 }
 function errnoOf(error) {
@@ -36414,22 +36396,22 @@ async function resolveTarget(ctx, task, mode) {
 		created: true
 	};
 }
-function legacyUnavailable(ws) {
-	return new McsError("LEGACY_ENGINE_UNAVAILABLE", `the instance '${ws.slug}' uses the legacy engine and no legacy engine is available`, { hint: `mcs instances set-engine --task ${ws.slug} node` });
+/** Where the monitor that this runtime did not start lives: its pid and URL, for the messages that refuse it. */
+function unmanagedWhere(probe) {
+	return `pid ${probe.pid === null ? "?" : String(probe.pid)}, ${probe.url ?? "?"}`;
 }
-/** `viewer.py` takes over a command of an instance whose engine is `legacy`; `null` when the Node engine handles it. */
-async function delegateToLegacy(ctx, e, command, ws, instance, rest, required) {
-	if (instance?.engine !== "legacy") return null;
-	const delegate = e.legacy[command];
-	if (delegate === void 0) {
-		if (required) throw legacyUnavailable(ws);
-		return null;
-	}
-	return delegate(ctx, {
-		command,
-		ws,
-		...rest.port === void 0 ? {} : { port: rest.port },
-		...rest.open === void 0 ? {} : { open: rest.open }
+/**
+* The refusal of `start`, `verify` and `serve` for an `unmanaged-running` workspace (ADR 0066): a monitor that this
+* runtime did not start answers there; it is never signalled, so the user stops it with the tool that started it.
+*/
+function unmanagedRunning(ws, probe) {
+	return new McsError("INSTANCE_RUNNING", `a monitor runs '${ws.slug}' (${unmanagedWhere(probe)}) that was not started by this runtime; it is left alone`, {
+		hint: "stop that monitor with the tool that started it, then run this command again",
+		details: {
+			state: probe.state,
+			pid: probe.pid,
+			url: probe.url
+		}
 	});
 }
 /**
@@ -36519,7 +36501,7 @@ function startedOutcome(base, outcome, probe, message, warnings, opened = null) 
 	return {
 		...base,
 		outcome,
-		engine: outcome === "already-running-legacy" ? "legacy" : "node",
+		engine: "node",
 		url: probe.url,
 		pid: probe.pid,
 		opened,
@@ -36571,21 +36553,6 @@ async function start(ctx, input = {}, deps = {}) {
 		createdDefault: target.created,
 		adopted: adoption.adopted
 	};
-	const delegated = await delegateToLegacy(ctx, e, "start", ws, instance, {
-		port: input.port,
-		open: input.open
-	}, true);
-	if (delegated !== null) return {
-		...base,
-		outcome: "delegated",
-		engine: "legacy",
-		url: null,
-		pid: null,
-		opened: null,
-		exitCode: exitOf(delegated),
-		message,
-		warnings
-	};
 	const config = await resolveConfig({
 		workspace: ws,
 		env: ctx.env,
@@ -36607,11 +36574,7 @@ async function start(ctx, input = {}, deps = {}) {
 		message.push(`already running: ${probe.url ?? "?"} (pid ${String(probe.pid)})`);
 		return startedOutcome(base, "already-running", probe, message, warnings);
 	}
-	if (probe.state === "legacy-running") {
-		message.push(`already running (engine=legacy): ${probe.url ?? "?"} (pid ${String(probe.pid)})`);
-		warnings.push(`the legacy engine runs this instance; to switch engines: mcs stop --task ${ws.slug} && mcs start --task ${ws.slug}`);
-		return startedOutcome(base, "already-running-legacy", probe, message, warnings);
-	}
+	if (probe.state === "unmanaged-running") throw unmanagedRunning(ws, probe);
 	if (probe.state === "stopping") throw new McsError("START_FAILED", `runtime ${describePid(probe.pid)} is still stopping`, { hint: `run \`mcs doctor --task ${ws.slug}\`` });
 	if (probe.state === "unhealthy") throw new McsError("START_FAILED", `runtime ${describePid(probe.pid)} answers its control channel but not HTTP`, {
 		hint: `run \`mcs doctor --task ${ws.slug}\` or \`mcs restart --task ${ws.slug}\``,
@@ -36695,10 +36658,7 @@ async function afterEarlyExit(ctx, e, ws, base, message, warnings, exit, timeout
 			message.push(`already running: ${probe.url ?? "?"} (pid ${String(probe.pid)})`);
 			return startedOutcome(base, "already-running", probe, message, warnings);
 		}
-		if (probe.state === "legacy-running") {
-			message.push(`already running (engine=legacy): ${probe.url ?? "?"} (pid ${String(probe.pid)})`);
-			return startedOutcome(base, "already-running-legacy", probe, message, warnings);
-		}
+		if (probe.state === "unmanaged-running") throw unmanagedRunning(ws, probe);
 	}
 	throw await failedStart(ws, `runtime exited during start (${exitName(exit.code, exit.signal)})`, `mcs doctor --task ${ws.slug}`, { exitCode: exit.code });
 }
@@ -36755,46 +36715,35 @@ async function removeStaleState(ws, probe) {
 /**
 * `ops.lifecycle.stop` (01 4.9). Graceful first (control `shutdown` with the token of the instance, then a wait for the
 * exit). The forced path is the only one that kills: the command line of the pid must carry the runtime marker of this
-* instance (`hasRuntimeMarker`), a legacy viewer must carry `viewer.py`; a pid without that proof is never killed.
+* instance (`hasRuntimeMarker`); a pid without that proof is never killed. A monitor that this runtime did not start
+* (`unmanaged-running`) is refused with `NOT_OUR_PROCESS` and never signalled (ADR 0066).
 */
 async function stop(ctx, input = {}, deps = {}) {
 	const e = effects(deps);
 	const { ws } = await resolveTarget(ctx, input.task, "existing");
 	const instance = await readInstanceFile(ws);
-	const delegated = await delegateToLegacy(ctx, e, "stop", ws, instance, {}, false);
-	if (delegated !== null) return {
-		...stopResult(ws, "delegated", null, ""),
-		exitCode: exitOf(delegated),
-		message: []
-	};
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
 	const config = await configOrNull(ctx, ws);
 	const waitMs = input.timeoutMs ?? config?.runtime.process.stopTimeoutMs ?? FALLBACK_STOP_TIMEOUT_MS;
 	switch (probe.state) {
 		case "stopped": return stopResult(ws, "nothing-to-stop", probe, `nothing to stop (no state file ${workspacePath(ws, "state.json")})`);
 		case "stale":
-		case "legacy-stale":
 		case "foreign-pid":
 			await removeStaleState(ws, probe);
 			return stopResult(ws, "stale-removed", probe, staleMessage(probe.pid));
-		case "legacy-running": return stopLegacyViewer(e, ws, probe);
+		case "unmanaged-running": throw new McsError("NOT_OUR_PROCESS", `a monitor runs '${ws.slug}' (${unmanagedWhere(probe)}) that was not started by this runtime; it is not signalled`, {
+			hint: "stop that monitor with the tool that started it",
+			details: {
+				state: probe.state,
+				pid: probe.pid,
+				url: probe.url
+			}
+		});
 		case "running":
 		case "starting":
 		case "stopping":
 		case "unhealthy": return stopRuntime(ctx, e, ws, instance, probe, waitMs, config);
 	}
-}
-async function stopLegacyViewer(e, ws, probe) {
-	const pid = probe.pid;
-	const line = pid === null || !isValidPid(pid) ? null : await e.processes.commandLineOf(pid);
-	if (pid === null || line === null || !hasLegacyMarker(line)) {
-		await removeStaleState(ws, probe);
-		return stopResult(ws, "stale-removed", probe, staleMessage(pid));
-	}
-	await e.processes.forceKill(pid);
-	if (!await e.processes.waitForExit(pid, FORCED_KILL_WAIT_MS)) throw new McsError("STOP_FAILED", `pid ${String(pid)} still alive after stop request`);
-	await removeStaleState(ws, probe);
-	return stopResult(ws, "stopped-legacy", probe, `stopped viewer pid ${String(pid)} (${probe.url ?? "?"})`);
 }
 function forcedReasonOf(attempt) {
 	switch (attempt.kind) {
@@ -36938,23 +36887,17 @@ async function currentStamp(ctx) {
 }
 /**
 * `ops.lifecycle.status` (01 4.10): `probeInstance`, and for a running instance the health, the legacy health and the
-* sessions of the server. The keys are the legacy ones first, then the new ones. Exit 0 iff the monitor runs.
+* sessions of the server. The keys are the legacy ones first, then the new ones. Exit 0 iff the monitor of this runtime
+* runs; a monitor that this runtime did not start is reported from the probe alone (nothing is fetched from it).
 */
 async function status(ctx, input = {}, deps = {}) {
 	const e = effects(deps);
 	const { ws } = await resolveTarget(ctx, input.task, "existing");
 	const instance = await readInstanceFile(ws);
-	const delegated = await delegateToLegacy(ctx, e, "status", ws, instance, {}, false);
-	if (delegated !== null) return {
-		report: null,
-		exitCode: exitOf(delegated),
-		delegated: true
-	};
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
 	return {
 		report: await buildReport(ctx, e, ws, instance, probe),
-		exitCode: isRunningState(probe.state) ? 0 : 1,
-		delegated: false
+		exitCode: isRunningState(probe.state) ? 0 : 1
 	};
 }
 async function buildReport(ctx, e, ws, instance, probe) {
@@ -36965,7 +36908,6 @@ async function buildReport(ctx, e, ws, instance, probe) {
 		instance_id: instance?.instanceId ?? null
 	};
 	if (probe.state === "running") return runningReport(ctx, e, ws, probe, stateFile, tail);
-	if (probe.state === "legacy-running") return legacyReport(e, probe, stateFile, tail);
 	const live = isLiveState(probe.state);
 	const hint = hintOf(ws, probe);
 	return {
@@ -36982,6 +36924,7 @@ function hintOf(ws, probe) {
 	if (probe.state === "unhealthy") return probe.identity === null ? `a runtime holds the control channel but does not answer; run \`mcs stop --task ${ws.slug}\` (it verifies the process before it kills)` : `runtime ${describePid(probe.pid)} answers its control channel but not HTTP; run \`mcs doctor --task ${ws.slug}\` or \`mcs restart --task ${ws.slug}\``;
 	if (probe.state === "starting") return "the runtime is starting; run status again in a moment";
 	if (probe.state === "stopping") return "the runtime is stopping";
+	if (probe.state === "unmanaged-running") return `a monitor that was not started by this runtime runs here (${unmanagedWhere(probe)}); stop it with the tool that started it`;
 	return null;
 }
 async function runningReport(ctx, e, ws, probe, stateFile, tail) {
@@ -37034,32 +36977,6 @@ async function runningReport(ctx, e, ws, probe, stateFile, tail) {
 		} : {}
 	};
 }
-/** A live legacy viewer without Python: what `state.json` and its own `/api/health` say (01 4.10). */
-async function legacyReport(e, probe, stateFile, tail) {
-	const attempt = await e.httpGet(`${probe.url ?? ""}/api/health`, { timeoutMs: HTTP_TIMEOUT_MS });
-	const body = attempt.ok && attempt.reply.status === 200 ? recordOf(jsonBodyOf(attempt.reply)) : null;
-	const uptime = body?.["uptime"];
-	const stamp = body?.["code_stamp"];
-	const task = recordOf(body?.["task"]);
-	const taskId = task?.["id"];
-	const taskName = task?.["name"];
-	const taskDescription = task?.["description"];
-	return {
-		running: true,
-		state_file: stateFile,
-		...probe.url === null ? {} : { url: probe.url },
-		...probe.pid === null ? {} : { pid: probe.pid },
-		...typeof uptime === "number" ? { uptime_s: uptime } : {},
-		...typeof stamp === "string" ? { code_stamp: stamp } : {},
-		...typeof taskId === "string" && typeof taskName === "string" ? { task: {
-			id: taskId,
-			name: taskName,
-			description: typeof taskDescription === "string" ? taskDescription : ""
-		} } : {},
-		...body?.["config_source"] === "task" ? { config_source: "task" } : {},
-		...tail
-	};
-}
 function instanceIdField(body) {
 	const id = recordOf(body)?.["instanceId"];
 	return typeof id === "string" ? id : null;
@@ -37072,17 +36989,8 @@ async function verify(ctx, input = {}, deps = {}) {
 	const e = effects(deps);
 	const { ws } = await resolveTarget(ctx, input.task, "existing");
 	const instance = await readInstanceFile(ws);
-	const delegated = await delegateToLegacy(ctx, e, "verify", ws, instance, {}, true);
-	if (delegated !== null) return {
-		slug: ws.slug,
-		url: null,
-		sessions: null,
-		exitCode: exitOf(delegated),
-		message: [],
-		delegated: true
-	};
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
-	if (probe.state === "legacy-running") throw new McsError("ENGINE_CONFLICT", `a legacy viewer runs '${ws.slug}'; verify checks the Node runtime`, { hint: `mcs stop --task ${ws.slug} && mcs start --task ${ws.slug}` });
+	if (probe.state === "unmanaged-running") throw unmanagedRunning(ws, probe);
 	if (probe.state !== "running" || probe.url === null) throw new McsError("INSTANCE_NOT_RUNNING", `no healthy monitor for this target (state file: ${workspacePath(ws, "state.json")})`, { hint: `mcs start --task ${ws.slug}` });
 	const url = probe.url;
 	const expected = instance?.instanceId ?? probe.identity?.instanceId ?? null;
@@ -37107,29 +37015,14 @@ async function verify(ctx, input = {}, deps = {}) {
 		url,
 		sessions,
 		exitCode: 0,
-		message: [`verified ${url}: health, instance, sessions (${sessions === null ? "?" : String(sessions)}), overview all valid`],
-		delegated: false
+		message: [`verified ${url}: health, instance, sessions (${sessions === null ? "?" : String(sessions)}), overview all valid`]
 	};
 }
 /** `ops.lifecycle.restart` (01 4.10): `stop`, and only if it succeeded, `start` with the same options. */
 async function restart(ctx, input = {}, deps = {}) {
-	const e = effects(deps);
 	const target = await resolveTarget(ctx, input.task, "create");
 	const { ws } = target;
 	const message = target.created ? [`created default workspace '${ws.slug}'`] : [];
-	const delegated = await delegateToLegacy(ctx, e, "restart", ws, await readInstanceFile(ws), {
-		port: input.port,
-		open: input.open
-	}, true);
-	if (delegated !== null) return {
-		slug: ws.slug,
-		stop: null,
-		start: null,
-		exitCode: exitOf(delegated),
-		message,
-		warnings: [],
-		delegated: true
-	};
 	const stopped = await stop(ctx, { task: ws.slug }, deps);
 	message.push(...stopped.message);
 	const started = await start(ctx, {
@@ -37143,8 +37036,7 @@ async function restart(ctx, input = {}, deps = {}) {
 		start: started,
 		exitCode: started.exitCode,
 		message,
-		warnings: started.warnings,
-		delegated: false
+		warnings: started.warnings
 	};
 }
 /** Resolves when the runtime answers ready, then opens the URL (`serve --open`); gives up when `cancelled()` says so. */
@@ -37173,20 +37065,9 @@ async function serveForeground(ctx, input = {}, deps = {}) {
 	const adoption = await adoptWorkspace(ws, { clock: ctx.clock });
 	if (adoption.adopted) message.push("added Node runtime files: instance.json");
 	const instance = adoption.instance;
-	const delegated = await delegateToLegacy(ctx, e, "serve", ws, instance, {
-		port: input.port,
-		open: input.open
-	}, true);
-	if (delegated !== null) return {
-		slug: ws.slug,
-		exitCode: exitOf(delegated),
-		message,
-		warnings,
-		interrupted: false,
-		delegated: true
-	};
 	if (input.stateFile !== void 0) warnings.push(`--state-file is ignored by the Node runtime (it always uses ${workspacePath(ws, "state.json")})`);
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
+	if (probe.state === "unmanaged-running") throw unmanagedRunning(ws, probe);
 	if (isLiveState(probe.state)) throw new McsError("INSTANCE_RUNNING", `the instance '${ws.slug}' is already running (${describePid(probe.pid)}, ${probe.state})`, { hint: `mcs stop --task ${ws.slug}` });
 	const config = await resolveConfig({
 		workspace: ws,
@@ -37256,11 +37137,10 @@ async function serveForeground(ctx, input = {}, deps = {}) {
 		exitCode: 0,
 		message,
 		warnings,
-		interrupted,
-		delegated: false
+		interrupted
 	};
 }
-var LF$1, DEFAULT_SLUG, DEFAULT_NAME, FALLBACK_STOP_TIMEOUT_MS, FORCED_KILL_WAIT_MS, POLL_MS, BOOT_LOG_TAIL_LINES, BOOT_LOG_LINE_CHARS, HTTP_TIMEOUT_MS, CONTROL_TIMEOUT_MS, TOKEN_RE, HOUR_MS, LEGACY_DELEGATES, REAL_PROCESSES, SERVER_EXIT_NAMES, INSTANCE_LOCKED, exitOf, staleMessage, SESSION_PAGES_MAX, SESSION_PAGE_SIZE, outdatedHint, VERIFY_ENDPOINTS, FORWARDED_SIGNALS;
+var LF$1, DEFAULT_SLUG, DEFAULT_NAME, FALLBACK_STOP_TIMEOUT_MS, FORCED_KILL_WAIT_MS, POLL_MS, BOOT_LOG_TAIL_LINES, BOOT_LOG_LINE_CHARS, HTTP_TIMEOUT_MS, CONTROL_TIMEOUT_MS, TOKEN_RE, HOUR_MS, REAL_PROCESSES, SERVER_EXIT_NAMES, INSTANCE_LOCKED, staleMessage, SESSION_PAGES_MAX, SESSION_PAGE_SIZE, outdatedHint, VERIFY_ENDPOINTS, FORWARDED_SIGNALS;
 var init_lifecycle = __esmMin((() => {
 	init_src$1();
 	init_protocol();
@@ -37291,7 +37171,6 @@ var init_lifecycle = __esmMin((() => {
 	CONTROL_TIMEOUT_MS = 2e3;
 	TOKEN_RE = /^[0-9a-f]{64}$/;
 	HOUR_MS = 36e5;
-	LEGACY_DELEGATES = {};
 	REAL_PROCESSES = {
 		pidAlive,
 		commandLineOf,
@@ -37312,7 +37191,6 @@ var init_lifecycle = __esmMin((() => {
 		70: "INTERNAL"
 	};
 	INSTANCE_LOCKED = 12;
-	exitOf = (code) => code === 0 ? 0 : 1;
 	staleMessage = (pid) => `pid ${pid === null ? "?" : String(pid)} is not this instance's runtime (already stopped or pid reused); removed the stale state file, nothing was killed`;
 	SESSION_PAGES_MAX = 5;
 	SESSION_PAGE_SIZE = 200;
@@ -37873,9 +37751,8 @@ var init_doctor_checks = __esmMin((() => {
 			case "stopped": return ok(id, probe.state);
 			case "unhealthy": return fail(id, "warn", `unhealthy: ${probe.reason}`, `mcs restart --task ${e.ws.slug}`);
 			case "stale":
-			case "legacy-stale":
-			case "foreign-pid":
-			case "legacy-running": return fail(id, "warn", `${probe.state}: ${probe.reason}`, `mcs stop --task ${e.ws.slug}`);
+			case "foreign-pid": return fail(id, "warn", `${probe.state}: ${probe.reason}`, `mcs stop --task ${e.ws.slug}`);
+			case "unmanaged-running": return fail(id, "warn", `${probe.state}: ${probe.reason}`, "stop that monitor with the tool that started it");
 		}
 	};
 	runtimeOutdated = async (e) => {
@@ -39763,6 +39640,7 @@ function codeOf(error) {
 async function liveBlocker(ws, deps) {
 	const { state } = await (deps.probe ?? ((w) => probeInstance(w)))(ws);
 	if (!isLiveState(state)) return null;
+	if (state === "unmanaged-running") return `INSTANCE_RUNNING: a monitor that was not started by this runtime runs for this workspace (${state}); stop it with the tool that started it`;
 	return `INSTANCE_RUNNING: a monitor runs for this workspace (${state}); stop it first with \`mcs stop --task ${ws.slug}\``;
 }
 /** Reads and plans one workspace; writes nothing. */
@@ -40092,7 +39970,6 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	fromPlain: () => fromPlain,
 	getEntry: () => getEntry,
 	globFiles: () => globFiles,
-	hasLegacyMarker: () => hasLegacyMarker,
 	hasRuntimeMarker: () => hasRuntimeMarker,
 	healthContextOf: () => healthContextOf,
 	hostPlatform: () => hostPlatform,
@@ -40656,7 +40533,7 @@ var init_init = __esmMin((() => {
 		name: "init",
 		aliases: ["init-task"],
 		summary: "create a task workspace (or reuse the existing one, adding the Node runtime files when they are missing)",
-		synopsis: "(--name NAME | --slug SLUG) [--slug SLUG] [--description TEXT] [--port N] [--config FILE] [--engine node|legacy]",
+		synopsis: "(--name NAME | --slug SLUG) [--slug SLUG] [--description TEXT] [--port N] [--config FILE]",
 		options: {
 			name: {
 				type: "string",
@@ -40683,12 +40560,6 @@ var init_init = __esmMin((() => {
 				type: "string",
 				valueName: "FILE",
 				description: "seed file of configuration keys for config.json (not the legacy flat config)"
-			},
-			engine: {
-				type: "string",
-				valueName: "ENGINE",
-				choices: ["node", "legacy"],
-				description: "engine of a new workspace (default node)"
 			}
 		},
 		async run(ctx) {
@@ -40698,14 +40569,12 @@ var init_init = __esmMin((() => {
 			const description = args.string("description");
 			const port = args.int("port");
 			const seed = args.string("config");
-			const engine = args.string("engine");
 			const input = {
 				...name === void 0 ? {} : { name },
 				...slug === void 0 ? {} : { slug },
 				...description === void 0 ? {} : { description },
 				...port === void 0 ? {} : { port },
-				...seed === void 0 ? {} : { seedConfig: path.resolve(seed) },
-				...engine === "node" || engine === "legacy" ? { engine } : {}
+				...seed === void 0 ? {} : { seedConfig: path.resolve(seed) }
 			};
 			const result = await init(ctx.op, input, ctx.deps);
 			return {
@@ -40939,7 +40808,6 @@ var init_version = __esmMin((() => {
 		} },
 		async run(ctx) {
 			const result = await version(ctx.op, ctx.deps);
-			const legacy = ctx.deps.legacyEngine === void 0 ? null : await ctx.deps.legacyEngine().catch(() => null);
 			return {
 				data: {
 					runtimeVersion: result.version,
@@ -40947,11 +40815,7 @@ var init_version = __esmMin((() => {
 					buildCurrent: result.build === "unknown" ? null : result.build === "current",
 					node: result.node,
 					platform: hostPlatform,
-					arch: process.arch,
-					legacyEngine: {
-						python: legacy?.exe ?? null,
-						version: null
-					}
+					arch: process.arch
 				},
 				text: [ctx.args.flag("short") ? `mcs ${result.version}` : result.text]
 			};
@@ -41142,10 +41006,6 @@ function makeCommand$4(ops = lifecycle_exports) {
 		async run(ctx) {
 			const task = ctx.args.string("task");
 			const result = await ops.status(ctx.op, task === void 0 ? {} : { task });
-			if (result.report === null) return {
-				data: { delegated: true },
-				exitCode: result.exitCode
-			};
 			return {
 				data: result.report,
 				legacy: result.report,
@@ -41558,9 +41418,6 @@ const GLOBAL_OPTIONS = {
 function isCommandEntry(entry) {
 	return "names" in entry;
 }
-function isDelegationEntry(entry) {
-	return "delegate" in entry;
-}
 function isDepsEntry(entry) {
 	return "deps" in entry;
 }
@@ -41799,11 +41656,6 @@ async function dispatch(argv, paths, run) {
 	if (first === "--version") {
 		printLine(`mcs ${RUNTIME_VERSION}`);
 		return 0;
-	}
-	for (const entry of REGISTRY) {
-		if (!isDelegationEntry(entry)) continue;
-		const code = await entry.delegate(argv, paths);
-		if (code !== null) return code;
 	}
 	const found = findEntry(argv);
 	if (found === null) {
