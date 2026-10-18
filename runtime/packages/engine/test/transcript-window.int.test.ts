@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { CHECKPOINT_EVERY_ENTRIES, type TranscriptEntry } from '@mcs/shared';
 import { FIXTURE_EPOCH_MS, FakeClock, TranscriptBuilder, bigTranscript, useTempDirs } from '@mcs/testkit';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultSkillDir } from '../src/config/defaults.ts';
 import { resolveConfig, type ResolvedConfig } from '../src/config/resolve.ts';
@@ -29,6 +29,12 @@ const SEED = seedFromEnv(process.env, 20261012);
 let config: ResolvedConfig;
 beforeAll(async () => {
   config = await resolveConfig({ workspace: null, env: {}, cli: {}, skillDir: defaultSkillDir() });
+});
+
+// `transcripts_dir: auto` discovers the project folder below the Claude home of the environment (WP-85): point that home at an
+// empty folder, so the real home of the machine is never read and the folder of the main transcript stays the containment root.
+beforeEach(() => {
+  vi.stubEnv('CLAUDE_CONFIG_DIR', tempDir('claude-home').path);
 });
 
 const opened: InstanceDb[] = [];

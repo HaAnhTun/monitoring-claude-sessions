@@ -2,7 +2,7 @@
 // SQL only. The merge rules are the statement of 03 3.6: `started_at` minimum, `ended_at` and `batch_at` maximum, `sources`
 // OR-ed, the outcome by precedence error > denied > interrupted > ok, a hook duration preferred, every other column the first
 // non-null value. Multi-argument `min()` / `max()` return NULL when an argument is NULL, so each is wrapped in `coalesce`, and
-// the precedence is an inlined CASE (no custom SQL function, so the statement also runs on `node:sqlite`).
+// the precedence is an inlined CASE (no custom SQL function, so the statement needs nothing beyond the driver seam).
 //
 // Deviation from the statement, which stamps `updated_seq = :seq` on every conflict (CR-WP-10-3): the update is guarded by a
 // WHERE that is true only when a merged column would change, and the row is stamped after the change is reserved. A write that

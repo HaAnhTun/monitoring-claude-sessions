@@ -21,7 +21,7 @@ import {
 } from '@mcs/shared';
 import { FIXTURE_EPOCH_MS, FakeClock, allocatePort, assertPortClosed, httpRequest, useTempDirs } from '@mcs/testkit';
 import express, { type Express } from 'express';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { bindRouteServices, type AppContext } from '../route-adapter.ts';
 import { transcriptRoutes } from './transcript.ts';
@@ -35,6 +35,12 @@ const LF = String.fromCharCode(10);
 let config: ResolvedConfig;
 beforeAll(async () => {
   config = await resolveConfig({ workspace: null, env: {}, cli: {}, skillDir: defaultSkillDir() });
+});
+
+// `transcripts_dir: auto` discovers the project folder below the Claude home of the environment (WP-85): point that home at an
+// empty folder, so the real home of the machine is never read and the folder of the main transcript stays the containment root.
+beforeEach(() => {
+  vi.stubEnv('CLAUDE_CONFIG_DIR', makeTemp('claude-home').path);
 });
 
 const servers: { readonly server: Server; readonly port: number }[] = [];

@@ -103,7 +103,7 @@ export function enableWal(driver: SqlDriver, sleep: (ms: number) => void = sleep
 
 const CONNECTION_PRAGMAS = [
   'synchronous = NORMAL',
-  'foreign_keys = ON', // the build defaults to ON [exp:X0]; explicit for the node:sqlite fallback
+  'foreign_keys = ON', // explicit: the SQLite build of the driver may default to OFF
   'temp_store = MEMORY',
   'cache_size = -16000',
   'journal_size_limit = 67108864',

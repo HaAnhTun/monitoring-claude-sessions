@@ -22,6 +22,8 @@ interface ConfigEntry {
   file: string;
   source: string;
   io: 'input' | 'output';
+  title: string;
+  description: string;
 }
 
 interface Generator {

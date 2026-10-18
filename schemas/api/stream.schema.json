@@ -3740,7 +3740,6 @@
                       "ps",
                       "taskkill",
                       "node",
-                      "python",
                       "icacls",
                       "opener"
                     ]
@@ -3784,7 +3783,6 @@
                     "ps",
                     "taskkill",
                     "node",
-                    "python",
                     "icacls",
                     "opener"
                   ]
