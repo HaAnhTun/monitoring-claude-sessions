@@ -1,0 +1,10 @@
+{
+  "name": "session-monitor",
+  "displayName": "Session monitor",
+  "version": "3.0.0",
+  "description": "Live, read-only view of running Claude Code sessions, subagents and workflows on a local loopback page.",
+  "author": { "name": "session-monitor contributors" },
+  "repository": "https://github.com/HaAnhTun/monitoring-claude-sessions",
+  "license": "MIT",
+  "keywords": ["monitoring", "sessions", "transcripts", "dashboard"]
+}

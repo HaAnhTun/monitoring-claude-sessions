@@ -209,7 +209,7 @@ const README_NOTES =
 function readmeText(name: string, description: string, slug: string): string {
   return (
     `# Monitoring task: ${name}\n\n${description}\n\n${README_NOTES}` +
-    `- Inspect: \`node <skill>/scripts/mcs.mjs inspect --task ${slug}\` (legacy engine: \`python <skill>/template/viewer.py inspect --task ${slug}\`)\n` +
+    `- Inspect: \`node <skill>/scripts/mcs.mjs inspect --task ${slug}\` (\`<skill>\` is the installed skill folder that holds \`SKILL.md\`)\n` +
     '- Never copy transcripts here; they are read in place.\n'
   );
 }

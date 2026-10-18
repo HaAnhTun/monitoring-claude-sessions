@@ -42,6 +42,15 @@ export { globFiles } from './platform/glob.ts';
 export type { GlobOptions, GlobResult } from './platform/glob.ts';
 export { PyStrptimeFormatError, pyStrptime, pyStrptimeValidate, toEpochMs } from './platform/pytime.ts';
 export type { PyTimeFields } from './platform/pytime.ts';
+export {
+  PYTHON_SYNTAX_HINT,
+  RegexCompileError,
+  applyLabelTemplate,
+  compileRegex,
+  pythonSyntaxHint,
+  tryCompileRegex,
+} from './regex/index.ts';
+export type { CompiledRegex, RegexContext, RegexMatch, TryCompileResult } from './regex/index.ts';
 export { createWatchHint } from './platform/watch-hint.ts';
 export type { WatchHint, WatchHintOptions } from './platform/watch-hint.ts';
 export { MutexTimeoutError, acquireMutex, mutexName, tryAcquireMutex } from './platform/mutex.ts';
@@ -109,6 +118,7 @@ export type { ChangeRecorder } from './db/changes.ts';
 // @wp-begin WP-12
 export {
   checkSchemaVersion,
+  defaultRuntimeDir,
   defaultSkillDir,
   getEntry,
   loadSkillDefaults,
@@ -116,6 +126,8 @@ export {
   readConfigJson,
   readOptionalConfigJson,
   schemaVersionOf,
+  skillDirOfRuntimeDir,
+  SKILL_FOLDER_NAME,
   LegacyConfigSchema,
 } from './config/defaults.ts';
 export type { LegacyConfig, PyObject, SkillDefaults } from './config/defaults.ts';
@@ -680,3 +692,12 @@ export type {
 
 // @wp-begin WP-63
 // @wp-end WP-63
+
+// @wp-begin WP-85
+export { PROJECT_NAME_MAX, claudeHomeOf, projectFolderName } from './ingest/transcripts/discovery.ts';
+export type { DetectOptions } from './ingest/transcripts/discovery.ts';
+export { recentSessionsOf } from './ingest/transcripts/recent-sessions.ts';
+export type { RecentSession, RecentSessionsLog } from './ingest/transcripts/recent-sessions.ts';
+export { refreshRouteFile } from './ingest/route-refresh.ts';
+export type { RouteRefreshContext } from './ingest/route-refresh.ts';
+// @wp-end WP-85

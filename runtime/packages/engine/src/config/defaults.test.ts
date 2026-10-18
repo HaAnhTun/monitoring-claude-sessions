@@ -8,12 +8,15 @@ import { describe, expect, it } from 'vitest';
 import { toPlain } from '../pyjson/index.ts';
 import {
   checkSchemaVersion,
+  defaultRuntimeDir,
   defaultSkillDir,
   loadSkillDefaults,
   parseLegacyConfig,
   readConfigJson,
   readOptionalConfigJson,
   schemaVersionOf,
+  SKILL_FOLDER_NAME,
+  skillDirOfRuntimeDir,
 } from './defaults.ts';
 import { LEGACY_KEYS } from './validate-legacy.ts';
 
@@ -42,8 +45,22 @@ function skillWith(files: Record<string, string>): string {
 describe('the shipped files', () => {
   it('defaultSkillDir is the skill folder that holds config/defaults.json and runtime/defaults.json', () => {
     const skill = defaultSkillDir();
+    expect(path.basename(skill)).toBe(SKILL_FOLDER_NAME);
+    expect(path.basename(path.dirname(skill))).toBe('skills');
+    expect(readFileSync(path.join(skill, 'SKILL.md'), 'utf8')).toContain(`name: ${SKILL_FOLDER_NAME}`);
     expect(readFileSync(path.join(skill, 'config', 'defaults.json'), 'utf8')).toContain('"schema_version": 1');
-    expect(readFileSync(path.join(skill, 'runtime', 'package.json'), 'utf8')).toContain('"@mcs/runtime"');
+  });
+
+  it('defaultRuntimeDir is the runtime workspace next to the skills folder', () => {
+    const runtime = defaultRuntimeDir();
+    expect(readFileSync(path.join(runtime, 'package.json'), 'utf8')).toContain('"@mcs/runtime"');
+    expect(path.dirname(runtime)).toBe(path.dirname(path.dirname(defaultSkillDir())));
+  });
+
+  it('skillDirOfRuntimeDir maps the checkout runtime to the skill folder and any other runtime to its parent', () => {
+    expect(skillDirOfRuntimeDir(defaultRuntimeDir())).toBe(defaultSkillDir());
+    const other = makeTemp('cfg-runtime-parent').path;
+    expect(skillDirOfRuntimeDir(path.join(other, 'runtime'))).toBe(other);
   });
 
   it('<skill>/runtime/defaults.json is exactly {"schema_version": 1}', () => {

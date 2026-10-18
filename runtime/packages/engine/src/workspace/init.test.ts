@@ -103,7 +103,7 @@ describe('initWorkspace: a new workspace', () => {
     expect(read(repo, 'nightly-build', 'README.md')).toBe(
       '# Monitoring task: Nightly build\n\nChecks the nightly build.\n\n' +
         '- `task.json` identity, `config.json` overrides of the shared defaults (shared with the legacy engine), `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n' +
-        '- Inspect: `node <skill>/scripts/mcs.mjs inspect --task nightly-build` (legacy engine: `python <skill>/template/viewer.py inspect --task nightly-build`)\n' +
+        '- Inspect: `node <skill>/scripts/mcs.mjs inspect --task nightly-build` (`<skill>` is the installed skill folder that holds `SKILL.md`)\n' +
         '- Never copy transcripts here; they are read in place.\n',
     );
     expect(read(repo, 'nightly-build', 'audit', 'changes.md')).toBe(
@@ -236,9 +236,22 @@ describe('initWorkspace: validation happens before anything is created', () => {
     expect(readdirSync(repo)).toEqual(['FIXTURE.md']);
   });
 
-  it('a regex Python rejects (CONFIG_INVALID) and one the translator cannot render exactly (REGEX_UNSUPPORTED)', async () => {
+  it('an invalid regex and a Python-syntax regex (CONFIG_INVALID, the second with the migration hint)', async () => {
     await refuses({ seedConfig: seed('{"session_rules": [{"match": "(", "label": "x"}]}') }, 'CONFIG_INVALID');
-    await refuses({ seedConfig: seed('{"session_rules": [{"match": "(?>a)", "label": "x"}]}') }, 'REGEX_UNSUPPORTED');
+    await refuses({ seedConfig: seed('{"session_rules": [{"match": "(?P<n>a)", "label": "x"}]}') }, 'CONFIG_INVALID');
+    const repo = bareRepo();
+    const error = await initWorkspace(
+      opts(repo, { seedConfig: seed('{"session_rules": [{"match": "(?P<n>a)", "label": "x"}]}') }),
+    ).catch((e: unknown) => e);
+    expect((error as McsError).message).toContain('this looks like Python regex syntax; run `mcs migrate-workspace');
+  });
+
+  it('accepts a seed rule with a JavaScript named group', async () => {
+    const repo = bareRepo();
+    await initWorkspace(
+      opts(repo, { seedConfig: seed('{"session_rules": [{"match": "job-(?<n>[0-9]+)", "label": "Job {1}"}]}') }),
+    );
+    expect(read(repo, 'nightly-build', 'config.json')).toContain('job-(?<n>[0-9]+)');
   });
 });
 

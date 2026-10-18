@@ -1,0 +1,13 @@
+{
+  "name": "session-monitor",
+  "description": "Marketplace of the session monitor plugin.",
+  "owner": { "name": "session-monitor contributors" },
+  "plugins": [
+    {
+      "name": "session-monitor",
+      "source": "./skills/monitoring-claude-sessions",
+      "version": "3.0.0",
+      "description": "Live, read-only view of running Claude Code sessions, subagents and workflows on a local loopback page."
+    }
+  ]
+}

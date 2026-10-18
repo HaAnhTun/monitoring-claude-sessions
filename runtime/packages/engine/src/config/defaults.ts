@@ -1,5 +1,6 @@
 // Shared inputs of configuration resolution (01 section 2.3 steps 1 and 3): reading the JSON files with the legacy
 // wording, the schema gate (2.6) and the typed form of the merged legacy (L) configuration.
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,12 +18,34 @@ const MAX_CONFIG_BYTES = 16 * 1024 * 1024;
 
 const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
 
+/** The name of the skill folder (and of the skill in its `SKILL.md` frontmatter). */
+export const SKILL_FOLDER_NAME = 'monitoring-claude-sessions';
+
 /**
- * The skill folder that holds `config/defaults.json` and `runtime/`: five levels above this module, which is the same
- * from `src/config` and from the compiled `dist/config`.
+ * The runtime workspace of a source checkout (`<repo>/runtime`): four levels above this module, which is the same from
+ * `src/config` and from the compiled `dist/config`.
+ */
+export function defaultRuntimeDir(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+}
+
+/**
+ * The skill folder (ADR 0062) that holds `SKILL.md`, `config/defaults.json` and `runtime/defaults.json`: in a checkout
+ * `<repo>/skills/monitoring-claude-sessions`, next to the runtime workspace.
  */
 export function defaultSkillDir(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..');
+  return path.join(path.dirname(defaultRuntimeDir()), 'skills', SKILL_FOLDER_NAME);
+}
+
+/**
+ * The skill folder that belongs to a runtime folder: `<repo>/skills/monitoring-claude-sessions` when `runtimeDir` is the
+ * runtime workspace of a checkout (it has that sibling), otherwise the parent of `runtimeDir` (an installed skill whose
+ * runtime folder sits inside it, or a test fixture laid out as `<skill>/runtime`).
+ */
+export function skillDirOfRuntimeDir(runtimeDir: string): string {
+  const parent = path.dirname(path.resolve(runtimeDir));
+  const checkout = path.join(parent, 'skills', SKILL_FOLDER_NAME);
+  return existsSync(path.join(checkout, 'SKILL.md')) ? checkout : parent;
 }
 
 function errorCode(error: unknown): string | undefined {

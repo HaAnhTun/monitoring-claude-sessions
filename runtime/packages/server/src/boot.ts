@@ -37,6 +37,7 @@ import {
   type LogLevel,
   type RuntimeFactories,
   type WorkspaceRef,
+  skillDirOfRuntimeDir,
 } from '@mcs/engine';
 import {
   LogLevelSchema,
@@ -357,7 +358,7 @@ export interface BootInput {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** `<skill>/runtime`. */
   readonly runtimeDir: string;
-  /** Default: the parent of `runtimeDir`. */
+  /** Default: the skill folder of `runtimeDir` (`skillDirOfRuntimeDir`). */
   readonly skillDir?: string;
   readonly clock?: Clock;
   /** Where the boot prints its failures (the detached server's stderr is `logs/boot.log`); default: file descriptor 2. */
@@ -452,7 +453,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
   const stderr = input.stderr ?? writeStderr;
   const gate = input.gate ?? createShutdownGate();
   const runtimeDir = path.resolve(input.runtimeDir);
-  const skillDir = input.skillDir ?? path.dirname(runtimeDir);
+  const skillDir = input.skillDir ?? skillDirOfRuntimeDir(runtimeDir);
 
   const fail = (exitCode: ServerFailureCode, message: string, detail?: string): BootResult => {
     stderr(

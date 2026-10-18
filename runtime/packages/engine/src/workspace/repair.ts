@@ -10,7 +10,7 @@ import { setTimeout as sleepMs } from 'node:timers/promises';
 import { McsError, isoSecondsZ, systemClock, type Clock, type InstanceFile } from '@mcs/shared';
 
 import { appendChange } from '../audit/writer.ts';
-import { defaultSkillDir } from '../config/defaults.ts';
+import { defaultRuntimeDir } from '../config/defaults.ts';
 import { listRuntimeProcesses } from '../platform/markers.ts';
 import { unlinkWithRetry } from '../platform/fsx.ts';
 import { isMissingFileError } from './fsio.ts';
@@ -168,7 +168,7 @@ async function clearRun(ws: WorkspaceRef): Promise<void> {
 
 function defaultIsRunning(runtimeDir: string | undefined): RunningCheck {
   return async (ids) => {
-    const dir = runtimeDir ?? path.join(defaultSkillDir(), 'runtime');
+    const dir = runtimeDir ?? defaultRuntimeDir();
     const alive = await listRuntimeProcesses(dir);
     return alive.some((p) => p.instanceId !== null && ids.includes(p.instanceId));
   };

@@ -12,11 +12,13 @@
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
 
 import {
   createLogger,
+  defaultRuntimeDir,
+  defaultSkillDir,
   tasksRootOf,
   testHook,
   type CheckDeps,
@@ -209,6 +211,29 @@ const REGISTRY: readonly RegistryEntry[] = [
 
   // @wp-begin WP-64
   // @wp-end WP-64
+
+  // @wp-begin WP-85
+  // transcript auto-detection (CR-WP-15-2) under the Claude home of the environment, and the rewrite of an existing route
+  // file after `configure` changed a key that routes (CR-WP-14-2)
+  {
+    deps: (op) => ({
+      transcripts: {
+        detectDir: async (repo) => {
+          const engine = await import('@mcs/engine');
+          return engine.detectTranscriptsDir(repo, engine.projectsRoot(op.env));
+        },
+        recentSessions: async (dir, limit) => {
+          const engine = await import('@mcs/engine');
+          return engine.recentSessionsOf(dir, limit, op.clock.now(), engine.nodeDiscoveryFs, op.log);
+        },
+      },
+      onRoutingChanged: async (ws) => {
+        const engine = await import('@mcs/engine');
+        await engine.refreshRouteFile({ env: op.env, skillDir: op.skillDir, clock: op.clock }, ws);
+      },
+    }),
+  },
+  // @wp-end WP-85
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
@@ -611,12 +636,12 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  // `dist/main.js` (and `src/main.ts`) sit four levels below the skill folder: skill/runtime/packages/cli/dist
-  const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+  // a source checkout: the runtime workspace is <repo>/runtime, the skill folder <repo>/skills/monitoring-claude-sessions
+  const skillDir = defaultSkillDir();
   const paths: MainPaths = {
     launcherPath: path.join(skillDir, 'scripts', 'mcs.mjs'),
     skillDir,
-    runtimeDir: path.join(skillDir, 'runtime'),
+    runtimeDir: defaultRuntimeDir(),
   };
   main(process.argv.slice(2), paths).then(
     (code) => {
