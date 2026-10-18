@@ -26,6 +26,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Typed ESLint over every workspace project needs more than the default 2 GB heap on hosted runners.
+  NODE_OPTIONS: --max-old-space-size=6144
   MCS_HOOK_DISABLE: "1"
   TZ: UTC
 
