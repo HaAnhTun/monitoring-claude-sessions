@@ -214,38 +214,55 @@ const PROBES: readonly Probe[] = [
     lines: ["import { execFile, exec } from 'node:child_process';", 'export const s = [execFile, exec];'],
     expect: [[1, IMPORTS, 'execFileText']],
   },
+  // node:sqlite is loaded by driver.ts only; better-sqlite3 stays banned everywhere, driver.ts included, so the native
+  // dependency cannot come back (ADR 0064)
   {
     file: 'packages/engine/src/panels/driver.ts',
-    lines: ["import Database from 'better-sqlite3';", 'export const d = Database;'],
-    expect: [[1, IMPORTS, 'Only engine/src/db/driver.ts opens the driver']],
+    lines: [
+      "import { DatabaseSync } from 'node:sqlite';",
+      "import Database from 'better-sqlite3';",
+      'export const d = [DatabaseSync, Database];',
+    ],
+    expect: [
+      [1, IMPORTS, 'Only engine/src/db/driver.ts opens the driver'],
+      [2, IMPORTS, 'The SQLite driver is node:sqlite'],
+    ],
   },
   {
     file: 'packages/engine/src/db/driver.ts',
-    lines: ["import Database from 'better-sqlite3';", 'export const d = Database;'],
-    expect: [],
+    lines: [
+      "import { DatabaseSync } from 'node:sqlite';",
+      "import Database from 'better-sqlite3';",
+      'export const d = [DatabaseSync, Database];',
+    ],
+    expect: [[2, IMPORTS, 'The SQLite driver is node:sqlite']],
   },
   {
     file: 'packages/server/src/spawn.ts',
     lines: [
       "import { spawn } from 'node:child_process';",
+      "import { DatabaseSync } from 'node:sqlite';",
       "import Database from 'better-sqlite3';",
-      'export const s = [spawn, Database];',
+      'export const s = [spawn, DatabaseSync, Database];',
     ],
     expect: [
       [1, IMPORTS, 'never starts processes'],
       [2, IMPORTS, 'Use engine repositories'],
+      [3, IMPORTS, 'Use engine repositories'],
     ],
   },
   {
     file: 'packages/cli/src/spawn.ts',
     lines: [
       "import { spawn } from 'node:child_process';",
+      "import { DatabaseSync } from 'node:sqlite';",
       "import Database from 'better-sqlite3';",
-      'export const s = [spawn, Database];',
+      'export const s = [spawn, DatabaseSync, Database];',
     ],
     expect: [
       [1, IMPORTS, 'execFileText'],
       [2, IMPORTS, 'Use engine repositories'],
+      [3, IMPORTS, 'Use engine repositories'],
     ],
   },
   // ---- layering per package

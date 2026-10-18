@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -22,8 +22,9 @@ function fileDb(name = 'db.sqlite'): { path: string; open: () => SqlDriver } {
   return { path, open: () => openSqlite(path, { readonly: false, fileMustExist: false, timeoutMs: 1000 }) };
 }
 
-function sqliteError(code: string, message = 'low level message'): Error {
-  return Object.assign(new Error(message), { name: 'SqliteError', code });
+/** An error shaped like the ones `node:sqlite` throws (ADR 0064 decision 8). */
+function sqliteError(errcode: number, message = 'low level message'): Error {
+  return Object.assign(new Error(message), { code: 'ERR_SQLITE_ERROR', errcode, errstr: 'low level text' });
 }
 
 function failure(run: () => unknown): DbError {
@@ -36,51 +37,88 @@ function failure(run: () => unknown): DbError {
   throw new Error('expected the call to throw a DbError');
 }
 
-describe('toDbError: SQLite error codes (03 4.3)', () => {
-  const table: readonly (readonly [string, DbErrorCode, DbConstraintKind?])[] = [
-    ['SQLITE_BUSY', 'db_busy'],
-    ['SQLITE_BUSY_RECOVERY', 'db_busy'],
-    ['SQLITE_BUSY_SNAPSHOT', 'db_busy'],
-    ['SQLITE_BUSY_TIMEOUT', 'db_busy'],
-    ['SQLITE_LOCKED', 'db_locked'],
-    ['SQLITE_LOCKED_SHAREDCACHE', 'db_locked'],
-    ['SQLITE_CORRUPT', 'db_corrupt'],
-    ['SQLITE_CORRUPT_VTAB', 'db_corrupt'],
-    ['SQLITE_NOTADB', 'db_corrupt'],
-    ['SQLITE_READONLY', 'db_readonly'],
-    ['SQLITE_READONLY_DBMOVED', 'db_readonly'],
-    ['SQLITE_FULL', 'db_full'],
-    ['SQLITE_IOERR', 'db_io'],
-    ['SQLITE_IOERR_WRITE', 'db_io'],
-    ['SQLITE_CANTOPEN', 'db_cantopen'],
-    ['SQLITE_CANTOPEN_ISDIR', 'db_cantopen'],
-    ['SQLITE_CONSTRAINT', 'db_constraint', 'other'],
-    ['SQLITE_CONSTRAINT_UNIQUE', 'db_constraint', 'unique'],
-    ['SQLITE_CONSTRAINT_PRIMARYKEY', 'db_constraint', 'unique'],
-    ['SQLITE_CONSTRAINT_CHECK', 'db_constraint', 'check'],
-    ['SQLITE_CONSTRAINT_FOREIGNKEY', 'db_constraint', 'foreignkey'],
-    ['SQLITE_CONSTRAINT_NOTNULL', 'db_constraint', 'notnull'],
-    ['SQLITE_CONSTRAINT_DATATYPE', 'db_constraint', 'datatype'],
-    ['SQLITE_CONSTRAINT_TRIGGER', 'db_constraint', 'other'],
-    ['SQLITE_CONSTRAINT_ROWID', 'db_constraint', 'unique'],
+describe('toDbError: SQLite result codes (03 4.3, ADR 0064 decision 8)', () => {
+  // [errcode, DbError code, SQLite name kept in sqliteCode, constraint kind]
+  const table: readonly (readonly [number, DbErrorCode, string, DbConstraintKind?])[] = [
+    [5, 'db_busy', 'SQLITE_BUSY'],
+    [261, 'db_busy', 'SQLITE_BUSY_RECOVERY'],
+    [517, 'db_busy', 'SQLITE_BUSY_SNAPSHOT'],
+    [773, 'db_busy', 'SQLITE_BUSY_TIMEOUT'],
+    [6, 'db_locked', 'SQLITE_LOCKED'],
+    [262, 'db_locked', 'SQLITE_LOCKED_SHAREDCACHE'],
+    [8, 'db_readonly', 'SQLITE_READONLY'],
+    [1032, 'db_readonly', 'SQLITE_READONLY_DBMOVED'],
+    [10, 'db_io', 'SQLITE_IOERR'],
+    [778, 'db_io', 'SQLITE_IOERR_WRITE'],
+    [11, 'db_corrupt', 'SQLITE_CORRUPT'],
+    [267, 'db_corrupt', 'SQLITE_CORRUPT_VTAB'],
+    [13, 'db_full', 'SQLITE_FULL'],
+    [14, 'db_cantopen', 'SQLITE_CANTOPEN'],
+    [526, 'db_cantopen', 'SQLITE_CANTOPEN_ISDIR'],
+    [26, 'db_corrupt', 'SQLITE_NOTADB'],
+    [19, 'db_constraint', 'SQLITE_CONSTRAINT', 'other'],
+    [275, 'db_constraint', 'SQLITE_CONSTRAINT_CHECK', 'check'],
+    [787, 'db_constraint', 'SQLITE_CONSTRAINT_FOREIGNKEY', 'foreignkey'],
+    [1299, 'db_constraint', 'SQLITE_CONSTRAINT_NOTNULL', 'notnull'],
+    [1555, 'db_constraint', 'SQLITE_CONSTRAINT_PRIMARYKEY', 'unique'],
+    [2067, 'db_constraint', 'SQLITE_CONSTRAINT_UNIQUE', 'unique'],
+    [2579, 'db_constraint', 'SQLITE_CONSTRAINT_ROWID', 'unique'],
+    [3091, 'db_constraint', 'SQLITE_CONSTRAINT_DATATYPE', 'datatype'],
+    [1811, 'db_constraint', 'SQLITE_CONSTRAINT_TRIGGER', 'other'],
+    // an extended code of primary 19 that the driver does not name: still a constraint, kind other, primary name
+    [(60 << 8) | 19, 'db_constraint', 'SQLITE_CONSTRAINT', 'other'],
   ];
 
-  for (const [sqliteCode, code, constraint] of table) {
-    it(`maps ${sqliteCode} to ${code}`, () => {
-      const mapped = toDbError(sqliteError(sqliteCode));
+  for (const [errcode, code, sqliteCode, constraint] of table) {
+    it(`maps errcode ${String(errcode)} to ${code} (${sqliteCode})`, () => {
+      const mapped = toDbError(sqliteError(errcode));
       expect(mapped).toBeInstanceOf(DbError);
       expect(mapped.code).toBe(code);
       expect(mapped.sqliteCode).toBe(sqliteCode);
       expect(mapped.constraint).toBe(constraint);
+      expect(mapped.message).toContain(sqliteCode);
     });
   }
 
-  it('maps every other SQLite code to db_io and keeps the code for diagnosis', () => {
-    for (const sqliteCode of ['SQLITE_ERROR', 'SQLITE_MISUSE', 'SQLITE_NOMEM', 'SQLITE_PERM', 'SQLITE_SCHEMA']) {
-      const mapped = toDbError(sqliteError(sqliteCode));
-      expect(mapped.code).toBe('db_io');
-      expect(mapped.sqliteCode).toBe(sqliteCode);
+  it('maps every other SQLite code to db_io and keeps a SQLITE_* name for diagnosis', () => {
+    const others: readonly (readonly [number, string])[] = [
+      [1, 'SQLITE_ERROR'],
+      [21, 'SQLITE_MISUSE'],
+      [7, 'SQLITE_NOMEM'],
+      [3, 'SQLITE_PERM'],
+      [17, 'SQLITE_SCHEMA'],
+      [25, 'SQLITE_RANGE'],
+      [(9 << 8) | 1, 'SQLITE_ERROR'],
+      [99, 'SQLITE_UNKNOWN'],
+    ];
+    for (const [errcode, sqliteCode] of others) {
+      const mapped = toDbError(sqliteError(errcode));
+      expect(mapped.code, String(errcode)).toBe('db_io');
+      expect(mapped.sqliteCode, String(errcode)).toBe(sqliteCode);
+      expect(mapped.constraint).toBeUndefined();
     }
+  });
+
+  it('maps a node:sqlite error without a usable errcode to db_io and does not keep it (its message can hold data)', () => {
+    for (const errcode of [undefined, 'SQLITE_BUSY', 0, 1.5]) {
+      const original = Object.assign(new Error('UNIQUE constraint failed: t.secret'), {
+        code: 'ERR_SQLITE_ERROR',
+        errcode,
+      });
+      const mapped = toDbError(original);
+      expect(mapped.code).toBe('db_io');
+      expect(mapped.sqliteCode).toBeUndefined();
+      expect(mapped.cause).toBeUndefined();
+      expect(mapped.message).not.toContain('secret');
+    }
+  });
+
+  it('does not take an error with a string SQLITE_* code (the old driver shape) for a SQLite error', () => {
+    const original = Object.assign(new Error('old driver'), { code: 'SQLITE_BUSY' });
+    const mapped = toDbError(original);
+    expect(mapped.code).toBe('db_io');
+    expect(mapped.sqliteCode).toBeUndefined();
+    expect(mapped.cause).toBe(original);
   });
 
   it('maps an error that is not from SQLite to db_io and keeps it as the cause', () => {
@@ -99,11 +137,12 @@ describe('toDbError: SQLite error codes (03 4.3)', () => {
   });
 
   it('never copies the SQLite message into the DbError message (it can name data)', () => {
-    const mapped = toDbError(
-      sqliteError('SQLITE_CONSTRAINT_UNIQUE', 'UNIQUE constraint failed: events.event_uid SECRET-VALUE'),
-    );
-    expect(mapped.message).not.toContain('SECRET-VALUE');
-    expect(mapped.message).not.toContain('event_uid');
+    for (const errcode of [2067, 275, 1, 14]) {
+      const mapped = toDbError(sqliteError(errcode, 'UNIQUE constraint failed: events.event_uid SECRET-VALUE'));
+      expect(mapped.message).not.toContain('SECRET-VALUE');
+      expect(mapped.message).not.toContain('event_uid');
+      expect(mapped.cause).toBeUndefined();
+    }
   });
 });
 
@@ -152,12 +191,33 @@ describe('toDbError: real SQLite errors', () => {
 
   it('maps a missing file with fileMustExist to db_cantopen', () => {
     const path = join(tempDir('driver').path, 'missing.sqlite');
-    expect(failure(() => openSqlite(path, { readonly: true, fileMustExist: true, timeoutMs: 1 })).code).toBe(
-      'db_cantopen',
-    );
-    expect(failure(() => openSqlite(path, { readonly: false, fileMustExist: true, timeoutMs: 1 })).code).toBe(
-      'db_cantopen',
-    );
+    const readOnly = failure(() => openSqlite(path, { readonly: true, fileMustExist: true, timeoutMs: 1 }));
+    expect(readOnly.code).toBe('db_cantopen');
+    expect(readOnly.sqliteCode).toBe('SQLITE_CANTOPEN');
+    const readWrite = failure(() => openSqlite(path, { readonly: false, fileMustExist: true, timeoutMs: 1 }));
+    expect(readWrite.code).toBe('db_cantopen');
+    expect(readWrite.sqliteCode).toBe('SQLITE_CANTOPEN');
+    expect(readWrite.message).toBe(readOnly.message);
+  });
+
+  it('creates nothing when fileMustExist refuses a missing read-write path', () => {
+    const path = join(tempDir('driver').path, 'missing.sqlite');
+    failure(() => openSqlite(path, { readonly: false, fileMustExist: true, timeoutMs: 1 }));
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(`${path}-wal`)).toBe(false);
+  });
+
+  it('creates the file when fileMustExist is false', () => {
+    const path = join(tempDir('driver').path, 'created.sqlite');
+    openSqlite(path, { readonly: false, fileMustExist: false, timeoutMs: 1 }).close();
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('maps a directory to db_cantopen', () => {
+    const dir = tempDir('driver').path;
+    for (const readonly of [false, true]) {
+      expect(failure(() => openSqlite(dir, { readonly, fileMustExist: true, timeoutMs: 1 })).code).toBe('db_cantopen');
+    }
   });
 
   it('maps a write on a read-only connection to db_readonly', () => {
@@ -225,6 +285,7 @@ describe('SqlDriver (03 4.5)', () => {
     const row = db.prepare<{ i: number; s: string; b: Uint8Array; absent: null }>('SELECT * FROM t').get();
     expect(row?.i).toBe(42);
     expect(row?.s).toBe('text');
+    expect(row?.b).toBeInstanceOf(Uint8Array);
     expect([...(row?.b ?? [])]).toEqual([1, 2, 3, 255]);
     expect(row?.absent).toBeNull();
     db.close();
@@ -274,7 +335,16 @@ describe('SqlDriver (03 4.5)', () => {
 
   it('lets an error that is not from SQLite pass through untouched', () => {
     const db = memory();
-    expect(() => db.prepare('SELECT ?').get([1, 2])).toThrow(RangeError);
+    // node:sqlite refuses an integer it cannot represent as a number (ERR_OUT_OF_RANGE): a programming error
+    expect(() => db.prepare('SELECT 9007199254740993 AS n').get()).toThrow(RangeError);
+    db.close();
+  });
+
+  it('maps too many positional values to db_io (SQLITE_RANGE)', () => {
+    const db = memory();
+    const error = failure(() => db.prepare('SELECT ?').get([1, 2]));
+    expect(error.code).toBe('db_io');
+    expect(error.sqliteCode).toBe('SQLITE_RANGE');
     db.close();
   });
 
@@ -315,6 +385,94 @@ describe('SqlDriver (03 4.5)', () => {
         db.prepare('INSERT INTO t VALUES (3)').run();
       });
       expect(db.prepare('SELECT x FROM t ORDER BY x').all()).toEqual([{ x: 1 }, { x: 3 }]);
+      db.close();
+    });
+
+    it('leaves the outer transaction usable after a savepoint failure, two levels deep', () => {
+      const db = memory();
+      db.exec('CREATE TABLE t (x INTEGER) STRICT');
+      const insert = (x: number): void => {
+        db.prepare('INSERT INTO t VALUES (?)').run([x]);
+      };
+      db.transaction(() => {
+        insert(1);
+        db.transaction(() => {
+          insert(2);
+          expect(() =>
+            db.transaction(() => {
+              insert(3);
+              throw new Error('deepest');
+            }),
+          ).toThrow('deepest');
+          insert(4);
+        });
+        expect(() =>
+          db.transaction(() => {
+            insert(5);
+            throw new Error('second');
+          }, 'immediate'),
+        ).toThrow('second');
+        insert(6);
+      });
+      expect(db.prepare('SELECT x FROM t ORDER BY x').all()).toEqual([{ x: 1 }, { x: 2 }, { x: 4 }, { x: 6 }]);
+      expect(db.transaction(() => db.prepare('SELECT count(*) AS n FROM t').get())).toEqual({ n: 4 });
+      db.close();
+    });
+
+    it('rolls back an inner savepoint that was released when the outer callback throws afterwards', () => {
+      const db = memory();
+      db.exec('CREATE TABLE t (x INTEGER) STRICT');
+      expect(() =>
+        db.transaction(() => {
+          db.transaction(() => db.prepare('INSERT INTO t VALUES (1)').run());
+          throw new Error('after the inner commit');
+        }),
+      ).toThrow('after the inner commit');
+      expect(db.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 0 });
+      db.close();
+    });
+
+    it('rethrows the original error when the rollback itself fails (closed connection)', () => {
+      const db = memory();
+      db.exec('CREATE TABLE t (x INTEGER) STRICT');
+      const boom = new Error('original');
+      expect(() =>
+        db.transaction(() => {
+          db.prepare('INSERT INTO t VALUES (1)').run();
+          db.close(); // the rollback that follows cannot run on a closed connection
+          throw boom;
+        }),
+      ).toThrow(boom);
+    });
+
+    it('rethrows the original error when the savepoint is gone before its rollback', () => {
+      const db = memory();
+      db.exec('CREATE TABLE t (x INTEGER) STRICT');
+      const boom = new Error('original');
+      db.transaction(() => {
+        expect(() =>
+          db.transaction(() => {
+            db.exec('RELEASE mcs_1'); // ROLLBACK TO of this savepoint then fails with SQLITE_ERROR
+            throw boom;
+          }),
+        ).toThrow(boom);
+        db.prepare('INSERT INTO t VALUES (1)').run();
+      });
+      expect(db.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 1 });
+      db.close();
+    });
+
+    it('maps a SQLite failure inside the callback to a DbError and rolls back', () => {
+      const db = memory();
+      db.exec('CREATE TABLE t (x INTEGER PRIMARY KEY) STRICT');
+      const error = failure(() =>
+        db.transaction(() => {
+          db.prepare('INSERT INTO t VALUES (1)').run();
+          return db.prepare('INSERT INTO t VALUES (1)').run();
+        }),
+      );
+      expect(error.constraint).toBe('unique');
+      expect(db.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 0 });
       db.close();
     });
 
@@ -393,7 +551,11 @@ describe('SqlDriver (03 4.5)', () => {
       const db = source.open();
       db.exec('CREATE TABLE t (x INTEGER) STRICT');
       const missingFolder = join(dirname(source.path), 'no-such-folder', 'copy.sqlite');
-      await expect(db.backupTo(missingFolder)).rejects.toThrow();
+      const error: unknown = await db.backupTo(missingFolder).then(
+        () => undefined,
+        (failed: unknown) => failed,
+      );
+      expect(isDbError(error, 'db_cantopen')).toBe(true);
       expect(db.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 0 });
       db.close();
     });
@@ -401,14 +563,38 @@ describe('SqlDriver (03 4.5)', () => {
 
   it('close() is idempotent and a closed driver refuses statements', () => {
     const db = memory();
+    const kept = db.prepare('SELECT 1 AS one');
     db.close();
     db.close();
-    expect(() => db.prepare('SELECT 1')).toThrow();
+    expect(() => db.prepare('SELECT 1 AS one')).toThrow();
+    expect(() => kept.get()).toThrow();
+    expect(() => {
+      db.exec('SELECT 1');
+    }).toThrow();
+  });
+
+  it('close() in the middle of a transaction discards its work', () => {
+    const { path, open } = fileDb();
+    const db = open();
+    db.exec('CREATE TABLE t (x INTEGER) STRICT');
+    expect(() =>
+      db.transaction(() => {
+        db.prepare('INSERT INTO t VALUES (1)').run();
+        db.close();
+        throw new Error('stop');
+      }),
+    ).toThrow('stop');
+    const again = openSqlite(path, { readonly: true, fileMustExist: true, timeoutMs: 1000 });
+    expect(again.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 0 });
+    again.close();
   });
 });
 
-describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, I-14)', () => {
-  const MODULE = ['better', 'sqlite3'].join('-');
+describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, ADR 0064, I-14)', () => {
+  // Module names are assembled from parts: scripts/check-deps.mjs scans source text with a regex and must not take the
+  // text of a probe for a real import.
+  const MODULE = ['node', 'sqlite'].join(':');
+  const LEGACY = ['better', 'sqlite3'].join('-');
   const SKIPPED = new Set(['node_modules', 'dist', 'coverage', '.vite']);
 
   function sourceFiles(dir: string): string[] {
@@ -422,7 +608,12 @@ describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, I-14)', () => {
     return found;
   }
 
-  /** True when the source really imports `module`: an import or export declaration, require() or import(). Strings do not count. */
+  /**
+   * True when the source really loads `module`: an import or export declaration (type-only included), `import x =
+   * require()`, or any call whose first argument is the module name (`require()`, `import()`,
+   * `createRequire(...)(...)`, a stored `createRequire` result, `process.getBuiltinModule()`). Strings and comments do
+   * not count.
+   */
   function importsModule(fileName: string, source: string, module: string): boolean {
     const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
     const isModule = (node: ts.Node | undefined): boolean =>
@@ -436,48 +627,70 @@ describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, I-14)', () => {
       ) {
         return true;
       }
-      if (ts.isCallExpression(node)) {
-        const callee = node.expression;
-        const isRequire = ts.isIdentifier(callee) && callee.text === 'require';
-        if ((isRequire || callee.kind === ts.SyntaxKind.ImportKeyword) && isModule(node.arguments[0])) return true;
+      if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && isModule(node.argument.literal)) {
+        return true;
       }
+      if (ts.isCallExpression(node) && isModule(node.arguments[0])) return true;
       return ts.forEachChild(node, (child) => (visit(child) ? true : undefined)) === true;
     };
     return visit(file);
   }
 
-  // Probe sources are assembled from parts: scripts/check-deps.mjs scans source text with a regex and must not take the
-  // text of a probe for a real import.
   const quoted = (name: string): string => `'${name}'`;
-  const call = (fn: string): string => `${fn}(${quoted(MODULE)})`;
   const statement = (...parts: string[]): string => `${parts.join(' ')};`;
 
-  it('the detector finds imports in every form and ignores the module name inside a string', () => {
-    const forms = [
-      statement('import Database', 'from', quoted(MODULE)),
-      statement('import type { Database }', 'from', quoted(MODULE)),
-      statement('export { default }', 'from', quoted(MODULE)),
+  function importForms(module: string): string[] {
+    const call = (fn: string): string => `${fn}(${quoted(module)})`;
+    return [
+      statement('import Database', 'from', quoted(module)),
+      statement('import type { DatabaseSync }', 'from', quoted(module)),
+      statement('import type * as S', 'from', quoted(module)),
+      statement('export { default }', 'from', quoted(module)),
       statement('const db =', call('require')),
       statement('const db = await', call('import')),
       statement('import db =', call('require')),
+      statement('const db =', call('createRequire(import.meta.url)')),
+      `const req = createRequire(import.meta.url);\n${statement('const db =', call('req'))}`,
+      statement('const db =', call('process.getBuiltinModule')),
+      statement(`type S = typeof import(${quoted(module)})`),
     ];
-    for (const form of forms) expect(importsModule('probe.ts', form, MODULE), form).toBe(true);
-    const inString = statement('const probe =', JSON.stringify(statement('import x', 'from', quoted(MODULE))));
-    expect(importsModule('probe.ts', inString, MODULE)).toBe(false);
-    const inComment = `// ${statement('import x', 'from', quoted(MODULE))}\nexport const a = 1;\n`;
-    expect(importsModule('probe.ts', inComment, MODULE)).toBe(false);
-    expect(importsModule('probe.ts', statement('import x', 'from', quoted('zod')), MODULE)).toBe(false);
+  }
+
+  it('the detector finds imports in every form and ignores the module name inside a string or a comment', () => {
+    for (const module of [MODULE, LEGACY]) {
+      for (const form of importForms(module)) expect(importsModule('probe.ts', form, module), form).toBe(true);
+      const inString = statement('const probe =', JSON.stringify(statement('import x', 'from', quoted(module))));
+      expect(importsModule('probe.ts', inString, module)).toBe(false);
+      const inComment = `// ${statement('import x', 'from', quoted(module))}\nexport const a = 1;\n`;
+      expect(importsModule('probe.ts', inComment, module)).toBe(false);
+      expect(importsModule('probe.ts', `export const name = ${quoted(module)};\n`, module)).toBe(false);
+      expect(importsModule('probe.ts', statement('import x', 'from', quoted('zod')), module)).toBe(false);
+    }
   });
 
-  it('lets exactly one file import the native module: packages/engine/src/db/driver.ts', () => {
+  /** Files under packages/, tests/ and scripts/ that load each module. A file that never names it is not parsed. */
+  function importersOf(modules: readonly string[]): Map<string, string[]> {
     const roots = [join(RUNTIME_ROOT, 'packages'), join(RUNTIME_ROOT, 'tests'), join(RUNTIME_ROOT, 'scripts')];
-    const importers = roots
+    const found = new Map<string, string[]>(modules.map((module) => [module, []]));
+    for (const file of roots
       .filter((root) => statSync(root, { throwIfNoEntry: false })?.isDirectory() === true)
-      .flatMap(sourceFiles)
-      .filter((file) => importsModule(file, readFileSync(file, 'utf8'), MODULE))
-      .map((file) => relative(RUNTIME_ROOT, file).replaceAll('\\', '/'));
-    expect(importers).toEqual(['packages/engine/src/db/driver.ts']);
-  });
+      .flatMap(sourceFiles)) {
+      const source = readFileSync(file, 'utf8');
+      for (const module of modules) {
+        if (source.includes(module) && importsModule(file, source, module)) {
+          found.get(module)?.push(relative(RUNTIME_ROOT, file).replaceAll('\\', '/'));
+        }
+      }
+    }
+    return found;
+  }
+
+  it('lets exactly one file load node:sqlite (packages/engine/src/db/driver.ts) and no file import better-sqlite3', () => {
+    const importers = importersOf([MODULE, LEGACY]);
+    expect(importers.get(MODULE)).toEqual(['packages/engine/src/db/driver.ts']);
+    // ADR 0064: no native production dependency
+    expect(importers.get(LEGACY)).toEqual([]);
+  }, 60_000);
 
   async function lintErrors(file: string, code: string): Promise<string[]> {
     const loaded: unknown = await import(pathToFileURL(join(RUNTIME_ROOT, 'eslint.config.js')).href);
@@ -500,21 +713,34 @@ describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, I-14)', () => {
       .map((message) => `${String(message.line)}: ${message.message}`);
   }
 
-  const PROBE = `${statement('import Database', 'from', quoted(MODULE))}\nexport const probe = Database;\n`;
+  const PROBE = `${statement('import { DatabaseSync }', 'from', quoted(MODULE))}\nexport const probe = DatabaseSync;\n`;
+  const TYPE_PROBE = `${statement('import type { DatabaseSync }', 'from', quoted(MODULE))}\nexport type Probe = DatabaseSync;\n`;
+  const LEGACY_PROBE = `${statement('import Database', 'from', quoted(LEGACY))}\nexport const probe = Database;\n`;
+  const ELSEWHERE = [
+    'packages/engine/src/db/other.ts',
+    'packages/engine/src/index.ts',
+    'packages/engine/src/platform/exec.ts',
+    'packages/server/src/probe.ts',
+    'packages/cli/src/probe.ts',
+    'packages/shared/src/probe.ts',
+    'packages/shared/src/protocol/probe.ts',
+  ];
 
-  it('ESLint negative probes: the import is an error anywhere but in driver.ts', async () => {
-    for (const file of [
-      'packages/engine/src/db/other.ts',
-      'packages/engine/src/index.ts',
-      'packages/server/src/probe.ts',
-      'packages/cli/src/probe.ts',
-      'packages/shared/src/probe.ts',
-    ]) {
+  it('ESLint negative probes: importing node:sqlite is an error anywhere but in driver.ts', async () => {
+    for (const file of ELSEWHERE) {
       expect(await lintErrors(file, PROBE), file).toHaveLength(1);
+      expect(await lintErrors(file, TYPE_PROBE), file).toHaveLength(1);
     }
   });
 
-  it('ESLint positive probe: driver.ts may import it', async () => {
+  it('ESLint negative probes: importing better-sqlite3 is an error everywhere, driver.ts included', async () => {
+    for (const file of [...ELSEWHERE, 'packages/engine/src/db/driver.ts']) {
+      expect(await lintErrors(file, LEGACY_PROBE), file).toHaveLength(1);
+    }
+  });
+
+  it('ESLint positive probe: driver.ts may import node:sqlite', async () => {
     expect(await lintErrors('packages/engine/src/db/driver.ts', PROBE)).toEqual([]);
+    expect(await lintErrors('packages/engine/src/db/driver.ts', TYPE_PROBE)).toEqual([]);
   });
 });

@@ -236,7 +236,11 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': restrictImports({
         paths: [
-          { name: 'better-sqlite3', message: 'Only engine/src/db/driver.ts opens the driver.' },
+          { name: 'node:sqlite', message: 'Only engine/src/db/driver.ts opens the driver.' },
+          {
+            name: 'better-sqlite3',
+            message: 'The SQLite driver is node:sqlite, opened in engine/src/db/driver.ts (ADR 0064).',
+          },
           { name: 'node:child_process', message: 'Only engine/src/platform/exec.ts starts processes.' },
           { name: 'child_process', message: 'Use node:child_process inside engine/src/platform/exec.ts only.' },
         ],
@@ -264,7 +268,10 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': restrictImports({
         patterns: [forbid(['@mcs/server', '@mcs/cli', '@mcs/web', '@mcs/testkit'], 'engine layering')],
-        paths: [CHILD_PROCESS_UNSAFE],
+        paths: [
+          CHILD_PROCESS_UNSAFE,
+          { name: 'better-sqlite3', message: 'The SQLite driver is node:sqlite (ADR 0064).' },
+        ],
       }),
     },
   },
@@ -274,7 +281,11 @@ export default defineConfig(
       'no-restricted-imports': restrictImports({
         paths: [
           CHILD_PROCESS_UNSAFE,
-          { name: 'better-sqlite3', message: 'Only engine/src/db/driver.ts opens the driver.' },
+          { name: 'node:sqlite', message: 'Only engine/src/db/driver.ts opens the driver.' },
+          {
+            name: 'better-sqlite3',
+            message: 'The SQLite driver is node:sqlite, opened in engine/src/db/driver.ts (ADR 0064).',
+          },
         ],
         patterns: [forbid(['@mcs/server', '@mcs/cli', '@mcs/web', '@mcs/testkit'], 'engine layering')],
       }),
@@ -291,6 +302,7 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': restrictImports({
         paths: [
+          { name: 'node:sqlite', message: 'Use engine repositories.' },
           { name: 'better-sqlite3', message: 'Use engine repositories.' },
           { name: 'node:child_process', message: 'The server never starts processes.' },
           { name: 'child_process', message: 'The server never starts processes.' },
@@ -312,6 +324,7 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': restrictImports({
         paths: [
+          { name: 'node:sqlite', message: 'Use engine repositories.' },
           { name: 'better-sqlite3', message: 'Use engine repositories.' },
           { name: 'node:child_process', message: 'Use execFileText/spawnDetached from @mcs/engine.' },
           { name: 'child_process', message: 'Use execFileText/spawnDetached from @mcs/engine.' },
