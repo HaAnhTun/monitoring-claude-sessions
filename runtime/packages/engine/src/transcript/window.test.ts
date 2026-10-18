@@ -53,6 +53,8 @@ function fixture(
     readBudgetBytes?: number;
     chunkBytes?: number;
     checkpointEvery?: number;
+    discoverRoot?: (dir: string) => () => Promise<string | null>;
+    now?: () => number;
   } = {},
 ): Fixture {
   const dir = tempDir('transcript-window').path;
@@ -72,6 +74,8 @@ function fixture(
     index: createEntryIndexService(db, { checkpointEvery: opts.checkpointEvery ?? 5, chunkBytes }),
     chunkBytes,
     ...(opts.readBudgetBytes === undefined ? {} : { readBudgetBytes: opts.readBudgetBytes }),
+    ...(opts.discoverRoot === undefined ? {} : { discoverRoot: opts.discoverRoot(dir) }),
+    ...(opts.now === undefined ? {} : { now: opts.now }),
   });
   const mainPath = join(dir, 'projects', `${SESSION}.jsonl`);
   mkdirSync(dirname(mainPath), { recursive: true });
@@ -464,6 +468,73 @@ describe('refusals', () => {
     const foreign: RepoContext = { instanceId: '22222222-2222-4222-8222-222222222222' };
     const error = await f.service.read(foreign, windowQuery(), live()).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(DbError);
+  });
+});
+
+describe('the containment root with transcripts_dir auto (CR-WP-33-4 part b)', () => {
+  it('serves a transcript inside the discovered folder and refuses one outside it', async () => {
+    const inside = fixture({
+      transcriptsDir: 'auto',
+      discoverRoot: (dir) => () => Promise.resolve(join(dir, 'projects')),
+    });
+    inside.main();
+    writeFileSync(inside.mainPath, text(sessionLines(5)));
+    expect((await inside.service.read(CTX, windowQuery(), live())).total).toBeGreaterThan(0);
+
+    const elsewhere = tempDir('elsewhere').path;
+    const outside = fixture({ transcriptsDir: 'auto', discoverRoot: () => () => Promise.resolve(elsewhere) });
+    outside.main();
+    writeFileSync(outside.mainPath, text(sessionLines(5)));
+    expect(await refusal(outside.service.read(CTX, windowQuery(), live()))).toBe('transcript_gone');
+    expect(await refusal(outside.service.locate(CTX, locateQuery({ i: 0 }), live()))).toBe('transcript_gone');
+  });
+
+  it('keeps the folder of the main transcript as the root while nothing is discovered, or the lookup fails', async () => {
+    for (const lookup of [() => Promise.resolve(null), () => Promise.reject(new Error('EACCES'))]) {
+      const f = fixture({ transcriptsDir: 'auto', discoverRoot: () => lookup });
+      f.main();
+      writeFileSync(f.mainPath, text(sessionLines(5)));
+      expect((await f.service.read(CTX, windowQuery(), live())).total).toBeGreaterThan(0);
+    }
+  });
+
+  it('asks again only after 10 seconds', async () => {
+    let now = T0;
+    let calls = 0;
+    let answer: string | null = null;
+    const f = fixture({
+      transcriptsDir: 'auto',
+      now: () => now,
+      discoverRoot: () => () => {
+        calls += 1;
+        return Promise.resolve(answer);
+      },
+    });
+    f.main();
+    writeFileSync(f.mainPath, text(sessionLines(5)));
+    expect((await f.service.read(CTX, windowQuery(), live())).total).toBeGreaterThan(0);
+    answer = tempDir('elsewhere').path;
+    now += 9_999;
+    expect((await f.service.read(CTX, windowQuery(), live())).total).toBeGreaterThan(0);
+    expect(calls).toBe(1);
+    now += 1;
+    expect(await refusal(f.service.read(CTX, windowQuery(), live()))).toBe('transcript_gone');
+    expect(calls).toBe(2);
+  });
+
+  it('never asks when transcripts_dir is an absolute folder', async () => {
+    let calls = 0;
+    const f = fixture({
+      transcriptsDir: (dir) => join(dir, 'projects'),
+      discoverRoot: () => () => {
+        calls += 1;
+        return Promise.resolve(null);
+      },
+    });
+    f.main();
+    writeFileSync(f.mainPath, text(sessionLines(5)));
+    expect((await f.service.read(CTX, windowQuery(), live())).total).toBeGreaterThan(0);
+    expect(calls).toBe(0);
   });
 });
 

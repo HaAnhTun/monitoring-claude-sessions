@@ -10,6 +10,7 @@ import { FakeClock, makeJunction, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultSkillDir } from '../config/defaults.ts';
+import { claudeHomeOf } from '../ingest/transcripts/discovery.ts';
 import { DbError, DB_ERROR_CODES } from '../db/errors.ts';
 import { DB_OPEN_EXIT_CODES, openInstanceDb } from '../db/open.ts';
 import { childStats, execFileText, resolveExecutable } from '../platform/exec.ts';
@@ -248,6 +249,8 @@ describe('buildInstanceContext: the fields of InstanceContext', () => {
     const fallback = await fixture({ env: { MCS_HOME: path.join(os.tmpdir(), 'mcs-home-x') } });
     const viaHome = await build(fallback);
     expect(viaHome.claudeHome).toBe(path.join(os.homedir(), '.claude'));
+    // the exported definition of transcript discovery agrees with the context (its private twin goes in a cleanup WP)
+    expect(viaHome.claudeHome).toBe(claudeHomeOf({}));
     viaHome.db.close();
 
     const relative = await fixture({
@@ -256,6 +259,7 @@ describe('buildInstanceContext: the fields of InstanceContext', () => {
     const viaRelative = await build(relative);
     expect(path.isAbsolute(viaRelative.claudeHome)).toBe(true);
     expect(viaRelative.claudeHome).toBe(path.resolve('rel/claude'));
+    expect(viaRelative.claudeHome).toBe(claudeHomeOf({ CLAUDE_CONFIG_DIR: 'rel/claude' }));
   });
 });
 

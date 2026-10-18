@@ -701,3 +701,17 @@ export type { RecentSession, RecentSessionsLog } from './ingest/transcripts/rece
 export { refreshRouteFile } from './ingest/route-refresh.ts';
 export type { RouteRefreshContext } from './ingest/route-refresh.ts';
 // @wp-end WP-85
+
+// @wp-begin WP-82
+export {
+  BUILD_STAMP_FILE,
+  BUNDLE_CLI_FILE,
+  BUNDLE_HOOK_FILE,
+  BUNDLE_SERVER_FILE,
+  layoutOfModule,
+  layoutOfRuntimeDir,
+} from './platform/layout.ts';
+export type { LayoutFs, RuntimeLayout, RuntimeLayoutMode } from './platform/layout.ts';
+export { BUNDLE_SERVER_ENTRY, RUNTIME_ENTRIES, RUNTIME_ENTRY } from './platform/markers.ts';
+export { defaultMigrationsDir } from './db/migrations.ts';
+// @wp-end WP-82

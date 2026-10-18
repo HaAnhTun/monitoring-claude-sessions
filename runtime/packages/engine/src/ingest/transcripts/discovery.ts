@@ -5,14 +5,23 @@
 // files and real folders are used: a link or junction is counted (`SYMLINK_SKIPPED`) and not followed. Names that end in
 // `.key`, the folders `tool-results`, `memory` and `workflows/scripts`, and every name that is not an id of the documented
 // form are never touched. The file system is a parameter so that a test can see exactly which paths were looked at.
-import { lstat as nodeLstat, open, readdir as nodeReaddir } from 'node:fs/promises';
+import { lstat as nodeLstat, open, readdir as nodeReaddir, realpath as nodeRealpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { AGENT_RE, RUN_ID_RE, SID_RE, TOOL_ID_RE, redact, routeKey, sanitizeProjectName } from '@mcs/shared/protocol';
+import {
+  AGENT_RE,
+  RUN_ID_RE,
+  SID_RE,
+  TOOL_ID_RE,
+  normalizePath,
+  redact,
+  sanitizeProjectName,
+} from '@mcs/shared/protocol';
 
 import type { TranscriptFileKind } from '../../db/repos/transcript-files.ts';
 import { clipCodePoints } from '../../platform/fsx.ts';
+import { pathsCaseInsensitive } from '../../platform/host.ts';
 
 export { sanitizeProjectName };
 
@@ -36,6 +45,8 @@ export interface DiscoveryFs {
   readText(file: string, maxBytes: number): Promise<string | null>;
   /** At most `maxBytes` from the start of a file; null when it is gone or unreadable. */
   readHead(file: string, maxBytes: number): Promise<Buffer | null>;
+  /** The real path of a folder (links resolved); null when it cannot be resolved. Optional: without it no real path is tried. */
+  realpath?(file: string): Promise<string | null>;
 }
 
 export const nodeDiscoveryFs: DiscoveryFs = {
@@ -60,6 +71,13 @@ export const nodeDiscoveryFs: DiscoveryFs = {
   },
   async readHead(file, maxBytes) {
     return (await readFrom(file, maxBytes))?.bytes ?? null;
+  },
+  async realpath(file) {
+    try {
+      return await nodeRealpath(file);
+    } catch {
+      return null;
+    }
   },
 };
 
@@ -87,11 +105,45 @@ async function readFrom(file: string, maxBytes: number): Promise<{ bytes: Buffer
 
 // ---- the transcripts folder -------------------------------------------------------------------------------------------------
 
-/** `<CLAUDE_CONFIG_DIR or ~/.claude>/projects` (legacy `projects_root`). */
-export function projectsRoot(env: Readonly<Record<string, string | undefined>>): string {
+/**
+ * The Claude home (Claude Code docs, 2026-10-18): `CLAUDE_CONFIG_DIR` when it is set and not empty (a relative value is
+ * resolved against the current directory), else `~/.claude` on every OS (`os.homedir()`: `USERPROFILE` on Windows, `HOME`
+ * elsewhere). The one exported definition; `runtime/context.ts` keeps a private twin until a cleanup removes it.
+ */
+export function claudeHomeOf(env: Readonly<Record<string, string | undefined>>): string {
   const configured = env['CLAUDE_CONFIG_DIR'];
-  const home = configured !== undefined && configured !== '' ? configured : path.join(os.homedir(), '.claude');
-  return path.join(home, 'projects');
+  return configured !== undefined && configured !== '' ? path.resolve(configured) : path.join(os.homedir(), '.claude');
+}
+
+/** `<claude home>/projects` (legacy `projects_root`). */
+export function projectsRoot(env: Readonly<Record<string, string | undefined>>): string {
+  return path.join(claudeHomeOf(env), 'projects');
+}
+
+/** Characters of a project folder name before Claude Code cuts it and appends a hash of the full path. */
+export const PROJECT_NAME_MAX = 200;
+
+const SEPARATORS = new Set(['/', String.fromCharCode(92)]);
+
+/**
+ * The project folder name Claude Code derives from a working directory: trailing separators dropped (a working directory
+ * never has one), every character outside `[A-Za-z0-9]` replaced by `-`. A name longer than 200 characters is cut to 200 and
+ * followed by `-<hash of the full path>`; the hash is not reproduced here, so `truncated` marks `name` as that prefix.
+ */
+export function projectFolderName(directory: string): { readonly name: string; readonly truncated: boolean } {
+  let end = directory.length;
+  while (end > 1 && SEPARATORS.has(directory[end - 1] ?? '')) end -= 1;
+  let trimmed = directory.slice(0, end);
+  if (/^[A-Za-z]:$/.test(trimmed)) trimmed = directory.slice(0, end + 1);
+  const name = sanitizeProjectName(trimmed);
+  return name.length > PROJECT_NAME_MAX
+    ? { name: name.slice(0, PROJECT_NAME_MAX), truncated: true }
+    : { name, truncated: false };
+}
+
+export interface DetectOptions {
+  /** Compare names and paths without case (default: the host, true on Windows and macOS, false on Linux). */
+  readonly caseInsensitive?: boolean;
 }
 
 /** Lines of a file that the legacy `first_cwd` looks at (`i > 60` break). */
@@ -142,24 +194,44 @@ async function listNamed(fs: DiscoveryFs, dir: string): Promise<{ name: string; 
 }
 
 /**
- * The project folder of a repository (legacy `detect_transcripts_dir`, same order): the folder named like the sanitized
- * repository (also its lower-case form), else the newest folder whose three newest files start with a record whose `cwd` is
- * the repository. Names and paths are compared with `routeKey`, which ignores case where the file system does.
+ * The project folder of a repository (legacy `detect_transcripts_dir`, extended for every OS): the folder named like the
+ * repository path (also its lower-case form), then like the real path of the repository when it is reached through a link,
+ * each in the cut form `<200 characters>-<hash>` when the name is longer than 200 characters; else the newest folder whose
+ * three newest files start with a record whose `cwd` is the repository (this also finds a folder that
+ * `CLAUDE_CODE_PROJECT_DIR_NAME` named). Names and paths ignore case where the file system does (Windows and macOS). Only
+ * real folders are used: a link, a dangling one included, is never taken and never entered.
  */
 export async function detectTranscriptsDir(
   repo: string,
   root: string,
   fs: DiscoveryFs = nodeDiscoveryFs,
+  options: DetectOptions = {},
 ): Promise<string | null> {
+  const insensitive = options.caseInsensitive ?? pathsCaseInsensitive;
+  const fold = (value: string): string => (insensitive ? value.toLowerCase() : value);
+  const pathKey = (value: string): string => fold(normalizePath(value));
   const entries = await listNamed(fs, root);
   if (entries === null) return null;
   const folders = entries.filter((entry) => entry.stat.kind === 'dir');
-  const sanitized = sanitizeProjectName(repo);
-  for (const candidate of [sanitized, sanitized.toLowerCase()]) {
-    const found = folders.find((entry) => routeKey(entry.name) === routeKey(candidate));
-    if (found !== undefined) return path.join(root, found.name);
+  const repos = [repo];
+  const real = fs.realpath === undefined ? null : await fs.realpath(repo);
+  if (real !== null && pathKey(real) !== pathKey(repo)) repos.push(real);
+  for (const candidate of repos) {
+    const { name, truncated } = projectFolderName(candidate);
+    if (name === '') continue;
+    const prefix = fold(`${name}-`);
+    const hits = truncated
+      ? folders.filter((entry) => entry.name.length > prefix.length && fold(entry.name).startsWith(prefix))
+      : folders.filter(
+          (entry) => entry.name === name || entry.name === name.toLowerCase() || fold(entry.name) === fold(name),
+        );
+    const exact = hits.find((entry) => entry.name === name) ?? hits.find((entry) => entry.name === name.toLowerCase());
+    if (exact !== undefined) return path.join(root, exact.name);
+    // several cut names that share the prefix: the content scan below decides between them
+    const only = hits.length === 1 ? hits[0] : undefined;
+    if (only !== undefined) return path.join(root, only.name);
   }
-  const want = routeKey(repo);
+  const wanted = new Set(repos.map(pathKey));
   const newestFirst = [...folders].sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
   for (const folder of newestFirst) {
     const dir = path.join(root, folder.name);
@@ -169,7 +241,7 @@ export async function detectTranscriptsDir(
       .slice(0, NEWEST_FILES);
     for (const file of files) {
       const cwd = await firstCwd(fs, path.join(dir, file.name));
-      if (cwd !== '' && routeKey(cwd) === want) return dir;
+      if (cwd !== '' && wanted.has(pathKey(cwd))) return dir;
     }
   }
   return null;

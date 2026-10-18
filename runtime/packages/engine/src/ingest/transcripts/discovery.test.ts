@@ -5,14 +5,17 @@ import path from 'node:path';
 
 import { SID_RE } from '@mcs/shared/protocol';
 import { FIXTURE_EPOCH_MS, buildClaudeHome, makeJunction, useTempDirs } from '@mcs/testkit';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { pathsCaseInsensitive } from '../../platform/host.ts';
 import {
+  PROJECT_NAME_MAX,
+  claudeHomeOf,
   detectTranscriptsDir,
   discoverSession,
   discoverTranscripts,
   nodeDiscoveryFs,
+  projectFolderName,
   projectsRoot,
   readAgentMeta,
   readCustomTitle,
@@ -101,7 +104,8 @@ function homeWithSessions(root: string): { projectsDir: string; tdir: string } {
 
 describe('projectsRoot and sanitizeProjectName', () => {
   it('uses CLAUDE_CONFIG_DIR, else the .claude folder of the user', () => {
-    expect(projectsRoot({ CLAUDE_CONFIG_DIR: path.join('x', 'cfg') })).toBe(path.join('x', 'cfg', 'projects'));
+    // a relative CLAUDE_CONFIG_DIR is resolved against the current directory, as the instance context does
+    expect(projectsRoot({ CLAUDE_CONFIG_DIR: path.join('x', 'cfg') })).toBe(path.resolve('x', 'cfg', 'projects'));
     expect(projectsRoot({ CLAUDE_CONFIG_DIR: '' })).toMatch(/\.claude[\\/]projects$/);
     expect(projectsRoot({})).toMatch(/\.claude[\\/]projects$/);
   });
@@ -483,5 +487,165 @@ describe('a session folder next to its title', () => {
     expect(found.sessions[0]?.customTitlePath).toBe(path.join(tdir, S1, 'custom-title.json'));
     const plain = await discoverSession(tdir, S2);
     expect(plain?.customTitlePath).toBeNull();
+  });
+});
+
+describe('claudeHomeOf (Claude Code docs, 2026-10-18)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('takes CLAUDE_CONFIG_DIR when it is set: absolute as it is, relative against the current directory', () => {
+    const absolute = path.resolve(makeTemp('cfg').path);
+    expect(claudeHomeOf({ CLAUDE_CONFIG_DIR: absolute })).toBe(absolute);
+    expect(claudeHomeOf({ CLAUDE_CONFIG_DIR: path.join('rel', 'cfg') })).toBe(path.resolve('rel', 'cfg'));
+    expect(projectsRoot({ CLAUDE_CONFIG_DIR: absolute })).toBe(path.join(absolute, 'projects'));
+  });
+
+  it('falls back to .claude in the home folder for an empty or missing CLAUDE_CONFIG_DIR', () => {
+    const home = makeTemp('home').path;
+    // os.homedir() reads USERPROFILE on Windows and HOME elsewhere
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('USERPROFILE', home);
+    expect(claudeHomeOf({ CLAUDE_CONFIG_DIR: '' })).toBe(path.join(home, '.claude'));
+    expect(claudeHomeOf({})).toBe(path.join(home, '.claude'));
+  });
+});
+
+// ---- the folder name and the folder choice, over an injected file system ---------------------------------------------------
+
+interface MemoryEntry {
+  readonly kind: 'dir' | 'link' | 'file';
+  readonly text?: string;
+  readonly mtimeMs?: number;
+  readonly unreadable?: boolean;
+}
+
+const BS = String.fromCharCode(92);
+const MEM_ROOT = path.resolve('/fixture-projects');
+
+/** A file system made of `tree` (paths relative to MEM_ROOT, '/' separated) and of the real paths in `links`. */
+function memoryFs(
+  tree: Readonly<Record<string, MemoryEntry>>,
+  links: Readonly<Record<string, string>> = {},
+): DiscoveryFs {
+  const entries = new Map<string, MemoryEntry>([[MEM_ROOT, { kind: 'dir' }]]);
+  for (const [rel, entry] of Object.entries(tree)) entries.set(path.join(MEM_ROOT, ...rel.split('/')), entry);
+  return {
+    readdir(dir) {
+      const self = entries.get(dir);
+      if (self?.kind !== 'dir' || self.unreadable === true) return Promise.reject(new Error('EACCES'));
+      const names = [...entries.keys()].filter((key) => path.dirname(key) === dir && key !== dir);
+      return Promise.resolve(names.map((key) => path.basename(key)));
+    },
+    lstat(file) {
+      const entry = entries.get(file);
+      if (entry === undefined) return Promise.resolve(null);
+      const size = entry.text?.length ?? 0;
+      return Promise.resolve({ kind: entry.kind, size, mtimeMs: entry.mtimeMs ?? NOW, birthMs: null });
+    },
+    readText: (file) => Promise.resolve(entries.get(file)?.text ?? null),
+    readHead: (file) => {
+      const text = entries.get(file)?.text;
+      return Promise.resolve(text === undefined ? null : Buffer.from(text, 'utf8'));
+    },
+    realpath: (file) => Promise.resolve(links[file] ?? file),
+  };
+}
+
+const NL = String.fromCharCode(10);
+const lines = (...records: readonly unknown[]): string => records.map((r) => JSON.stringify(r) + NL).join('');
+const LONG_201 = '/' + 'a'.repeat(200);
+const LONG_300 = '/srv/' + 'b'.repeat(295);
+
+describe('projectFolderName and the folder of a working directory on every OS', () => {
+  const table: readonly (readonly [string, string])[] = [
+    [['D:', 'mvp', 'x'].join(BS), 'D--mvp-x'],
+    [['C:', 'Users', 'Test User', 'src', 'app'].join(BS), 'C--Users-Test-User-src-app'],
+    [BS + BS + ['srv', 'share', 'p'].join(BS), '--srv-share-p'],
+    ['/home/me/my proj (x)', '-home-me-my-proj--x-'],
+    ['/Users/me/Dev/App', '-Users-me-Dev-App'],
+    ['/home/me/caf' + String.fromCharCode(0xe9) + '/r.v2', '-home-me-caf--r-v2'],
+    ['/home/me/repo/', '-home-me-repo'],
+    [['D:', 'repo', ''].join(BS), 'D--repo'],
+  ];
+
+  it.each(table)('%s is the folder %s', async (cwd, name) => {
+    expect(projectFolderName(cwd)).toEqual({ name, truncated: false });
+    const fs = memoryFs({ [name]: { kind: 'dir' }, other: { kind: 'dir' } });
+    expect(await detectTranscriptsDir(cwd, MEM_ROOT, fs, { caseInsensitive: false })).toBe(path.join(MEM_ROOT, name));
+  });
+
+  it.each([LONG_201, LONG_300])(
+    'cuts a name longer than 200 characters and finds it by its prefix (%#)',
+    async (cwd) => {
+      const { name, truncated } = projectFolderName(cwd);
+      expect(truncated).toBe(true);
+      expect(name).toHaveLength(PROJECT_NAME_MAX);
+      const folder = `${name}-1x2y3z`;
+      const fs = memoryFs({ [folder]: { kind: 'dir' }, [name]: { kind: 'file' } });
+      expect(await detectTranscriptsDir(cwd, MEM_ROOT, fs, { caseInsensitive: false })).toBe(
+        path.join(MEM_ROOT, folder),
+      );
+    },
+  );
+
+  it('lets the cwd of the files decide between cut names that share the prefix', async () => {
+    const { name } = projectFolderName(LONG_300);
+    const fs = memoryFs({
+      [`${name}-aaaa`]: { kind: 'dir', mtimeMs: NOW },
+      [`${name}-aaaa/${S1}.jsonl`]: { kind: 'file', text: lines({ cwd: LONG_300 + '-sibling' }) },
+      [`${name}-bbbb`]: { kind: 'dir', mtimeMs: NOW - HOUR },
+      [`${name}-bbbb/${S2}.jsonl`]: { kind: 'file', text: lines({ cwd: LONG_300 }) },
+    });
+    expect(await detectTranscriptsDir(LONG_300, MEM_ROOT, fs)).toBe(path.join(MEM_ROOT, `${name}-bbbb`));
+  });
+
+  it('ignores case on Windows and macOS and compares exactly on Linux', async () => {
+    const fs = memoryFs({ '-Users-Me-Dev-App': { kind: 'dir' } });
+    expect(await detectTranscriptsDir('/users/me/dev/app', MEM_ROOT, fs, { caseInsensitive: true })).toBe(
+      path.join(MEM_ROOT, '-Users-Me-Dev-App'),
+    );
+    expect(await detectTranscriptsDir('/users/me/dev/app', MEM_ROOT, fs, { caseInsensitive: false })).toBeNull();
+    const byCwd = memoryFs({
+      named: { kind: 'dir' },
+      [`named/${S1}.jsonl`]: { kind: 'file', text: lines({ cwd: 'C:/Work/Repo' }) },
+    });
+    expect(await detectTranscriptsDir('c:/work/repo', MEM_ROOT, byCwd, { caseInsensitive: true })).toBe(
+      path.join(MEM_ROOT, 'named'),
+    );
+    expect(await detectTranscriptsDir('c:/work/repo', MEM_ROOT, byCwd, { caseInsensitive: false })).toBeNull();
+  });
+
+  it('finds the folder of the real path of a repository reached through a link, by name and by cwd', async () => {
+    const link = path.resolve('/link/repo');
+    const real = path.resolve('/real/repo');
+    const links = { [link]: real };
+    const byName = memoryFs({ [projectFolderName(real).name]: { kind: 'dir' } }, links);
+    expect(await detectTranscriptsDir(link, MEM_ROOT, byName)).toBe(path.join(MEM_ROOT, projectFolderName(real).name));
+    const byCwd = memoryFs(
+      { chosen: { kind: 'dir' }, [`chosen/${S1}.jsonl`]: { kind: 'file', text: lines({ cwd: real }) } },
+      links,
+    );
+    expect(await detectTranscriptsDir(link, MEM_ROOT, byCwd)).toBe(path.join(MEM_ROOT, 'chosen'));
+  });
+
+  it('finds a folder named by CLAUDE_CODE_PROJECT_DIR_NAME through the cwd of its sessions', async () => {
+    const fs = memoryFs({
+      'my-chosen-name': { kind: 'dir' },
+      [`my-chosen-name/${S1}.jsonl`]: { kind: 'file', text: lines({ type: 'system' }, { cwd: '/home/me/repo' }) },
+    });
+    expect(await detectTranscriptsDir('/home/me/repo', MEM_ROOT, fs)).toBe(path.join(MEM_ROOT, 'my-chosen-name'));
+  });
+
+  it('passes over a folder it cannot list and never takes a link, a dangling one included', async () => {
+    const fs = memoryFs({
+      locked: { kind: 'dir', unreadable: true, mtimeMs: NOW },
+      good: { kind: 'dir', mtimeMs: NOW - HOUR },
+      [`good/${S1}.jsonl`]: { kind: 'file', text: lines({ cwd: '/home/me/repo' }) },
+    });
+    expect(await detectTranscriptsDir('/home/me/repo', MEM_ROOT, fs)).toBe(path.join(MEM_ROOT, 'good'));
+    const dangling = memoryFs({ '-home-me-repo': { kind: 'link' }, locked: { kind: 'dir', unreadable: true } });
+    expect(await detectTranscriptsDir('/home/me/repo', MEM_ROOT, dangling)).toBeNull();
   });
 });
