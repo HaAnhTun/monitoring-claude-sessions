@@ -1,0 +1,395 @@
+{
+  "schema": "mcs.ci-status/1",
+  "sha": "b5762950ecd31419a72d8ef14ab141660497aee9",
+  "ref": "refs/heads/feat/v4-node-only",
+  "runId": "39157990455",
+  "runAttempt": "1",
+  "runUrl": "https://github.com/HaAnhTun/monitoring-claude-sessions/actions/runs/39157990455",
+  "finishedAt": "2026-10-18T19:38:18.845Z",
+  "result": "fail",
+  "jobs": [
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "22.22",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 25827
+        },
+        {
+          "name": "lint",
+          "result": "pass",
+          "ms": 97127
+        },
+        {
+          "name": "typecheck",
+          "result": "pass",
+          "ms": 72580
+        },
+        {
+          "name": "check:deps",
+          "result": "pass",
+          "ms": 105
+        },
+        {
+          "name": "build",
+          "result": "pass",
+          "ms": 17731
+        },
+        {
+          "name": "test",
+          "result": "fail",
+          "ms": 530602
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "test",
+      "tail": [
+        " ✓  web  src/lib/clipboard.test.ts (7 tests) 9ms",
+        " ✓  web  src/lib/announce.test.ts (5 tests) 10ms",
+        " ✓  web  src/test/fake-event-source.test.ts (4 tests) 7ms",
+        " ✓  web  src/components/Disclosure.test.tsx (3 tests) 82ms",
+        " ✓  web  src/lib/attempts.test.ts (6 tests) 5ms",
+        " ✓  web  src/components/Button.test.tsx (6 tests) 79ms",
+        " ✓  web  src/components/EmptyState.test.tsx (5 tests) 69ms",
+        " ✓  web  src/components/Skeleton.test.tsx (7 tests) 43ms",
+        " ✓  web  src/components/TagBadge.test.tsx (13 tests) 65ms",
+        " ✓  web  src/components/icons.test.ts (47 tests) 13ms",
+        " ✓  web  src/components/Icon.test.tsx (3 tests) 39ms",
+        " ✓  web  src/transcript/ResumeFollowButton.test.tsx (3 tests) 65ms",
+        " ✓  web  src/transcript/PartialBanner.test.tsx (3 tests) 28ms",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯",
+        "",
+        " FAIL   integration  packages/server/test/stream-limits.int.test.ts > slow clients (DA-T-RT-6) > evicts a paused client after the stall timeout with less than 64 KiB buffered while a fast client gets every frame",
+        "AssertionError: expected 72318 to be less than 65536",
+        " ❯ packages/server/test/stream-limits.int.test.ts:458:41",
+        "    456|     }",
+        "    457|     expect(slowResponse.writableNeedDrain).toBe(true);",
+        "    458|     expect(slowResponse.writableLength).toBeLessThan(64 * 1024);",
+        "       |                                         ^",
+        "    459|     expect(hub?.size).toBe(2);",
+        "    460|",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+        "",
+        "",
+        " Test Files  1 failed | 338 passed | 1 skipped (340)",
+        "      Tests  1 failed | 6517 passed | 20 skipped (6538)",
+        "   Start at  19:21:48",
+        "   Duration  529.98s (tests 76%, import 14%, environment 4%, setup 3%, transform 2%)",
+        "",
+        "Environment   web  happy-dom was created 72 times · 19.60s total, 25% of tracked time",
+        "             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)",
+        "             learn more: https://vitest.dev/guide/improving-performance#test-environments",
+        "",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/server/test/stream-limits.int.test.ts,title=[integration] packages/server/test/stream-limits.int.test.ts > slow clients (DA-T-RT-6) > evicts a paused client after the stall timeout with less than 64 KiB buffered while a fast client gets every frame,line=458,column=41::AssertionError: expected 7231..."
+      ]
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "24",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 14381
+        },
+        {
+          "name": "lint",
+          "result": "pass",
+          "ms": 61971
+        },
+        {
+          "name": "typecheck",
+          "result": "pass",
+          "ms": 42452
+        },
+        {
+          "name": "check:deps",
+          "result": "pass",
+          "ms": 74
+        },
+        {
+          "name": "build",
+          "result": "pass",
+          "ms": 9996
+        },
+        {
+          "name": "test",
+          "result": "fail",
+          "ms": 425386
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "test",
+      "tail": [
+        "If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+        " ❯ packages/engine/test/ingest-service.int.test.ts:698:3",
+        "    696|   });",
+        "    697|",
+        "    698|   it('counts the hook failures of the transcripts that carry the marke…",
+        "       |   ^",
+        "    699|     const t0 = NOW() - 20 * MIN;",
+        "    700|     const h = await harness({",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯",
+        "",
+        " FAIL   integration  packages/server/test/stream-limits.int.test.ts > slow clients (DA-T-RT-6) > evicts a paused client after the stall timeout with less than 64 KiB buffered while a fast client gets every frame",
+        "AssertionError: expected 72318 to be less than 65536",
+        " ❯ packages/server/test/stream-limits.int.test.ts:458:41",
+        "    456|     }",
+        "    457|     expect(slowResponse.writableNeedDrain).toBe(true);",
+        "    458|     expect(slowResponse.writableLength).toBeLessThan(64 * 1024);",
+        "       |                                         ^",
+        "    459|     expect(hub?.size).toBe(2);",
+        "    460|",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯",
+        "",
+        "",
+        " Test Files  2 failed | 337 passed | 1 skipped (340)",
+        "      Tests  4 failed | 6514 passed | 20 skipped (6538)",
+        "   Start at  19:20:16",
+        "   Duration  424.89s (tests 82%, import 11%, environment 3%, setup 2%, transform 2%)",
+        "",
+        "    Isolate  340 workers spawned · ~112ms startup each (spawn + environment, per file)",
+        "             at least ~37.99s faster with isolate: false — reuses workers across files instead of one per file",
+        "",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > T-PL-13 start%2C untilIdle%2C stop > counts a hook gap when transcript tools have no hook%2C and ignores the last 5 s before the end (T-HE-02),line=252,column=3::Error: Test timed out in 10...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > the composition root with the real factories (registry C06) > ingests on its own%2C ingestUntilIdle says idle%2C and the health of the runtime is evaluated,line=578,column=3::Error: Test ti...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > ingestion health over the real service > counts the hook failures of the transcripts that carry the marker of our handler (T-HE-05),line=698,column=3::Error: Test timed out in 10000ms.%0AIf...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/server/test/stream-limits.int.test.ts,title=[integration] packages/server/test/stream-limits.int.test.ts > slow clients (DA-T-RT-6) > evicts a paused client after the stall timeout with less than 64 KiB buffered while a fast client gets every frame,line=458,column=41::AssertionError: expected 7231..."
+      ]
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "26",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "format:check",
+          "result": "pass",
+          "ms": 12193
+        },
+        {
+          "name": "lint",
+          "result": "pass",
+          "ms": 53875
+        },
+        {
+          "name": "typecheck",
+          "result": "pass",
+          "ms": 37949
+        },
+        {
+          "name": "check:deps",
+          "result": "pass",
+          "ms": 63
+        },
+        {
+          "name": "build",
+          "result": "pass",
+          "ms": 8839
+        },
+        {
+          "name": "test",
+          "result": "fail",
+          "ms": 382635
+        },
+        {
+          "name": "smoke",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "bundle:check",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        },
+        {
+          "name": "audit",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "test",
+      "tail": [
+        "    250|     // the first runtime did not notice",
+        "    251|     expect(await requestControl(controlAddress(f.id), { v: 1, op: 'ide…",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯",
+        "",
+        " FAIL   integration  packages/server/test/stream-limits.int.test.ts > slow clients (DA-T-RT-6) > evicts a paused client after the stall timeout with less than 64 KiB buffered while a fast client gets every frame",
+        "AssertionError: expected 72318 to be less than 65536",
+        " ❯ packages/server/test/stream-limits.int.test.ts:458:41",
+        "    456|     }",
+        "    457|     expect(slowResponse.writableNeedDrain).toBe(true);",
+        "    458|     expect(slowResponse.writableLength).toBeLessThan(64 * 1024);",
+        "       |                                         ^",
+        "    459|     expect(hub?.size).toBe(2);",
+        "    460|",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯",
+        "",
+        "",
+        " Test Files  3 failed | 336 passed | 1 skipped (340)",
+        "      Tests  7 failed | 6511 passed | 20 skipped (6538)",
+        "   Start at  19:20:11",
+        "   Duration  382.21s (tests 85%, import 10%, environment 2%, setup 2%, transform 2%)",
+        "",
+        "    Isolate  340 workers spawned · ~87ms startup each (spawn + environment, per file)",
+        "             at least ~29.35s faster with isolate: false — reuses workers across files instead of one per file",
+        "",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > T-PL-13 start%2C untilIdle%2C stop > merges the transcript of the same session into the rows the hooks made (T-PL-01%2C T-HE-01),line=177,column=3::Error: Test timed out in 10000ms.%0AIf th...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > T-PL-13 start%2C untilIdle%2C stop > links the file of a subagent to the agent the hooks made and merges its tool call (T-HE-01),line=214,column=3::Error: Test timed out in 10000ms.%0AIf th...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > the composition root with the real factories (registry C06) > ingests on its own%2C ingestUntilIdle says idle%2C and the health of the runtime is evaluated,line=578,column=3::Error: Test ti...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > ingestion health over the real service > counts the hook failures of the transcripts that carry the marker of our handler (T-HE-05),line=698,column=3::Error: Test timed out in 10000ms.%0AIf...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/test/ingest-service.int.test.ts,title=[integration] packages/engine/test/ingest-service.int.test.ts > ingestion health over the real service > keeps lastSyncAt where it is while a file is behind and moves it when everything is caught up (T-HE-06),line=727,column=3::Error: Test timed out in ...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/server/test/boot.int.test.ts,title=[integration] packages/server/test/boot.int.test.ts > T-LC-03%3A every boot failure has its exit code (01 4.1%2C 4.4) > 12%3A another runtime holds the control channel%3A exit at once%2C and nothing of the instance is touched,line=249,column=87::AssertionError: e...",
+        "",
+        "::error file=/home/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/server/test/stream-limits.int.test.ts,title=[integration] packages/server/test/stream-limits.int.test.ts > slow clients (DA-T-RT-6) > evicts a paused client after the stall timeout with less than 64 KiB buffered while a fast client gets every frame,line=458,column=41::AssertionError: expected 7231..."
+      ]
+    },
+    {
+      "name": "gates",
+      "os": "Windows",
+      "arch": "X64",
+      "node": "24",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "macos",
+      "os": "macOS",
+      "arch": "ARM64",
+      "node": "24",
+      "result": "fail",
+      "gates": [
+        {
+          "name": "build",
+          "result": "pass",
+          "ms": 11617
+        },
+        {
+          "name": "platform",
+          "result": "fail",
+          "ms": 11021
+        },
+        {
+          "name": "smoke:bundle",
+          "result": "not-run",
+          "ms": 0
+        }
+      ],
+      "failedGate": "platform",
+      "tail": [
+        "::error file=/Users/runner/work/monitoring-claude-sessions/monitoring-claude-sessions/runtime/packages/engine/src/platform/exec.test.ts,title=[unit] packages/engine/src/platform/exec.test.ts > execFileText%3A limits > answers an oversize command line with a failed result%2C never an exception,line=193,column=23::AssertionError: expected true to be false // Object.is equality%0A%0A- Expected%0A+ Re...",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯",
+        "",
+        " FAIL   unit  packages/engine/src/platform/exec.test.ts > execFileText: arguments, output and exit codes > runs in the given working directory",
+        "AssertionError: expected '/private/var/folders/n6/hn37q6pj7sj_9…' to be '/var/folders/n6/hn37q6pj7sj_9dmqqc211…' // Object.is equality",
+        "",
+        "Expected: \"/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/t/mcs-exec-th1jwe\"",
+        "Received: \"/private/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/t/mcs-exec-th1jwe\"",
+        "",
+        " ❯ packages/engine/src/platform/exec.test.ts:119:55",
+        "    117|     const dir = makeTemp('exec').path;",
+        "    118|     const result = await execFileText(node('process.stdout.write(proce…",
+        "    119|     expect(path.resolve(result.stdout).toLowerCase()).toBe(path.resolv…",
+        "       |                                                       ^",
+        "    120|   });",
+        "    121| });",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯",
+        "",
+        " FAIL   unit  packages/engine/src/platform/exec.test.ts > execFileText: limits > answers an oversize command line with a failed result, never an exception",
+        "AssertionError: expected true to be false // Object.is equality",
+        "",
+        "- Expected",
+        "+ Received",
+        "",
+        "- false",
+        "+ true",
+        "",
+        " ❯ packages/engine/src/platform/exec.test.ts:193:23",
+        "    191|   it('answers an oversize command line with a failed result, never an …",
+        "    192|     const result = await execFileText(node('0', {}, ['x'.repeat(200_00…",
+        "    193|     expect(result.ok).toBe(false);",
+        "       |                       ^",
+        "    194|     expect(['SPAWN_FAILED', 'NONZERO_EXIT']).toContain(result.error);",
+        "    195|   });",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯",
+        "",
+        ""
+      ]
+    }
+  ]
+}
