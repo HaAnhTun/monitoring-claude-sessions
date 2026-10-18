@@ -44,6 +44,15 @@ Node only. A user machine needs nothing but Node 22.22 or newer.
 - The read-only MCP server.
 - The UI redesign and the Vietnamese UI (i18n).
 - The diagnostics bundle command.
+- `migrate-workspace --all` (convert one task at a time with `--task`).
+
+### Known issues
+
+- The integration test T-HE-03 b (`packages/engine/test/ingest-service.int.test.ts`, "shows a database that cannot be
+  written in the persisted block only") fails: the second batch of hook envelopes in the test never reaches the writer,
+  so no failed commit is counted. Under investigation; the monitor itself runs normally.
+- macOS is covered only by the lean CI job (build, platform unit tests, bundle smoke); the full POSIX suites ran in
+  Linux containers (see `docs/platform-support.md`).
 
 ## Before 4.0
 
