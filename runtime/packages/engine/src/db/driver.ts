@@ -1,7 +1,7 @@
 // The only module that loads the SQLite binding (03 4.5, ADR 0020, ADR 0064, I-14; the ESLint rule and the boundary test
 // of driver.test.ts keep it that way). The binding is Node's built-in `node:sqlite`: no native dependency. A change of
 // `node:sqlite` between Node versions stays inside this file; callers see the same surface as before.
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type * as NodeSqlite from 'node:sqlite';
 
@@ -315,6 +315,9 @@ export function openSqlite(
   // the caller's identity checks (open.ts: application_id, instance id) then refuse that empty file. A read-only open of
   // a missing file fails natively with SQLITE_CANTOPEN.
   if (opts.fileMustExist && !opts.readonly && path !== ':memory:' && !existsSync(path)) throw fromErrcode(14);
+  // Linux opens a folder read-only and only the first read fails (SQLITE_IOERR): a folder is refused here with the
+  // SQLITE_CANTOPEN that Windows gives natively, so the error code is the same on every host (WP-87, Docker run).
+  if (path !== ':memory:' && statSync(path, { throwIfNoEntry: false })?.isDirectory() === true) throw fromErrcode(14);
   const raw = guard(() => new Database(path, { readOnly: opts.readonly, timeout: opts.timeoutMs }));
   // Least recently used first. The row type `R` of `prepare<R>` is the caller's declaration (03 4.5), so the cache keeps
   // `Stmt<unknown>` and `prepare` hands it out under the row type the caller named.

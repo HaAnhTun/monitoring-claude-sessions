@@ -150,7 +150,11 @@ describe('instanceCommands', () => {
     if (hostPlatform === 'win32') {
       expect(status).toBe('node D:/skill/scripts/mcs.mjs status --task demo --repo D:/work/repo');
     } else {
-      expect(status).toContain(`D:${backslash}skill`);
+      // a backslash is special in a POSIX shell: the path is double-quoted with each backslash escaped, so a paste of the
+      // command gives the path back as it is
+      expect(status).toBe(
+        `node "D:${backslash}${backslash}skill${backslash}${backslash}scripts${backslash}${backslash}mcs.mjs" status --task demo --repo "D:${backslash}${backslash}work${backslash}${backslash}repo"`,
+      );
     }
   });
 

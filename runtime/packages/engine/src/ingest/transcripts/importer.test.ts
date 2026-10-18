@@ -14,6 +14,7 @@ import {
   useTempDirs,
   type SessionSpec,
 } from '@mcs/testkit';
+import { routeKey } from '@mcs/shared/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FIXTURE_INSTANCE_ID } from '../../../test/fixtures/hook-sequences.ts';
@@ -189,7 +190,8 @@ async function drain(r: Rig, limit = 1_000_000): Promise<void> {
 function file(r: Rig, session = S1): TranscriptFileRow {
   const row = new TranscriptFilesRepo(r.db).findByPathKey(
     SCOPE,
-    path.join(r.tdir, `${session}.jsonl`).replaceAll('\\', '/').toLowerCase(),
+    // the importer keys files by routeKey: lower-cased on Windows only (POSIX names are case-sensitive)
+    routeKey(path.join(r.tdir, `${session}.jsonl`)),
   );
   if (row === undefined) throw new Error(`no file row for ${session}`);
   return row;
