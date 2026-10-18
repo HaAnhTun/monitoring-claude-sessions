@@ -120,7 +120,7 @@ interface Script {
 interface Calls {
   readonly identify: { address: string; timeoutMs: number }[];
   readonly http: { url: string; timeoutMs: number }[];
-  readonly lists: string[];
+  readonly lists: (string | null)[];
 }
 
 function scripted(script: Script): { deps: ProbeDeps; calls: Calls } {
@@ -350,7 +350,21 @@ describe('probeInstance: a runtime holds the name and says nothing (hung)', () =
     });
     const probe = await createProbe(deps)(f.ws, { runtimeDir: f.runtimeDir });
     expect(probe).toMatchObject({ state: 'unhealthy', pid: 601 });
-    expect(calls.lists).toEqual([f.runtimeDir]);
+    expect(calls.lists).toEqual([null]);
+  });
+
+  it('finds a runtime of this instance started from another folder of the same install (ADR 0062: any folder, by id)', async () => {
+    const f = workspace();
+    const { deps, calls } = scripted({
+      control: silent,
+      runtimeProcesses: [
+        { pid: 610, instanceId: OTHER_ID, instanceDir: null },
+        { pid: 611, instanceId: ID, instanceDir: f.ws.dir },
+      ],
+    });
+    const probe = await createProbe(deps)(f.ws, { runtimeDir: path.join(f.runtimeDir, 'newer-version') });
+    expect(probe).toMatchObject({ state: 'unhealthy', pid: 611 });
+    expect(calls.lists).toEqual([null]);
   });
 
   it('a legacy-shaped state file does not name our runtime either: the listing decides', async () => {

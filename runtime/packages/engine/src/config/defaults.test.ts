@@ -5,6 +5,7 @@ import { McsError } from '@mcs/shared';
 import { useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
+import { layoutOfModule } from '../platform/layout.ts';
 import { toPlain } from '../pyjson/index.ts';
 import {
   checkSchemaVersion,
@@ -55,6 +56,13 @@ describe('the shipped files', () => {
     const runtime = defaultRuntimeDir();
     expect(readFileSync(path.join(runtime, 'package.json'), 'utf8')).toContain('"@mcs/runtime"');
     expect(path.dirname(runtime)).toBe(path.dirname(path.dirname(defaultSkillDir())));
+  });
+
+  it('both defaults come from the layout resolver (source layout in a checkout)', () => {
+    const layout = layoutOfModule(import.meta.url);
+    expect(layout.mode).toBe('source');
+    expect(defaultRuntimeDir()).toBe(layout.runtimeDir);
+    expect(defaultSkillDir()).toBe(layout.skillDir);
   });
 
   it('skillDirOfRuntimeDir maps the checkout runtime to the skill folder and any other runtime to its parent', () => {

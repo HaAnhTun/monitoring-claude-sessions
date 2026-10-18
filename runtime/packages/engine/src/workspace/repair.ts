@@ -10,8 +10,7 @@ import { setTimeout as sleepMs } from 'node:timers/promises';
 import { McsError, isoSecondsZ, systemClock, type Clock, type InstanceFile } from '@mcs/shared';
 
 import { appendChange } from '../audit/writer.ts';
-import { defaultRuntimeDir } from '../config/defaults.ts';
-import { listRuntimeProcesses } from '../platform/markers.ts';
+import { listRuntimeProcesses, type RuntimeProcess } from '../platform/markers.ts';
 import { unlinkWithRetry } from '../platform/fsx.ts';
 import { isMissingFileError } from './fsio.ts';
 import { readInstanceFile, writeInstanceFile } from './adopt.ts';
@@ -20,14 +19,19 @@ import { withTaskMutex, workspacePath, type WorkspaceRef } from './paths.ts';
 /** Answers whether a runtime of any of these instance ids is alive (the repair refuses while one is). */
 export type RunningCheck = (instanceIds: readonly string[]) => Promise<boolean>;
 
+type Lister = (runtimeDir: string | null) => Promise<readonly RuntimeProcess[]>;
+
 export interface RepairOptions {
   readonly clock?: Clock;
   /** Test seam: the new instance id. */
   readonly newId?: () => string;
-  /** The running check; the default lists the runtime processes of `runtimeDir` (`listRuntimeProcesses`). */
+  /**
+   * The running check; the default lists the runtime processes of every runtime folder (`listRuntimeProcesses(null)`) and
+   * matches by instance id, so a runtime started from another folder of the install (a previous plugin version) is found.
+   */
   readonly isRunning?: RunningCheck;
-  /** The runtime folder whose processes the default check looks at (default: this install's `<skill>/runtime`). */
-  readonly runtimeDir?: string;
+  /** Test seam of the default check: the process listing. */
+  readonly listRuntimeProcesses?: Lister;
 }
 
 export interface RepairPlan {
@@ -166,10 +170,9 @@ async function clearRun(ws: WorkspaceRef): Promise<void> {
     await rm(path.join(run, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
 }
 
-function defaultIsRunning(runtimeDir: string | undefined): RunningCheck {
+function defaultIsRunning(list: Lister): RunningCheck {
   return async (ids) => {
-    const dir = runtimeDir ?? defaultRuntimeDir();
-    const alive = await listRuntimeProcesses(dir);
+    const alive = await list(null);
     return alive.some((p) => p.instanceId !== null && ids.includes(p.instanceId));
   };
 }
@@ -191,7 +194,7 @@ export function applyRepair(ws: WorkspaceRef, plan: RepairPlan, o: RepairOptions
         `instance.json of '${ws.slug}' changed after the plan was made (it was ${plan.oldInstanceId.slice(0, 8)}, it is ${instance.instanceId.slice(0, 8)}); plan again`,
       );
     }
-    const running = o.isRunning ?? defaultIsRunning(o.runtimeDir);
+    const running = o.isRunning ?? defaultIsRunning(o.listRuntimeProcesses ?? listRuntimeProcesses);
     if (await running([plan.oldInstanceId, plan.newInstanceId])) {
       throw new McsError(
         'INSTANCE_RUNNING',

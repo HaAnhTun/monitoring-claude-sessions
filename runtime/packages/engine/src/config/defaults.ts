@@ -2,13 +2,13 @@
 // wording, the schema gate (2.6) and the typed form of the merged legacy (L) configuration.
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { McsError } from '@mcs/shared';
 import { z } from 'zod';
 
 import { parsePyJson, pyFloatRepr, pyRepr, type PyJsonValue } from '../pyjson/index.ts';
 import { readSmallFile } from '../platform/fsx.ts';
+import { SKILL_FOLDER_NAME, layoutOfModule } from '../platform/layout.ts';
 
 /** A parsed JSON object that still knows integers from floats (01 1.9). */
 export type PyObject = Extract<PyJsonValue, { k: 'obj' }>;
@@ -18,23 +18,19 @@ const MAX_CONFIG_BYTES = 16 * 1024 * 1024;
 
 const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
 
-/** The name of the skill folder (and of the skill in its `SKILL.md` frontmatter). */
-export const SKILL_FOLDER_NAME = 'monitoring-claude-sessions';
+export { SKILL_FOLDER_NAME } from '../platform/layout.ts';
 
-/**
- * The runtime workspace of a source checkout (`<repo>/runtime`): four levels above this module, which is the same from
- * `src/config` and from the compiled `dist/config`.
- */
+/** The runtime folder of this install (ADR 0062): `<skillDir>/bundle` in the bundle layout, `<repo>/runtime` in a checkout. */
 export function defaultRuntimeDir(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+  return layoutOfModule(import.meta.url).runtimeDir;
 }
 
 /**
- * The skill folder (ADR 0062) that holds `SKILL.md`, `config/defaults.json` and `runtime/defaults.json`: in a checkout
- * `<repo>/skills/monitoring-claude-sessions`, next to the runtime workspace.
+ * The skill folder (ADR 0062) that holds `SKILL.md`, `config/defaults.json` and `runtime/defaults.json`: the folder around
+ * `bundle/` when installed, `<repo>/skills/monitoring-claude-sessions` in a checkout.
  */
 export function defaultSkillDir(): string {
-  return path.join(path.dirname(defaultRuntimeDir()), 'skills', SKILL_FOLDER_NAME);
+  return layoutOfModule(import.meta.url).skillDir;
 }
 
 /**

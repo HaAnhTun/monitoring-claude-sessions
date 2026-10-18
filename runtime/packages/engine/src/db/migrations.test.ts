@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { APPLICATION_ID } from '@mcs/shared';
@@ -12,6 +12,7 @@ import { DbError, type DbErrorCode } from './errors.ts';
 import {
   applyPendingMigrations,
   assertIdentity,
+  defaultMigrationsDir,
   loadMigrationFiles,
   migrationStatus,
   type MigrationFile,
@@ -107,6 +108,21 @@ describe('loadMigrationFiles (03 4.1)', () => {
 
   it('is the same file when given the folder explicitly', () => {
     expect(loadMigrationFiles(SHIPPED_DIR)).toEqual(loadMigrationFiles());
+  });
+
+  it('the default folder follows the layout: packages/engine/migrations in the source layout', () => {
+    expect(fileURLToPath(defaultMigrationsDir())).toBe(fileURLToPath(SHIPPED_DIR));
+  });
+
+  it('the default folder follows the layout: <bundle>/migrations next to a bundle entry (a hand-built bundle)', () => {
+    const bundle = join(tempDir('mig-bundle').path, 'skill', 'bundle');
+    mkdirSync(join(bundle, 'migrations'), { recursive: true });
+    writeFileSync(join(bundle, 'mcs-server.mjs'), '');
+    writeFileSync(join(bundle, 'mcs-cli.mjs'), '');
+    writeFileSync(join(bundle, 'migrations', '0001_initial.sql'), shipped());
+    const dir = defaultMigrationsDir(pathToFileURL(join(bundle, 'mcs-cli.mjs')).href);
+    expect(fileURLToPath(dir)).toBe(join(bundle, 'migrations') + sep);
+    expect(loadMigrationFiles(dir)).toEqual(loadMigrationFiles());
   });
 
   it('computes the checksum after removing a BOM and converting CRLF to LF (a Windows checkout changes nothing)', () => {

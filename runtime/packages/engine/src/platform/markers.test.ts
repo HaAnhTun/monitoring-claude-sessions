@@ -6,11 +6,13 @@ import { killAllTracked, spawnTracked, useTempDirs, waitFor } from '@mcs/testkit
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ChildResult, ChildSpec } from './exec.ts';
-import { pathsCaseInsensitive } from './host.ts';
+import { isCaseInsensitive, pathsCaseInsensitive } from './host.ts';
 import { commandLineOf } from './process.ts';
 import {
+  BUNDLE_SERVER_ENTRY,
   LIST_RUNTIME_END,
   LIST_RUNTIME_SCRIPT,
+  RUNTIME_ENTRIES,
   RUNTIME_ENTRY,
   createRuntimeLister,
   hasLegacyMarker,
@@ -18,6 +20,7 @@ import {
   listRuntimeProcesses,
   matchRuntimeMarker,
   parseRuntimeCommandLine,
+  runtimeDirOf,
   splitCommandLine,
   type ListerDeps,
 } from './markers.ts';
@@ -146,6 +149,77 @@ describe('matchRuntimeMarker (01 4.1: "/" normalisation, instance token, entry p
     expect(hasRuntimeMarker(line(), ID_B)).toBe(false);
     const upper = line().replace('packages', 'PACKAGES');
     expect(hasRuntimeMarker(upper, ID_A)).toBe(pathsCaseInsensitive);
+  });
+});
+
+describe('the bundle server entry (ADR 0062 item 3: two accepted suffixes)', () => {
+  const BACKSLASH = String.fromCharCode(92);
+  const winPath = (posixLike: string): string => posixLike.replaceAll('/', BACKSLASH);
+  const bundleEntry = 'C:/Users/Some One/.claude/plugins/cache/session-monitor/4.0.0/skills/mcs/bundle/mcs-server.mjs';
+  const line = (entry: string, id = ID_A) =>
+    `"C:/nodejs/node.exe" "${entry}" serve --mcs-instance=${id} --instance-dir=D:/ws`;
+
+  it('exports both suffixes; the source one stays RUNTIME_ENTRY', () => {
+    expect(BUNDLE_SERVER_ENTRY).toBe('/mcs-server.mjs');
+    expect(RUNTIME_ENTRIES).toEqual([RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY]);
+  });
+
+  it('both suffixes match, with slashes or backslashes, in a plugin cache path with spaces in quotes', () => {
+    expect(matchRuntimeMarker(line(bundleEntry), ID_A, true)).toBe(true);
+    expect(matchRuntimeMarker(line(winPath(bundleEntry)), ID_A, true)).toBe(true);
+    expect(matchRuntimeMarker(line('/opt/skill/bundle/mcs-server.mjs'), ID_A, false)).toBe(true);
+    expect(matchRuntimeMarker(line('/r/runtime/packages/server/dist/main.js'), ID_A, false)).toBe(true);
+  });
+
+  it('rejects impostors: a longer file name, a suffix, a folder of that name, another or missing instance token', () => {
+    expect(matchRuntimeMarker(line('/opt/b/xmcs-server.mjs'), ID_A, false)).toBe(false);
+    expect(matchRuntimeMarker(line('/opt/b/mcs-server.mjs.bak'), ID_A, false)).toBe(false);
+    expect(matchRuntimeMarker(line('/opt/b/mcs-server.mjs/main.js'), ID_A, false)).toBe(false);
+    expect(matchRuntimeMarker(line('/opt/b/mcs-server.mjs', ID_B), ID_A, false)).toBe(false);
+    expect(matchRuntimeMarker('node /opt/b/mcs-server.mjs serve --instance-dir=/ws', ID_A, false)).toBe(false);
+    expect(matchRuntimeMarker(`node /opt/b/mcs-server.mjs serve --mcs-instance=${ID_A}x`, ID_A, false)).toBe(false);
+    expect(matchRuntimeMarker(`node /opt/b/mcs-server.mjs --note=--mcs-instance=${ID_A}`, ID_A, false)).toBe(false);
+  });
+
+  it('case: win32 and darwin compare without case, linux does not', () => {
+    const upper = line('/opt/b/MCS-Server.MJS');
+    expect(matchRuntimeMarker(upper, ID_A, isCaseInsensitive('win32'))).toBe(true);
+    expect(matchRuntimeMarker(upper, ID_A, isCaseInsensitive('darwin'))).toBe(true);
+    expect(matchRuntimeMarker(upper, ID_A, isCaseInsensitive('linux'))).toBe(false);
+  });
+
+  it('runtimeDirOf finds the folder in front of either suffix', () => {
+    expect(runtimeDirOf(line(bundleEntry), true)).toBe(bundleEntry.slice(0, -'/mcs-server.mjs'.length));
+    expect(runtimeDirOf(line(winPath(bundleEntry)), true)).toBe(
+      winPath(bundleEntry.slice(0, -'/mcs-server.mjs'.length)),
+    );
+    expect(runtimeDirOf(line('/r/runtime/packages/server/dist/main.js'), false)).toBe('/r/runtime');
+    expect(runtimeDirOf(line('/opt/b/MCS-SERVER.MJS'), false)).toBeNull();
+    expect(runtimeDirOf(line('/opt/b/MCS-SERVER.MJS'), true)).toBe('/opt/b');
+    expect(runtimeDirOf('node /opt/b/xmcs-server.mjs serve', false)).toBeNull();
+    expect(runtimeDirOf('node -e 1', false)).toBeNull();
+  });
+
+  it('listRuntimeProcesses(null) lists runtimes of every folder, of both layouts', async () => {
+    const lister = createRuntimeLister({
+      platform: 'linux',
+      resolve: () => Promise.resolve(null),
+      exec: () => Promise.reject(new Error('no process must be spawned on Linux')),
+      scanProc: () =>
+        Promise.resolve([
+          { pid: 700, argv: ['/usr/bin/node', '/old/4.0.0/bundle/mcs-server.mjs', 'serve', `--mcs-instance=${ID_A}`] },
+          {
+            pid: 701,
+            argv: ['/usr/bin/node', '/r/runtime/packages/server/dist/main.js', 'serve', `--mcs-instance=${ID_B}`],
+          },
+          { pid: 702, argv: ['/usr/bin/node', '/opt/b/xmcs-server.mjs', 'serve', `--mcs-instance=${ID_A}`] },
+        ]),
+    });
+    expect(await lister(null)).toEqual([
+      { pid: 700, instanceId: ID_A, instanceDir: null },
+      { pid: 701, instanceId: ID_B, instanceDir: null },
+    ]);
+    expect(await lister('/old/4.0.0/bundle')).toEqual([{ pid: 700, instanceId: ID_A, instanceDir: null }]);
   });
 });
 

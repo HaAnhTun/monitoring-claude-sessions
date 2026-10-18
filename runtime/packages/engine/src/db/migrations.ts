@@ -4,10 +4,12 @@
 // the template): `src/db/` and `dist/db/` are both two levels below the engine package folder that holds `migrations/`.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { APPLICATION_ID, isoMsZ, systemClock } from '@mcs/shared';
+
+import { layoutOfModule, type LayoutFs } from '../platform/layout.ts';
 
 import { BUSY_TIMEOUT_MS, openSqlite, pragmaNumber, type SqlDriver } from './driver.ts';
 import { DbError } from './errors.ts';
@@ -35,11 +37,17 @@ export interface MigrationStatus {
 
 /** Folder and optional test hook shared by the functions that read the shipped files. */
 export interface MigrationsLocation {
-  /** Folder of the `.sql` files (a `file:` URL); default: `packages/engine/migrations/` next to `dist/`. */
+  /** Folder of the `.sql` files (a `file:` URL); default: {@link defaultMigrationsDir}. */
   migrationsDir?: URL;
 }
 
-const DEFAULT_MIGRATIONS_DIR = new URL('../../migrations/', import.meta.url);
+/**
+ * The shipped migrations folder (a `file:` URL with a trailing slash) of the layout `moduleUrl` belongs to (ADR 0062):
+ * `<bundle>/migrations/` next to a bundle entry, `packages/engine/migrations/` in the source layout.
+ */
+export function defaultMigrationsDir(moduleUrl: string | URL = import.meta.url, fs?: LayoutFs): URL {
+  return pathToFileURL(layoutOfModule(moduleUrl, fs).migrationsDir + sep);
+}
 /** U+FEFF: what a UTF-8 byte order mark decodes to. */
 const UTF8_BOM = String.fromCharCode(0xfeff);
 const FILE_NAME_RE = /^(\d{4})_([a-z0-9_]{1,48})\.sql$/;
@@ -95,7 +103,7 @@ function parseFile(folder: string, fileName: string): MigrationFile {
  * Reads, validates and sorts the migration files: names `NNNN_name.sql`, header equal to the name, versions 1..n without a
  * gap (`migration_gap`). A missing or empty folder is `migrations_missing`.
  */
-export function loadMigrationFiles(dir: URL = DEFAULT_MIGRATIONS_DIR): MigrationFile[] {
+export function loadMigrationFiles(dir: URL = defaultMigrationsDir()): MigrationFile[] {
   const folder = fileURLToPath(dir);
   let names: string[];
   try {

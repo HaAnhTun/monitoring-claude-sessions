@@ -216,12 +216,33 @@ describe('applyRepair', () => {
     expect(tree(copy)).toBe(before);
   });
 
-  it('the default running check looks for runtime processes of the runtime folder it is given (none in a temp folder)', async () => {
+  it('the default running check lists the real runtime processes (none of these fresh identities runs)', async () => {
     const { copy } = copiedWorkspace();
-    const runtimeDir = makeTemp('repair-runtime').path;
-    const plan = await planRepair(copy, { clock: new FakeClock(NOW), newId: () => NEW_ID, runtimeDir });
-    const result = await applyRepair(copy, plan, { clock: new FakeClock(NOW), newId: () => NEW_ID, runtimeDir });
+    const plan = await planRepair(copy, { clock: new FakeClock(NOW), newId: () => NEW_ID });
+    const result = await applyRepair(copy, plan, { clock: new FakeClock(NOW), newId: () => NEW_ID });
     expect(result.plan.newInstanceId).toBe(NEW_ID);
+  });
+
+  it('the default running check finds a runtime started from another folder of the same install (by instance id)', async () => {
+    const { copy } = copiedWorkspace();
+    const asked: (string | null)[] = [];
+    const listRuntimeProcesses = (dir: string | null) => {
+      asked.push(dir);
+      return Promise.resolve([
+        { pid: 900, instanceId: '99999999-8888-4777-8666-555555555555', instanceDir: null },
+        { pid: 901, instanceId: OLD_ID, instanceDir: null },
+      ]);
+    };
+    const base = { clock: new FakeClock(NOW), newId: () => NEW_ID, listRuntimeProcesses };
+    const plan = await planRepair(copy, base);
+    await expect(applyRepair(copy, plan, base)).rejects.toMatchObject({ code: 'INSTANCE_RUNNING' });
+    expect(asked).toEqual([null]);
+    const others = {
+      ...base,
+      listRuntimeProcesses: () =>
+        Promise.resolve([{ pid: 900, instanceId: NEW_ID.replace(/^./, '9'), instanceDir: null }]),
+    };
+    expect((await applyRepair(copy, plan, others)).plan.newInstanceId).toBe(NEW_ID);
   });
 
   it('a repaired workspace reads back without a mismatch and a second repair makes yet another identity', async () => {

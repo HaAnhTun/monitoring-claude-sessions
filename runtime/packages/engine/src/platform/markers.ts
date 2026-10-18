@@ -12,10 +12,15 @@ import { execFileText, firstLine, powershellEncodedArgs, resolveExecutable } fro
 import type { ChildResult, ChildSpec } from './exec.ts';
 import { readSmallFile } from './fsx.ts';
 import { hostPlatform, pathsCaseInsensitive, type HostPlatform } from './host.ts';
+import { BUNDLE_SERVER_FILE } from './layout.ts';
 import { pathKey } from './paths.ts';
 
-/** The server entry below a runtime folder, with `/` separators (01 4.1). */
+/** The server entry below a runtime folder of the source layout, with `/` separators (01 4.1). */
 export const RUNTIME_ENTRY = '/packages/server/dist/main.js';
+/** The server entry below a runtime folder of the bundle layout (ADR 0062 item 3). */
+export const BUNDLE_SERVER_ENTRY = `/${BUNDLE_SERVER_FILE}`;
+/** The two accepted server entry suffixes (lower case, `/` separators). */
+export const RUNTIME_ENTRIES: readonly string[] = [RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY];
 
 const INSTANCE_TOKEN = '--mcs-instance=';
 const DIR_TOKEN = '--instance-dir=';
@@ -77,21 +82,26 @@ function normalize(text: string, caseInsensitive: boolean): string {
   return caseInsensitive ? slashed.toLowerCase() : slashed;
 }
 
-/** True when `line` contains the server entry as a whole path ending (followed by the end, a blank or a quote). */
-function containsEntry(line: string): boolean {
+/** True when `line` contains `entry` as a whole path ending (followed by the end, a blank or a quote). */
+function containsOneEntry(line: string, entry: string): boolean {
   let from = 0;
   for (;;) {
-    const at = line.indexOf(RUNTIME_ENTRY, from);
+    const at = line.indexOf(entry, from);
     if (at < 0) return false;
-    const after = line.charAt(at + RUNTIME_ENTRY.length);
+    const after = line.charAt(at + entry.length);
     if (after === '' || isWhitespace(after) || after === '"') return true;
     from = at + 1;
   }
 }
 
+/** True when `line` contains one of the server entries (source or bundle layout) as a whole path ending. */
+function containsEntry(line: string): boolean {
+  return RUNTIME_ENTRIES.some((entry) => containsOneEntry(line, entry));
+}
+
 /**
- * The runtime marker of 01 4.1: the command line, with `\` read as `/`, contains the server entry
- * `/packages/server/dist/main.js` and has `--mcs-instance=<instanceId>` as an argument of its own. `caseInsensitive` is
+ * The runtime marker of 01 4.1: the command line, with `\` read as `/`, contains a server entry
+ * (`/packages/server/dist/main.js` or `/mcs-server.mjs`, ADR 0062) as a whole path ending and has `--mcs-instance=<instanceId>` as an argument of its own. `caseInsensitive` is
  * true on Windows (and macOS), where paths and the instance token compare without case.
  */
 export function matchRuntimeMarker(commandLine: string, instanceId: string, caseInsensitive: boolean): boolean {
@@ -213,12 +223,13 @@ async function rowsFromPs(deps: ListerDeps): Promise<Row[]> {
   return rows;
 }
 
-/** The directory in front of the server entry in one argument of the command line, or null. */
-function runtimeDirOf(commandLine: string): string | null {
+/** The directory in front of a server entry (either layout) in one argument of the command line, or null. */
+export function runtimeDirOf(commandLine: string, caseInsensitive: boolean = pathsCaseInsensitive): string | null {
   for (const token of splitCommandLine(commandLine)) {
-    const slashed = normalize(token, pathsCaseInsensitive);
-    if (slashed.endsWith(RUNTIME_ENTRY)) {
-      const dir = token.slice(0, token.length - RUNTIME_ENTRY.length);
+    const slashed = normalize(token, caseInsensitive);
+    const entry = RUNTIME_ENTRIES.find((candidate) => slashed.endsWith(candidate));
+    if (entry !== undefined) {
+      const dir = token.slice(0, token.length - entry.length);
       return dir === '' ? '/' : dir;
     }
   }
@@ -226,11 +237,12 @@ function runtimeDirOf(commandLine: string): string | null {
 }
 
 /**
- * Builds `listRuntimeProcesses` over `deps`: the processes whose command line runs `<runtimeDir>/packages/server/dist/main.js`,
- * with the instance id and directory they were started with. A listing that cannot run is an error, never an empty list
+ * Builds `listRuntimeProcesses` over `deps`: the processes whose command line runs a server entry of `runtimeDir` (either
+ * layout; `null`: of any folder, such as a previous plugin version directory), with the instance id and directory they were
+ * started with. Callers match by instance id, never by folder alone. A listing that cannot run is an error, never an empty list
  * (the launcher uses it to refuse `npm ci` while runtimes hold native files open).
  */
-export function createRuntimeLister(deps: ListerDeps): (runtimeDir: string) => Promise<RuntimeProcess[]> {
+export function createRuntimeLister(deps: ListerDeps): (runtimeDir: string | null) => Promise<RuntimeProcess[]> {
   return async (runtimeDir) => {
     let rows: Row[];
     if (deps.platform === 'win32') {
@@ -243,12 +255,12 @@ export function createRuntimeLister(deps: ListerDeps): (runtimeDir: string) => P
     } else {
       rows = await rowsFromPs(deps);
     }
-    const wanted = pathKey(runtimeDir);
+    const wanted = runtimeDir === null ? null : pathKey(runtimeDir);
     const found = new Map<number, RuntimeProcess>();
     for (const row of rows) {
       if (found.has(row.pid)) continue;
       const dir = runtimeDirOf(row.commandLine);
-      if (dir === null || pathKey(dir) !== wanted) continue;
+      if (dir === null || (wanted !== null && pathKey(dir) !== wanted)) continue;
       found.set(row.pid, { pid: row.pid, ...parseRuntimeCommandLine(row.commandLine) });
     }
     return [...found.values()];
@@ -284,7 +296,10 @@ const realLister = createRuntimeLister({
   scanProc: scanProcFs,
 });
 
-/** The node processes that run the server of the runtime in `runtimeDir` (Windows: one CIM query, 0.3-0.5 s). */
-export function listRuntimeProcesses(runtimeDir: string): Promise<RuntimeProcess[]> {
+/**
+ * The node processes that run the server of the runtime in `runtimeDir`, or of any runtime folder when `null` (Windows: one
+ * CIM query, 0.3-0.5 s).
+ */
+export function listRuntimeProcesses(runtimeDir: string | null): Promise<RuntimeProcess[]> {
   return realLister(runtimeDir);
 }

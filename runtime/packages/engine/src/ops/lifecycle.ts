@@ -33,6 +33,7 @@ import type { LogLevel } from '../log/logger.ts';
 import { execFileText, resolveExecutable, spawnDetached, spawnForeground } from '../platform/exec.ts';
 import { atomicWriteFile, readSmallFile, tailLines } from '../platform/fsx.ts';
 import { hostPlatform } from '../platform/host.ts';
+import { layoutOfRuntimeDir, type RuntimeLayout } from '../platform/layout.ts';
 import { hasLegacyMarker, hasRuntimeMarker } from '../platform/markers.ts';
 import { commandLineOf, forceKill, isValidPid, pidAlive, waitForExit } from '../platform/process.ts';
 import { adoptWorkspace, ensureWorkspaceDir, readInstanceFile } from '../workspace/adopt.ts';
@@ -417,13 +418,29 @@ async function delegateToLegacy(
   });
 }
 
-/** The server entry of the runtime folder; a runtime that is not built cannot start. */
+/**
+ * The server entry of the runtime folder in either layout (ADR 0062); a source runtime that is not built and a bundle that
+ * lost its server entry cannot start.
+ */
 function serverMainOf(ctx: OpContext): string {
-  const main = path.join(ctx.runtimeDir, 'packages', 'server', 'dist', 'main.js');
-  if (!existsSync(main)) {
-    throw new McsError('START_FAILED', `the server is not built: ${main} is missing`, {
-      hint: 'run `npm run build` in the runtime folder',
+  let layout: RuntimeLayout;
+  try {
+    layout = layoutOfRuntimeDir(ctx.runtimeDir);
+  } catch (error) {
+    throw new McsError('START_FAILED', `no runtime found in ${ctx.runtimeDir}`, {
+      hint: error instanceof McsError && error.hint !== undefined ? error.hint : 'reinstall the skill',
+      cause: error,
     });
+  }
+  const main = layout.serverEntry;
+  if (!existsSync(main)) {
+    throw layout.mode === 'bundle'
+      ? new McsError('START_FAILED', `the bundled server is missing: ${main}`, {
+          hint: 'reinstall the skill (the bundle folder is incomplete)',
+        })
+      : new McsError('START_FAILED', `the server is not built: ${main} is missing`, {
+          hint: 'run `npm run build` in the runtime folder',
+        });
   }
   return main;
 }

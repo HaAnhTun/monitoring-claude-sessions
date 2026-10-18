@@ -293,8 +293,9 @@ export interface ProbeOptions {
   /** Default 2000 (`CONTROL_CLIENT_TIMEOUT_MS`). */
   readonly controlTimeoutMs?: number;
   /**
-   * `<skill>/runtime`: needed only to find the pid of a hung runtime that `state.json` does not name (one process listing,
-   * 0.3-0.5 s on Windows). Without it that pid stays unknown.
+   * The runtime folder of this install: given, it enables the lookup of the pid of a hung runtime that `state.json` does not
+   * name (one process listing, 0.3-0.5 s on Windows). The listing covers every runtime folder (a server started from a
+   * previous plugin version directory is found) and matches by instance id. Without it that pid stays unknown.
    */
   readonly runtimeDir?: string;
 }
@@ -320,7 +321,8 @@ export interface ProbeDeps {
   pidAlive(pid: number): boolean;
   identify(address: string, timeoutMs: number): Promise<ControlAttempt>;
   httpGet(url: string, o: { timeoutMs: number }): Promise<HttpAttempt>;
-  listRuntimeProcesses(runtimeDir: string): Promise<readonly RuntimeProcess[]>;
+  /** `null`: the runtimes of every folder. */
+  listRuntimeProcesses(runtimeDir: string | null): Promise<readonly RuntimeProcess[]>;
 }
 
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -476,7 +478,8 @@ async function pidOfHungRuntime(
   if (stateFile?.instanceId === instanceId) return { pid: stateFile.pid, fromState: true };
   if (runtimeDir === undefined) return { pid: null, fromState: false };
   try {
-    const found = (await deps.listRuntimeProcesses(runtimeDir)).find((p) => p.instanceId === instanceId);
+    // Any folder: the instance id decides, so a runtime of this install started from another folder is found.
+    const found = (await deps.listRuntimeProcesses(null)).find((p) => p.instanceId === instanceId);
     return { pid: found?.pid ?? null, fromState: false };
   } catch {
     return { pid: null, fromState: false };
