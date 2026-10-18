@@ -48,7 +48,9 @@
     "pretest:isolation": "node scripts/lib.mjs require-build",
     "pretest:resilience": "node scripts/lib.mjs require-build",
     "docker:posix": "node scripts/docker-posix.mjs",
-    "test:slow": "vitest run --project slow"
+    "test:slow": "vitest run --project slow",
+    "bundle": "node scripts/bundle.mjs",
+    "bundle:check": "node scripts/bundle.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
