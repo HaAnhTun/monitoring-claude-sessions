@@ -425,7 +425,11 @@ describe('the active workflow (ADR 0065)', () => {
     expect(doc['name']).toBe('ci');
     expect(Object.keys(asMap(doc['jobs'], 'jobs'))).toEqual(JOBS);
     expect(asMap(doc['permissions'], 'permissions')).toEqual({ contents: 'read' });
-    expect(asMap(doc['env'], 'env')).toEqual({ MCS_HOOK_DISABLE: '1', TZ: 'UTC' });
+    expect(asMap(doc['env'], 'env')).toEqual({
+      NODE_OPTIONS: '--max-old-space-size=6144',
+      MCS_HOOK_DISABLE: '1',
+      TZ: 'UTC',
+    });
   });
 
   it('runs on push to main and feat/** and on a manual dispatch with the boolean input full, never on pull requests', () => {
@@ -535,10 +539,8 @@ describe('the active workflow (ADR 0065)', () => {
       'gates-full: npm run test:slow',
       `gates-full: ${summarizeGates}`,
       'macos: npm ci',
-      'macos: npm run build',
-      'macos: npx vitest run --project unit packages/engine/src/platform',
-      'macos: node scripts/smoke.mjs --bundle',
-      `macos: ${summarizeOnly}`,
+      'macos: node scripts/ci-lean.mjs',
+      `macos: ${summarizeGates}`,
       'e2e: npm ci',
       'e2e: npx playwright install --with-deps chromium',
       'e2e: npx playwright install chromium',
