@@ -61,6 +61,7 @@ function makeRoot(): string {
   writeFileSync(join(root, 'scripts', 'typecheck.mjs'), stubSource('typecheck'));
   writeFileSync(join(root, 'scripts', 'check-deps.mjs'), stubSource('check-deps'));
   writeFileSync(join(root, 'scripts', 'smoke.mjs'), stubSource('smoke'));
+  writeFileSync(join(root, 'scripts', 'bundle.mjs'), stubSource('bundle'));
   mkdirSync(join(root, 'npm'));
   writeFileSync(join(root, 'npm', 'npm-cli.mjs'), stubSource('npm:@ARGS'));
   return root;
@@ -151,6 +152,13 @@ describe('scripts/ci.mjs', () => {
       'vitest run --project slow',
       'playwright test -c packages/web/e2e/playwright.config.ts',
     ]);
+    expect(run.status).toBe(0);
+  });
+
+  it('--bundle adds bundle:check and the smoke through the bundle after smoke', () => {
+    const run = runCi(['--bundle', '--offline']);
+    expect(run.order).toEqual([...GATES.filter((gate) => gate !== 'audit'), 'bundle:check', 'smoke:bundle']);
+    expect(run.calls.slice(-2)).toEqual(['bundle --check', 'smoke --bundle']);
     expect(run.status).toBe(0);
   });
 

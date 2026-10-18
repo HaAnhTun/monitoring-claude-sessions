@@ -1,5 +1,6 @@
 // Local CI: runs every gate in a fixed order and prints a result table. Zero dependencies.
 // Usage: npm run ci [-- --offline] [-- --keep-going]   |   npm run ci:full (adds the slow suites + e2e)
+// `--bundle` adds `bundle:check` and a smoke run through the bundle after `smoke` (ADR 0063 item 7).
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { binPath, runNode } from './lib.mjs';
@@ -9,6 +10,7 @@ const full = args.has('--full');
 const offline = args.has('--offline');
 const keepGoing = args.has('--keep-going');
 const strict = args.has('--strict'); // release-check: a SKIPPED gate fails
+const bundle = args.has('--bundle');
 // npm_execpath is set when run through npm; otherwise fall back to the npm CLI bundled next to this node binary (lead decision, CR-WP-01-2).
 function resolveNpmCli() {
   if (process.env.npm_execpath) return process.env.npm_execpath;
@@ -54,6 +56,12 @@ const steps = [
   ],
   ['smoke', 'scripts/smoke.mjs', []],
 ];
+// @wp-begin WP-84
+if (bundle) {
+  steps.push(['bundle:check', 'scripts/bundle.mjs', ['--check']]);
+  steps.push(['smoke:bundle', 'scripts/smoke.mjs', ['--bundle']]);
+}
+// @wp-end WP-84
 if (!offline) steps.push(['audit', npmCli, ['audit', '--audit-level=low']]);
 if (full) {
   steps.push(['test:slow', binPath('vitest'), ['run', '--project', 'slow']]);

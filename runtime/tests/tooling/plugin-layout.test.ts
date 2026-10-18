@@ -10,8 +10,19 @@ const RUNTIME = join(REPO, 'runtime');
 const SKILL_NAME = 'monitoring-claude-sessions';
 const SKILLDIR = join(REPO, 'skills', SKILL_NAME);
 
-/** Files `SKILL.md` may reference before the work packages that create them land (WP-84 launcher, WP-21 bundle). */
-const PENDING = ['scripts/mcs.mjs', 'bundle/'];
+/** Files `SKILL.md` may reference before the work packages that create them land (the bundle-first launcher). */
+const PENDING = ['scripts/mcs.mjs'];
+
+/** The fixed top-level file set of the committed bundle (ADR 0062 item 1, ADR 0063). */
+const BUNDLE_ENTRIES = [
+  '.mcs-build.json',
+  'THIRD-PARTY-NOTICES.txt',
+  'mcs-cli.mjs',
+  'mcs-hook.mjs',
+  'mcs-server.mjs',
+  'migrations',
+  'web',
+];
 
 /** The documented top-level entries of the skill folder (ADR 0062 item 1). */
 const SKILLDIR_ENTRIES = ['SKILL.md', 'config', 'runtime', 'scripts', 'bundle', 'reference'];
@@ -190,5 +201,27 @@ describe('skill folder', () => {
 
   it('holds the skill-level runtime defaults', () => {
     expect(readJson(join(SKILLDIR, 'runtime', 'defaults.json'))).toEqual({ schema_version: 1 });
+  });
+
+  it('holds the committed bundle: the fixed file set, the web index and a manifest that lists every other file', () => {
+    const bundle = join(SKILLDIR, 'bundle');
+    expect(readdirSync(bundle).sort()).toEqual(BUNDLE_ENTRIES);
+    expect(existsSync(join(bundle, 'web', 'index.html'))).toBe(true);
+    expect(readdirSync(join(bundle, 'migrations')).every((name) => name.endsWith('.sql'))).toBe(true);
+    const files: string[] = [];
+    const walk = (dir: string, prefix: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (lstatSync(full).isDirectory()) walk(full, `${prefix}${entry}/`);
+        else files.push(`${prefix}${entry}`);
+      }
+    };
+    walk(bundle, '');
+    const manifest = readJson(join(bundle, '.mcs-build.json'));
+    expect(manifest['schemaVersion']).toBe(1);
+    expect(manifest['runtimeVersion']).toBe(runtimeVersion);
+    expect(Object.keys(manifest['files'] as Record<string, unknown>)).toEqual(
+      files.filter((rel) => rel !== '.mcs-build.json').sort(),
+    );
   });
 });

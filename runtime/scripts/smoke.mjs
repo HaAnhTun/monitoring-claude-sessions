@@ -1,22 +1,39 @@
 // Post-build smoke (05 section 3.2, critic N-02): the real CLI creates a throw-away instance on a smoke port and starts it; the
 // server answers health and refuses a foreign Host; the CLI stops it and the port closes. Exit 77 (SKIPPED) until 01 S8/S9 are built.
+// `--bundle [--bundle-dir <dir>]` drives the bundled CLI instead (`<dir>/mcs-cli.mjs`, default the tracked skill bundle, ADR 0063
+// item 7): the same steps through the bundle layout, so the server bundle answers through Express.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { RUNTIME_ROOT } from './lib.mjs';
 
 const SKIP_EXIT = 77;
-const CLI = join(RUNTIME_ROOT, 'packages/cli/dist/main.js');
-const READY = ['packages/server/dist/boot.js', 'packages/engine/dist/ops/lifecycle.js', 'packages/cli/dist/main.js'];
+const argv = process.argv.slice(2);
+const bundle = argv.includes('--bundle');
+const dirAt = argv.indexOf('--bundle-dir');
+const BUNDLE_DIR =
+  dirAt >= 0 && argv[dirAt + 1] !== undefined
+    ? resolve(argv[dirAt + 1])
+    : join(RUNTIME_ROOT, '..', 'skills', 'monitoring-claude-sessions', 'bundle');
+const CLI = bundle ? join(BUNDLE_DIR, 'mcs-cli.mjs') : join(RUNTIME_ROOT, 'packages/cli/dist/main.js');
 
-const missing = READY.find((p) => !existsSync(join(RUNTIME_ROOT, p)));
-if (missing !== undefined) {
-  console.log(`smoke: SKIPPED (01 S8/S9 not built: ${missing})`);
-  process.exit(SKIP_EXIT);
+if (bundle) {
+  const absent = ['mcs-cli.mjs', 'mcs-server.mjs', 'migrations'].find((p) => !existsSync(join(BUNDLE_DIR, p)));
+  if (absent !== undefined) {
+    console.log(`smoke: FAIL (the bundle has no ${absent}: run npm run build && npm run bundle)`);
+    process.exit(1);
+  }
+} else {
+  const READY = ['packages/server/dist/boot.js', 'packages/engine/dist/ops/lifecycle.js', 'packages/cli/dist/main.js'];
+  const missing = READY.find((p) => !existsSync(join(RUNTIME_ROOT, p)));
+  if (missing !== undefined) {
+    console.log(`smoke: SKIPPED (01 S8/S9 not built: ${missing})`);
+    process.exit(SKIP_EXIT);
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -98,7 +115,7 @@ const task = ['--task', 'smoke', '--repo', repo];
 
 let ok = false;
 let started = false;
-let summary = `smoke: port ${port}`;
+let summary = `smoke${bundle ? ' (bundle)' : ''}: port ${port}`;
 try {
   const init = await mcs(
     ['init', '--slug', 'smoke', '--name', 'FIXTURE smoke', '--repo', repo, '--port', String(port)],
