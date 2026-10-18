@@ -715,3 +715,8 @@ export type { LayoutFs, RuntimeLayout, RuntimeLayoutMode } from './platform/layo
 export { BUNDLE_SERVER_ENTRY, RUNTIME_ENTRIES, RUNTIME_ENTRY } from './platform/markers.ts';
 export { defaultMigrationsDir } from './db/migrations.ts';
 // @wp-end WP-82
+
+// @wp-begin WP-95
+export * as opsMigrate from './ops/migrate-workspace.ts';
+export type { MigrateDeps, MigrateInput, PatternStep, WorkspaceMigrationReport } from './ops/migrate-workspace.ts';
+// @wp-end WP-95

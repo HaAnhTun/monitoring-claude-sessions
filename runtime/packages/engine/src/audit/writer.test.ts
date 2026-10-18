@@ -99,6 +99,7 @@ describe('the action catalogue (01 7.2)', () => {
       'instances-repair',
       'db-rebuild',
       'ingest-replay',
+      'migrate-workspace',
     ]);
   });
 });
@@ -223,6 +224,13 @@ describe('appendChange', () => {
         'moved; backup 20261011T140507Z-db-rebuild',
       ],
       ['ingest-replay', 'spool replay of 3 segments from all', [], 'cursors re-read', 'scheduled'],
+      [
+        'migrate-workspace',
+        'translated 2 patterns to the JavaScript dialect (attempts.start, attempts.end); kept 0 patterns as written',
+        ['config.json'],
+        'patterns compile; configuration resolves',
+        'migrated; backup in data/backups/pre-migrate-20261011T140507Z/',
+      ],
     ];
     expect(table.map((row) => row[0])).toEqual([...AUDIT_ACTIONS]);
     const ws = freshWorkspace();

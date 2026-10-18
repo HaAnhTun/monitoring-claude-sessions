@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS = [
   'instances-repair',
   'db-rebuild',
   'ingest-replay',
+  'migrate-workspace',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
