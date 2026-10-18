@@ -9,6 +9,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { openInstanceDb, type InstanceDb } from '../db/open.ts';
 import { SpoolCursorsRepo, type NewSpoolCursor } from '../db/repos/spool-cursors.ts';
+import { TranscriptFilesRepo, type TranscriptFileKind } from '../db/repos/transcript-files.ts';
+import { UsageRepo, type UsageValues } from '../db/repos/usage.ts';
 import { onCommitted, withWriteTx } from '../db/write.ts';
 import { changeCounts, dumpDatabase, duplicatesSeen, readCounters } from '../../test/fixtures/spool.ts';
 import {
@@ -25,6 +27,8 @@ import { eventRow } from './event-row.ts';
 import {
   createIngestWriter,
   envelopeItem,
+  usageItems,
+  USAGE_ROWS_PER_ITEM,
   type IngestBatch,
   type IngestItem,
   type IngestWriterHandle,
@@ -651,5 +655,287 @@ describe('instance level records', () => {
     await r.writer.flushNow();
     expect(dumpDatabase(r.db)['reconciliations']).toHaveLength(1);
     expect(INSTANCE_KEY).toBe('instance');
+  });
+});
+
+// ---- token usage in the cursor transaction (WP-98, ADR 0015, 02 5.3) ----------------------------------------------------------
+
+const AGENT_UID = 'a0123456789abcdef';
+
+function registerFile(db: InstanceDb, name: string, sessionUid: string, kind: TranscriptFileKind = 'session'): number {
+  return withWriteTx(db, CTX, (tx) =>
+    new TranscriptFilesRepo(db).register(CTX, tx, {
+      path: `/transcripts/${name}.jsonl`,
+      pathKey: `/transcripts/${name}.jsonl`,
+      kind,
+      sessionUid,
+      agentUid: kind === 'subagent' ? AGENT_UID : null,
+      runUid: null,
+      sessionId: null,
+      agentId: null,
+      workflowRunId: null,
+      birthMs: null,
+      firstSeenMtimeMs: null,
+      mtimeSeen: null,
+    }),
+  ).id;
+}
+
+function usageValues(input: number, output: number): UsageValues {
+  return {
+    model: 'model-x',
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    cacheCreation5mTokens: null,
+    cacheCreation1hTokens: null,
+    thinkingTokens: null,
+    webSearchRequests: null,
+    webFetchRequests: null,
+    legacyIn: input,
+    legacyOut: output,
+    legacyCr: 0,
+    legacyCc: 0,
+    finalized: true,
+    usageSource: 'top',
+    synthetic: false,
+    ts: NOW,
+    invalidValues: 0,
+  };
+}
+
+function seenItem(sessionUid: string, fileId: number): IngestItem {
+  return {
+    kind: 'record',
+    events: [
+      {
+        k: 'session.seen',
+        sessionId: sessionUid,
+        stamp: { at: NOW - 1000, rank: 0, tie: `t:${String(fileId)}:seen` },
+        transcriptPath: `/transcripts/${String(fileId)}.jsonl`,
+      },
+    ],
+    rows: [],
+  };
+}
+
+function usageBatch(
+  fileId: number,
+  list: readonly { messageKey: string; values: UsageValues }[],
+  head: readonly IngestItem[] = [],
+  tailOffset = 100,
+): IngestBatch {
+  return {
+    source: 'transcript',
+    items: [...head, ...usageItems(fileId, list)],
+    bytes: 1000,
+    cursor: { kind: 'transcript', fileId, cursor: { tailOffset, sizeSeen: tailOffset } },
+  };
+}
+
+function sessionTokens(db: InstanceDb, uid: string): { tok_input: number; tok_output: number } | undefined {
+  return db.driver
+    .prepare<{ tok_input: number; tok_output: number }>(
+      'SELECT tok_input, tok_output FROM sessions WHERE session_uid = ?',
+    )
+    .get([uid]);
+}
+
+function tailOffsetOf(db: InstanceDb, fileId: number): number {
+  return new TranscriptFilesRepo(db).get(CTX, fileId)?.tailOffset ?? -1;
+}
+
+function maxSeq(db: InstanceDb): number {
+  return db.driver.prepare<{ n: number | null }>('SELECT max(seq) AS n FROM changes').get()?.n ?? 0;
+}
+
+function announcedSince(db: InstanceDb, seq: number): { kind: string; entity_id: number; n: number }[] {
+  return db.driver
+    .prepare<{ kind: string; entity_id: number; n: number }>(
+      `SELECT kind, entity_id, count(*) AS n FROM changes WHERE seq > ? AND kind IN ('session', 'agent')
+        GROUP BY kind, entity_id ORDER BY kind, entity_id`,
+    )
+    .all([seq]);
+}
+
+describe('usage rows ride in the cursor transaction (WP-98)', () => {
+  it('a failed commit leaves neither the usage nor the cursor; the retry writes both; a second delivery changes nothing', async () => {
+    let throwOnce = true;
+    let seenInside = -1;
+    let db: InstanceDb | null = null;
+    const r = rig({
+      beforeCommit: (_tx, batches) => {
+        if (throwOnce && batches.some((b) => b.cursor?.kind === 'transcript')) {
+          throwOnce = false;
+          seenInside = db === null ? -1 : count(db, 'usage');
+          throw new Error('injected failure before COMMIT');
+        }
+      },
+    });
+    db = r.db;
+    const fileId = registerFile(r.db, 'main', FIXTURE_SESSION_ID);
+    const list = [
+      { messageKey: 'msg_1', values: usageValues(10, 5) },
+      { messageKey: 'msg_2', values: usageValues(20, 7) },
+    ];
+    const committed: number[] = [];
+    onCommitted(r.db, () => committed.push(count(r.db, 'usage')));
+    r.writer.submit(usageBatch(fileId, list, [seenItem(FIXTURE_SESSION_ID, fileId)]));
+    await r.writer.flushNow();
+    expect(throwOnce).toBe(false);
+    // the failing transaction held the usage, and the rollback took it away with the cursor
+    expect(seenInside).toBe(2);
+    expect(r.writer.stats.failures).toBe(1);
+    // the first commit carries both usage rows and the cursor together
+    expect(committed[0]).toBe(2);
+    expect(tailOffsetOf(r.db, fileId)).toBe(100);
+    expect(sessionTokens(r.db, FIXTURE_SESSION_ID)).toEqual({ tok_input: 30, tok_output: 12 });
+    const before = dumpDatabase(r.db);
+    r.writer.submit(usageBatch(fileId, list, [seenItem(FIXTURE_SESSION_ID, fileId)]));
+    await r.writer.flushNow();
+    const after = dumpDatabase(r.db);
+    expect(after['usage']).toEqual(before['usage']);
+    expect(after['usage_files']).toEqual(before['usage_files']);
+    expect(sessionTokens(r.db, FIXTURE_SESSION_ID)).toEqual({ tok_input: 30, tok_output: 12 });
+    expect(new UsageRepo(r.db).verifyRollups(CTX)).toEqual([]);
+  });
+
+  it('a rolled back transaction leaves no usage and no cursor behind', async () => {
+    const r = rig({
+      beforeCommit: () => {
+        throw new Error('always fails');
+      },
+    });
+    const fileId = registerFile(r.db, 'main', FIXTURE_SESSION_ID);
+    r.writer.submit(
+      usageBatch(fileId, [{ messageKey: 'msg_1', values: usageValues(1, 1) }], [seenItem(FIXTURE_SESSION_ID, fileId)]),
+    );
+    await r.writer.flushNow();
+    // the poison path records the failure, but the rows of the failed attempts are gone
+    expect(count(r.db, 'usage')).toBe(0);
+    expect(count(r.db, 'usage_files')).toBe(0);
+  });
+
+  it('applies the usage of the very batch that creates the session: the writer links the file in the transaction', async () => {
+    const r = rig();
+    const fileId = registerFile(r.db, 'fresh', FIXTURE_SESSION_ID);
+    expect(new TranscriptFilesRepo(r.db).get(CTX, fileId)?.sessionId).toBeNull();
+    r.writer.submit(
+      usageBatch(fileId, [{ messageKey: 'msg_1', values: usageValues(3, 4) }], [seenItem(FIXTURE_SESSION_ID, fileId)]),
+    );
+    await r.writer.flushNow();
+    const file = new TranscriptFilesRepo(r.db).get(CTX, fileId);
+    expect(file?.sessionId).not.toBeNull();
+    const session = r.db.driver
+      .prepare<{ id: number; transcript_file_id: number | null }>(
+        'SELECT id, transcript_file_id FROM sessions WHERE session_uid = ?',
+      )
+      .get([FIXTURE_SESSION_ID]);
+    expect(session?.id).toBe(file?.sessionId);
+    expect(session?.transcript_file_id).toBe(fileId);
+    expect(sessionTokens(r.db, FIXTURE_SESSION_ID)).toEqual({ tok_input: 3, tok_output: 4 });
+  });
+
+  it('puts the usage of a subagent file on the agent and on its session rollup', async () => {
+    const r = rig();
+    const fileId = registerFile(r.db, 'agent', FIXTURE_SESSION_ID, 'subagent');
+    const meta: IngestItem = {
+      kind: 'record',
+      events: [{ k: 'agent.meta', sessionId: FIXTURE_SESSION_ID, agentId: AGENT_UID }],
+      rows: [],
+    };
+    r.writer.submit(usageBatch(fileId, [{ messageKey: 'msg_a', values: usageValues(8, 2) }], [meta]));
+    await r.writer.flushNow();
+    const agent = r.db.driver
+      .prepare<{ id: number; tok_input: number; transcript_file_id: number | null }>(
+        'SELECT id, tok_input, transcript_file_id FROM agents WHERE agent_uid = ?',
+      )
+      .get([AGENT_UID]);
+    expect(agent?.tok_input).toBe(8);
+    expect(agent?.transcript_file_id).toBe(fileId);
+    expect(new TranscriptFilesRepo(r.db).get(CTX, fileId)?.agentId).toBe(agent?.id);
+    expect(sessionTokens(r.db, FIXTURE_SESSION_ID)).toEqual({ tok_input: 8, tok_output: 2 });
+    expect(new UsageRepo(r.db).verifyRollups(CTX)).toEqual([]);
+  });
+
+  it('isolates a usage row of an unknown file: PERSIST_FAILED once, the other items commit, the cursor advances', async () => {
+    const r = rig();
+    const fileId = registerFile(r.db, 'main', FIXTURE_SESSION_ID);
+    const batch: IngestBatch = {
+      source: 'transcript',
+      items: [
+        seenItem(FIXTURE_SESSION_ID, fileId),
+        ...usageItems(fileId, [{ messageKey: 'msg_ok', values: usageValues(1, 1) }]),
+        ...usageItems(9999, [{ messageKey: 'msg_lost', values: usageValues(5, 5) }]),
+      ],
+      bytes: 1000,
+      cursor: { kind: 'transcript', fileId, cursor: { tailOffset: 300, sizeSeen: 300 } },
+    };
+    r.writer.submit(batch);
+    await r.writer.flushNow();
+    expect(readCounters(r.db).persistFailed).toBe(1);
+    expect(readCounters(r.db).errors).toMatchObject({ PERSIST_FAILED: 1 });
+    expect(new UsageRepo(r.db).get(CTX, 'msg_ok')).toBeDefined();
+    expect(new UsageRepo(r.db).get(CTX, 'msg_lost')).toBeUndefined();
+    expect(tailOffsetOf(r.db, fileId)).toBe(300);
+  });
+
+  it('announces each session and agent whose rollup changed once per transaction, the owner of a resumed copy too', async () => {
+    const r = rig();
+    const original = registerFile(r.db, 'original', FIXTURE_SESSION_ID);
+    const copy = registerFile(r.db, 'copy', SECOND_SESSION);
+    r.writer.submit(
+      usageBatch(
+        original,
+        [
+          { messageKey: 'msg_shared', values: usageValues(10, 1) },
+          { messageKey: 'msg_own', values: usageValues(4, 1) },
+        ],
+        [seenItem(FIXTURE_SESSION_ID, original)],
+      ),
+    );
+    await r.writer.flushNow();
+    const first = announcedSince(r.db, 0);
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((row) => row.n === 1)).toBe(true);
+    const originalRow = r.db.driver
+      .prepare<{ id: number }>('SELECT id FROM sessions WHERE session_uid = ?')
+      .get([FIXTURE_SESSION_ID])?.id;
+    expect(first.filter((row) => row.kind === 'session').map((row) => row.entity_id)).toEqual([originalRow]);
+
+    // the copy holds the same message with more output: the value grows and the key may change owner; the session that
+    // loses or gains the contribution is announced in the transaction of the copy, whichever session the batch is about
+    const mark = maxSeq(r.db);
+    r.writer.submit(
+      usageBatch(copy, [{ messageKey: 'msg_shared', values: usageValues(10, 9) }], [seenItem(SECOND_SESSION, copy)]),
+    );
+    await r.writer.flushNow();
+    const second = announcedSince(r.db, mark);
+    expect(second.every((row) => row.n === 1)).toBe(true);
+    expect(second.filter((row) => row.kind === 'session').map((row) => row.entity_id)).toContain(originalRow);
+    const a = sessionTokens(r.db, FIXTURE_SESSION_ID);
+    const b = sessionTokens(r.db, SECOND_SESSION);
+    expect((a?.tok_input ?? 0) + (b?.tok_input ?? 0)).toBe(14);
+    expect((a?.tok_output ?? 0) + (b?.tok_output ?? 0)).toBe(10);
+    // the frame of the commit carries the totals: the announced rows are stamped with the seq of this transaction
+    const stamped = r.db.driver.prepare<{ updated_seq: number }>('SELECT updated_seq FROM sessions').all();
+    expect(stamped.every((row) => row.updated_seq > mark)).toBe(true);
+    expect(new UsageRepo(r.db).verifyRollups(CTX)).toEqual([]);
+  });
+
+  it('splits 300 usage rows into items of at most 50, so the item cap of a transaction still bounds the work', async () => {
+    const list = Array.from({ length: 300 }, (_, i) => ({ messageKey: `msg_${String(i)}`, values: usageValues(1, 1) }));
+    const items = usageItems(7, list);
+    expect(USAGE_ROWS_PER_ITEM).toBe(50);
+    expect(items).toHaveLength(6);
+    expect(items.every((item) => item.rows.length <= 50 && item.events.length === 0)).toBe(true);
+    const r = rig();
+    const fileId = registerFile(r.db, 'big', FIXTURE_SESSION_ID);
+    // the queue counts the usage items: a batch with 300 usage rows weighs 7 items, not 1
+    r.writer.submit(usageBatch(fileId, list, [seenItem(FIXTURE_SESSION_ID, fileId)]));
+    expect(r.writer.stats.queued).toBe(7);
+    await r.writer.flushNow();
+    expect(sessionTokens(r.db, FIXTURE_SESSION_ID)).toEqual({ tok_input: 300, tok_output: 300 });
   });
 });

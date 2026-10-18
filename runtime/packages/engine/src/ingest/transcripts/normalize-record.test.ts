@@ -748,6 +748,65 @@ describe('normalizeRecords (lines to items)', () => {
     expect(batch.counters.ignoredAttachments).toEqual({ date: 2, environment: 1 });
   });
 
+  it('calls onRecord once per object record that passed the shape check, before it is normalized', () => {
+    const b = ordinarySession();
+    b.invalidLine();
+    b.raw({ type: 5 });
+    const lines = rawLines(b);
+    const seen: number[] = [];
+    const batch = normalizeRecords(lines, sessionFile(), createNormalizerState(), {
+      onRecord: (rec, line) => {
+        expect(typeof rec.type).toBe('string');
+        seen.push(line.offset);
+      },
+    });
+    // the invalid line and the record of the wrong shape are not handed over
+    expect(seen).toHaveLength(lines.length - 2);
+    expect(new Set(seen).size).toBe(seen.length);
+    for (const item of batch.items) expect(seen).toContain(item.offset);
+
+    // before normalization: a record whose normalization throws was handed over all the same
+    const hostile = builder().user('FIXTURE one').bookkeeping('ai-title').user('FIXTURE two');
+    const hostileLines = rawLines(hostile);
+    const hostileState = createNormalizerState();
+    Object.defineProperty(hostileState, 'titles', {
+      get(): never {
+        throw new Error('hostile state');
+      },
+    });
+    let handed = 0;
+    const out = normalizeRecords(hostileLines, sessionFile(), hostileState, { onRecord: () => (handed += 1) });
+    expect(out.counters.normalizeFailed).toBe(1);
+    expect(handed).toBe(hostileLines.length);
+  });
+
+  it('ends the loop when shouldStop says so, counts the lines it used in taken, and equals the plain call otherwise', () => {
+    const lines = rawLines(ordinarySession());
+    const plain = normalizeRecords(lines, sessionFile(), createNormalizerState());
+    expect(plain.taken).toBe(lines.length);
+    const same = normalizeRecords(lines, sessionFile(), createNormalizerState(), {
+      shouldStop: () => false,
+      onRecord: () => undefined,
+    });
+    expect(same.items).toEqual(plain.items);
+    expect(same.counters).toEqual(plain.counters);
+    let asked = 0;
+    const cut = normalizeRecords(lines, sessionFile(), createNormalizerState(), {
+      shouldStop: () => {
+        asked += 1;
+        return asked > 2;
+      },
+    });
+    expect(cut.taken).toBe(2);
+    expect(cut.items.every((item) => item.offset < (lines[2]?.offset ?? 0))).toBe(true);
+    // the rest of the lines, in a second call with the same state, completes the plain result
+    const state = createNormalizerState();
+    let n = 0;
+    const head = normalizeRecords(lines, sessionFile(), state, { shouldStop: () => (n += 1) > 2 });
+    const rest = normalizeRecords(lines.slice(head.taken), sessionFile(), state);
+    expect([...head.items, ...rest.items]).toEqual(plain.items);
+  });
+
   it('keeps the title state across calls (a title is emitted once per change)', () => {
     const state = createNormalizerState();
     const b = builder().user().bookkeeping('ai-title');

@@ -466,7 +466,6 @@ function transcriptStats(over: Partial<TranscriptStats> = {}): TranscriptStats {
     maxLagMs: 0,
     lastScanAt: null,
     lastSyncAt: null,
-    usageFailed: 0,
     sliceFailures: 0,
     ...over,
   };

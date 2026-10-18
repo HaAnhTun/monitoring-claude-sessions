@@ -761,6 +761,15 @@ export interface RecordCounters {
 export interface NormalizedBatch {
   items: RecordItem[];
   counters: RecordCounters;
+  /** Lines the call used (all of them unless `shouldStop` ended the loop): the next call starts at `lines[taken]`. */
+  taken: number;
+}
+
+export interface NormalizeRecordsOptions extends Omit<NormalizeOptions, 'state'> {
+  /** Called once per object record that passed the shape check, before it is normalized (usage, head facts). */
+  onRecord?: (rec: TranscriptRecord, line: RawLine) => void;
+  /** Asked before each line: true ends the loop there (a slice deadline). */
+  shouldStop?: () => boolean;
 }
 
 const MAX_NAMES = 64;
@@ -776,7 +785,7 @@ export function normalizeRecords(
   lines: readonly RawLine[],
   file: TrackedFile,
   state: NormalizerState,
-  opts: Omit<NormalizeOptions, 'state'> = {},
+  opts: NormalizeRecordsOptions = {},
 ): NormalizedBatch {
   const items: RecordItem[] = [];
   const counters: RecordCounters = {
@@ -790,7 +799,10 @@ export function normalizeRecords(
   };
   const unknown = new Map<string, number>();
   const ignored = new Map<string, number>();
+  let taken = 0;
   for (const line of lines) {
+    if (opts.shouldStop?.() === true) break;
+    taken += 1;
     let value: unknown;
     try {
       value = JSON.parse(line.bytes.toString('utf8'));
@@ -807,6 +819,7 @@ export function normalizeRecords(
       counters.shapeInvalid += 1;
       continue;
     }
+    opts.onRecord?.(shape.data, line);
     let out: NormalizedRecord;
     try {
       out = normalizeRecord(
@@ -831,5 +844,5 @@ export function normalizeRecords(
   }
   counters.unknownRecordTypes = Object.fromEntries(unknown);
   counters.ignoredAttachments = Object.fromEntries(ignored);
-  return { items, counters };
+  return { items, counters, taken };
 }

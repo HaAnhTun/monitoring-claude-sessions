@@ -9,14 +9,16 @@
 // The cursor of a batch rides with the batch, so it commits in the same transaction as the rows derived from the bytes it
 // passed; a crash re-reads at most the batches that were not committed, and every write is idempotent (02 4.4, 6.2).
 //
-// What is NOT in the writer's transaction (the writer has no row kind for it, CR-WP-34-1): token usage, the session label, the
-// links of a file to its session and agent, and the identity reset of a file. They are written in the importer's own short
-// `withWriteTx`, after the batch that created the session was handed over, and each is idempotent (max-merge, last write).
+// Token usage rides in the batch of its slice (`usage` rows, CR-WP-34-1, ADR 0015): the writer links the file and applies the
+// usage in the transaction that moves the cursor, so a hard kill between two commits loses no usage. What is NOT in the
+// writer's transaction: the session label, the early link of a file to its rows and the identity reset of a file. They are
+// written in the importer's own short `withWriteTx`, after the batch that created the session was handed over, and each is
+// idempotent (last write).
 import { performance } from 'node:perf_hooks';
 import { setImmediate as yieldToLoop, setTimeout as sleepFor } from 'node:timers/promises';
 import { stat as nodeStat } from 'node:fs/promises';
 
-import { TranscriptRecordShape, type Clock } from '@mcs/shared';
+import type { Clock } from '@mcs/shared';
 import { redact, routeKey } from '@mcs/shared/protocol';
 
 import type { InstanceDb, RepoContext } from '../../db/open.ts';
@@ -44,7 +46,8 @@ import type { LogicalEvent } from '../event-row.ts';
 import { checkIdentity, lineStartAtOrAfter, readIdentity, readLines, type FileIdentity } from '../tail/jsonl-tailer.ts';
 import { classifyFsError, errorCodeOf, IDENTITY_HEAD_BYTES } from '../tail/file-identity.ts';
 import type { RawLine } from '../tail/line-splitter.ts';
-import type { IngestBatch, IngestItem, IngestWriter } from '../writer.ts';
+import { linkTranscriptFile, type LinkRepos } from '../link-file.ts';
+import { usageItems, type IngestBatch, type IngestItem, type IngestWriter } from '../writer.ts';
 import {
   CLASSIFY_LINE_LIMIT,
   classify,
@@ -66,7 +69,7 @@ import {
 } from './discovery.ts';
 import {
   createNormalizerState,
-  normalizeRecord,
+  normalizeRecords,
   type NormalizerState,
   type TrackedFile,
   type TranscriptRecord,
@@ -131,8 +134,6 @@ export interface TranscriptStats {
   lastScanAt: number | null;
   /** End of the last stat cycle in which every tracked file had nothing behind it. */
   lastSyncAt: number | null;
-  /** Usage records whose accounting failed (a file without session or agent rows): counted, never thrown. */
-  usageFailed: number;
   /** Slices that threw (logged by code, never rethrown): the work comes back at the next cycle. */
   sliceFailures: number;
 }
@@ -184,14 +185,6 @@ const DEFAULT_CHUNK_BYTES = 256 * 1024;
 const STAT_PARALLEL = 32;
 const MAX_TRACKED_ROWS = 1_000_000;
 const TITLE_KIND = 'custom' as const;
-/** Usage records per write transaction (about 8 ms of work). */
-const USAGE_TX_RECORDS = 50;
-
-type Plain = Readonly<Record<string, unknown>>;
-
-function isPlain(value: unknown): value is Plain {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
@@ -310,6 +303,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
   const events = new EventsRepo(db);
   const usage = new UsageRepo(db);
   const files = new TranscriptFilesRepo(db);
+  const linkRepos: LinkRepos = { sessions, agents, runs, files };
 
   const states = new Map<number, FileState>();
   const byKey = new Map<string, FileState>();
@@ -324,7 +318,6 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     maxLagMs: 0,
     lastScanAt: null,
     lastSyncAt: null,
-    usageFailed: 0,
     sliceFailures: 0,
   };
   let tdir: string | null = options.transcriptsDir ?? null;
@@ -484,30 +477,14 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     return out;
   }
 
-  // ---- usage, links, labels (the importer's own short transactions) ------------------------------------------------------------
+  // ---- links and labels (the importer's own short transactions) ----------------------------------------------------------------
 
   function tryLink(file: FileState): boolean {
     if (file.linked) return true;
-    const sessionRowId = sessions.idByUid(scope, file.sessionUid);
-    if (sessionRowId === undefined) return false;
-    let agentRowId: number | null = null;
-    if (file.agentUid !== null) {
-      const agent = agents.byUid(scope, sessionRowId, file.agentUid);
-      if (agent === undefined) return false;
-      agentRowId = agent.id;
-    }
-    const runRowId = file.runUid === null ? null : (runs.byUid(scope, sessionRowId, file.runUid)?.id ?? null);
-    if (file.runUid !== null && runRowId === null) return false;
-    withWriteTx(db, scope, (tx) => {
-      files.register(scope, tx, {
-        ...file.spec,
-        sessionId: sessionRowId,
-        agentId: agentRowId,
-        workflowRunId: runRowId,
-      });
-      if (file.kind === 'session') sessions.update(scope, tx, sessionRowId, { transcriptFileId: file.id }, null);
-      if (agentRowId !== null) agents.update(scope, tx, agentRowId, { transcriptFileId: file.id }, null);
-    });
+    if (sessions.idByUid(scope, file.sessionUid) === undefined) return false;
+    // an agent file links once its agent row exists (the writer creates it from the batch, or the link below does)
+    const link = withWriteTx(db, scope, (tx) => linkTranscriptFile(scope, tx, linkRepos, file));
+    if (link?.complete !== true) return false;
     file.linked = true;
     return true;
   }
@@ -516,66 +493,6 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     if (tryLink(file)) return true;
     await writer.flushNow();
     return tryLink(file);
-  }
-
-  /**
-   * The usage of a slice is committed after the batch that announced the session, so a frame hydrated for that announcement
-   * carries the old token totals (CR-LF-7-1). Once the usage is committed, the sessions and agents whose rollup columns changed
-   * are announced again and stamped with that seq (03 9.3, DA-I6: the frame data equals the committed rollups). One
-   * transaction per slice: `session/upsert` and `agent/upsert` coalesce, and a client takes a patch only when it is newer.
-   */
-  function announceRollups(sessionRowIds: ReadonlySet<number>, agentRowIds: ReadonlySet<number>): void {
-    const uids = sessions.uidsByRowIds(scope, [...sessionRowIds]);
-    withWriteTx(db, scope, (tx) => {
-      for (const [sessionRowId, sessionUid] of uids) {
-        const row = sessions.byUid(scope, sessionUid);
-        if (row === undefined) continue;
-        // the patch repeats a value the row holds: the write only stamps `updated_seq` (and `updated_at`)
-        const seq = tx.changes.reserve('session', 'upsert', { entityId: sessionRowId, sessionUid });
-        sessions.update(scope, tx, sessionRowId, { lastActivityAt: row.lastActivityAt }, seq);
-        for (const agent of agents.listBySession(scope, sessionRowId)) {
-          if (!agentRowIds.has(agent.id)) continue;
-          const agentSeq = tx.changes.reserve('agent', 'upsert', { entityId: agent.id, sessionUid });
-          agents.update(scope, tx, agent.id, { lastActivityAt: agent.lastActivityAt }, agentSeq);
-        }
-      }
-    });
-  }
-
-  async function applyUsage(file: FileState, list: readonly RecordUsage[]): Promise<void> {
-    if (list.length === 0) return;
-    if (!(await ensureLinked(file))) {
-      stats.usageFailed += list.length;
-      return;
-    }
-    const touchedSessions = new Set<number>();
-    const touchedAgents = new Set<number>();
-    // short transactions with a turn of the event loop between them (a slice has about 150 records: one transaction for all
-    // of them held the loop for up to 30 ms); every write is a per-field maximum, so the groups need not be atomic together
-    for (let from = 0; from < list.length; from += USAGE_TX_RECORDS) {
-      const group = list.slice(from, from + USAGE_TX_RECORDS);
-      try {
-        withWriteTx(db, scope, (tx) => {
-          for (const u of group) {
-            const applied = usage.applyRecord(scope, tx, file.id, u.messageKey, u.values);
-            for (const id of applied.touchedSessionIds) touchedSessions.add(id);
-            for (const id of applied.touchedAgentIds) touchedAgents.add(id);
-          }
-        });
-      } catch (error) {
-        stats.usageFailed += group.length;
-        options.logger?.warn('transcript_usage_failed', { code: error instanceof Error ? error.name : 'unknown' });
-      }
-      if (from + USAGE_TX_RECORDS < list.length) await yieldToLoop();
-    }
-    if (touchedSessions.size === 0) return;
-    try {
-      announceRollups(touchedSessions, touchedAgents);
-    } catch (error) {
-      options.logger?.warn('transcript_usage_announce_failed', {
-        code: error instanceof Error ? error.name : 'unknown',
-      });
-    }
   }
 
   /** Reads the first 401 lines from disk again (a short read: nothing is held between slices) and parses them. */
@@ -727,63 +644,47 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     lineNoKnown: boolean,
     budgetMs: number,
   ): { parsed: Parsed[]; usage: RecordUsage[]; counters: Counters; taken: number } {
-    const parsed: Parsed[] = [];
     const usageList: RecordUsage[] = [];
-    const counters: Counters = { invalidJson: 0, notObject: 0, shapeInvalid: 0, unknownTypes: 0, normalizeFailed: 0 };
-    const tracked = trackedFileOf(file);
-    const nowMs = clock.now();
+    const uuids = new Map<number, string>();
     const stopAt = performance.now() + budgetMs;
-    let taken = 0;
-    for (const line of lines) {
-      if (taken > 0 && performance.now() >= stopAt) break;
-      taken += 1;
-      let value: unknown;
-      try {
-        value = JSON.parse(line.bytes.toString('utf8'));
-      } catch {
-        counters.invalidJson += 1;
-        continue;
-      }
-      if (!isPlain(value)) {
-        counters.notObject += 1;
-        continue;
-      }
-      const shape = TranscriptRecordShape.safeParse(value);
-      if (!shape.success) {
-        counters.shapeInvalid += 1;
-        continue;
-      }
-      const rec = shape.data;
-      noteRecord(file, phase, rec);
-      if (rec.type === 'assistant') {
-        const u = usageOfRecord(rec, { fileId: file.id, byteOffset: line.offset });
-        if (u !== null) usageList.push(u);
-      }
-      try {
-        const out = normalizeRecord(
-          rec,
-          tracked,
-          { offset: line.offset, length: line.length, lineNo: lineNoKnown ? line.lineNo : 0 },
-          { state: file.normalizer, nowMs },
-        );
-        if (out.unknownType !== null) counters.unknownTypes += 1;
-        if (out.events.length > 0 || out.rows.length > 0) {
-          parsed.push({
-            uuid: rec.uuid ?? null,
-            events: out.events,
-            rows: out.rows.map((row) => ({
-              t: 'event' as const,
-              row: row.lineNo === 0 ? { ...row, lineNo: null } : row,
-            })),
-            offset: line.offset,
-          });
-        }
-      } catch {
-        // The cursor moves past this line: a throw here would be re-read and re-thrown on every poll (a poison pill).
-        counters.normalizeFailed += 1;
-      }
-    }
-    return { parsed, usage: usageList, counters, taken };
+    let first = true;
+    const batch = normalizeRecords(
+      lineNoKnown ? lines : lines.map((line) => ({ ...line, lineNo: 0 })),
+      trackedFileOf(file),
+      file.normalizer,
+      {
+        nowMs: clock.now(),
+        // at least one line per call, then the budget
+        shouldStop: () => {
+          if (first) {
+            first = false;
+            return false;
+          }
+          return performance.now() >= stopAt;
+        },
+        onRecord: (rec, line) => {
+          noteRecord(file, phase, rec);
+          if (rec.uuid !== undefined) uuids.set(line.offset, rec.uuid);
+          if (rec.type === 'assistant') {
+            const u = usageOfRecord(rec, { fileId: file.id, byteOffset: line.offset });
+            if (u !== null) usageList.push(u);
+          }
+        },
+      },
+    );
+    const parsed: Parsed[] = batch.items.map((item) => ({
+      uuid: uuids.get(item.offset) ?? null,
+      events: item.events,
+      rows: item.rows.map((row) => ({ t: 'event' as const, row: row.lineNo === 0 ? { ...row, lineNo: null } : row })),
+      offset: item.offset,
+    }));
+    const { invalidJson, notObject, shapeInvalid, unknownTypes, normalizeFailed } = batch.counters;
+    return {
+      parsed,
+      usage: usageList,
+      counters: { invalidJson, notObject, shapeInvalid, unknownTypes, normalizeFailed },
+      taken: batch.taken,
+    };
   }
 
   async function readRange(
@@ -871,6 +772,12 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
 
   function itemsOf(out: ReadOutcome): IngestItem[] {
     return out.parsed.map((p) => ({ kind: 'record' as const, events: p.events, rows: p.rows }));
+  }
+
+  /** The usage of the slice, AFTER its record items: the writer applies it once the session and agent rows exist. */
+  function withUsage(file: FileState, items: IngestItem[], out: ReadOutcome): IngestItem[] {
+    items.push(...usageItems(file.id, out.usage));
+    return items;
   }
 
   function bytesOf(out: ReadOutcome, extra: number): number {
@@ -1021,9 +928,8 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     return behind ? (file.behindSince ?? now) : null;
   }
 
-  async function afterSlice(file: FileState, usageList: readonly RecordUsage[], copies: number): Promise<void> {
+  async function afterSlice(file: FileState, copies: number): Promise<void> {
     await ensureLinked(file);
-    await applyUsage(file, usageList);
     if (copies > 0) await reportCopies(file);
     if (file.needsClassify && file.kind === 'session') {
       file.needsClassify = false;
@@ -1132,7 +1038,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     const copies = dropCopiedActivity(file, out);
     const batch: IngestBatch = {
       source: 'transcript',
-      items,
+      items: withUsage(file, items, out),
       bytes: bytesOf(out, 0),
       cursor: { kind: 'transcript', fileId: file.id, cursor: update },
     };
@@ -1153,7 +1059,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
       file.behindSince = update.behindSince ?? null;
       file.lastGrowthAt = file.observedMtimeMs ?? now;
     }
-    await afterSlice(file, out.usage, copies);
+    await afterSlice(file, copies);
     return { progressed: true, bytes: out.bytes };
   }
 
@@ -1190,7 +1096,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
       file.checkedSize = size;
       return { progressed: false, bytes: 0 };
     }
-    const items = itemsOf(out);
+    const items = withUsage(file, itemsOf(out), out);
     if (
       !(await give({
         source: 'transcript',
@@ -1209,7 +1115,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     if (grew) file.lastGrowthAt = file.observedMtimeMs ?? now;
     file.identityDirty = false;
     if (out.lineCount > 0 && file.classifiedLines < CLASSIFY_LINE_LIMIT) file.needsClassify = file.kind === 'session';
-    await afterSlice(file, out.usage, copies);
+    await afterSlice(file, copies);
     return { progressed: true, bytes: out.bytes };
   }
 
@@ -1235,7 +1141,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     if (
       !(await give({
         source: 'transcript',
-        items: itemsOf(out),
+        items: withUsage(file, itemsOf(out), out),
         bytes: bytesOf(out, 0),
         cursor: { kind: 'transcript', fileId: file.id, cursor: update },
       }))
@@ -1244,7 +1150,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     }
     file.lineCount += out.lineCount;
     file.usageState = state;
-    await afterSlice(file, out.usage, copies);
+    await afterSlice(file, copies);
     return { progressed: true, bytes: out.bytes };
   }
 

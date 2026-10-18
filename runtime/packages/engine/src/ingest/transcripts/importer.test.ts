@@ -21,8 +21,9 @@ import { dumpDatabase } from '../../../test/fixtures/spool.ts';
 import { openInstanceDb, type InstanceDb } from '../../db/open.ts';
 import { ChangesRepo } from '../../db/repos/changes.ts';
 import { SessionsRepo } from '../../db/repos/sessions.ts';
-import { withWriteTx } from '../../db/write.ts';
+import { onCommitted, withWriteTx, type WriteTx } from '../../db/write.ts';
 import { TranscriptFilesRepo, type TranscriptFileRow } from '../../db/repos/transcript-files.ts';
+import { UsageRepo } from '../../db/repos/usage.ts';
 import { aggregateInstance, aggregateSession } from '../../tokens/aggregate.ts';
 import { legacyFileUsage } from '../../tokens/legacy-projection.ts';
 import { createIngestWriter, type IngestBatch, type IngestWriterHandle } from '../writer.ts';
@@ -71,6 +72,8 @@ interface RigOptions {
   /** Another instance over the Claude home of this rig (its own workspace and database). */
   readonly homeFrom?: Rig;
   readonly accept?: () => boolean;
+  /** The writer's test seam: called inside each writer transaction before COMMIT. */
+  readonly beforeCommit?: (tx: WriteTx, batches: readonly IngestBatch[]) => void;
 }
 
 const dbs = new Set<InstanceDb>();
@@ -125,7 +128,14 @@ function rig(o: RigOptions = {}): Rig {
   }
   const clock = o.of?.clock ?? new FakeClock(NOW);
   const db = openDb(path.join(root, 'monitor.db'), clock);
-  const real = createIngestWriter({ db, scope: SCOPE, retryBaseMs: 1, retryMaxMs: 2, sleep: () => Promise.resolve() });
+  const real = createIngestWriter({
+    db,
+    scope: SCOPE,
+    retryBaseMs: 1,
+    retryMaxMs: 2,
+    sleep: () => Promise.resolve(),
+    ...(o.beforeCommit === undefined ? {} : { beforeCommit: o.beforeCommit }),
+  });
   const batches: IngestBatch[] = [];
   const drains: (() => void)[] = [];
   const writer: IngestWriterHandle = {
@@ -653,7 +663,7 @@ describe('subagents, workflows and the small files', () => {
     expect(rows(r.db, 'SELECT run_uid, status_file FROM workflow_runs')).toHaveLength(1);
     expect(rows(r.db, 'SELECT run_uid FROM workflow_runs')[0]).toMatchObject({ run_uid: RUN });
     expect(r.importer.stats().sliceFailures).toBe(0);
-    expect(r.importer.stats().usageFailed).toBe(0);
+    expect(r.importer.stats()).not.toHaveProperty('usageFailed');
   });
 
   it('links every file to its session, agent and run', async () => {
@@ -1056,5 +1066,97 @@ describe('slices, line numbers, tracking and the statistics', () => {
     const everything =
       JSON.stringify(dumpDatabase(r.db)) + JSON.stringify(rows(r.db, 'SELECT * FROM transcript_files'));
     expect(everything).not.toContain(CANARY.key);
+  });
+});
+
+describe('usage rides in the batch of its slice (WP-98, ADR 0015)', () => {
+  const ONE_FILE: SessionSpec[] = [{ id: S1, project: 'p1', mtimeAgeMs: HOUR, build: () => undefined }];
+
+  function twoTurns(): TranscriptBuilder {
+    const b = new TranscriptBuilder({ sessionId: S1, cwd: 'FIXTURE/x', startMs: NOW - 2 * HOUR });
+    b.user('first').assistant({ messageId: 'm1', usage: { input_tokens: 5, output_tokens: 7 } });
+    b.user('second').assistant({ messageId: 'm2', usage: { input_tokens: 11, output_tokens: 13 } });
+    return b;
+  }
+
+  function tokens(db: InstanceDb): Row[] {
+    return rows(db, 'SELECT session_uid, tok_input, tok_output FROM sessions ORDER BY session_uid');
+  }
+
+  it('hands the usage rows to the writer with the cursor, after the record items, and writes no usage outside the writer', async () => {
+    let inWriter = false;
+    const r = rig({
+      sessions: ONE_FILE,
+      beforeCommit: () => {
+        inWriter = true;
+      },
+    });
+    let last = 0;
+    let outside = 0;
+    onCommitted(r.db, () => {
+      const n = count(r.db, 'usage_files');
+      if (!inWriter && n !== last) outside += 1;
+      last = n;
+      inWriter = false;
+    });
+    put(r, S1, twoTurns());
+    await drain(r);
+    const carrying = r.batches.filter((b) => b.items.some((item) => item.rows.some((row) => row.t === 'usage')));
+    expect(carrying.length).toBeGreaterThan(0);
+    for (const batch of carrying) {
+      expect(batch.cursor?.kind).toBe('transcript');
+      const firstUsage = batch.items.findIndex((item) => item.rows.some((row) => row.t === 'usage'));
+      // the usage items close the batch: no record item follows them, and they carry no events
+      expect(batch.items.slice(firstUsage).every((item) => item.events.length === 0)).toBe(true);
+      expect(batch.items.slice(firstUsage).every((item) => item.rows.every((row) => row.t === 'usage'))).toBe(true);
+    }
+    expect(count(r.db, 'usage_files')).toBe(2);
+    expect(outside).toBe(0);
+    expect(r.importer.stats()).not.toHaveProperty('usageFailed');
+  });
+
+  it('a hard kill right after the commit of a slice loses no usage: the restart ends with the totals of an undisturbed run', async () => {
+    const whole = rig({ sessions: ONE_FILE });
+    put(whole, S1, twoTurns());
+    await drain(whole);
+    const expected = tokens(whole.db);
+    expect(expected).toEqual([{ session_uid: S1, tok_input: 16, tok_output: 20 }]);
+
+    let armed = false;
+    let killed = false;
+    const first = rig({
+      sessions: ONE_FILE,
+      beforeCommit: (_tx, batches) => {
+        if (batches.some((b) => b.cursor?.kind === 'transcript' && (b.cursor.cursor.headEnd ?? 0) > 0)) armed = true;
+      },
+    });
+    // the process dies at the instant the writer committed the head slice: nothing after that commit runs
+    onCommitted(first.db, () => {
+      if (armed && !killed) {
+        killed = true;
+        first.db.close();
+      }
+    });
+    put(first, S1, twoTurns());
+    await first.importer.discover();
+    // read through a call: the listener sets the flag behind the back of the narrowing
+    const isKilled = (): boolean => killed;
+    for (let i = 0; i < 20 && !isKilled(); i += 1) {
+      const next = first.importer.work()[0];
+      if (next === undefined) break;
+      await first.importer.runSlice(next, performance.now() + 50);
+      await first.writer.flushNow();
+    }
+    expect(isKilled()).toBe(true);
+    first.importer.close();
+    importers.delete(first.importer);
+    await first.writer.close();
+    writers.delete(first.writer);
+    dbs.delete(first.db);
+
+    const second = rig({ of: first });
+    await drain(second);
+    expect(tokens(second.db)).toEqual(expected);
+    expect(new UsageRepo(second.db).verifyRollups(SCOPE)).toEqual([]);
   });
 });

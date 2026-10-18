@@ -37,6 +37,7 @@ import { SpoolCursorsRepo, type NewSpoolCursor } from '../db/repos/spool-cursors
 import { ToolCallsRepo, type ToolCallRow as DbToolCall, type ToolCallWrite } from '../db/repos/tool-calls.ts';
 import { TranscriptFilesRepo, type FileCursorUpdate } from '../db/repos/transcript-files.ts';
 import { TurnsRepo, type TurnEndKind } from '../db/repos/turns.ts';
+import { UsageRepo, type UsageValues } from '../db/repos/usage.ts';
 import { WorkflowRunsRepo } from '../db/repos/workflow-runs.ts';
 import { withWriteTx, onCommitted, type WriteTx } from '../db/write.ts';
 import { deriveModel } from '../lifecycle/derive-session.ts';
@@ -64,12 +65,18 @@ import {
 import { IngestWriterClosedError, type IngestErrorRecord } from './errors.ts';
 import type { EventRowWrite, LogicalEvent } from './event-row.ts';
 import { normalizeEnvelope, type EnvelopeLocation } from './hooks/normalize-envelope.ts';
+import { linkTranscriptFile, type LinkRepos } from './link-file.ts';
 
 // ---- the public contract (02 4.6) ------------------------------------------------------------------------------------
 
-/** One write that is not a logical event: an `events` row, a probe, an ingest error or a reconciliation record. */
+/**
+ * One write that is not a logical event: an `events` row, a probe, an ingest error, a reconciliation record or the token usage
+ * of one transcript record (`usage`: the writer links the file to its session and agent first, in the same transaction, and
+ * announces the sessions and agents whose rollups changed, ADR 0015, 02 5.3).
+ */
 export type RowWrite =
   | { readonly t: 'event'; readonly row: EventRowWrite }
+  | { readonly t: 'usage'; readonly fileId: number; readonly messageKey: string; readonly values: UsageValues }
   | { readonly t: 'probe'; readonly probeSessionId: string; readonly receivedAt: number }
   | { readonly t: 'error'; readonly error: IngestErrorRecord }
   | {
@@ -168,6 +175,8 @@ const DEFAULT_CACHE = 2000;
 const ERRORS_KEPT = 1000;
 const TRIM_EVERY_ERRORS = 100;
 const TOOLS_KEPT_IN_MODEL = 1000;
+/** Usage rows per item (about 8 ms of work): the adaptive item cap of a transaction then bounds the usage work too. */
+export const USAGE_ROWS_PER_ITEM = 50;
 
 // ---- small helpers ---------------------------------------------------------------------------------------------------
 
@@ -323,6 +332,11 @@ interface TxState {
   lastEnvelopeAt: number | null;
   drained: boolean;
   errorRows: number;
+  /** Sessions and agents (row ids) whose usage rollups changed: announced once each at the end of the transaction. */
+  readonly rollupSessions: Set<number>;
+  readonly rollupAgents: Set<number>;
+  /** Files linked in this transaction. */
+  readonly linkedFiles: Set<number>;
 }
 
 interface Queued {
@@ -364,6 +378,8 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
   const reconciliations = new ReconciliationsRepo(db);
   const spoolCursors = new SpoolCursorsRepo(db);
   const transcriptFiles = new TranscriptFilesRepo(db);
+  const usage = new UsageRepo(db);
+  const linkRepos: LinkRepos = { sessions, agents, runs: workflowRuns, files: transcriptFiles };
 
   // the facts cache: session uid -> committed model (insertion order = recency)
   const cache = new Map<string, LifecycleModel>();
@@ -885,6 +901,9 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
       case 'error':
         recordError(c, row.error);
         return;
+      case 'usage':
+        applyUsageRow(c, row);
+        return;
       case 'reconciliation': {
         const detailHash = canonicalJsonHash(row.detail);
         if (row.sessionUid === null) {
@@ -910,6 +929,51 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         });
         return;
       }
+    }
+  }
+
+  /** The usage of one record: the file is linked to its rows first (the batch may have just created them), then accounted. */
+  function applyUsageRow(c: TxState, row: Extract<RowWrite, { t: 'usage' }>): void {
+    if (!c.linkedFiles.has(row.fileId)) {
+      const file = transcriptFiles.get(scope, row.fileId);
+      if (file === undefined) throw new RangeError('usage of a transcript file that has no row');
+      const w = openWorking(c, file.sessionUid, c.tx.now);
+      // an agent file whose agent is not known yet: created through the working copy, so it is finalized and announced
+      if (file.agentUid !== null) agentRowOf(c, w, file.agentUid, c.tx.now);
+      if (linkTranscriptFile(scope, c.tx, linkRepos, file) === null) {
+        throw new RangeError('usage of a transcript file without a session');
+      }
+      c.linkedFiles.add(row.fileId);
+    }
+    const applied = usage.applyRecord(scope, c.tx, row.fileId, row.messageKey, row.values);
+    for (const id of applied.touchedSessionIds) c.rollupSessions.add(id);
+    for (const id of applied.touchedAgentIds) c.rollupAgents.add(id);
+  }
+
+  /**
+   * The sessions and agents whose rollup columns changed in this transaction are announced (`session/upsert`, `agent/upsert`,
+   * coalesced with the other announcements of the transaction) and stamped with that seq, so a frame hydrated for the commit
+   * carries the committed totals (03 9.3, CR-LF-7-1). The owner of a message key may be another session (a resume copy).
+   */
+  function announceRollups(c: TxState): void {
+    if (c.rollupSessions.size === 0 && c.rollupAgents.size === 0) return;
+    for (const [rowId, uid] of sessions.uidsByRowIds(scope, [...c.rollupSessions])) {
+      const row = sessions.byUid(scope, uid);
+      if (row === undefined) continue;
+      const seq = c.sink.record('session', `${String(rowId)}:${uid}`, 'update');
+      // the patch repeats a value the row holds: the write only stamps `updated_seq` (and `updated_at`)
+      if (seq !== null) sessions.update(scope, c.tx, rowId, { lastActivityAt: row.lastActivityAt }, seq);
+    }
+    if (c.rollupAgents.size === 0) return;
+    const rows = db.driver
+      .prepare<{ id: number; lastActivityAt: number; sessionUid: string }>(
+        `SELECT a.id AS id, a.last_activity_at AS lastActivityAt, s.session_uid AS sessionUid
+           FROM agents a JOIN sessions s ON s.id = a.session_id WHERE a.id IN (SELECT value FROM json_each(?))`,
+      )
+      .all([JSON.stringify([...c.rollupAgents])]);
+    for (const row of rows) {
+      const seq = c.sink.record('agent', `${String(row.id)}:${row.sessionUid}`, 'update');
+      if (seq !== null) agents.update(scope, c.tx, row.id, { lastActivityAt: row.lastActivityAt }, seq);
     }
   }
 
@@ -1204,10 +1268,14 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           lastEnvelopeAt: null,
           drained: false,
           errorRows: 0,
+          rollupSessions: new Set(),
+          rollupAgents: new Set(),
+          linkedFiles: new Set(),
         };
         for (const { batch } of group) for (const item of batch.items) applyItem(c, item);
         for (const { batch } of group) if (batch.cursor !== undefined) applyCursor(c, batch.cursor);
         for (const w of working.values()) finalizeSession(c, w);
+        announceRollups(c);
         finalizeHealth(
           c,
           group.map(({ batch }) => batch.source),
@@ -1241,6 +1309,9 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           lastEnvelopeAt: null,
           drained: false,
           errorRows: 0,
+          rollupSessions: new Set(),
+          rollupAgents: new Set(),
+          linkedFiles: new Set(),
         };
         recordError(c, {
           code: 'PERSIST_FAILED',
@@ -1500,4 +1571,22 @@ export function envelopeItem(
     events: normalized.events,
     rows: normalized.row === null ? [] : [{ t: 'event', row: normalized.row }],
   };
+}
+
+/**
+ * The items that carry the usage of a slice: `USAGE_ROWS_PER_ITEM` rows each, no events. A producer appends them AFTER the
+ * record items of the same batch, so the session and agent rows exist when the writer applies them.
+ */
+export function usageItems(fileId: number, list: readonly { messageKey: string; values: UsageValues }[]): IngestItem[] {
+  const items: IngestItem[] = [];
+  for (let from = 0; from < list.length; from += USAGE_ROWS_PER_ITEM) {
+    items.push({
+      kind: 'record',
+      events: [],
+      rows: list
+        .slice(from, from + USAGE_ROWS_PER_ITEM)
+        .map((u): RowWrite => ({ t: 'usage', fileId, messageKey: u.messageKey, values: u.values })),
+    });
+  }
+  return items;
 }
