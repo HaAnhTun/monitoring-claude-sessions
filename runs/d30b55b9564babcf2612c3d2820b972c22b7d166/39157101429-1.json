@@ -1,0 +1,62 @@
+{
+  "schema": "mcs.ci-status/1",
+  "sha": "d30b55b9564babcf2612c3d2820b972c22b7d166",
+  "ref": "refs/heads/feat/v4-node-only",
+  "runId": "39157101429",
+  "runAttempt": "1",
+  "runUrl": "https://github.com/HaAnhTun/monitoring-claude-sessions/actions/runs/39157101429",
+  "finishedAt": "2026-10-18T19:07:51.559Z",
+  "result": "fail",
+  "jobs": [
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "22.22",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "24",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "gates",
+      "os": "Linux",
+      "arch": "X64",
+      "node": "26",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "gates",
+      "os": "Windows",
+      "arch": "X64",
+      "node": "24",
+      "result": "cancelled",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    },
+    {
+      "name": "macos",
+      "os": "macOS",
+      "arch": "ARM64",
+      "node": "24",
+      "result": "fail",
+      "gates": [],
+      "failedGate": null,
+      "tail": []
+    }
+  ]
+}
