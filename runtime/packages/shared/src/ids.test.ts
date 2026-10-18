@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BackupManifestSchema } from './files/backup-manifest.ts';
 import { InstanceFileSchema } from './files/instance.ts';
-import { StateFileSchema, stateEngine } from './files/state.ts';
+import { StateFileSchema } from './files/state.ts';
 import {
   IsoSecondsZ,
   RESERVED_SLUGS,
@@ -163,14 +163,14 @@ describe('InstanceFileSchema (01 1.5)', () => {
     expect(ok({ dbSchemaVersion: -1 })).toBe(false);
     expect(ok({ dbSchemaVersion: 1.5 })).toBe(false);
     expect(ok({ engine: 'python' })).toBe(false);
-    expect(ok({ engine: 'legacy' })).toBe(true);
+    expect(ok({ engine: 'legacy' })).toBe(false);
     expect(ok({ hooks: { enabled: true, more: 1 } })).toBe(false);
     expect(ok({ upgradedAt: '2026-10-12T00:00:00Z' })).toBe(true);
     expect(ok({ upgradedAt: undefined })).toBe(false);
   });
 });
 
-const legacyState = {
+const foreignState = {
   pid: 4242,
   url: 'http://127.0.0.1:8765',
   port: 8765,
@@ -198,18 +198,18 @@ const nodeState = {
 } as const;
 
 describe('StateFileSchema (01 1.7)', () => {
-  it('reads a legacy state file and classifies it as legacy', () => {
-    const s = StateFileSchema.parse(legacyState);
-    expect(stateEngine(s)).toBe('legacy');
+  it('reads a state file that this runtime did not write (seven keys, no engine)', () => {
+    const s = StateFileSchema.parse(foreignState);
+    expect(s.engine).toBeUndefined();
   });
 
-  it('reads a node state file and classifies it as node', () => {
+  it('reads a node state file with engine node', () => {
     const s = StateFileSchema.parse(nodeState);
-    expect(stateEngine(s)).toBe('node');
+    expect(s.engine).toBe('node');
   });
 
   it('tolerates unknown keys (future versions)', () => {
-    expect(StateFileSchema.safeParse({ ...legacyState, future: 'x' }).success).toBe(true);
+    expect(StateFileSchema.safeParse({ ...foreignState, future: 'x' }).success).toBe(true);
     expect(StateFileSchema.safeParse({ ...nodeState, future: { nested: true } }).success).toBe(true);
   });
 

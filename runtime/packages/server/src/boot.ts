@@ -485,7 +485,7 @@ interface Resources {
   http?: Server;
   /** The bytes of `state.json` this process wrote or would have written (the watchdog compares against them). */
   state?: BuiltStateFile;
-  /** True when this process wrote `state.json` (it did not when a live legacy viewer owns the file). */
+  /** True when this process wrote `state.json`. */
   stateWritten?: boolean;
   /** The bytes of `run/control.token` once written. */
   token?: Uint8Array;
@@ -633,7 +633,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
     const ctx = res.ctx;
     if (ctx === undefined) return;
     const failures: unknown[] = [];
-    // compare-and-delete: a file that someone else wrote in the meantime (a legacy viewer, a newer runtime) stays
+    // compare-and-delete: a file that someone else wrote in the meantime (another monitor, a newer runtime) stays
     const attempt = async (file: string, bytes: Uint8Array | undefined): Promise<void> => {
       if (bytes === undefined) return;
       try {
@@ -827,13 +827,8 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
       nodeVersion: process.version,
       control: address,
     });
-    if (existing.kind === 'conflict') {
-      // a live legacy viewer owns the file (started with `$V serve`, bypassing the checks): leave it, say so, keep serving
-      ctx.logger.warn('ownership_conflict', { pid: existing.pid });
-    } else {
-      await writeStateFile(path.join(ctx.instanceDir, STATE_FILE_NAME), res.state);
-      res.stateWritten = true;
-    }
+    await writeStateFile(path.join(ctx.instanceDir, STATE_FILE_NAME), res.state);
+    res.stateWritten = true;
 
     // 11. ingestion, sweeper, timers, the state watchdog, the route file
     await runtime.start();

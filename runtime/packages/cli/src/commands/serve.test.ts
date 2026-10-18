@@ -41,7 +41,6 @@ const RESULT: ServeResult = {
   message: [],
   warnings: ['--state-file is ignored by the Node runtime (it always uses S)'],
   interrupted: false,
-  delegated: false,
 };
 
 const added: (() => void)[] = [];

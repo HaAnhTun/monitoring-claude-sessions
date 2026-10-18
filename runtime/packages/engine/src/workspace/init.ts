@@ -21,7 +21,6 @@ import {
   newInstanceFile,
   readInstanceFile,
   readTaskFile,
-  type EngineName,
 } from './adopt.ts';
 import { isMissingFileError, readJsonFile, writePyJsonFile, writeWorkspaceFile } from './fsio.ts';
 import {
@@ -48,8 +47,6 @@ export interface InitOptions {
   readonly port?: number;
   /** `--config FILE`: a seed of legacy (L) keys for `config.json`. */
   readonly seedConfig?: string;
-  /** The engine of a new `instance.json` (default `node`). */
-  readonly engine?: EngineName;
   readonly clock?: Clock;
   /** Test seam: the instance id. */
   readonly newId?: () => string;
@@ -204,7 +201,7 @@ async function prepareRequest(o: InitOptions, root: string): Promise<Request> {
 // ---- step 5: the files of a new workspace
 
 const README_NOTES =
-  '- `task.json` identity, `config.json` overrides of the shared defaults (shared with the legacy engine), `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n';
+  '- `task.json` identity, `config.json` overrides of the shared defaults, `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n';
 
 function readmeText(name: string, description: string, slug: string): string {
   return (
@@ -246,7 +243,6 @@ async function buildStaging(
   const nowMs = clock.now();
   const instance = newInstanceFile(ws.slug, {
     nowMs,
-    ...(o.engine === undefined ? {} : { engine: o.engine }),
     ...(o.newId === undefined ? {} : { instanceId: o.newId() }),
   });
   await mkdir(staging);
@@ -367,7 +363,6 @@ async function reuse(ws: WorkspaceRef, request: Request, o: InitOptions, clock: 
   }
   const adoption = await adoptWorkspace(ws, {
     clock,
-    ...(o.engine === undefined ? {} : { engine: o.engine }),
     ...(o.newId === undefined ? {} : { newId: o.newId }),
   });
   return { created: false, adopted: adoption.adopted, ws, instance: adoption.instance };

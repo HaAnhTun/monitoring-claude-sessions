@@ -48,7 +48,6 @@ describe('verify command', () => {
       sessions: 3,
       exitCode: 0,
       message: ['verified http://127.0.0.1:18000: health, instance, sessions (3), overview all valid'],
-      delegated: false,
     };
     const out = await makeCommand({ verify: () => Promise.resolve(result) }).run(contextOf({ task: 'demo' }));
     expect(out.text).toEqual(result.message);

@@ -50,7 +50,7 @@ describe('status command', () => {
   });
 
   it('prints the report as the legacy JSON and as the data of the envelope, exit 1 when it is not running', async () => {
-    const result: StatusResult = { report: STOPPED, exitCode: 1, delegated: false };
+    const result: StatusResult = { report: STOPPED, exitCode: 1 };
     const cmd = makeCommand({ status: () => Promise.resolve(result) });
     const out = await cmd.run(contextOf({ task: 'demo' }));
     expect(out.legacy).toEqual(STOPPED);
@@ -61,15 +61,22 @@ describe('status command', () => {
 
   it('exit 0 for a running instance', async () => {
     const running: StatusReport = { ...STOPPED, running: true, probe: 'running', engine: 'node' };
-    const cmd = makeCommand({ status: () => Promise.resolve({ report: running, exitCode: 0, delegated: false }) });
+    const cmd = makeCommand({ status: () => Promise.resolve({ report: running, exitCode: 0 }) });
     expect((await cmd.run(contextOf({}))).exitCode).toBe(0);
   });
 
-  it('a delegated status has nothing of its own to print', async () => {
-    const cmd = makeCommand({ status: () => Promise.resolve({ report: null, exitCode: 1, delegated: true }) });
+  it('an unmanaged-running workspace is printed like any report: engine null, exit 1', async () => {
+    const unmanaged: StatusReport = {
+      ...STOPPED,
+      url: 'http://127.0.0.1:18000',
+      pid: 7,
+      engine: null,
+      probe: 'unmanaged-running',
+    };
+    const cmd = makeCommand({ status: () => Promise.resolve({ report: unmanaged, exitCode: 1 }) });
     const out = await cmd.run(contextOf({}));
-    expect(out.legacy).toBeUndefined();
-    expect(out.data).toEqual({ delegated: true });
+    expect(out.legacy).toEqual(unmanaged);
+    expect(out.data).toEqual(unmanaged);
     expect(out.exitCode).toBe(1);
   });
 });

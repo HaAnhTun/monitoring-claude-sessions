@@ -1,5 +1,5 @@
-// Runtime and legacy process markers (01 4.1, 4.2, registry C13). A process may be killed only after its command line proves
-// that it is the runtime of the instance (or a legacy `viewer.py`); the control channel answers first (ADR 0006), the
+// Runtime process markers (01 4.1, 4.2, registry C13). A process may be killed only after its command line proves
+// that it is the runtime of the instance (ADR 0066: there is no other engine); the control channel answers first (ADR 0006), the
 // command line is the fallback. `listRuntimeProcesses` is the one listing of runtime processes of an install: it spawns only
 // through `execFileText` with a constant `-EncodedCommand` script and filters in Node (06 rule 8: no path is ever part of
 // PowerShell text). The launcher `scripts/mcs.mjs` carries a zero-dependency copy of the listing (01 5.1) that must use
@@ -24,7 +24,6 @@ export const RUNTIME_ENTRIES: readonly string[] = [RUNTIME_ENTRY, BUNDLE_SERVER_
 
 const INSTANCE_TOKEN = '--mcs-instance=';
 const DIR_TOKEN = '--instance-dir=';
-const LEGACY_MARKER = 'viewer.py';
 const PID_RE = /^[1-9][0-9]{0,9}$/;
 const LIST_TIMEOUT_MS = 20_000;
 const LIST_MAX_OUTPUT_BYTES = 1_048_576;
@@ -114,11 +113,6 @@ export function matchRuntimeMarker(commandLine: string, instanceId: string, case
 /** True when `commandLine` is the runtime server of `instanceId` (host case rule). */
 export function hasRuntimeMarker(commandLine: string, instanceId: string): boolean {
   return matchRuntimeMarker(commandLine, instanceId, pathsCaseInsensitive);
-}
-
-/** True when `commandLine` mentions `viewer.py`: the legacy rule of `cli.py` (a legacy viewer may be stopped). */
-export function hasLegacyMarker(commandLine: string): boolean {
-  return commandLine.includes(LEGACY_MARKER);
 }
 
 /** The instance id and the instance directory a runtime command line carries (first occurrence wins). */

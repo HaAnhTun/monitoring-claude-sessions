@@ -1,5 +1,5 @@
-// `<ws>/state.json`: runtime-only, written by whichever engine runs (01 section 1.7). Not strict (z.object ignores unknown
-// keys): legacy files and files of future versions carry keys this schema does not know.
+// `<ws>/state.json`: runtime-only (01 section 1.7). Not strict (z.object ignores unknown keys): files that this runtime did
+// not write (no `engine: 'node'`, such as a pre-4.0 monitor's) and files of future versions carry keys this schema does not know.
 import { z } from 'zod';
 
 import { Semver, UUID_V4_RE } from '../ids.ts';
@@ -35,6 +35,3 @@ export const StateFileSchema = z
   });
 
 export type StateFile = z.infer<typeof StateFileSchema>;
-
-/** A state file without `engine: 'node'` is a legacy file. */
-export const stateEngine = (s: StateFile): 'node' | 'legacy' => (s.engine === 'node' ? 'node' : 'legacy');

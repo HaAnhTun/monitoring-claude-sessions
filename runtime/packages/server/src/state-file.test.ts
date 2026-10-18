@@ -1,9 +1,9 @@
-// `state.json` of the Node runtime (01 1.7, 4.4 step 10, 4.6, 4.13): the exact content with the seven legacy keys first, the
-// atomic write, and the decision about a file that is already there at boot (stale, or a live legacy viewer to leave alone).
+// `state.json` of the Node runtime (01 1.7, 4.4 step 10, 4.6, 4.13): the exact content with the seven pre-4.0 keys first,
+// the atomic write, and the decision about a file that is already there at boot (always stale: there is no other engine).
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { StateFileSchema, stateEngine } from '@mcs/shared';
+import { StateFileSchema } from '@mcs/shared';
 import { makeJunction, useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
@@ -72,7 +72,7 @@ describe('buildStateFile (01 1.7)', () => {
       nodeVersion: 'v24.14.1',
       control: INPUT.control,
     });
-    expect(stateEngine(state)).toBe('node');
+    expect(state.engine).toBe('node');
   });
 
   it('is Python-compatible JSON: indent 2, one LF at the end, started is always a float, pid and port are ints', () => {
@@ -129,8 +129,6 @@ describe('readExistingState (01 4.4 step 10, 4.13)', () => {
     return {
       selfPid: 100,
       pidAlive: () => false,
-      commandLineOf: () => Promise.resolve(null),
-      hasLegacyMarker: (commandLine) => commandLine.includes('viewer.py'),
       ...over,
     };
   }
@@ -169,39 +167,35 @@ describe('readExistingState (01 4.4 step 10, 4.13)', () => {
     });
   });
 
-  it('says conflict for a live process whose command line is a legacy viewer, and checks the pid only once', async () => {
+  it('has no conflict kind: a live pid of a file that this runtime did not write (seven keys) is stale/foreign_pid', async () => {
+    const file = path.join(makeTemp('state-foreign').path, STATE_FILE_NAME);
+    const seven = { pid: 555, url: 'http://127.0.0.1:18123', port: 18123, started: 1.5, version: '2.0.2', task: null };
+    writeFileSync(file, JSON.stringify({ ...seven, config: null }));
+    const state = await readExistingState(file, fakes({ pidAlive: () => true }));
+    expect(state).toEqual({ kind: 'stale', reason: 'foreign_pid' });
+  });
+
+  it('says stale/foreign_pid for a live process that is not this runtime (a reused pid)', async () => {
     const asked: number[] = [];
     const state = await readExistingState(
       stateFileWith(555),
       fakes({
-        pidAlive: () => true,
-        commandLineOf: (pid) => {
+        pidAlive: (pid) => {
           asked.push(pid);
-          return Promise.resolve('python D:/x/viewer.py serve --task demo');
+          return true;
         },
       }),
     );
-    expect(state).toEqual({ kind: 'conflict', pid: 555 });
+    expect(state).toEqual({ kind: 'stale', reason: 'foreign_pid' });
     expect(asked).toEqual([555]);
   });
 
-  it('says stale/foreign_pid for a live process that is not a legacy viewer (a reused pid)', async () => {
-    const state = await readExistingState(
-      stateFileWith(555),
-      fakes({ pidAlive: () => true, commandLineOf: () => Promise.resolve('notepad.exe C:/x.txt') }),
-    );
-    expect(state).toEqual({ kind: 'stale', reason: 'foreign_pid' });
+  it('never stays silent forever over a live pid: the file is always replaced', async () => {
+    const state = await readExistingState(stateFileWith(555), fakes({ pidAlive: () => true }));
+    expect(state.kind).toBe('stale');
   });
 
-  it('treats a live process whose command line cannot be read as a reused pid, never as a reason to stay silent forever', async () => {
-    const state = await readExistingState(
-      stateFileWith(555),
-      fakes({ pidAlive: () => true, commandLineOf: () => Promise.resolve(null) }),
-    );
-    expect(state).toEqual({ kind: 'stale', reason: 'foreign_pid' });
-  });
-
-  it('works with the real process helpers: this test process is alive and is not a legacy viewer', async () => {
+  it('works with the real process helpers: this test process is alive and is a foreign pid', async () => {
     const file = stateFileWith(process.pid);
     expect(await readExistingState(file, { selfPid: process.pid + 1 })).toEqual({
       kind: 'stale',

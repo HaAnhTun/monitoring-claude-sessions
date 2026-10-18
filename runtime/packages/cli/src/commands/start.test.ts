@@ -1,6 +1,7 @@
 // `start` (01 6.3): the option table and the rendering of the result of `ops.lifecycle.start`; the operation itself is
 // proven in the engine (lifecycle.test.ts) and on real processes (cli/test/lifecycle.int.test.ts).
 import type { OpContext, StartInput, StartResult } from '@mcs/engine';
+import { McsError } from '@mcs/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../main.ts';
@@ -88,10 +89,9 @@ describe('start command', () => {
     expect(out.data).toMatchObject({ outcome: 'started', pid: 42 });
   });
 
-  it('carries a failing exit code of a delegated start', async () => {
-    const cmd = makeCommand({
-      start: () => Promise.resolve({ ...RESULT, outcome: 'delegated', exitCode: 1, message: [] }),
-    });
-    expect((await cmd.run(contextOf({}))).exitCode).toBe(1);
+  it('passes the refusal of a workspace held by a monitor that this runtime did not start through', async () => {
+    const refusal = new McsError('INSTANCE_RUNNING', "a monitor runs 'demo' (pid 7, http://127.0.0.1:18000)");
+    const cmd = makeCommand({ start: () => Promise.reject(refusal) });
+    await expect(cmd.run(contextOf({}))).rejects.toBe(refusal);
   });
 });

@@ -397,10 +397,8 @@ describe('health, healthIngest, instance, config', () => {
     expect(nodeBody.engine).toBe('node');
     expect(nodeBody.entries.length).toBeGreaterThan(10);
 
-    const legacy = context({ instance: { ...INSTANCE, engine: 'legacy' } });
-    const legacyPort = await serveMeta(legacy.ctx, TASK);
-    const legacyBody = ConfigInspectionSchema.parse(JSON.parse((await httpRequest(legacyPort, '/api/v3/config')).body));
-    expect(legacyBody.engine).toBe('legacy');
+    // one engine (ADR 0066): the contract has no other engine value
+    expect(ConfigInspectionSchema.safeParse({ ...nodeBody, engine: 'legacy' }).success).toBe(false);
   });
 });
 

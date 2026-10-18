@@ -92,8 +92,9 @@ async function defaultWorkspace(ctx: OpContext): Promise<WorkspaceRef | null> {
   return slugs.includes(DEFAULT_SLUG) ? resolveWorkspace(ctx.root, DEFAULT_SLUG) : null;
 }
 
-function engineOf(instance: InstanceFile | null): 'node' | 'legacy' {
-  return instance?.engine ?? 'legacy';
+/** `null` for a workspace without `instance.json` (a pre-4.0 workspace): there is no other engine (ADR 0066). */
+function engineOf(instance: InstanceFile | null): 'node' | null {
+  return instance?.engine ?? null;
 }
 
 // ---- inspect
@@ -120,7 +121,8 @@ export interface InspectReport {
   readonly runtime_effective: PlainRecord;
   readonly effective_port: number;
   readonly files: readonly ConfigFileStatus[];
-  readonly engine: 'node' | 'legacy';
+  /** `null` for a workspace without `instance.json`. */
+  readonly engine: 'node' | null;
   readonly probe: ProbeSummary;
 }
 
@@ -742,7 +744,8 @@ export interface CheckResult {
   readonly panels: readonly string[];
   readonly source: 'task' | 'defaults';
   readonly effectivePort: number;
-  readonly engine: 'node' | 'legacy';
+  /** `null` for a workspace without `instance.json`. */
+  readonly engine: 'node' | null;
   readonly regex: { readonly checked: number; readonly ok: true };
 }
 

@@ -11,7 +11,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { StateFileSchema, UUID_V4_RE, stateEngine, type StateFile } from '@mcs/shared';
+import { StateFileSchema, UUID_V4_RE, type StateFile } from '@mcs/shared';
 import {
   CONTROL_CLIENT_TIMEOUT_MS,
   parseControlResponse,
@@ -268,13 +268,13 @@ export type ProbeState =
   | 'stopped'
   | 'stale'
   | 'foreign-pid'
-  | 'legacy-running'
-  | 'legacy-stale';
+  /** A live monitor that this runtime did not start: a `state.json` without `engine: node` whose pid answers `/api/health`. */
+  | 'unmanaged-running';
 
 export interface ProbeResult {
   readonly state: ProbeState;
-  /** The engine of the process that holds (or held) the instance; `null` when nothing is known. */
-  readonly engine: 'node' | 'legacy' | null;
+  /** `node` when this runtime holds (or held) the instance; `null` when nothing is known or the state file is not ours. */
+  readonly engine: 'node' | null;
   readonly pid: number | null;
   readonly url: string | null;
   readonly port: number | null;
@@ -300,20 +300,20 @@ export interface ProbeOptions {
   readonly runtimeDir?: string;
 }
 
-/** A state that has a live process of an engine behind it. */
+/** A state that has a live monitor process behind it (ours or one this runtime did not start). */
 export function isLiveState(state: ProbeState): boolean {
   return (
     state === 'running' ||
     state === 'starting' ||
     state === 'stopping' ||
     state === 'unhealthy' ||
-    state === 'legacy-running'
+    state === 'unmanaged-running'
   );
 }
 
-/** A monitor that serves: a healthy Node runtime or a live legacy viewer (`status` exits 0 for these). */
+/** A monitor of this runtime that serves (`status` exits 0 for it). */
 export function isRunningState(state: ProbeState): boolean {
-  return state === 'running' || state === 'legacy-running';
+  return state === 'running';
 }
 
 /** What the probe needs from the outside world; tests pass scripted versions. */
@@ -326,7 +326,7 @@ export interface ProbeDeps {
 }
 
 const DEFAULT_TIMEOUT_MS = 2000;
-const LEGACY_HEALTH_TIMEOUT_MS = 3000;
+const UNMANAGED_HEALTH_TIMEOUT_MS = 3000;
 const STATE_FILE_MAX_BYTES = 64 * 1024;
 
 export interface StateSnapshot {
@@ -351,7 +351,7 @@ export async function readStateSnapshot(ws: Pick<WorkspaceRef, 'dir'>): Promise<
   }
 }
 
-/** `instance.json`, or `null` for a legacy workspace and for one whose identity cannot be read (the callers say why). */
+/** `instance.json`, or `null` for a pre-4.0 workspace and for one whose identity cannot be read (the callers say why). */
 async function readInstanceId(ws: WorkspaceRef): Promise<string | null> {
   try {
     return (await readInstanceFile(ws))?.instanceId ?? null;
@@ -372,7 +372,7 @@ export function createProbe(deps: ProbeDeps): (ws: WorkspaceRef, o?: ProbeOption
     const { stateFile, bytes } = await readStateSnapshot(ws);
     const instanceId = await readInstanceId(ws);
 
-    const fromState = (state: ProbeState, engine: 'node' | 'legacy' | null, reason: string): ProbeResult => ({
+    const fromState = (state: ProbeState, engine: 'node' | null, reason: string): ProbeResult => ({
       state,
       engine,
       pid: stateFile?.pid ?? null,
@@ -454,17 +454,26 @@ export function createProbe(deps: ProbeDeps): (ws: WorkspaceRef, o?: ProbeOption
 
     // steps 3 to 5: the state file
     if (stateFile === null) return fromState('stopped', null, 'there is no usable state file');
-    if (stateEngine(stateFile) === 'node') {
+    if (stateFile.engine === 'node') {
       return deps.pidAlive(stateFile.pid)
         ? fromState('foreign-pid', 'node', 'the control channel is free but the pid of the state file is alive')
         : fromState('stale', 'node', 'the pid of the state file is gone');
     }
-    if (!deps.pidAlive(stateFile.pid)) return fromState('legacy-stale', 'legacy', 'the pid of the state file is gone');
-    const health = await deps.httpGet(`${stateFile.url}/api/health`, { timeoutMs: LEGACY_HEALTH_TIMEOUT_MS });
+    // a state file that this runtime did not write: never ours to signal; a live one that answers as its pid blocks start
+    if (!deps.pidAlive(stateFile.pid)) return fromState('stale', null, 'the pid of the state file is gone');
+    const health = await deps.httpGet(`${stateFile.url}/api/health`, { timeoutMs: UNMANAGED_HEALTH_TIMEOUT_MS });
     const body = health.ok && health.reply.status === 200 ? recordOf(jsonBodyOf(health.reply)) : null;
     return body?.['pid'] === stateFile.pid
-      ? fromState('legacy-running', 'legacy', 'the legacy viewer answers /api/health with the pid of the state file')
-      : fromState('legacy-stale', 'legacy', 'the pid of the state file does not answer /api/health as that pid');
+      ? fromState(
+          'unmanaged-running',
+          null,
+          'a monitor that this runtime did not start answers /api/health with the pid of the state file',
+        )
+      : fromState(
+          'foreign-pid',
+          null,
+          'the pid of the state file is alive but does not answer /api/health as that pid',
+        );
   };
 }
 
@@ -496,8 +505,8 @@ const REAL_DEPS: ProbeDeps = {
 const realProbe = createProbe(REAL_DEPS);
 
 /**
- * Classifies the instance of `ws` (01 4.8): `running`, `starting`, `stopping`, `unhealthy`, `stopped`, `stale`, `foreign-pid`,
- * `legacy-running` or `legacy-stale`. Fast path first: a control-channel round trip (about 60 ms) and one HTTP request; no
+ * Classifies the instance of `ws` (01 4.8): `running`, `starting`, `stopping`, `unhealthy`, `stopped`, `stale`, `foreign-pid`
+ * or `unmanaged-running`. Fast path first: a control-channel round trip (about 60 ms) and one HTTP request; no
  * PowerShell unless a hung runtime has to be found. Never throws for a state of the workspace.
  */
 export function probeInstance(ws: WorkspaceRef, o?: ProbeOptions): Promise<ProbeResult> {

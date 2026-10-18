@@ -262,11 +262,15 @@ describe('toConfigInspection (01 6.4, I-20)', () => {
   });
 
   it('passes the files, the engine and the effective port through', () => {
-    const out = toConfigInspection(resolved, 'legacy');
+    const out = toConfigInspection(resolved, 'node');
     expect(out.files).toEqual(files);
-    expect(out.engine).toBe('legacy');
+    expect(out.engine).toBe('node');
     expect(out.effectivePort).toBe(8766);
     expect(Object.keys(out)).toEqual(['entries', 'files', 'effectivePort', 'engine']);
+  });
+
+  it('reports engine null for a workspace without instance.json', () => {
+    expect(toConfigInspection(resolved, null).engine).toBeNull();
   });
 
   it('uses the field name source (not provenance) and is detached from its input', () => {

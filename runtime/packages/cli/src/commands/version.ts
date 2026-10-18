@@ -12,8 +12,6 @@ export const command: CommandDefinition = {
   },
   async run(ctx) {
     const result = await opsVersion(ctx.op, ctx.deps);
-    // `legacyEngine.version` (read from the legacy sources by the legacy-engine work package) is not known here: null.
-    const legacy = ctx.deps.legacyEngine === undefined ? null : await ctx.deps.legacyEngine().catch(() => null);
     return {
       data: {
         runtimeVersion: result.version,
@@ -22,7 +20,6 @@ export const command: CommandDefinition = {
         node: result.node,
         platform: hostPlatform,
         arch: process.arch,
-        legacyEngine: { python: legacy?.exe ?? null, version: null },
       },
       text: [ctx.args.flag('short') ? `mcs ${result.version}` : result.text],
     };

@@ -346,10 +346,10 @@ describe('audit check: the Node checks, only when instance.json exists', () => {
     expect(report?.problems).toEqual(['state.json instanceId does not match instance.json']);
   });
 
-  it('reports a node state file on an instance whose engine is legacy', async () => {
+  it('accepts a node state file of the own instance (one engine, ADR 0066)', async () => {
     const { repo } = buildRepo(makeTemp('audit').path);
     const ctx = contextFor(repo);
-    await init(ctx, { name: 'Old engine', engine: 'legacy' });
+    await init(ctx, { name: 'Old engine' });
     const instance = JSON.parse(readFileSync(wsPath(ctx, 'old-engine', 'instance.json'), 'utf8')) as {
       instanceId: string;
     };
@@ -371,7 +371,7 @@ describe('audit check: the Node checks, only when instance.json exists', () => {
       }),
     );
     const [report] = await check(ctx, { task: 'old-engine' });
-    expect(report?.problems).toEqual(["state.json engine 'node' does not match instance.json engine 'legacy'"]);
+    expect(report?.problems).toEqual([]);
   });
 
   it('accepts a legacy state file and ignores a state file that cannot be read', async () => {

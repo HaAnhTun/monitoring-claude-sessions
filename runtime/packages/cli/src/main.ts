@@ -6,9 +6,9 @@
 // byte of output goes through `io/terminal.ts`. Exit codes: 0 success, 1 failure or problems found, 2 usage error, 130 Ctrl+C.
 //
 // The registry below is the one place that knows the commands. Later work packages add entries inside their own marked
-// block, in one of three forms (`RegistryEntry`): a command (`names` + a lazy loader of its module), a delegation that may
-// take over the whole call before dispatch (the legacy engine, WP-63) or a provider of operation dependencies (`deps`: the
-// probe of WP-19, transcript discovery of the ingestion WPs, ...), which the kernel merges and hands to every command.
+// block, in one of two forms (`RegistryEntry`): a command (`names` + a lazy loader of its module) or a provider of operation
+// dependencies (`deps`: the probe of WP-19, transcript discovery of the ingestion WPs, ...), which the kernel merges and
+// hands to every command.
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -84,7 +84,7 @@ export interface ParsedArgs {
 
 /**
  * The dependencies of the engine operations that belong to other work packages (transcript discovery, the instance probe,
- * hooks, the legacy engine, the route file). Their field names are the ones of the operations' own `*Deps` types, so a
+ * hooks, the route file). Their field names are the ones of the operations' own `*Deps` types, so a
  * command passes `ctx.deps` straight on. Without a provider the operations degrade as designed (01 6.4).
  */
 export interface OpDeps
@@ -147,17 +147,12 @@ export interface CommandEntry {
   readonly load: () => Promise<CommandModule>;
 }
 
-/** Runs before dispatch with the raw argv; a number is the exit code of a call it took over, `null` lets dispatch go on. */
-export interface DelegationEntry {
-  readonly delegate: (argv: readonly string[], paths: MainPaths) => Promise<number | null>;
-}
-
 /** Contributes operation dependencies; later entries override earlier ones key by key. */
 export interface DepsEntry {
   readonly deps: (op: OpContext) => OpDeps;
 }
 
-export type RegistryEntry = CommandEntry | DelegationEntry | DepsEntry;
+export type RegistryEntry = CommandEntry | DepsEntry;
 
 const REGISTRY: readonly RegistryEntry[] = [
   { names: ['discover'], load: () => import('./commands/discover.ts') },
@@ -263,10 +258,6 @@ export const GLOBAL_OPTIONS: OptionTable = {
 
 function isCommandEntry(entry: RegistryEntry): entry is CommandEntry {
   return 'names' in entry;
-}
-
-function isDelegationEntry(entry: RegistryEntry): entry is DelegationEntry {
-  return 'delegate' in entry;
 }
 
 function isDepsEntry(entry: RegistryEntry): entry is DepsEntry {
@@ -565,11 +556,6 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
   if (first === '--version') {
     printLine(`mcs ${RUNTIME_VERSION}`);
     return 0;
-  }
-  for (const entry of REGISTRY) {
-    if (!isDelegationEntry(entry)) continue;
-    const code = await entry.delegate(argv, paths);
-    if (code !== null) return code;
   }
   const found = findEntry(argv);
   if (found === null) {

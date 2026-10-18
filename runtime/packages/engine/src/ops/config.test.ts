@@ -730,7 +730,7 @@ describe('a workspace written by the legacy engine', () => {
     const { report } = await inspect(ctx, { task: 'legacy-demo' });
     expect(report.last_change).toEqual({ t: '2026-10-11T16:38:28Z', summary: 'window_hours: (default 8) -> 12' });
     expect(report.recent_audit).toBe(read(ctx, 'legacy-demo', 'audit', 'changes.md'));
-    expect(report.engine).toBe('legacy');
+    expect(report.engine).toBeNull();
     expect(report.instance).toBeNull();
     expect(report.effective['window_hours']).toBe(12);
     expect(report.overridden_keys).toEqual(expect.arrayContaining(['title', 'window_hours']));
@@ -864,12 +864,12 @@ describe('init', () => {
     expect((await failure(init(ctx, { name: 'x', slug: 'Bad Slug' }))).code).toBe('SLUG_INVALID');
   });
 
-  it('passes the engine and runs the before-rename hook once', async () => {
+  it('records the node engine and runs the before-rename hook once', async () => {
     const { repo } = buildRepo(makeTemp('init').path);
     const ctx = contextFor(repo);
     const hook = vi.fn();
-    const result = await init(ctx, { name: 'Legacy engine', engine: 'legacy' }, { beforeRename: hook });
-    expect(result.engine).toBe('legacy');
+    const result = await init(ctx, { name: 'Legacy engine' }, { beforeRename: hook });
+    expect(result.engine).toBe('node');
     expect(hook).toHaveBeenCalledTimes(1);
     expect(readdirSync(ctx.root).filter((name) => name.startsWith('.init-'))).toEqual([]);
   });
@@ -895,7 +895,6 @@ describe('discover', () => {
       'ledger candidate: PROJECT-status.md',
       `tasks: alpha  [${ctx.root}]`,
       expect.stringMatching(/^runtime: mcs \d+\.\d+\.\d+ \(build unknown\)$/),
-      'legacy engine: not found',
       'hooks: not installed',
       'instances:',
       '  alpha engine=node state=stopped -',
@@ -976,7 +975,6 @@ describe('discover', () => {
         },
       },
       buildStatus: () => Promise.resolve('stale'),
-      legacyEngine: () => Promise.resolve({ version: '3.14.3', exe: 'C:/python/python.exe' }),
       hooksSummary: () => Promise.resolve('installed (project-local)'),
     });
     expect(result.lines.slice(0, 5)).toEqual([
@@ -986,19 +984,20 @@ describe('discover', () => {
       '  aaaa-1111     12s ago      2048 B  Please run the tests',
       `  bbbb-2222  86400s ago         7 B  ${'x'.repeat(110)}`,
     ]);
-    expect(result.lines).toContain('legacy engine: python 3.14.3 at C:/python/python.exe');
+    expect(result.lines.some((line) => line.includes('legacy engine'))).toBe(false);
+    expect(result).not.toHaveProperty('legacyEngine');
     expect(result.lines).toContain('hooks: installed (project-local)');
     expect(result.runtime.build).toBe('stale');
     expect(result.lines).toContain('tasks: (none)  [' + ctx.root + ']');
     expect(result.lines.at(-1)).toBe('instances: (none)');
   });
 
-  it('shows a legacy-only workspace with engine=legacy and uses an injected probe', async () => {
+  it('shows a workspace without instance.json with engine=none and uses an injected probe', async () => {
     const { repo } = buildRepo(makeTemp('discover').path);
     buildTaskWorkspace(repo, { slug: 'old-task', config: { title: 'Old' } });
     const ctx = contextFor(repo);
-    const result = await discover(ctx, { probeState: () => Promise.resolve('legacy-running') });
-    expect(result.lines.at(-1)).toBe('  old-task engine=legacy state=legacy-running -');
+    const result = await discover(ctx, { probeState: () => Promise.resolve('unmanaged-running') });
+    expect(result.lines.at(-1)).toBe('  old-task engine=none state=unmanaged-running -');
   });
 
   it('reports a workspace whose identity cannot be used as invalid, not as a stopped legacy one', async () => {
@@ -1074,12 +1073,12 @@ describe('discover', () => {
       expect(events).toHaveLength(1);
     });
 
-    it('the legacy engine', async () => {
+    it('the probe of an instance', async () => {
       const { repo } = buildRepo(makeTemp('discover').path);
+      buildTaskWorkspace(repo, { slug: 'old-task', config: { title: 'Old' } });
       const { ctx, events } = recordingContext(repo);
-      const result = await discover(ctx, { legacyEngine: denied });
-      expect(result.legacyEngine).toBeNull();
-      expect(result.lines).toContain('legacy engine: not found');
+      const result = await discover(ctx, { probeState: denied });
+      expect(result.lines.at(-1)).toBe('  old-task engine=none state=unknown -');
       expect(events).toHaveLength(1);
     });
 

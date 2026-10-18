@@ -60,6 +60,10 @@ async function liveBlocker(ws: WorkspaceRef, deps: MigrateDeps): Promise<string 
   const probe = deps.probe ?? ((w: WorkspaceRef) => probeInstance(w));
   const { state } = await probe(ws);
   if (!isLiveState(state)) return null;
+  if (state === 'unmanaged-running') {
+    // never signalled by this runtime (ADR 0066): `mcs stop` refuses it, so the hint names the tool that started it
+    return `INSTANCE_RUNNING: a monitor that was not started by this runtime runs for this workspace (${state}); stop it with the tool that started it`;
+  }
   return `INSTANCE_RUNNING: a monitor runs for this workspace (${state}); stop it first with \`mcs stop --task ${ws.slug}\``;
 }
 

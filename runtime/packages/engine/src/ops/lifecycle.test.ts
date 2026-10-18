@@ -79,7 +79,7 @@ interface Options {
   readonly slug?: string;
   readonly config?: Record<string, unknown>;
   readonly runtime?: Record<string, unknown>;
-  /** `false`: a legacy workspace without `instance.json`. */
+  /** `false`: a pre-4.0 workspace without `instance.json`. */
   readonly instance?: Partial<InstanceFile> | false;
   /** `false`: no server entry in the runtime folder (an unbuilt runtime). */
   readonly built?: boolean;
@@ -261,10 +261,11 @@ function identity(over: Partial<IdentifyResponse> = {}): IdentifyResponse {
   };
 }
 
-function stateFileOf(pid: number, port = PORT, engine: 'node' | 'legacy' = 'node'): StateFile {
+/** `foreign`: the seven keys of a state file that this runtime did not write (a pre-4.0 monitor's, no `engine`). */
+function stateFileOf(pid: number, port = PORT, writer: 'node' | 'foreign' = 'node'): StateFile {
   const base = { pid, url: URL_OF(port), port, started: 1_700_000_000.5, version: '3.0.0', task: 'demo', config: null };
   return StateFileSchema.parse(
-    engine === 'node'
+    writer === 'node'
       ? {
           ...base,
           schema_version: 1,
@@ -545,14 +546,18 @@ describe('start: what is already there (01 4.7 step 6)', () => {
     expect(existsSync(fileOf(w, 'logs', 'boot.log'))).toBe(false);
   });
 
-  it('a live legacy viewer blocks a second engine and says how to switch (D12)', async () => {
+  it('a monitor that this runtime did not start blocks start: INSTANCE_RUNNING names pid and url (ADR 0066)', async () => {
     const w = world();
-    w.probes = [probeOf('legacy-running', { engine: 'legacy', pid: 888, url: URL_OF(PORT), port: PORT })];
-    const result = await start(w.ctx, { task: 'demo' }, w.deps);
-    expect(result).toMatchObject({ outcome: 'already-running-legacy', exitCode: 0, engine: 'legacy' });
-    expect(result.message).toEqual([`already running (engine=legacy): ${URL_OF(PORT)} (pid 888)`]);
-    expect(result.warnings.join(' ')).toContain('mcs stop --task demo && mcs start --task demo');
+    w.alive.add(888);
+    w.probes = [probeOf('unmanaged-running', { engine: null, pid: 888, url: URL_OF(PORT), port: PORT })];
+    const error = await failure(start(w.ctx, { task: 'demo' }, w.deps));
+    expectCode(error, 'INSTANCE_RUNNING');
+    expect(error.message).toContain('pid 888');
+    expect(error.message).toContain(URL_OF(PORT));
+    expect(error.message).toContain('not started by this runtime');
     expect(w.spawns).toEqual([]);
+    expect(w.killed).toEqual([]);
+    expect(w.requests).toEqual([]);
   });
 
   it('a runtime that answers control but not HTTP is START_FAILED and is not replaced', async () => {
@@ -605,7 +610,7 @@ describe('start: what is already there (01 4.7 step 6)', () => {
     expect(w.spawns).toHaveLength(1);
   });
 
-  it.each(['stale', 'foreign-pid', 'legacy-stale'] as const)('%s: carries on and starts', async (state) => {
+  it.each(['stale', 'foreign-pid'] as const)('%s: carries on and starts', async (state) => {
     const w = world();
     w.probes = [probeOf(state, { engine: 'node', pid: 999 }), running(SERVER_PID)];
     const result = await start(w.ctx, { task: 'demo' }, w.deps);
@@ -783,35 +788,29 @@ describe('start: a server that does not come up (01 4.7 steps 9 and 11)', () => 
   });
 });
 
-describe('start: an instance of the legacy engine (01 4.7 step 3, 6.5)', () => {
-  it('without the legacy delegation it is LEGACY_ENGINE_UNAVAILABLE with the way back to Node', async () => {
-    const w = world({ instance: { engine: 'legacy' } });
-    w.probes = [stopped()];
-    const error = await failure(start(w.ctx, { task: 'demo' }, w.deps));
-    expectCode(error, 'LEGACY_ENGINE_UNAVAILABLE');
-    expect(error.hint).toBe('mcs instances set-engine --task demo node');
+describe('start: a state file that this runtime did not write (ADR 0066)', () => {
+  it('a pre-4.0 workspace with a live foreign monitor is adopted, then refused, and nothing is signalled', async () => {
+    const w = world({ instance: false });
+    w.alive.add(888);
+    w.probes = [probeOf('unmanaged-running', { engine: null, pid: 888, url: URL_OF(PORT), port: PORT })];
+    const error = await failure(start(w.ctx, { task: 'demo', port: 18200 }, w.deps));
+    expectCode(error, 'INSTANCE_RUNNING');
+    expect(existsSync(fileOf(w, 'instance.json'))).toBe(true);
     expect(w.spawns).toEqual([]);
+    expect(w.killed).toEqual([]);
   });
 
-  it('with a delegate registered, the delegate runs and its exit code is the result', async () => {
-    const w = world({ instance: { engine: 'legacy' } });
-    const seen: { command: string; slug: string; port: number | undefined }[] = [];
-    const deps: LifecycleDeps = {
-      ...w.deps,
-      legacy: {
-        start: (_ctx, request) => {
-          seen.push({ command: request.command, slug: request.ws.slug, port: request.port });
-          return Promise.resolve(0);
-        },
-      },
-    };
-    const result = await start(w.ctx, { task: 'demo', port: 18200 }, deps);
-    expect(result).toMatchObject({ outcome: 'delegated', exitCode: 0, engine: 'legacy' });
-    expect(seen).toEqual([{ command: 'start', slug: 'demo', port: 18200 }]);
-    expect(w.spawns).toEqual([]);
-
-    const failing = await start(w.ctx, { task: 'demo' }, { ...w.deps, legacy: { start: () => Promise.resolve(3) } });
-    expect(failing.exitCode).toBe(1);
+  it('a foreign state file whose pid is dead is stale: start replaces it with its own runtime', async () => {
+    const w = world();
+    const file = stateFileOf(888, PORT, 'foreign');
+    w.probes = [
+      probeOf('stale', { engine: null, pid: 888, stateFile: file, stateFileBytes: writeState(w, file) }),
+      running(SERVER_PID),
+    ];
+    const result = await start(w.ctx, { task: 'demo' }, w.deps);
+    expect(result).toMatchObject({ outcome: 'started', engine: 'node', exitCode: 0 });
+    expect(w.spawns).toHaveLength(1);
+    expect(w.killed).toEqual([]);
   });
 });
 
@@ -827,7 +826,7 @@ describe('stop: nothing to stop and stale files (01 4.9)', () => {
     expect(w.killed).toEqual([]);
   });
 
-  it.each(['stale', 'foreign-pid', 'legacy-stale'] as const)(
+  it.each(['stale', 'foreign-pid'] as const)(
     '%s: removes the state file, says nothing was killed, and kills nothing',
     async (state) => {
       const w = world();
@@ -1126,11 +1125,12 @@ describe('stop: the forced path verifies the marker before any kill (01 4.9, ADR
   });
 });
 
-describe('stop: a legacy viewer (01 4.9 last row)', () => {
-  const viewer = (w: World): ProbeResult => {
-    const file = stateFileOf(888, PORT, 'legacy');
-    return probeOf('legacy-running', {
-      engine: 'legacy',
+describe('stop: a monitor that this runtime did not start (01 4.9 last row, ADR 0066)', () => {
+  const VIEWER_LINE = `python ${['viewer', 'py'].join('.')} serve --task demo`;
+  const foreign = (w: World, state: 'unmanaged-running' | 'foreign-pid'): ProbeResult => {
+    const file = stateFileOf(888, PORT, 'foreign');
+    return probeOf(state, {
+      engine: null,
       pid: 888,
       url: URL_OF(PORT),
       port: PORT,
@@ -1139,36 +1139,39 @@ describe('stop: a legacy viewer (01 4.9 last row)', () => {
     });
   };
 
-  it('kills it when its command line has viewer.py, waits, removes the state file', async () => {
+  it('refuses a live unmanaged monitor with NOT_OUR_PROCESS, names pid and url, signals nothing', async () => {
     const w = world();
     w.alive.add(888);
-    w.commandLines.set(888, 'python viewer.py serve --task demo');
-    w.probes = [viewer(w)];
-    const result = await stop(w.ctx, { task: 'demo' }, w.deps);
-    expect(result).toMatchObject({ outcome: 'stopped-legacy', exitCode: 0 });
-    expect(result.message).toEqual([`stopped viewer pid 888 (${URL_OF(PORT)})`]);
-    expect(w.killed).toEqual([888]);
-    expect(existsSync(fileOf(w, 'state.json'))).toBe(false);
+    w.commandLines.set(888, VIEWER_LINE);
+    w.probes = [foreign(w, 'unmanaged-running')];
+    const error = await failure(stop(w.ctx, { task: 'demo' }, w.deps));
+    expectCode(error, 'NOT_OUR_PROCESS');
+    expect(error.message).toContain('pid 888');
+    expect(error.message).toContain(URL_OF(PORT));
+    expect(w.killed).toEqual([]);
+    expect(w.requests).toEqual([]);
+    expect(existsSync(fileOf(w, 'state.json'))).toBe(true);
   });
 
-  it('a pid without viewer.py is a stale file: removed, nothing killed', async () => {
+  it('a pid-reuse impostor named like a viewer is a stale file: removed, nothing killed', async () => {
     const w = world();
     w.alive.add(888);
-    w.commandLines.set(888, 'node something-else.js');
-    w.probes = [viewer(w)];
+    w.commandLines.set(888, VIEWER_LINE);
+    w.probes = [foreign(w, 'foreign-pid')];
     const result = await stop(w.ctx, { task: 'demo' }, w.deps);
     expect(result.outcome).toBe('stale-removed');
     expect(w.killed).toEqual([]);
     expect(existsSync(fileOf(w, 'state.json'))).toBe(false);
   });
 
-  it('a viewer that survives the kill is STOP_FAILED', async () => {
+  it('a stubborn unmanaged monitor is still never signalled', async () => {
     const w = world();
     w.alive.add(888);
     w.stubborn = true;
-    w.commandLines.set(888, 'python viewer.py serve');
-    w.probes = [viewer(w)];
-    expectCode(await failure(stop(w.ctx, { task: 'demo' }, w.deps)), 'STOP_FAILED');
+    w.commandLines.set(888, VIEWER_LINE);
+    w.probes = [foreign(w, 'unmanaged-running')];
+    expectCode(await failure(stop(w.ctx, { task: 'demo' }, w.deps)), 'NOT_OUR_PROCESS');
+    expect(w.killed).toEqual([]);
   });
 });
 
@@ -1350,9 +1353,9 @@ describe('status (01 4.10)', () => {
     w.probes = [probeOf('stale', { engine: 'node', pid: 999, stateFile: file, stateFileBytes: new Uint8Array() })];
     const result = await status(w.ctx, { task: 'demo' }, w.deps);
     expect(result.exitCode).toBe(1);
-    expect(result.report?.running).toBe(false);
-    expect(result.report?.stale_state_file).toEqual(file);
-    expect(result.report?.probe).toBe('stale');
+    expect(result.report.running).toBe(false);
+    expect(result.report.stale_state_file).toEqual(file);
+    expect(result.report.probe).toBe('stale');
   });
 
   it('a running instance: the legacy keys first, then the new ones, exit 0', async () => {
@@ -1362,7 +1365,7 @@ describe('status (01 4.10)', () => {
     const result = await status(w.ctx, { task: 'demo' }, w.deps);
     expect(result.exitCode).toBe(0);
     const report = result.report;
-    expect(Object.keys(report ?? {})).toEqual([
+    expect(Object.keys(report)).toEqual([
       'running',
       'state_file',
       'url',
@@ -1417,7 +1420,7 @@ describe('status (01 4.10)', () => {
     w.probes = [running()];
     const report = (await status(w.ctx, { task: 'demo' }, w.deps)).report;
     expect(report).toMatchObject({ outdated: true, outdated_reason: 'code_stamp_changed' });
-    expect(report?.hint).toBe(
+    expect(report.hint).toBe(
       'the runtime code changed since this instance started: run `mcs restart --task demo` (or `mcs upgrade --task demo --restart` when the database needs an upgrade)',
     );
   });
@@ -1460,9 +1463,9 @@ describe('status (01 4.10)', () => {
     serve(w, { health: { errors } });
     w.probes = [running()];
     const report = (await status(w.ctx, { task: 'demo' }, w.deps)).report;
-    expect(report?.recent_errors).toHaveLength(5);
-    expect(report?.recent_errors?.[0]).toEqual({ at: errors[0]?.at, where: 'file 0', message: 'problem 0' });
-    expect(report?.recent_errors?.[1]).toEqual({ at: errors[1]?.at, where: 'ingest', message: 'problem 1' });
+    expect(report.recent_errors).toHaveLength(5);
+    expect(report.recent_errors?.[0]).toEqual({ at: errors[0]?.at, where: 'file 0', message: 'problem 0' });
+    expect(report.recent_errors?.[1]).toEqual({ at: errors[1]?.at, where: 'ingest', message: 'problem 1' });
   });
 
   it('a body that does not match its schema leaves the keys out; the instance is still running', async () => {
@@ -1486,39 +1489,43 @@ describe('status (01 4.10)', () => {
     const result = await status(w.ctx, { task: 'demo' }, w.deps);
     expect(result.exitCode).toBe(1);
     expect(result.report).toMatchObject({ running: false, probe: 'unhealthy', pid: 321 });
-    expect(result.report?.hint).toContain('mcs doctor --task demo');
+    expect(result.report.hint).toContain('mcs doctor --task demo');
   });
 
-  it('a live legacy viewer is running: the subset of state.json and /api/health (no Python needed)', async () => {
+  it('a monitor that this runtime did not start: unmanaged-running, engine null, exit 1, nothing fetched', async () => {
     const w = world();
-    w.httpRoutes.set(
-      '/api/health',
-      ok({
-        ok: true,
-        pid: 888,
-        uptime: 12.5,
-        code_stamp: 'legacystamp',
-        task: { id: 'demo', name: 'x', description: '' },
-        config_source: 'task',
-      }),
-    );
-    w.probes = [probeOf('legacy-running', { engine: 'legacy', pid: 888, url: URL_OF(PORT), port: PORT })];
-    const result = await status(w.ctx, { task: 'demo' }, w.deps);
-    expect(result.exitCode).toBe(0);
+    w.httpRoutes.set('/api/health', ok({ ok: true, pid: 888 }));
+    w.probes = [probeOf('unmanaged-running', { engine: null, pid: 888, url: URL_OF(PORT), port: PORT })];
+    const fetched: string[] = [];
+    const realGet = w.deps.httpGet;
+    const deps: LifecycleDeps = {
+      ...w.deps,
+      httpGet: (url, o) => {
+        fetched.push(url);
+        if (realGet === undefined) throw new Error('no scripted http');
+        return realGet(url, o);
+      },
+    };
+    const result = await status(w.ctx, { task: 'demo' }, deps);
+    expect(result.exitCode).toBe(1);
     expect(result.report).toMatchObject({
-      running: true,
+      running: false,
       url: URL_OF(PORT),
       pid: 888,
-      uptime_s: 12.5,
-      engine: 'legacy',
-      probe: 'legacy-running',
+      engine: null,
+      probe: 'unmanaged-running',
     });
+    expect(result.report.hint).toContain('not started by this runtime');
+    expect(fetched).toEqual([]);
+    expect(w.killed).toEqual([]);
   });
 
-  it('delegates for an instance of the legacy engine when a delegate is registered', async () => {
-    const w = world({ instance: { engine: 'legacy' } });
-    const result = await status(w.ctx, { task: 'demo' }, { ...w.deps, legacy: { status: () => Promise.resolve(1) } });
-    expect(result).toMatchObject({ report: null, exitCode: 1, delegated: true });
+  it('a pre-4.0 workspace without instance.json is reported, not delegated: instance_id null', async () => {
+    const w = world({ instance: false });
+    w.probes = [stopped()];
+    const result = await status(w.ctx, { task: 'demo' }, w.deps);
+    expect(result).toMatchObject({ exitCode: 1, report: { running: false, instance_id: null, probe: 'stopped' } });
+    expect(result).not.toHaveProperty('delegated');
   });
 });
 
@@ -1625,10 +1632,14 @@ describe('verify (01 4.10)', () => {
     expect(error.message).toBe(`no healthy monitor for this target (state file: ${fileOf(w, 'state.json')})`);
   });
 
-  it('a legacy viewer is not verified here: ENGINE_CONFLICT', async () => {
+  it('a monitor that this runtime did not start is not verified: INSTANCE_RUNNING names pid and url', async () => {
     const w = world();
-    w.probes = [probeOf('legacy-running', { engine: 'legacy', pid: 888, url: URL_OF(PORT) })];
-    expectCode(await failure(verify(w.ctx, { task: 'demo' }, w.deps)), 'ENGINE_CONFLICT');
+    w.probes = [probeOf('unmanaged-running', { engine: null, pid: 888, url: URL_OF(PORT) })];
+    const error = await failure(verify(w.ctx, { task: 'demo' }, w.deps));
+    expectCode(error, 'INSTANCE_RUNNING');
+    expect(error.message).toContain('pid 888');
+    expect(error.message).toContain(URL_OF(PORT));
+    expect(w.killed).toEqual([]);
   });
 });
 
@@ -1727,7 +1738,7 @@ describe('serveForeground (01 4.10)', () => {
       running(),
       probeOf('starting', { engine: 'node', pid: 321 }),
       hungProbe(321),
-      probeOf('legacy-running', { engine: 'legacy', pid: 888, url: URL_OF(PORT) }),
+      probeOf('unmanaged-running', { engine: null, pid: 888, url: URL_OF(PORT) }),
     ]) {
       const w = world();
       w.probes = [probe];
@@ -1798,10 +1809,15 @@ describe('serveForeground (01 4.10)', () => {
     const done = serveForeground(w.ctx, { task: 'demo' }, { ...w.deps, signals: signals as never });
     await spawned(w);
     signals.emit('SIGINT');
-    await settle();
     const child = w.foreground[0]?.child;
-    if (process.platform === 'win32') expect(child?.killedWith).toEqual([]);
-    else expect(child?.killedWith).toEqual(['SIGINT']);
+    // the signal follows the control shutdown, which reads the token from disk first: one tick is not enough on Linux
+    if (process.platform === 'win32') {
+      await settle();
+      expect(child?.killedWith).toEqual([]);
+    } else {
+      await waitFor(() => (child?.killedWith.length ?? 0) > 0, { what: 'the forwarded signal' });
+      expect(child?.killedWith).toEqual(['SIGINT']);
+    }
     child?.emit('exit', 0, null);
     await done;
   });

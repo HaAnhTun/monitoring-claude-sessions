@@ -205,24 +205,24 @@ describe('probeInstance: no process answers on the control channel (01 4.8 steps
     expect(calls.lists).toEqual([]);
   });
 
-  it('a legacy state file whose pid is dead is legacy-stale', async () => {
+  it('a state file that this runtime did not write (seven keys, no engine) whose pid is dead is stale', async () => {
     const f = workspace();
     writeState(f, legacyState(888));
     expect(await createProbe(scripted({ alive: [] }).deps)(f.ws)).toMatchObject({
-      state: 'legacy-stale',
-      engine: 'legacy',
+      state: 'stale',
+      engine: null,
       pid: 888,
     });
   });
 
-  it('a legacy viewer that answers /api/health with the pid of the state file is legacy-running', async () => {
+  it('a foreign state file whose pid answers /api/health with that pid is unmanaged-running', async () => {
     const f = workspace();
     writeState(f, legacyState(888, 18123));
     const { deps, calls } = scripted({ alive: [888], http: () => httpReply(200, { ok: true, pid: 888 }) });
     const probe = await createProbe(deps)(f.ws);
     expect(probe).toMatchObject({
-      state: 'legacy-running',
-      engine: 'legacy',
+      state: 'unmanaged-running',
+      engine: null,
       pid: 888,
       url: URL_OF(18123),
       port: 18123,
@@ -230,7 +230,7 @@ describe('probeInstance: no process answers on the control channel (01 4.8 steps
     expect(calls.http).toEqual([{ url: `${URL_OF(18123)}/api/health`, timeoutMs: 3000 }]);
   });
 
-  it('a legacy file whose pid answers with another pid, an error status or nothing is legacy-stale', async () => {
+  it('a foreign file whose live pid answers with another pid, an error status or nothing is a foreign pid', async () => {
     const f = workspace();
     writeState(f, legacyState(888));
     const cases: HttpAttempt[] = [
@@ -241,7 +241,7 @@ describe('probeInstance: no process answers on the control channel (01 4.8 steps
     ];
     for (const answer of cases) {
       const probe = await createProbe(scripted({ alive: [888], http: () => answer }).deps)(f.ws);
-      expect(probe.state).toBe('legacy-stale');
+      expect(probe).toMatchObject({ state: 'foreign-pid', engine: null });
     }
   });
 });
@@ -413,9 +413,8 @@ describe('probeInstance: options', () => {
 });
 
 describe('state predicates', () => {
-  it('running means a healthy node runtime or a live legacy viewer', () => {
+  it('running means a healthy runtime of this install, not a monitor that it did not start', () => {
     expect(isRunningState('running')).toBe(true);
-    expect(isRunningState('legacy-running')).toBe(true);
     for (const state of [
       'starting',
       'stopping',
@@ -423,17 +422,17 @@ describe('state predicates', () => {
       'stopped',
       'stale',
       'foreign-pid',
-      'legacy-stale',
+      'unmanaged-running',
     ] as const) {
       expect(isRunningState(state)).toBe(false);
     }
   });
 
-  it('live means that a process of an engine holds the instance', () => {
-    for (const state of ['running', 'starting', 'stopping', 'unhealthy', 'legacy-running'] as const) {
+  it('live means that a monitor process holds the instance', () => {
+    for (const state of ['running', 'starting', 'stopping', 'unhealthy', 'unmanaged-running'] as const) {
       expect(isLiveState(state)).toBe(true);
     }
-    for (const state of ['stopped', 'stale', 'foreign-pid', 'legacy-stale'] as const) {
+    for (const state of ['stopped', 'stale', 'foreign-pid'] as const) {
       expect(isLiveState(state)).toBe(false);
     }
   });

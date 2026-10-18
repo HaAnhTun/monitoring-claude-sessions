@@ -102,7 +102,7 @@ describe('initWorkspace: a new workspace', () => {
     );
     expect(read(repo, 'nightly-build', 'README.md')).toBe(
       '# Monitoring task: Nightly build\n\nChecks the nightly build.\n\n' +
-        '- `task.json` identity, `config.json` overrides of the shared defaults (shared with the legacy engine), `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n' +
+        '- `task.json` identity, `config.json` overrides of the shared defaults, `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n' +
         '- Inspect: `node <skill>/scripts/mcs.mjs inspect --task nightly-build` (`<skill>` is the installed skill folder that holds `SKILL.md`)\n' +
         '- Never copy transcripts here; they are read in place.\n',
     );
@@ -146,8 +146,8 @@ describe('initWorkspace: a new workspace', () => {
 
   it('stores the engine and a requested port; the config gets the port key after the title', async () => {
     const repo = bareRepo();
-    const result = await initWorkspace(opts(repo, { engine: 'legacy', port: 8801 }));
-    expect(result.instance.engine).toBe('legacy');
+    const result = await initWorkspace(opts(repo, { port: 8801 }));
+    expect(result.instance.engine).toBe('node');
     expect(read(repo, 'nightly-build', 'config.json')).toBe(
       '{\n  "schema_version": 1,\n  "title": "Nightly build",\n  "port": 8801\n}\n',
     );

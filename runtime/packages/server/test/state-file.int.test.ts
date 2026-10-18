@@ -1,6 +1,6 @@
 // `state.json` of a running server (01 1.7, 4.4 step 10, 4.6): T-LC-07, the watchdog that puts the file back when it is
 // deleted, damaged or names a dead process, leaves it alone while it names a live one (and says so), and the rule at boot
-// for a file that is already there (a live legacy viewer is not overwritten, a reused pid is). Real processes as impostors.
+// for a file that is already there (always taken over: there is no other engine, ADR 0066). Real processes as impostors.
 import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -86,8 +86,8 @@ async function start(f: Fixture): Promise<RunningServer> {
   return result.server;
 }
 
-/** The legacy shape of `state.json` (seven keys), naming `pid`: what a live legacy viewer or an impostor leaves. */
-function legacyState(pid: number): string {
+/** The seven-key shape of `state.json` that this runtime did not write (no `engine`), naming `pid`: what an impostor leaves. */
+function foreignState(pid: number): string {
   return JSON.stringify({
     pid,
     url: 'http://127.0.0.1:18000',
@@ -172,7 +172,7 @@ describe('T-LC-07: the watchdog puts the file back (01 4.6)', () => {
     const f = await fixture();
     await start(f);
     const original = readFileSync(f.stateFile);
-    writeFileSync(f.stateFile, legacyState(await deadPid()));
+    writeFileSync(f.stateFile, foreignState(await deadPid()));
     await waitFor(() => Buffer.compare(readFileSync(f.stateFile), original) === 0, {
       timeoutMs: 6000,
       what: 'state.json to be restored over the dead pid',
@@ -184,7 +184,7 @@ describe('T-LC-07: the watchdog puts the file back (01 4.6)', () => {
     const server = await start(f);
     const original = readFileSync(f.stateFile);
     const impostor: TrackedProcess = spawnImpostor([]);
-    const theirs = legacyState(impostor.pid);
+    const theirs = foreignState(impostor.pid);
     writeFileSync(f.stateFile, theirs);
 
     await waitFor(() => server.ctx.process.ownershipConflict(), { timeoutMs: 6000, what: 'the conflict flag' });
@@ -211,26 +211,23 @@ describe('T-LC-07: the watchdog puts the file back (01 4.6)', () => {
 });
 
 describe('a state.json that is already there at boot (01 4.4 step 10)', () => {
-  it('names a live legacy viewer: it is not overwritten, the conflict is logged and the server still serves', async () => {
+  it('names a live process named like a pre-4.0 viewer: the file is taken over, no conflict at boot', async () => {
     const f = await fixture();
-    const viewer = spawnImpostor(['viewer.py', 'serve', '--task', 'demo']);
-    const theirs = legacyState(viewer.pid);
-    writeFileSync(f.stateFile, theirs);
+    const viewer = spawnImpostor([['viewer', 'py'].join('.'), 'serve', '--task', 'demo']);
+    writeFileSync(f.stateFile, foreignState(viewer.pid));
     const server = await start(f);
-    expect(readFileSync(f.stateFile, 'utf8')).toBe(theirs);
-    expect(runtimeLog(f).filter((line) => line.event === 'ownership_conflict')).not.toHaveLength(0);
-    expect(server.ctx.process.previousRunUnclean).toBe(false);
+    const state = StateFileSchema.parse(JSON.parse(readFileSync(f.stateFile, 'utf8')));
+    expect(state).toMatchObject({ pid: process.pid, engine: 'node' });
+    expect(runtimeLog(f).some((line) => line.event === 'ownership_conflict')).toBe(false);
+    expect(server.ctx.process.previousRunUnclean).toBe(true);
     expect(server.port).not.toBeNull();
-    await waitFor(() => server.ctx.process.ownershipConflict(), {
-      timeoutMs: 6000,
-      what: 'the conflict flag in health',
-    });
+    expect(server.ctx.process.ownershipConflict()).toBe(false);
   }, 60_000);
 
-  it('names a live process that is not a legacy viewer (a reused pid): the file is taken over', async () => {
+  it('names a live process that is not this runtime (a reused pid): the file is taken over', async () => {
     const f = await fixture();
     const stranger = spawnImpostor(['something-else.js']);
-    writeFileSync(f.stateFile, legacyState(stranger.pid));
+    writeFileSync(f.stateFile, foreignState(stranger.pid));
     const server = await start(f);
     const state = StateFileSchema.parse(JSON.parse(readFileSync(f.stateFile, 'utf8')));
     expect(state.pid).toBe(process.pid);
@@ -240,7 +237,7 @@ describe('a state.json that is already there at boot (01 4.4 step 10)', () => {
 
   it('names a process that is gone: the file is taken over and the previous run counts as unclean', async () => {
     const f = await fixture();
-    writeFileSync(f.stateFile, legacyState(await deadPid()));
+    writeFileSync(f.stateFile, foreignState(await deadPid()));
     const server = await start(f);
     expect(StateFileSchema.parse(JSON.parse(readFileSync(f.stateFile, 'utf8'))).pid).toBe(process.pid);
     expect(server.ctx.process.previousRunUnclean).toBe(true);

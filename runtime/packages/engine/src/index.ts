@@ -55,7 +55,7 @@ export { createWatchHint } from './platform/watch-hint.ts';
 export type { WatchHint, WatchHintOptions } from './platform/watch-hint.ts';
 export { MutexTimeoutError, acquireMutex, mutexName, tryAcquireMutex } from './platform/mutex.ts';
 export type { AcquireOptions, ProcessMutex } from './platform/mutex.ts';
-export { hasLegacyMarker, hasRuntimeMarker, listRuntimeProcesses } from './platform/markers.ts';
+export { hasRuntimeMarker, listRuntimeProcesses } from './platform/markers.ts';
 export type { RuntimeProcess } from './platform/markers.ts';
 // @wp-end WP-07
 
@@ -315,8 +315,6 @@ export type {
   StateSnapshot,
 } from './ops/probe.ts';
 export type {
-  LegacyDelegate,
-  LegacyRequest,
   LifecycleCommand,
   LifecycleDeps,
   ProcessApi,

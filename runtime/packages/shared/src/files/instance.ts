@@ -15,8 +15,8 @@ export const InstanceFileSchema = z.strictObject({
   runtimeVersion: Semver,
   /** Mirror of the DB value after the last upgrade; 0 = no DB yet; the DB is authoritative. */
   dbSchemaVersion: z.number().int().min(0),
-  /** Which engine `mcs start` launches (01 6.5). */
-  engine: z.enum(['node', 'legacy']),
+  /** Written by this runtime; the Node runtime is the only engine (ADR 0066). */
+  engine: z.literal('node'),
   /** Whether the hook handler routes to this instance. */
   hooks: z.strictObject({ enabled: z.boolean() }),
   upgradedAt: IsoSecondsZ.nullable(),

@@ -51,7 +51,6 @@ describe('restart command', () => {
       exitCode: 0,
       message: ['stopped runtime pid 1 (u)', 'started: u (pid 2)'],
       warnings: ['w'],
-      delegated: false,
     };
     const cmd = makeCommand({
       restart: (_ctx, input) => {

@@ -283,7 +283,7 @@ describe('migrate-workspace safety', () => {
     const before = snapshotTree(ws);
     const dry = await plan(sb.ctx, { task: 'shape-a' });
     expect(dry.verdict).toBe('blocked');
-    expect(dry.blockers[0]).toMatch(/^INSTANCE_RUNNING: .*legacy-running/u);
+    expect(dry.blockers[0]).toMatch(/^INSTANCE_RUNNING: .*not started by this runtime.*unmanaged-running/u);
     const applied = await apply(sb.ctx, { task: 'shape-a' });
     expect(applied.verdict).toBe('blocked');
     expect(snapshotTree(ws)).toBe(before);

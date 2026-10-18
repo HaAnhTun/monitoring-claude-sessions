@@ -172,14 +172,15 @@ describe('ops.config.inspect of a task', () => {
     expect(report.recent_audit).toBe('');
   });
 
-  it('shows the instance file, or null and engine legacy for a legacy-only workspace', async () => {
+  it('shows the instance file, or null and engine null for a workspace without instance.json', async () => {
     const { repo, ctx } = repoWith('alpha');
     buildTaskWorkspace(repo, { slug: 'legacy-only', config: { title: 'Old' } });
     const withInstance = (await inspect(ctx, { task: 'alpha' })).report;
     expect(withInstance.instance?.slug).toBe('alpha');
     const legacy = (await inspect(ctx, { task: 'legacy-only' })).report;
     expect(legacy.instance).toBeNull();
-    expect(legacy.engine).toBe('legacy');
+    expect(legacy.engine).toBeNull();
+    expect((await inspect(ctx, { task: 'legacy-only' })).inspection.engine).toBeNull();
   });
 
   it('reports the raw state file and a cheap probe without any network access', async () => {
@@ -199,7 +200,7 @@ describe('ops.config.inspect of a task', () => {
     writeFileSync(path.join(ctx.root, 'alpha', 'state.json'), JSON.stringify(state));
     const stale = (await inspect(ctx, { task: 'alpha' })).report;
     expect(stale.runtime).toEqual(state);
-    expect(stale.probe.state).toBe('legacy-stale');
+    expect(stale.probe.state).toBe('stale');
     expect(stale.probe.url).toBe('http://127.0.0.1:18999');
   });
 

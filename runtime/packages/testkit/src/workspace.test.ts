@@ -88,10 +88,10 @@ describe('buildTaskWorkspace', () => {
     const ws = buildTaskWorkspace(repo, {
       slug: 'a',
       config: {},
-      instance: { engine: 'legacy', hooks: { enabled: true }, dbSchemaVersion: 3 },
+      instance: { hooks: { enabled: true }, dbSchemaVersion: 3 },
     });
     expect(InstanceFileSchema.parse(json(join(ws, 'instance.json')))).toMatchObject({
-      engine: 'legacy',
+      engine: 'node',
       hooks: { enabled: true },
       dbSchemaVersion: 3,
     });

@@ -4,7 +4,7 @@ import type { Dirent } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import { McsError, stateEngine } from '@mcs/shared';
+import { McsError } from '@mcs/shared';
 import { SPOOL_SEGMENT_RE } from '@mcs/shared/protocol';
 
 import { auditFilePath, readAuditText } from '../audit/reader.ts';
@@ -210,8 +210,6 @@ async function nodeProblems(ws: WorkspaceRef, problems: string[]): Promise<void>
   if (state === null) return;
   if (state.instanceId !== undefined && state.instanceId !== instance.instanceId) {
     add('state.json instanceId does not match instance.json');
-  } else if (stateEngine(state) === 'node' && instance.engine === 'legacy') {
-    add("state.json engine 'node' does not match instance.json engine 'legacy'");
   }
 }
 

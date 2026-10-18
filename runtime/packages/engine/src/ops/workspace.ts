@@ -1,10 +1,10 @@
 // Engine operations behind `discover`, `init` and `version` (01 6.1, 6.3, 6.4, registry 2.1): typed input, typed result,
 // `McsError` for every expected failure. The CLI renders these results and the server may read them; nothing here prints.
-// The operations that need modules of later work packages (transcript discovery, the control-channel probe, hooks and
-// the Python engine) take them as optional dependencies and report "unknown" without them; they never guess.
+// The operations that need modules of later work packages (transcript discovery, the control-channel probe and hooks)
+// take them as optional dependencies and report "unknown" without them; they never guess.
 import path from 'node:path';
 
-import { McsError, RUNTIME_VERSION, StateFileSchema, stateEngine, type Clock, type StateFile } from '@mcs/shared';
+import { McsError, RUNTIME_VERSION, StateFileSchema, type Clock, type StateFile } from '@mcs/shared';
 
 import type { Logger } from '../log/logger.ts';
 import { globFiles } from '../platform/glob.ts';
@@ -35,10 +35,10 @@ export interface OpContext {
 
 /**
  * What a look at `state.json` and the process table can tell without a control-channel or HTTP query: `stopped` (no usable
- * state file), `stale` / `legacy-stale` (the pid is gone, by engine of the state file) and `unverified` (the pid is alive,
+ * state file), `stale` (the pid is gone, whoever wrote the state file) and `unverified` (the pid is alive,
  * identity not checked). The full classification of 01 4.8 belongs to `probeInstance`.
  */
-export type QuickProbeState = 'stopped' | 'stale' | 'legacy-stale' | 'unverified';
+export type QuickProbeState = 'stopped' | 'stale' | 'unverified';
 
 /** What `inspect` and `discover` show of an instance: a probe state name (01 4.8 or a quick one), the pid and the URL. */
 export interface ProbeSummary {
@@ -68,7 +68,7 @@ export async function quickProbe(ws: Pick<WorkspaceRef, 'dir'>): Promise<QuickPr
   const state = await readStateFile(ws);
   if (state === null) return { state: 'stopped', pid: null, url: null };
   if (!pidAlive(state.pid)) {
-    return { state: stateEngine(state) === 'node' ? 'stale' : 'legacy-stale', pid: state.pid, url: state.url };
+    return { state: 'stale', pid: state.pid, url: state.url };
   }
   return { state: 'unverified', pid: state.pid, url: state.url };
 }
@@ -90,7 +90,6 @@ export interface InitInput {
   readonly port?: number;
   /** `--config FILE`: a seed of legacy (L) keys. */
   readonly seedConfig?: string;
-  readonly engine?: EngineName;
 }
 
 export interface InitDeps {
@@ -125,7 +124,6 @@ export async function init(ctx: OpContext, input: InitInput, deps: InitDeps = {}
     ...(input.description === undefined ? {} : { description: input.description }),
     ...(input.port === undefined ? {} : { port: input.port }),
     ...(input.seedConfig === undefined ? {} : { seedConfig: input.seedConfig }),
-    ...(input.engine === undefined ? {} : { engine: input.engine }),
     clock: ctx.clock,
     ...(deps.beforeRename === undefined ? {} : { beforeRename: deps.beforeRename }),
   });
@@ -164,8 +162,6 @@ export interface DiscoverDeps {
   readonly transcripts?: TranscriptDiscovery;
   /** Whether the compiled runtime matches its sources. */
   readonly buildStatus?: () => Promise<'current' | 'stale'>;
-  /** The legacy Python engine, `null` when none is usable. */
-  readonly legacyEngine?: () => Promise<{ readonly version: string; readonly exe: string } | null>;
   /** One line about the installed hooks, `null` when none are installed. */
   readonly hooksSummary?: () => Promise<string | null>;
   /** The probe state of an instance (`probeInstance`); the cheap probe is used without it. */
@@ -174,8 +170,11 @@ export interface DiscoverDeps {
 
 export interface DiscoveredInstance {
   readonly slug: string;
-  /** `unknown` for a workspace whose identity cannot be used (`state` is then `invalid`). */
-  readonly engine: EngineName | 'unknown';
+  /**
+   * `none` for a workspace without `instance.json` (a pre-4.0 workspace), `unknown` for one whose identity cannot be used
+   * (`state` is then `invalid`).
+   */
+  readonly engine: EngineName | 'none' | 'unknown';
   readonly state: string;
   readonly url: string | null;
 }
@@ -189,7 +188,6 @@ export interface DiscoverResult {
   readonly tasksRoot: string;
   readonly tasks: readonly string[];
   readonly runtime: { readonly version: string; readonly build: 'current' | 'stale' | 'unknown' };
-  readonly legacyEngine: { readonly version: string; readonly exe: string } | null;
   readonly hooks: string | null;
   readonly instances: readonly DiscoveredInstance[];
   /** The output lines: the legacy ones first, then the Node ones (01 6.4 `discover`). */
@@ -307,9 +305,6 @@ export async function discover(ctx: OpContext, deps: DiscoverDeps = {}): Promise
       ? 'unknown'
       : await optionalPiece<'current' | 'stale' | 'unknown'>(ctx, 'build', buildStatus, 'unknown');
   lines.push(`runtime: mcs ${RUNTIME_VERSION} (build ${build})`);
-  const legacyEngine = deps.legacyEngine;
-  const legacy = legacyEngine === undefined ? null : await optionalPiece(ctx, 'legacy-engine', legacyEngine, null);
-  lines.push(legacy === null ? 'legacy engine: not found' : `legacy engine: python ${legacy.version} at ${legacy.exe}`);
   const hooksSummary = deps.hooksSummary;
   const hooks = hooksSummary === undefined ? null : await optionalPiece(ctx, 'hooks', hooksSummary, null);
   lines.push(`hooks: ${hooks ?? 'not installed'}`);
@@ -326,7 +321,7 @@ export async function discover(ctx: OpContext, deps: DiscoverDeps = {}): Promise
     const probeState = deps.probeState;
     const state =
       probeState === undefined ? probe.state : await optionalPiece(ctx, 'probe', () => probeState(ws), 'unknown');
-    instances.push({ slug: entry.slug, engine: entry.instance?.engine ?? 'legacy', state, url: probe.url });
+    instances.push({ slug: entry.slug, engine: entry.instance?.engine ?? 'none', state, url: probe.url });
   }
   if (instances.length === 0) {
     lines.push('instances: (none)');
@@ -343,7 +338,6 @@ export async function discover(ctx: OpContext, deps: DiscoverDeps = {}): Promise
     tasksRoot: ctx.root,
     tasks,
     runtime: { version: RUNTIME_VERSION, build },
-    legacyEngine: legacy,
     hooks,
     instances,
     lines,

@@ -347,9 +347,9 @@ describe('a server that was killed, and a pid that was reused', () => {
   }, 240_000);
 });
 
-// ---- a live legacy viewer (01 4.14) -------------------------------------------------------------------------------------------
+// ---- a live monitor that this runtime did not start (01 4.14, ADR 0066) ---------------------------------------------------------
 
-/** What the legacy `/api/health` answers, as far as the lifecycle reads it. */
+/** What a pre-4.0 monitor's `/api/health` answers, as far as the probe reads it. */
 const VIEWER_SOURCE = (port: number): string =>
   [
     "const http = require('node:http');",
@@ -361,14 +361,15 @@ const VIEWER_SOURCE = (port: number): string =>
   ].join(LF);
 
 /**
- * A stand-in for `viewer.py serve`: an idle Node process that answers `/api/health` with its own pid. `named` puts `viewer.py`
- * into its command line (the legacy marker); without it the process answers the same but is not a viewer.
+ * A stand-in for a pre-4.0 monitor: an idle Node process that answers `/api/health` with its own pid and writes a seven-key
+ * `state.json` (no `engine`). `named` puts a viewer script name into its command line (the old marker, which no command
+ * trusts any more); without it the process answers the same.
  */
 async function standInViewer(sb: Sandbox, port: number, named: boolean): Promise<TrackedProcess> {
   const child = spawnTracked(process.execPath, [
     '-e',
     VIEWER_SOURCE(port),
-    ...(named ? ['viewer.py', 'serve'] : ['serve']),
+    ...(named ? [['viewer', 'py'].join('.'), 'serve'] : ['serve']),
   ]);
   await waitFor(async () => (await httpRequest(port, '/api/health').catch(() => ({ status: 0 }))).status === 200, {
     what: 'the stand-in viewer to answer /api/health',
@@ -394,59 +395,63 @@ async function standInViewer(sb: Sandbox, port: number, named: boolean): Promise
   return child;
 }
 
-describe('a live legacy viewer holds the workspace (01 4.14, D12)', () => {
-  it('start reports it and starts nothing; status and verify know it; stop kills it after the viewer.py check', async () => {
-    const sb = sandbox('status-legacy');
+describe('a monitor that this runtime did not start holds the workspace (01 4.14, ADR 0066)', () => {
+  it('start, verify and stop refuse it and signal nothing; status reports it with exit 1', async () => {
+    const sb = sandbox('status-unmanaged');
     const port = await allocatePort();
     await initTask(sb, port);
     const viewer = await standInViewer(sb, port, true);
     const url = `http://127.0.0.1:${String(port)}`;
     const before = readFileSync(path.join(sb.ws, 'state.json'));
 
-    const started = await mcs(sb, ['start', '--task', SLUG]);
-    expect(started.code, started.stderr).toBe(0);
-    expect(started.stdout.trim()).toBe(`already running (engine=legacy): ${url} (pid ${String(viewer.pid)})`);
-    expect(started.stderr).toContain('mcs stop --task demo && mcs start --task demo');
+    const started = await mcs(sb, ['start', '--task', SLUG, '--json']);
+    expect(started.code, started.stderr).toBe(1);
+    const startError = parseEnvelope(started).error;
+    expect(startError?.code).toBe('INSTANCE_RUNNING');
+    expect(startError?.message).toContain(`pid ${String(viewer.pid)}`);
+    expect(startError?.message).toContain(url);
+    expect(startError?.message).toContain('not started by this runtime');
     expect(await listRuntimeProcesses(sb.runtimeDir)).toEqual([]);
     expect(readFileSync(path.join(sb.ws, 'state.json')).equals(before)).toBe(true);
 
     const status = await mcs(sb, ['status', '--task', SLUG]);
-    expect(status.code, status.stderr).toBe(0);
-    expect(JSON.parse(status.stdout)).toMatchObject({
-      running: true,
-      engine: 'legacy',
-      probe: 'legacy-running',
+    expect(status.code, status.stderr).toBe(1);
+    const report = JSON.parse(status.stdout) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      running: false,
+      engine: null,
+      probe: 'unmanaged-running',
       pid: viewer.pid,
       url,
-      uptime_s: 1.5,
-      code_stamp: 'legacystamp',
     });
+    // nothing is fetched from it: the keys a running report reads from the server are absent
+    expect(report).not.toHaveProperty('uptime_s');
+    expect(report).not.toHaveProperty('code_stamp');
 
     const verified = await mcs(sb, ['verify', '--task', SLUG, '--json']);
     expect(verified.code).toBe(1);
-    expect(parseEnvelope(verified).error?.code).toBe('ENGINE_CONFLICT');
-    expect(pidAlive(viewer.pid)).toBe(true);
+    expect(parseEnvelope(verified).error?.code).toBe('INSTANCE_RUNNING');
 
-    const stopped = await mcs(sb, ['stop', '--task', SLUG]);
-    expect(stopped.code, stopped.stderr).toBe(0);
-    expect(stopped.stdout.trim()).toBe(`stopped viewer pid ${String(viewer.pid)} (${url})`);
-    expect(await waitForExit(viewer.pid, 10_000)).toBe(true);
-    expect(existsSync(path.join(sb.ws, 'state.json'))).toBe(false);
-    await assertPortClosed(port);
+    const stopped = await mcs(sb, ['stop', '--task', SLUG, '--json']);
+    expect(stopped.code).toBe(1);
+    const stopError = parseEnvelope(stopped).error;
+    expect(stopError?.code).toBe('NOT_OUR_PROCESS');
+    expect(stopError?.message).toContain(`pid ${String(viewer.pid)}`);
+    expect(stopError?.message).toContain(url);
+    expect(pidAlive(viewer.pid)).toBe(true);
+    expect(readFileSync(path.join(sb.ws, 'state.json')).equals(before)).toBe(true);
   }, 240_000);
 
-  it('a process that answers /api/health with the pid of the state file but is not a viewer is never killed', async () => {
-    const sb = sandbox('status-legacy-impostor');
+  it('a process that answers /api/health with the pid of the state file but has no viewer name is never killed either', async () => {
+    const sb = sandbox('status-unmanaged-impostor');
     const port = await allocatePort();
     await initTask(sb, port);
     const impostor = await standInViewer(sb, port, false);
 
-    const stopped = await mcs(sb, ['stop', '--task', SLUG]);
-    expect(stopped.code, stopped.stderr).toBe(0);
-    expect(stopped.stdout.trim()).toBe(
-      `pid ${String(impostor.pid)} is not this instance's runtime (already stopped or pid reused); removed the stale state file, nothing was killed`,
-    );
+    const stopped = await mcs(sb, ['stop', '--task', SLUG, '--json']);
+    expect(stopped.code).toBe(1);
+    expect(parseEnvelope(stopped).error?.code).toBe('NOT_OUR_PROCESS');
     expect(pidAlive(impostor.pid)).toBe(true);
-    expect(existsSync(path.join(sb.ws, 'state.json'))).toBe(false);
+    expect(existsSync(path.join(sb.ws, 'state.json'))).toBe(true);
   }, 240_000);
 });

@@ -35,7 +35,8 @@ export const ConfigInspectionSchema = z.strictObject({
   entries: z.array(ConfigInspectionEntrySchema),
   files: z.array(ConfigFileStatusSchema),
   effectivePort: z.number().int().min(1).max(65535),
-  engine: z.enum(['node', 'legacy']),
+  /** `null` for a workspace without `instance.json` (a pre-4.0 workspace). */
+  engine: z.literal('node').nullable(),
 });
 
 export type ConfigInspection = z.infer<typeof ConfigInspectionSchema>;
@@ -99,7 +100,7 @@ function compareCodePoints(a: string, b: string): number {
  * legacy (L) keys (the two name sets are disjoint). Entries are sorted by key in code-point order. No redaction:
  * loopback API, same user (D-C6).
  */
-export function toConfigInspection(r: ConfigInspectionSource, engine: 'node' | 'legacy'): ConfigInspection {
+export function toConfigInspection(r: ConfigInspectionSource, engine: 'node' | null): ConfigInspection {
   const entries: ConfigInspectionEntry[] = [];
   for (const [key, source] of Object.entries(r.provenance)) {
     if (key === 'effectivePort') continue;

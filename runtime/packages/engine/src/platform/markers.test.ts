@@ -15,7 +15,6 @@ import {
   RUNTIME_ENTRIES,
   RUNTIME_ENTRY,
   createRuntimeLister,
-  hasLegacyMarker,
   hasRuntimeMarker,
   listRuntimeProcesses,
   matchRuntimeMarker,
@@ -223,14 +222,11 @@ describe('the bundle server entry (ADR 0062 item 3: two accepted suffixes)', () 
   });
 });
 
-describe('hasLegacyMarker (legacy cli.py rule: viewer.py in the command line)', () => {
-  it('finds viewer.py anywhere in the command line, case-sensitively', () => {
-    expect(hasLegacyMarker('python viewer.py serve --task x')).toBe(true);
-    expect(hasLegacyMarker('"C:\\Python\\python.exe" D:\\skill\\scripts\\viewer.py serve')).toBe(true);
-    expect(hasLegacyMarker('python3 /opt/skill/viewer.py')).toBe(true);
-    expect(hasLegacyMarker('python Viewer.PY')).toBe(false);
-    expect(hasLegacyMarker('node packages/server/dist/main.js')).toBe(false);
-    expect(hasLegacyMarker('')).toBe(false);
+describe('a pre-4.0 viewer command line (ADR 0066)', () => {
+  it('never carries the runtime marker, so no command may signal it', () => {
+    const viewer = ['viewer', 'py'].join('.');
+    expect(hasRuntimeMarker(`python ${viewer} serve --task x`, ID_A)).toBe(false);
+    expect(hasRuntimeMarker(`python3 /opt/skill/${viewer} serve --mcs-instance=${ID_A}`, ID_A)).toBe(false);
   });
 });
 
@@ -575,12 +571,13 @@ describe('listRuntimeProcesses with real processes', () => {
       `--instance-dir=${ws}`,
     ]);
     const noMarker = spawnTracked(process.execPath, [idle, 'serve', `--instance-dir=${ws}`]);
-    const legacy = spawnTracked(process.execPath, [idle, 'viewer.py', 'serve']);
+    // a process named like a pre-4.0 viewer carries no runtime marker (ADR 0066: nothing else may be signalled)
+    const impostor = spawnTracked(process.execPath, [idle, ['viewer', 'py'].join('.'), 'serve']);
 
     const serverLine = (await commandLineOf(server.pid)) ?? '';
     const wrongLine = (await commandLineOf(wrongInstance.pid)) ?? '';
     const noMarkerLine = (await commandLineOf(noMarker.pid)) ?? '';
-    const legacyLine = (await commandLineOf(legacy.pid)) ?? '';
+    const impostorLine = (await commandLineOf(impostor.pid)) ?? '';
 
     expect(hasRuntimeMarker(serverLine, ID_A)).toBe(true);
     expect(hasRuntimeMarker(serverLine, ID_B)).toBe(false);
@@ -588,9 +585,8 @@ describe('listRuntimeProcesses with real processes', () => {
     expect(hasRuntimeMarker(wrongLine, ID_B)).toBe(true);
     expect(hasRuntimeMarker(noMarkerLine, ID_A)).toBe(false);
     expect(hasRuntimeMarker(noMarkerLine, ID_B)).toBe(false);
-    expect(hasRuntimeMarker(legacyLine, ID_A)).toBe(false);
-    expect(hasLegacyMarker(legacyLine)).toBe(true);
-    expect(hasLegacyMarker(serverLine)).toBe(false);
-    expect(hasLegacyMarker(noMarkerLine)).toBe(false);
+    expect(impostorLine).not.toBe('');
+    expect(hasRuntimeMarker(impostorLine, ID_A)).toBe(false);
+    expect(hasRuntimeMarker(impostorLine, ID_B)).toBe(false);
   }, 60_000);
 });

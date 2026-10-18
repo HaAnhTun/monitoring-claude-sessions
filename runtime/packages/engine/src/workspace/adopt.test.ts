@@ -59,10 +59,11 @@ describe('newInstanceFile', () => {
     expect(InstanceFileSchema.safeParse(file).success).toBe(true);
   });
 
-  it('generates a version 4 uuid when no id is given and honours the engine', () => {
-    const file = newInstanceFile('demo', { nowMs: NOW, engine: 'legacy' });
-    expect(file.engine).toBe('legacy');
+  it('generates a version 4 uuid when no id is given and always records the node engine', () => {
+    const file = newInstanceFile('demo', { nowMs: NOW });
+    expect(file.engine).toBe('node');
     expect(InstanceFileSchema.safeParse(file).success).toBe(true);
+    expect(InstanceFileSchema.safeParse({ ...file, engine: 'legacy' }).success).toBe(false);
     expect(newInstanceFile('demo', { nowMs: NOW }).instanceId).not.toBe(file.instanceId);
   });
 });
@@ -224,11 +225,11 @@ describe('adoptWorkspace (T-LC-12, unit part)', () => {
     );
   });
 
-  it('honours the engine option and records it', async () => {
+  it('records the node engine in the instance file it creates', async () => {
     const ws = legacyWorkspace(tasksRoot());
-    const result = await adoptWorkspace(ws, { clock: new FakeClock(NOW), newId: () => ID, engine: 'legacy' });
-    expect(result.instance.engine).toBe('legacy');
-    expect((await readInstanceFile(ws))?.engine).toBe('legacy');
+    const result = await adoptWorkspace(ws, { clock: new FakeClock(NOW), newId: () => ID });
+    expect(result.instance.engine).toBe('node');
+    expect((await readInstanceFile(ws))?.engine).toBe('node');
   });
 
   it('refuses a workspace without task.json (TASK_NOT_FOUND) and creates nothing', async () => {

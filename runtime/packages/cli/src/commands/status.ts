@@ -19,7 +19,6 @@ export function makeCommand(ops: Pick<typeof opsLifecycle, 'status'> = opsLifecy
     async run(ctx) {
       const task = ctx.args.string('task');
       const result = await ops.status(ctx.op, task === undefined ? {} : { task });
-      if (result.report === null) return { data: { delegated: true }, exitCode: result.exitCode };
       return { data: result.report, legacy: result.report, exitCode: result.exitCode };
     },
   };

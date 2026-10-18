@@ -65,12 +65,12 @@ describe('listWorkspaces', () => {
     workspace(root, 'adopted');
     await writeInstanceFile(
       resolveWorkspace(root, 'adopted'),
-      newInstanceFile('adopted', { nowMs: NOW, instanceId: ID, engine: 'legacy' }),
+      newInstanceFile('adopted', { nowMs: NOW, instanceId: ID }),
     );
     const entries = await listWorkspaces(root);
     expect(entries.map((e) => [e.slug, e.instance?.instanceId ?? null, e.instance?.engine ?? null, e.problem])).toEqual(
       [
-        ['adopted', ID, 'legacy', null],
+        ['adopted', ID, 'node', null],
         ['legacy-demo', null, null, null],
       ],
     );

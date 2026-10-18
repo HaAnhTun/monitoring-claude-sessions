@@ -506,10 +506,10 @@ export const stateCurrent: BuiltinCheck = async (e) => {
     case 'unhealthy':
       return fail(id, 'warn', `unhealthy: ${probe.reason}`, `mcs restart --task ${e.ws.slug}`);
     case 'stale':
-    case 'legacy-stale':
     case 'foreign-pid':
-    case 'legacy-running':
       return fail(id, 'warn', `${probe.state}: ${probe.reason}`, `mcs stop --task ${e.ws.slug}`);
+    case 'unmanaged-running':
+      return fail(id, 'warn', `${probe.state}: ${probe.reason}`, 'stop that monitor with the tool that started it');
   }
 };
 

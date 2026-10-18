@@ -22,10 +22,10 @@ export function buildRepo(root: string): { repo: string; tasksRoot: string } {
 }
 
 /**
- * Writes `<repo>/.claude/monitor/tasks/<slug>/` as the legacy engine lays it out: `task.json`, `config.json` (with
+ * Writes `<repo>/.claude/monitor/tasks/<slug>/` as a pre-4.0 monitor laid it out: `task.json`, `config.json` (with
  * `schema_version: 1` first), `README.md`, and `runtime.json` when `runtime` is given. With `instance` it also writes a
- * complete `instance.json`, validated by `InstanceFileSchema` (defaults of 05 4.4, keys in schema order); without it the
- * workspace is legacy-only. Returns the workspace path.
+ * complete `instance.json`, validated by `InstanceFileSchema` (defaults of 05 4.4, keys in schema order); a workspace
+ * without `instance.json` is a pre-4.0 workspace. Returns the workspace path.
  */
 export function buildTaskWorkspace(
   repo: string,

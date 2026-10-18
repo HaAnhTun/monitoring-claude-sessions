@@ -1,11 +1,9 @@
 // `<ws>/state.json` of the Node runtime (01 1.7, 4.4 step 10, 4.6, 4.13): the exact bytes, the atomic write, and the decision
-// about a file that is already there when the server boots. The legacy engine writes seven keys and its readers do not retry
-// (E5), so the Node server writes those seven first, in the same order, then its own keys; the file is replaced atomically
+// about a file that is already there when the server boots. Pre-4.0 readers know seven keys and do not retry (E5), so the
+// Node server writes those seven first, in the same order, then its own keys; the file is replaced atomically
 // and only after the HTTP port is bound, so a reader never sees a port that is not ours.
 import {
-  commandLineOf,
   fromPlain,
-  hasLegacyMarker,
   isMissingFileError,
   pidAlive,
   pyJsonFileText,
@@ -83,29 +81,24 @@ export function writeStateFile(file: string, built: BuiltStateFile): Promise<voi
 // ---- a file that is already there at boot ----------------------------------------------------------------------------------
 
 /**
- * `absent`: no file. `stale`: not ours and not worth keeping (damaged, a dead process, a reused pid, our own pid): the boot
- * overwrites it, and a previous run that left it behind ended without a clean shutdown (01 4.13). `conflict`: a live legacy
- * viewer wrote it (a `$V serve` that bypassed the checks): the boot leaves it alone, says so, and keeps serving.
+ * `absent`: no file. `stale`: not worth keeping (damaged, a dead process, a live pid of another process, our own pid): the
+ * boot overwrites it, and a previous run that left it behind ended without a clean shutdown (01 4.13). There is no other
+ * engine to leave the file to (ADR 0066): a monitor that this runtime did not start is refused by `mcs start` before any
+ * server boots.
  */
 export type ExistingState =
   | { readonly kind: 'absent' }
-  | { readonly kind: 'stale'; readonly reason: 'unparsable' | 'dead_pid' | 'own_pid' | 'foreign_pid' }
-  | { readonly kind: 'conflict'; readonly pid: number };
+  | { readonly kind: 'stale'; readonly reason: 'unparsable' | 'dead_pid' | 'own_pid' | 'foreign_pid' };
 
 /** The process helpers the decision uses; tests pass fakes. */
 export interface ExistingStateDeps {
   readonly selfPid: number;
   pidAlive(pid: number): boolean;
-  /** The command line of a process, or null when it cannot be read. */
-  commandLineOf(pid: number): Promise<string | null>;
-  hasLegacyMarker(commandLine: string): boolean;
 }
 
 const REAL_DEPS: ExistingStateDeps = {
   selfPid: process.pid,
   pidAlive,
-  commandLineOf,
-  hasLegacyMarker,
 };
 
 function parseState(bytes: Uint8Array): StateFile | null {
@@ -118,10 +111,8 @@ function parseState(bytes: Uint8Array): StateFile | null {
 }
 
 /**
- * Looks at `state.json` before this process writes its own. A live process is a conflict only when its command line carries
- * the legacy marker (`viewer.py`, 01 4.1): a pid alone proves nothing (INV-04), and Windows reuses pids quickly, so a stranger
- * that holds the pid of a run that crashed must not block the start. A command line that cannot be read is treated as a
- * stranger for the same reason.
+ * Looks at `state.json` before this process writes its own. A live pid proves nothing (INV-04), and Windows reuses pids
+ * quickly, so a stranger that holds the pid of a run that crashed must not block the start: it is `foreign_pid`.
  */
 export async function readExistingState(file: string, deps: Partial<ExistingStateDeps> = {}): Promise<ExistingState> {
   const d: ExistingStateDeps = { ...REAL_DEPS, ...deps };
@@ -136,7 +127,5 @@ export async function readExistingState(file: string, deps: Partial<ExistingStat
   if (state === null) return { kind: 'stale', reason: 'unparsable' };
   if (state.pid === d.selfPid) return { kind: 'stale', reason: 'own_pid' };
   if (!d.pidAlive(state.pid)) return { kind: 'stale', reason: 'dead_pid' };
-  const commandLine = await d.commandLineOf(state.pid);
-  if (commandLine !== null && d.hasLegacyMarker(commandLine)) return { kind: 'conflict', pid: state.pid };
   return { kind: 'stale', reason: 'foreign_pid' };
 }

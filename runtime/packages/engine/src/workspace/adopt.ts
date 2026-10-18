@@ -24,7 +24,6 @@ export type EngineName = InstanceFile['engine'];
 
 export interface NewInstanceOptions {
   readonly nowMs: number;
-  readonly engine?: EngineName;
   /** Default: a fresh `crypto.randomUUID()`. */
   readonly instanceId?: string;
   /** Default `RUNTIME_VERSION`. */
@@ -42,7 +41,7 @@ export function newInstanceFile(slug: string, o: NewInstanceOptions): InstanceFi
     createdBy: `mcs ${runtimeVersion}`,
     runtimeVersion,
     dbSchemaVersion: 0,
-    engine: o.engine ?? 'node',
+    engine: 'node',
     hooks: { enabled: false },
     upgradedAt: null,
   };
@@ -168,8 +167,6 @@ export async function ensureWorkspaceDir(ws: Pick<WorkspaceRef, 'dir'>, ...segme
 
 export interface AdoptOptions {
   readonly clock?: Clock;
-  /** The engine recorded in a new `instance.json` (default `node`). */
-  readonly engine?: EngineName;
   /** Test seam: the instance id. */
   readonly newId?: () => string;
 }
@@ -205,7 +202,6 @@ export function adoptWorkspace(ws: WorkspaceRef, o: AdoptOptions = {}): Promise<
     const nowMs = (o.clock ?? systemClock).now();
     const instance = newInstanceFile(ws.slug, {
       nowMs,
-      ...(o.engine === undefined ? {} : { engine: o.engine }),
       ...(o.newId === undefined ? {} : { instanceId: o.newId() }),
     });
     for (const folder of ['audit', 'data', 'logs']) await ensureWorkspaceDir(ws, folder);

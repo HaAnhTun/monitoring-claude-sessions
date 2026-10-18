@@ -89,7 +89,7 @@ const GLOBAL_OPTIONS = ['--repo', '--root', '--json', '--help'];
 
 const COMMAND_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   discover: [],
-  init: ['--name', '--slug', '--description', '--port', '--config', '--engine'],
+  init: ['--name', '--slug', '--description', '--port', '--config'],
   inspect: ['--task'],
   configure: ['--task', '--set', '--unset', '--reason', '--decision', '--dry-run'],
   decide: ['--task', '--title', '--decision', '--rejected'],
@@ -438,7 +438,7 @@ describe('legacy-shaped default output (01 6.2): pretty JSON for inspect, config
     expect(check.stdout.trimEnd().endsWith(' | source: task')).toBe(true);
   });
 
-  it('discover prints the legacy lines first and the Node lines after them', async () => {
+  it('discover prints the legacy lines first and the Node lines after them, with no legacy-engine line', async () => {
     const sb = sandbox();
     await initTask(sb);
     const run = await mcs(sb, ['discover']);
@@ -449,24 +449,20 @@ describe('legacy-shaped default output (01 6.2): pretty JSON for inspect, config
     expect(at('transcripts: ')).toBe(1);
     expect(at('tasks: ')).toBeGreaterThan(1);
     expect(at('runtime: mcs 3.0.0')).toBeGreaterThan(at('tasks: '));
-    expect(at('legacy engine: ')).toBeGreaterThan(at('runtime: '));
-    expect(at('hooks: ')).toBeGreaterThan(at('legacy engine: '));
+    expect(at('legacy engine')).toBe(-1);
+    expect(at('hooks: ')).toBeGreaterThan(at('runtime: '));
     expect(at('instances:')).toBeGreaterThan(at('hooks: '));
     expect(run.stdout).toContain('alpha-task engine=node state=stopped');
   });
 
-  it('init --engine legacy creates instance.json with engine legacy; --port and --description reach the files', async () => {
+  it('init creates instance.json with engine node (there is no --engine); --port and --description reach the files', async () => {
     const sb = sandbox();
-    const slug = await initTask(sb, 'Delta task', [
-      '--engine',
-      'legacy',
-      '--port',
-      '18950',
-      '--description',
-      'about it',
-    ]);
+    const slug = await initTask(sb, 'Delta task', ['--port', '18950', '--description', 'about it']);
     const ws = join(sb.tasksRoot, slug);
-    expect(JSON.parse(readText(ws, 'instance.json'))).toMatchObject({ engine: 'legacy' });
+    expect(JSON.parse(readText(ws, 'instance.json'))).toMatchObject({ engine: 'node' });
+    const legacy = await mcs(sb, ['init', '--name', 'Echo task', '--engine', 'legacy']);
+    expect(legacy.code).toBe(2);
+    expect(legacy.stderr).toContain('--engine');
     expect(JSON.parse(readText(ws, 'config.json'))).toMatchObject({ port: 18950 });
     expect(JSON.parse(readText(ws, 'task.json'))).toMatchObject({ description: 'about it' });
   });
