@@ -14,6 +14,7 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['CLAUDE_CONFIG_DIR', 'runtime'],
   ['MCS_FS_WATCH', 'runtime'],
   ['MCS_LAUNCHER_NO_BOOTSTRAP', 'runtime'],
+  ['MCS_LAUNCHER_MODE', 'runtime'],
   ['MCS_DEBUG', 'runtime'],
   ['MCS_TEST', 'test'],
   ['MCS_TEST_IGNORE_CONTROL', 'test'],

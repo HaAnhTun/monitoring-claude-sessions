@@ -31,8 +31,19 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
     readers: ['runtime/packages/engine/src/ingest/transcripts/discovery.ts'],
   },
   { name: 'MCS_FS_WATCH', scope: 'runtime', readers: ['runtime/packages/engine/src/platform/watch-hint.ts'] },
-  { name: 'MCS_LAUNCHER_NO_BOOTSTRAP', scope: 'runtime', readers: ['scripts/mcs.mjs'] },
-  { name: 'MCS_DEBUG', scope: 'runtime', readers: ['runtime/packages/cli/src/main.ts', 'scripts/mcs.mjs'] },
+  // Accepted and ignored since the bundle-first launcher (ADR 0062 item 4): there is nothing to bootstrap; the cleanup area removes it.
+  {
+    name: 'MCS_LAUNCHER_NO_BOOTSTRAP',
+    scope: 'runtime',
+    readers: ['skills/monitoring-claude-sessions/scripts/mcs.mjs'],
+  },
+  // `bundle` or `dev`: forces the launcher's runtime (default: the bundle when it exists, else a checkout's dist).
+  { name: 'MCS_LAUNCHER_MODE', scope: 'runtime', readers: ['skills/monitoring-claude-sessions/scripts/mcs.mjs'] },
+  {
+    name: 'MCS_DEBUG',
+    scope: 'runtime',
+    readers: ['runtime/packages/cli/src/main.ts', 'skills/monitoring-claude-sessions/scripts/mcs.mjs'],
+  },
   {
     name: 'MCS_TEST',
     scope: 'test',

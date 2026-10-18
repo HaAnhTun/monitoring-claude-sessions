@@ -10,8 +10,8 @@ const RUNTIME = join(REPO, 'runtime');
 const SKILL_NAME = 'monitoring-claude-sessions';
 const SKILLDIR = join(REPO, 'skills', SKILL_NAME);
 
-/** Files `SKILL.md` may reference before the work packages that create them land (the bundle-first launcher). */
-const PENDING = ['scripts/mcs.mjs'];
+/** Files `SKILL.md` may reference before the work packages that create them land (none left since the launcher, WP-21). */
+const PENDING: readonly string[] = [];
 
 /** The fixed top-level file set of the committed bundle (ADR 0062 item 1, ADR 0063). */
 const BUNDLE_ENTRIES = [

@@ -667,7 +667,8 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_HOME` | runtime | `resolveMcsHome(env)` | per-user state folder | 02 2.6.1 |
 | `CLAUDE_CONFIG_DIR` | runtime (non-MCS) | discovery, installer user scope, external pollers | Claude home (default `~/.claude`) | 01 2.10, 02 1.3 |
 | `MCS_FS_WATCH` | runtime | `createWatchHint` | `0` = no `fs.watch` hint | 06 4.4 |
-| `MCS_LAUNCHER_NO_BOOTSTRAP` | runtime | launcher | `1` = stale build is an error | 01 5.1 |
+| `MCS_LAUNCHER_NO_BOOTSTRAP` | runtime | launcher | accepted and ignored (ADR 0062 item 4); removed by the cleanup area | 01 5.1 |
+| `MCS_LAUNCHER_MODE` | runtime | launcher | `bundle` or `dev` forces the runtime the launcher imports (default: the bundle when it exists, else a checkout's `dist`) | ADR 0062 item 4 |
 | `MCS_DEBUG` | runtime | CLI, launcher | `1` = stack traces | 01 2.10 |
 | `MCS_TEST` | test | `testHook`, installer and hooks CLI guards | `1` = test mode | 01 2.10, 02 3.5 |
 | `VITEST` | test (non-MCS) | installer guard | same guard effect as `MCS_TEST` | 01, 02 |
