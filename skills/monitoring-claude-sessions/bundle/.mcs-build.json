@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "runtimeVersion": "4.0.0",
-  "buildStamp": "c592e165366ec4b8d270fc4a5c9abfca66308ca0c9131c9555003e05c59f2c81",
-  "codeStamp": "c592e16536",
+  "buildStamp": "dc9ecb2bb000fb404253198272232b03cf30d3cc7ba350c60f502e8183dd4646",
+  "codeStamp": "dc9ecb2bb0",
   "files": {
     "THIRD-PARTY-NOTICES.txt": {
       "bytes": 93524,
@@ -14,7 +14,7 @@
     },
     "mcs-hook.mjs": {
       "bytes": 57828,
-      "sha256": "b732c6d6c462215f0f6aee5e9c85bc7385c6975be29c185c67cb7bcd9636d125"
+      "sha256": "95fd34eee708fe5d1142f4de54eccae7869c30987c1baee6cc9f40460c71287c"
     },
     "mcs-server.mjs": {
       "bytes": 2095581,

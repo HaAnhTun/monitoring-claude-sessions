@@ -264,7 +264,7 @@ const DiscoverData = {
   repo: anyString,
   tasksRoot: anyString,
   tasks: anyArray,
-  runtime: { version: '3.0.0', build: BUILD },
+  runtime: { version: '4.0.0', build: BUILD },
   lines: anyArray,
 };
 const InitData = {
@@ -305,7 +305,7 @@ const CheckData = {
   regex: { checked: anyNumber, ok: true },
 };
 const VersionData = {
-  runtimeVersion: '3.0.0',
+  runtimeVersion: '4.0.0',
   node: anyString,
   platform: anyString,
   arch: anyString,
@@ -386,13 +386,13 @@ describe('T-CLI-02 --json: one envelope per command, validated against the envel
     const full = await mcs(sb, ['version']);
     expect(full.code).toBe(0);
     const line = full.stdout.trimEnd();
-    expect(line.startsWith('mcs 3.0.0 (code ')).toBe(true);
+    expect(line.startsWith('mcs 4.0.0 (code ')).toBe(true);
     expect(line).toContain(', node ');
     expect(line.endsWith('build current)') || line.endsWith('build stale)') || line.endsWith('build unknown)')).toBe(
       true,
     );
     const short = await mcs(sb, ['version', '--short']);
-    expect(short.stdout).toBe(`mcs 3.0.0${LF}`);
+    expect(short.stdout).toBe(`mcs 4.0.0${LF}`);
     const json = parseEnvelope(await mcs(sb, ['version', '--json']));
     expect(json.data).toMatchObject(VersionData);
     const stamps = dataOf(json);
@@ -448,7 +448,7 @@ describe('legacy-shaped default output (01 6.2): pretty JSON for inspect, config
     const at = (prefix: string): number => lines.findIndex((l) => l.startsWith(prefix));
     expect(at('transcripts: ')).toBe(1);
     expect(at('tasks: ')).toBeGreaterThan(1);
-    expect(at('runtime: mcs 3.0.0')).toBeGreaterThan(at('tasks: '));
+    expect(at('runtime: mcs 4.0.0')).toBeGreaterThan(at('tasks: '));
     expect(at('legacy engine')).toBe(-1);
     expect(at('hooks: ')).toBeGreaterThan(at('runtime: '));
     expect(at('instances:')).toBeGreaterThan(at('hooks: '));

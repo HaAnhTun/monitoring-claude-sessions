@@ -8,7 +8,7 @@
 export const HOOK_ENVELOPE_VERSION = 1 as const;
 
 /** Version the handler reports (`--version`, envelope `handler.version`). Equals `RUNTIME_VERSION` (98 1.7, N2). */
-export const HANDLER_VERSION = '3.0.0';
+export const HANDLER_VERSION = '4.0.0';
 
 // ---- caps (98 10.1) ----------------------------------------------------------------------------------------------
 /** Hard exit of the handler process, ms. */

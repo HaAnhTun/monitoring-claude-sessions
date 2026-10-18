@@ -66,7 +66,7 @@ describe('constants of 98 10.1', () => {
   it('HANDLER_VERSION equals the runtime package version (98 1.7, N2)', () => {
     const pkg: unknown = JSON.parse(readFileSync(RUNTIME_PACKAGE_JSON, 'utf8'));
     expect(pkg).toMatchObject({ version: HANDLER_VERSION });
-    expect(HANDLER_VERSION).toBe('3.0.0');
+    expect(HANDLER_VERSION).toBe('4.0.0');
   });
 
   it('minimal envelope keeps the closed key list of 02 2.3.4', () => {

@@ -5,7 +5,7 @@ import { request } from "node:http";
 
 //#region packages/shared/src/protocol/hook-envelope.ts
 /** Version the handler reports (`--version`, envelope `handler.version`). Equals `RUNTIME_VERSION` (98 1.7, N2). */
-const HANDLER_VERSION = "3.0.0";
+const HANDLER_VERSION = "4.0.0";
 /** Hard exit of the handler process, ms. */
 const HANDLER_HARD_EXIT_MS = 1200;
 /** Stdin bytes kept in memory by the handler. */
