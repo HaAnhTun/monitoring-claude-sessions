@@ -47,7 +47,8 @@
     "schemas:check": "node scripts/gen-schemas.mjs --check",
     "pretest:int": "node scripts/lib.mjs require-build",
     "pretest:isolation": "node scripts/lib.mjs require-build",
-    "pretest:resilience": "node scripts/lib.mjs require-build"
+    "pretest:resilience": "node scripts/lib.mjs require-build",
+    "docker:posix": "node scripts/docker-posix.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -60,6 +61,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "prettier": "3.9.10",
+    "rolldown": "1.2.13",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.1",
     "vitest": "5.0.3"

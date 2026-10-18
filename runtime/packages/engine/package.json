@@ -20,11 +20,9 @@
   },
   "dependencies": {
     "@mcs/shared": "3.0.0",
-    "better-sqlite3": "13.0.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@mcs/testkit": "3.0.0",
-    "@types/better-sqlite3": "9.6.0"
+    "@mcs/testkit": "3.0.0"
   }
 }
