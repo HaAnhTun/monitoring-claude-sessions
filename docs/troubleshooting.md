@@ -1,26 +1,33 @@
 # Troubleshooting
 
-Start with `python template/viewer.py doctor [--task SLUG]`: it checks config, transcripts folder, parse errors, rule matches, state file, a running instance and task audit, and prints what failed.
+The same table ships to agents as `skills/monitoring-claude-sessions/reference/troubleshooting.md`; keep both in step.
+Platform-specific results: [platform-support.md](platform-support.md).
+
+Start with `doctor [--task <slug>]`. It checks Node, the runtime (bundle integrity), the Claude home and, with a task, the
+transcripts folder, the configuration, the port, the workspace, the database and whether a running monitor is outdated. Every
+failed or warned check prints a `fix:` line. All commands below run through the launcher
+`node "<skill dir>/scripts/mcs.mjs" <command>`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `start` says it did not become healthy | port range busy, config invalid, Python error | run `serve` in the foreground (`... serve --task SLUG`) to see the traceback; `doctor` |
-| Port already used | another viewer or app on the port | the next free port (up to +19) is used automatically; the real URL is printed and kept in `state.json` / `<config>.state.json` |
-| `start` says "already running" | a healthy instance for this task exists | use that URL, or `stop` first. A second instance for the same task is never started |
-| `stop` says "not a viewer process" | the state file was stale (process gone, pid reused) | nothing was killed; the stale file was removed |
-| Page shows data but a STALE badge | polls failing for longer than `poll.stale_after_ms` | the banner shows the last error; check `/api/health`, whether the process is alive (`status`), then Retry |
-| Empty session list | no rule matched, window too short (`window_hours`), wrong repo, `transcripts_dir` not found | `doctor`; `discover` prints recent sessions and their first prompt; adjust `session_rules`, `scope: "any"`, `window_hours`, or tick "show unmatched" |
-| Session shows `IDLE` for a finished job | a transcript cannot prove completion | configure `chain_log` + `attempts` for runs that have an end marker; otherwise `IDLE` is the honest answer |
-| Session shows `UNKNOWN` | no readable records, or a tool call pending longer than the grace period (killed, waiting for permission, very long tool) | look at the last events of that session; raise `pending_tool_grace_seconds` for known long tools |
-| "tokens partial" badge | the token scan has not reached the end of a big file yet | it converges on later polls (`scanned_pct`); above `usage_max_mb` it stays unavailable |
-| "Showing only the latest events" | transcript larger than `event_window_mb`, or more than `max_events` events | use "Load older"; raise the limits if memory allows |
-| Invalid lines counted in `/api/health` reader stats | truncated or corrupted records | harmless (skipped); a file being written mid-line is not counted |
-| Missing token numbers for a session | file unreadable, over the size limit, or no `assistant` usage fields in this Claude Code version | check `completeness.usage`; see `reference/transcript-format.md` |
-| 403 "forbidden host" | the page was opened through a name other than 127.0.0.1/localhost (proxy, tunnel) | open it via http://127.0.0.1:PORT; do not forward the port |
-| Task command fails with "schema_version" | missing or unsupported version in `config.json` | read the message; fix the file by hand; the tool never rewrites it silently |
-| Rule regex never matches | JSON escaping or the phrase is not in the first prompt | use character classes instead of backslashes; try `"scope": "any"` |
-| Memory growth | many open transcripts with events held | readers idle for 30 min are dropped; lower `limits.max_events` |
+| `ERROR: Node >= 22.22.0 is required` | Node is too old | install a current Node LTS (24 recommended) |
+| `ERROR: no runtime found` | the skill folder has no `bundle/` (incomplete copy) | reinstall the skill (plugin or `install.mjs`); in a source checkout run `npm ci && npm run build` in `runtime/` |
+| `start` says the server did not become healthy | invalid configuration, port range busy, start timeout | `check --task <slug>`; `doctor --task <slug>`; run `serve --task <slug>` in the foreground to see the error; read `logs/boot.log` of the workspace |
+| `start` reports a monitor that already runs | one monitor per task | use that URL, or `stop` first; `instances list` shows every task |
+| Port already in use | another program holds the port | the next free port is used automatically and printed; `server.portScan` sets how many are tried |
+| `invalid regex ... this looks like Python regex syntax` | a workspace from before 4.0, or a pattern in the old syntax | `migrate-workspace --task <slug>` (dry run), then `--apply`; or rewrite the pattern in JavaScript syntax |
+| `invalid regex (Invalid character class)` | `-` or another class syntax character unescaped inside `[...]` under the `v` flag | `[a-z\-]` or move `-` out of the class |
+| `migrate-workspace` refuses | the monitor of that task runs, or a pattern cannot be translated exactly | `stop --task <slug>` first; a blocked pattern is named by position: rewrite it by hand with `configure` |
+| Empty session list | no rule matched, window too short, wrong repository, transcripts folder not found | `discover` shows recent sessions and their first prompt; adjust `session_rules`, `"scope": "any"`, `window_hours`, `repo` or `transcripts_dir` |
+| `transcripts.dir` warning in `doctor` | no Claude Code session ran in this repository yet, or another config folder is used | run a session in the repository, set `CLAUDE_CONFIG_DIR` the way Claude Code uses it, or set `transcripts_dir` |
+| A finished job shows `IDLE` | a transcript cannot prove completion | `IDLE` is the honest answer; in 4.0 only a finished daemon job completes a session (the attempts reader comes later) |
+| A session shows `UNKNOWN` | no readable records, or a tool call pending longer than `pending_tool_grace_seconds` | look at its last events; raise the grace for known long tools |
+| Token numbers marked partial | the token scan of a large file has not reached the end | it converges on later reads; very large files stay unavailable (`limits.usage_max_mb`) |
+| `status` shows `outdated: true` | the skill was updated after the monitor started | `restart --task <slug>` |
+| 403 from the page | it was opened through another host name (proxy, tunnel, LAN address) | open `http://127.0.0.1:<port>`; never forward the port |
+| `instances list` shows two tasks with the same identity | a workspace was copied or renamed | `instances repair --task <slug>` (dry run), then `--yes` with the monitor stopped |
+| `stop` says nothing was stopped | the recorded process is gone or is not this monitor | nothing was killed; `status` and `instances list` show what is left |
 
-Machine panel works fully on Windows only; Linux/macOS paths exist but were not verified.
-
-Logs: the detached monitor writes nothing to disk. For a traceback run it in the foreground. Server-side errors of the last minutes are in `/api/health` under `errors`.
+Logs: each workspace has `logs/boot.log` and `logs/runtime.log`. `MCS_LOG_LEVEL=debug` (or `start --log-level debug`) adds
+detail; `MCS_DEBUG=1` adds stacks to launcher and CLI errors. Logs are designed to hold no transcript text; still read a log
+before you share it.

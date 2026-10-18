@@ -1,75 +1,104 @@
-# Architecture
+# Architecture (4.0)
 
-Read-only monitor for Claude Code sessions. It never writes to transcripts, never starts or stops sessions, and binds `127.0.0.1` only. Transcripts contain private data (prompts, file contents, possibly secrets): the page shows them, so never expose the port.
+A read-only monitor of Claude Code sessions. It never writes to transcripts, never starts, stops or signals a session, binds
+`127.0.0.1` only and has one engine: the Node runtime. Transcripts contain private data (prompts, file contents, possibly
+secrets): the page shows them, so the port must never be exposed. Decisions are recorded in [decisions/](decisions/).
 
-## Layout
+## Repository layout
+
 ```
-SKILL.md                    how an agent operates the skill (short)
-template/viewer.py          entry point (only adds ../src to sys.path and calls backend.cli.main)
-template/config.example.json, template/examples/   legacy flat configs (still supported)
-config/defaults.json        shared defaults: the single source of truth for every default value
-src/backend/
-  config.py                 defaults + overrides merge, validation, schema versions, provenance
-  tasks.py                  task workspaces: init/reuse, configure + audit, inspect, isolation snapshot
-  reader.py                 TranscriptReader / ReaderPool: incremental, defensive JSONL reader
-  state.py                  session state classification (pure), Claude session registry, pid liveness
-  sessions.py               transcripts dir detection, rule classification, subagents, session list
-  panels.py                 machine, git, log tails, ledger, attempts table
-  server.py                 Monitor (config + readers + caches), HTTP handler, static files
-  cli.py                    commands: discover init-task inspect configure decide audit check start serve verify status stop doctor
-src/frontend/               index.html, styles.css, app.js, modules/*.js, icons.svg (no build, no CDN)
-tests/                      unittest (backend, stdlib only) and node:test (frontend pure modules)
-docs/                       api.md  architecture.md  configuration.md  development.md  troubleshooting.md  ui-decision-record.md changelog.md
-reference/                  transcript-format.md (what Claude Code writes), viewer-reference.md (short key list)
+.claude-plugin/                 plugin.json and marketplace.json (the plugin "session-monitor", ADR 0061)
+install.mjs                     install path B: copies the skill folder into a skills folder
+skills/monitoring-claude-sessions/   the self-contained skill folder that both install paths ship (ADR 0062)
+  SKILL.md                      how an agent operates the monitor
+  scripts/mcs.mjs               the launcher (Node floor check, then the bundle or a checkout build)
+  scripts/mcs-hook.mjs          stable hook entry point (no installer in 4.0)
+  bundle/                       committed build: mcs-cli.mjs, mcs-server.mjs, mcs-hook.mjs, web/, migrations/, notices
+  config/defaults.json          shared monitor defaults; runtime/defaults.json: runtime section defaults
+  reference/                    agent reference: configuration, troubleshooting, transcript format
+runtime/                        npm workspace with the TypeScript sources (developers only)
+  packages/shared               contracts: zod schemas, API route registry, protocol ids, environment variable list
+  packages/engine               configuration, workspaces, transcript ingestion, lifecycle, SQLite, queries, operations
+  packages/server               HTTP server (express), API routes, server-sent events, control channel, static web assets
+  packages/cli                  the `mcs` commands and the hook handler
+  packages/web                  the React web UI (built with Vite)
+  packages/testkit              test helpers: synthetic Claude homes, demo data, frozen fixtures
+  scripts/                      build, bundle, CI, Docker POSIX harness, schema generation
+schemas/                        generated JSON Schemas (CLI envelope, API, workspace files)
+docs/                           user and developer documentation, ADRs (decisions/), design notes (design/)
 ```
-Task workspaces live outside the skill, in the monitored repository: `<repo>/.claude/monitor/tasks/<slug>/` (see configuration.md). The skill folder holds tools; the repo holds per-task data.
+
+Task workspaces live in the monitored repository, not in the skill: `<repo>/.claude/monitor/tasks/<slug>/` (see
+[configuration.md](configuration.md)). A per-user folder `MCS_HOME` (default `%LOCALAPPDATA%/mcs` on Windows,
+`${XDG_STATE_HOME:-~/.local/state}/mcs` elsewhere) holds locks and route files shared by all tasks.
+
+## Process model
+
+```
+node scripts/mcs.mjs <command>        launcher: Node >= 22.22.0, then imports bundle/mcs-cli.mjs in-process
+        │ start
+        ▼
+detached server process (bundle/mcs-server.mjs), one per task
+  ├── ingest service: tails transcripts, registry and job files ──> SQLite (<workspace>/data/monitor.db, node:sqlite)
+  ├── lifecycle: derives the state of every session, agent and workflow from facts
+  ├── HTTP API /api/v3/* + /api/v3/stream (SSE) + static web UI   on 127.0.0.1:<port>
+  └── control channel (named pipe or Unix socket) for stop, status and identity checks
+```
+
+`start` waits until the server answers its health route and writes `state.json`; a second `start` for the same task reports the
+running one. `stop` asks the server through the control channel and kills a process only after it verified the process identity.
+`status` compares the code stamp of the running server with the files on disk (`outdated`).
 
 ## Data flow
+
 ```
-Claude Code ── writes ──> ~/.claude/projects/<proj>/<sid>.jsonl, <sid>/subagents/**, <sid>/workflows/*.json
-                          ~/.claude/sessions/<pid>.json (registry: busy/idle, interactive sessions only)
-optional: chain log, ledger, live logs, git, docker, tasklist
-        │ read-only
+Claude Code ── writes ──> <claude home>/projects/<project>/<session>.jsonl, <session>/subagents/**, workflows
+                          <claude home>/sessions/<pid>.json (registry), <claude home>/jobs/<id>/state.json (daemon jobs)
+        │ read-only, incremental (byte offsets, truncation and replacement detected)
         ▼
-ReaderPool (one TranscriptReader per file, checkpoints in memory)
-        │ per poll: only the bytes appended since the last poll are parsed
+ingest writer: events, tool calls, token usage (deduplicated by message.id), file links, cursor ── one transaction
         ▼
-sessions.list_sessions → state.classify_state (evidence → RUNNING/IDLE/COMPLETED/FAILED/UNKNOWN)
-        │ shared TTL cache (all tabs share one computation)
+lifecycle facts ──> session / agent / workflow state with evidence, basis and confidence
         ▼
-HTTP JSON API (docs/api.md)  ──poll──>  browser (vanilla ES modules)
+query layer ──> HTTP API (docs/api.md) ──> web UI (polling plus server-sent events)
 ```
 
-## Reader (reader.py)
-- Two cursors per file. The **events cursor** starts at the last `event_window_mb` of a big file so something shows at once; the **usage cursor** starts at byte 0 and advances within `usage_scan_budget_ms` per poll. When both are in sync a line is parsed once.
-- Handles: files growing while read; an unterminated last line (consumed only when it is already valid JSON, otherwise waited for; a writer mid-line never makes the scan look incomplete); invalid lines (counted, skipped); unknown record types (counted); records longer than a chunk (the window grows up to 64 MB); truncation and replacement (the first 256 bytes are compared on every poll; any change resets the reader, so two files are never mixed).
-- Token totals deduplicate by `message.id` (Claude Code writes one assistant message as several records that repeat the usage; each field takes the maximum). `complete=false` + `scanned_pct` while the scan is behind; `unavailable` above `usage_max_mb`.
-- Events are kept in memory only for transcripts somebody opened (`want_events`), capped at `max_events` (oldest dropped, indexes stay absolute). Readers idle for 30 minutes are dropped. Measured: about 50 MB RSS with 300+ transcripts known.
+The claude home is `CLAUDE_CONFIG_DIR` when set, else `~/.claude`. `transcripts_dir: "auto"` finds the project folder of the
+repository from its path. The database holds metadata only (ids, times, states, counts, file references): transcript text is read
+from the transcript file on request and is never copied into the database (ADR 0016, 0022).
 
-## State model (state.py, evidence table in api.md)
-Execution state, monitor health and data freshness are three separate things:
-- **Execution state** per session/agent: from transcript recency, pending tool calls, subagent activity, the optional Claude registry, and external evidence (attempts table). A transcript alone never proves completion or failure; a finished turn is `IDLE`. A subagent whose turn ended is shown `COMPLETED` (it cannot continue unless its parent resumes it).
-- **Monitor health**: `/api/health` (process alive, recent server errors).
-- **Data freshness**: measured by the page per endpoint (time since the last successful poll). A failed poll never changes a session's state.
+## State model
 
-## Concurrency and caching
-`ThreadingMixIn` HTTP server, one thread per request. `Monitor.cached(key, ttl, fn)` computes once per key per TTL under a per-key lock, so cost does not grow with the number of tabs; if a recomputation raises, the previous good value is served and the error goes to `/api/health`. Each reader has its own lock.
+Execution state, monitor health and data freshness are three separate things.
+
+- **Execution state** per session and agent: `running`, `working`, `waiting_input`, `waiting_tool`, `waiting_agent`, `turn_ended`,
+  `completed`, `failed`, `stale`, `unknown`, each with evidence, a basis (observed or inferred) and a confidence. The CLI and the
+  compatibility health route map them to `RUNNING`, `IDLE`, `COMPLETED`, `FAILED`, `UNKNOWN`. A transcript alone never proves
+  completion: a finished turn is `turn_ended` (`IDLE`). `completed` and `failed` need external evidence (in 4.0 a finished daemon
+  job; the attempts reader of `chain_log` is not built yet). External evidence keeps the time its source recorded (ADR 0069).
+- **Monitor health**: `/api/v3/health` (runtime, database, ingestion, recent errors).
+- **Data freshness**: measured by the page per data source.
 
 ## Security posture
-Loopback bind; `Host` validated (127.0.0.1, localhost, ::1) against DNS rebinding; this is not authentication. Session and agent ids are validated (UUID / id pattern) and resolved through directory listings, never joined from client input. Static files: allow-listed extensions, no dotfiles, `realpath` must stay inside `src/frontend`. The page renders transcript text only through `textContent`. No outbound network code. `stop` kills only a pid whose command line contains `viewer.py` and whose state file names it.
 
-## Compatibility constraints
-- v1 endpoints and fields are unchanged (v2 only adds). `done` is kept (deprecated).
-- v1 CLI flags (`--config FILE [--check|--stop]`, `--discover`) and `template/viewer.py` path are unchanged.
-- Legacy flat config files keep working as an override layer over the shared defaults.
-- The old single-file page is gone (replaced by `src/frontend`); its panels all remain.
-- Transcript format is undocumented upstream: see `reference/transcript-format.md` for what was verified and on which versions.
+Loopback bind; `Host` and `Origin` validation against DNS rebinding and cross-site requests (not authentication); every route is
+read-only `GET` apart from a body-less ingest nudge; ids are validated and resolved through directory listings, never joined from
+client input; the web UI is served with a strict Content Security Policy and loads nothing from the network; transcript text is
+rendered as text, never as HTML. No outbound network code. See ADR 0045.
+
+## Shipping
+
+Users run the committed bundle; they never run npm or a build. The bundle is built with rolldown from the sources and is
+deterministic: `npm run bundle:check` rebuilds it and compares (ADR 0063). There is no native dependency: SQLite is Node's built-in
+`node:sqlite` behind the single driver seam `engine/src/db/driver.ts` (ADR 0064).
 
 ## Where to change what
+
 | Goal | Edit |
 |---|---|
-| New config key | `config/defaults.json` + `SCHEMA` in `config.py` + `docs/configuration.md` |
-| New state rule | `state.classify_state` + its tests + the table in `docs/api.md` |
-| New API field | `server.py`/`sessions.py` + `docs/api.md` + frontend consumer |
-| Look and feel | `src/frontend/styles.css` (tokens at the top) |
-| Timeline behaviour | `src/frontend/modules/timeline.js` |
+| New monitor config key | `skills/monitoring-claude-sessions/config/defaults.json`, the schema in `engine/src/config`, `docs/configuration.md` and the skill's `reference/configuration.md` |
+| New runtime section key | `shared/src/config/runtime/<section>.ts` |
+| New state rule | `engine/src/lifecycle` and its tests |
+| New API route | `shared/src/api/routes.ts`, a handler in `server/src/routes`, `npm run schemas` |
+| New command | `cli/src/commands`, the `CLI_COMMANDS` list of `tests/tooling/plugin-layout.test.ts` when `SKILL.md` teaches it |
+| Web UI | `packages/web/src` |

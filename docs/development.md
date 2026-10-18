@@ -1,19 +1,64 @@
-# Developing the skill and keeping running monitors in sync
+# Development
 
-The skill lives in its own git repository (this folder). It contains tools only: no task workspaces, no transcripts, no project data. Task workspaces (`<repo>/.claude/monitor/tasks/`) belong to the monitored project and are not part of this repository.
+The repository holds tools only: no task workspaces, no transcripts, no project data. Task workspaces
+(`<repo>/.claude/monitor/tasks/`) belong to the monitored project. Read [architecture.md](architecture.md) first.
 
-## One source of truth
-A running monitor executes the skill's files from disk: `template/viewer.py serve` imports `src/backend/*` and serves `src/frontend/*`. There is no copy to keep in sync, only a running process that may be older than the code:
-- **Frontend** (`src/frontend/*`): served from disk on every request. Reload the page.
-- **Backend** (`src/backend/*`, `config/defaults.json`): loaded at start. The monitor remembers a `code_stamp` (hash of those files); `status` compares it with the files on disk and prints `"outdated": true` plus a hint. Apply with `restart`.
-- **Task config** (`<task>/config.json`): read at start; use `configure` then `restart`.
+## Setup
 
-## Change loop
-1. Edit the skill (read `docs/architecture.md`; keep API changes additive, update `docs/api.md`).
-2. From this folder: `python -m unittest discover -s tests` and `node --test "tests/frontend/*.test.mjs"`.
-3. Optional browser check on made-up data: `python tests/tools/demo.py OUT` builds a demo project (see its docstring for the `serve` command); `node tests/tools/screenshots.mjs http://127.0.0.1:8860 OUT/shots` captures the UI (the last shot stops the viewer to show the offline state). `tests/fixtures/make.py` is the smaller builder used by the unit tests.
-4. `git add -A && git commit` in this folder.
-5. For every monitor that should pick the change up: `python template/viewer.py status --repo <project> --task <slug>` (look for `outdated`), then `restart`.
+Node 22.22 or newer (24 recommended). All development happens in the npm workspace `runtime/`:
+
+```bash
+cd runtime
+npm ci
+npm run build          # tsc -b for every package, the Vite build of the web UI, the build stamp
+```
+
+## Tests and checks
+
+| Command (in `runtime/`) | What it runs |
+|---|---|
+| `npm test` | the unit, web, integration, isolation and resilience projects (integration needs `npm run build` first) |
+| `npm run test:unit` | unit and web tests only, from the TypeScript sources (no build needed) |
+| `npm run test:tooling` | repository rules: plugin layout, launcher, install script, bundle, CI scripts, environment variables |
+| `npm run test:slow` | the slow suites |
+| `npm run test:e2e` | Playwright end-to-end tests of the web UI |
+| `npm run lint`, `npm run typecheck`, `npm run format:check` | ESLint, TypeScript, Prettier |
+| `npm run check:deps` | the dependency policy (ADR 0041) |
+| `npm run schemas:check` | the generated JSON Schemas and `docs/api/reference.md` are current (`npm run schemas` regenerates) |
+| `npm run ci` | every gate in a fixed order with a result table (`npm run ci:full` adds the slow suites and e2e) |
+| `npm run docker:posix` | the gates in throw-away Linux containers (Node 22, 24, 26, Alpine, arm64 emulation); needs Docker |
+
+Tests use temporary folders and synthetic Claude homes from `packages/testkit`, never the real `~/.claude`. Ports in tests stay in
+18000-18999.
+
+`npm run dev` runs the server from the TypeScript sources and the Vite dev server with the API proxied to it.
+
+## The bundle
+
+Users run the committed bundle in `skills/monitoring-claude-sessions/bundle/`, so every change to runtime code must ship a
+rebuilt bundle in the same commit:
+
+```bash
+npm run bundle         # rebuild the bundle (deterministic, rolldown)
+npm run bundle:check   # fail when the committed bundle differs from a fresh build
+```
+
+`bundle/THIRD-PARTY-NOTICES.txt` is generated with the bundle. A dependency change needs an ADR (ADR 0041).
+
+## Running from a checkout
+
+The launcher `skills/monitoring-claude-sessions/scripts/mcs.mjs` runs the bundle when it exists. `MCS_LAUNCHER_MODE=dev` makes it
+run the checkout build (`runtime/packages/cli/dist/main.js`) instead, which needs `npm run build`. A running monitor executes the
+code it started with: after a change, `status --task <slug>` shows `outdated: true`; apply it with `restart --task <slug>`.
+
+## CI
+
+`.github/workflows/ci.yml` runs the gates on Windows x64 (Node 24) and Ubuntu x64 (Node 22.22, 24, 26), a lean job on macOS arm64 and the
+end-to-end tests; a final job writes a JSON summary to the `ci-status` branch, readable with `git fetch` (ADR 0065).
 
 ## Conventions
-Python stdlib only (3.8+), no frontend build, no CDN, no `innerHTML` with data (a test enforces it). New config key: `config/defaults.json` + `SCHEMA` in `config.py` + `docs/configuration.md`. New state rule: `state.classify_state` + tests + the table in `docs/api.md`. Keep project-specific names, paths and prompts out of this repository (examples use a generic "nightly build").
+
+- English in code, comments, identifiers, commit messages and docs; `README.vi.md` is the Vietnamese README.
+- No personal data (names, emails, home paths, session ids, tokens) in code, tests, fixtures or docs.
+- New configuration key, state rule, API route or command: see "Where to change what" in [architecture.md](architecture.md).
+- Decisions go into an ADR under [decisions/](decisions/).
