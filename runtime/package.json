@@ -30,7 +30,6 @@
     "test:int": "vitest run --project integration",
     "test:isolation": "vitest run --project isolation",
     "test:resilience": "vitest run --project resilience",
-    "test:parity": "vitest run --project parity",
     "test:tooling": "vitest run --project tooling",
     "test:coverage": "vitest run --coverage --project unit --project web --project integration",
     "test:e2e": "playwright test -c packages/web/e2e/playwright.config.ts",
@@ -48,7 +47,8 @@
     "pretest:int": "node scripts/lib.mjs require-build",
     "pretest:isolation": "node scripts/lib.mjs require-build",
     "pretest:resilience": "node scripts/lib.mjs require-build",
-    "docker:posix": "node scripts/docker-posix.mjs"
+    "docker:posix": "node scripts/docker-posix.mjs",
+    "test:slow": "vitest run --project slow"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
