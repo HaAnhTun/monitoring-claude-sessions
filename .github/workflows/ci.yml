@@ -137,9 +137,21 @@ jobs:
           cache: npm
           cache-dependency-path: runtime/package-lock.json
       - run: npm ci
-      - run: npm run build
-      - run: npx vitest run --project unit packages/engine/src/platform
-      - run: node scripts/smoke.mjs --bundle
+      # The lean gates run in one step that writes an mcs.ci-run/1 summary, so a failure reaches the ci-status branch with
+      # its gate name and log tail (the job status alone says nothing).
+      - name: lean gates (build, platform unit tests, bundle smoke)
+        shell: bash
+        run: |
+          gates=("build|npm run build" "platform|npx vitest run --project unit packages/engine/src/platform" "smoke:bundle|node scripts/smoke.mjs --bundle")
+          failed=""; : > lean.log; : > gates.txt
+          for g in "${gates[@]}"; do
+            name="${g%%|*}"; cmd="${g#*|}"
+            if [ -n "$failed" ]; then echo "$name not-run" >> gates.txt; continue; fi
+            echo "=== $name" | tee -a lean.log
+            if bash -c "$cmd" 2>&1 | tee -a lean.log; [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "$name pass" >> gates.txt; else echo "$name fail" >> gates.txt; failed="$name"; fi
+          done
+          node -e "const fs=require('fs');const gates=fs.readFileSync('gates.txt','utf8').trim().split('\n').map((l)=>{const [name,result]=l.split(' ');return {name,result,ms:0};});const failed=gates.find((g)=>g.result==='fail');fs.writeFileSync('ci-summary.json',JSON.stringify({schema:'mcs.ci-run/1',result:failed?'fail':'pass',gates,failedGate:failed?failed.name:null,tail:fs.readFileSync('lean.log','utf8').split('\n').slice(-60)}));"
+          [ -z "$failed" ]
       - if: always()
         env:
           MCS_CI_JOB: macos
@@ -147,7 +159,7 @@ jobs:
           MCS_CI_ARCH: ${{ runner.arch }}
           MCS_CI_NODE: "24"
           MCS_CI_JOB_STATUS: ${{ job.status }}
-        run: node scripts/ci-status.mjs summarize --out ci-job.json
+        run: node scripts/ci-status.mjs summarize --in ci-summary.json --out ci-job.json || node scripts/ci-status.mjs summarize --out ci-job.json
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
