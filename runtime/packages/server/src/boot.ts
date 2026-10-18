@@ -13,6 +13,7 @@ import { writeSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { Server as NetServer } from 'node:net';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   AtomicWriteError,
@@ -25,6 +26,7 @@ import {
   DB_OPEN_EXIT_CODES,
   ensureWorkspaceDir,
   isDbError,
+  layoutOfRuntimeDir,
   readInstanceFile,
   readSmallFile,
   readTaskFile,
@@ -36,6 +38,7 @@ import {
   type InstanceRuntime,
   type LogLevel,
   type RuntimeFactories,
+  type RuntimeLayoutMode,
   type WorkspaceRef,
   skillDirOfRuntimeDir,
 } from '@mcs/engine';
@@ -258,34 +261,74 @@ export interface BuildStamp {
 const BuildStampSchema = z.object({ runtimeVersion: z.string(), codeStamp: z.string().regex(/^[0-9a-f]{10}$/) });
 const BUILD_STAMP_FILE = '.mcs-build.json';
 
-/** `runtime/.mcs-build.json`: present, well formed, and written for this runtime version; otherwise exit 18 (BUILD_INVALID). */
+/**
+ * `<runtimeDir>/.mcs-build.json`: present, well formed, and written for this runtime version; otherwise exit 18
+ * (BUILD_INVALID). The message names the file and the way out of the layout (ADR 0062 item 5): rebuild a checkout, reinstall
+ * a bundle.
+ */
 export async function readBuildStamp(
   runtimeDir: string,
+  mode: RuntimeLayoutMode = 'source',
 ): Promise<{ readonly ok: true; readonly stamp: BuildStamp } | { readonly ok: false; readonly message: string }> {
-  const hint = 'run `npm run build` in the runtime folder';
+  const hint = mode === 'bundle' ? 'reinstall the skill' : 'run `npm run build` in the runtime folder';
+  const label = `${mode === 'bundle' ? 'bundle' : 'runtime'}/${BUILD_STAMP_FILE}`;
   let bytes: Buffer;
   try {
     bytes = await readSmallFile(path.join(runtimeDir, BUILD_STAMP_FILE), 64 * 1024);
   } catch {
-    return { ok: false, message: `runtime/${BUILD_STAMP_FILE} is missing or unreadable: ${hint}` };
+    return { ok: false, message: `${label} is missing or unreadable: ${hint}` };
   }
   let value: unknown;
   try {
     value = JSON.parse(bytes.toString('utf8'));
   } catch {
-    return { ok: false, message: `runtime/${BUILD_STAMP_FILE} is not valid JSON: ${hint}` };
+    return { ok: false, message: `${label} is not valid JSON: ${hint}` };
   }
   const parsed = BuildStampSchema.safeParse(value);
   if (!parsed.success) {
-    return { ok: false, message: `runtime/${BUILD_STAMP_FILE} has no runtimeVersion and codeStamp: ${hint}` };
+    return { ok: false, message: `${label} has no runtimeVersion and codeStamp: ${hint}` };
   }
   if (parsed.data.runtimeVersion !== RUNTIME_VERSION) {
     return {
       ok: false,
-      message: `runtime/${BUILD_STAMP_FILE} was written for runtime ${parsed.data.runtimeVersion}, this code is ${RUNTIME_VERSION}: ${hint}`,
+      message: `${label} was written for runtime ${parsed.data.runtimeVersion}, this code is ${RUNTIME_VERSION}: ${hint}`,
     };
   }
   return { ok: true, stamp: { runtimeVersion: parsed.data.runtimeVersion, codeStamp: parsed.data.codeStamp } };
+}
+
+// ---- the folders of the runtime layout (ADR 0062 item 2) -------------------------------------------------------------------
+
+export interface RuntimeFolders {
+  readonly mode: RuntimeLayoutMode;
+  readonly skillDir: string;
+  readonly webDir: string;
+  /** Bundle layout: `<runtimeDir>/migrations`. Undefined: the engine default (the folder of the running engine module). */
+  readonly migrationsDir: URL | undefined;
+}
+
+/**
+ * The folders of a runtime folder through the layout resolver. A folder the resolver does not know (a test fixture laid out
+ * as `<skill>/runtime` with only the stamp) keeps the source-layout paths. Only a bundle names its own migrations folder.
+ */
+export function runtimeFoldersOf(runtimeDir: string): RuntimeFolders {
+  try {
+    const layout = layoutOfRuntimeDir(runtimeDir);
+    return {
+      mode: layout.mode,
+      skillDir: layout.skillDir,
+      webDir: layout.webDir,
+      // a source folder keeps the engine default: a test install that only has a server shim has no migrations of its own
+      migrationsDir: layout.mode === 'bundle' ? pathToFileURL(layout.migrationsDir + path.sep) : undefined,
+    };
+  } catch {
+    return {
+      mode: 'source',
+      skillDir: skillDirOfRuntimeDir(runtimeDir),
+      webDir: path.join(runtimeDir, 'packages', 'web', 'dist'),
+      migrationsDir: undefined,
+    };
+  }
 }
 
 // ---- the port scan (01 4.11) ---------------------------------------------------------------------------------------------------
@@ -358,7 +401,7 @@ export interface BootInput {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** `<skill>/runtime`. */
   readonly runtimeDir: string;
-  /** Default: the skill folder of `runtimeDir` (`skillDirOfRuntimeDir`). */
+  /** Default: the skill folder of the layout of `runtimeDir` (`runtimeFoldersOf`). */
   readonly skillDir?: string;
   readonly clock?: Clock;
   /** Where the boot prints its failures (the detached server's stderr is `logs/boot.log`); default: file descriptor 2. */
@@ -453,7 +496,8 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
   const stderr = input.stderr ?? writeStderr;
   const gate = input.gate ?? createShutdownGate();
   const runtimeDir = path.resolve(input.runtimeDir);
-  const skillDir = input.skillDir ?? skillDirOfRuntimeDir(runtimeDir);
+  const folders = runtimeFoldersOf(runtimeDir);
+  const skillDir = input.skillDir ?? folders.skillDir;
 
   const fail = (exitCode: ServerFailureCode, message: string, detail?: string): BootResult => {
     stderr(
@@ -494,7 +538,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
   }
 
   // the build stamp is a read of the runtime folder, not of the instance; its failure is reported after the lock (step 6)
-  const stampResult = await readBuildStamp(runtimeDir);
+  const stampResult = await readBuildStamp(runtimeDir, folders.mode);
   const address = controlAddress(args.instanceId);
   const startedAtMs = clock.now();
   const token = randomBytes(32).toString('hex');
@@ -639,6 +683,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
         skillDir,
         runtimeDir,
         build: stamp,
+        ...(folders.migrationsDir === undefined ? {} : { migrationsDir: folders.migrationsDir }),
         clock,
         processInfo: { pid: process.pid, startedAtMs, previousRunUnclean, phase: currentPhase },
       });
@@ -732,7 +777,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
     // 8. the web build in memory (a rebuild under a running server cannot break the served UI), then the HTTP app
     let site: StaticSite | null = null;
     try {
-      site = await loadStaticSite(path.join(runtimeDir, 'packages', 'web', 'dist'));
+      site = await loadStaticSite(folders.webDir);
       if (site === null) ctx.logger.info('static_site_absent');
     } catch (error) {
       ctx.logger.warn('static_site_failed', { code: errorCodeOf(error) });

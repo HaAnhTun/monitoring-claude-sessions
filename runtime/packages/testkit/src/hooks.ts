@@ -149,21 +149,33 @@ export interface RunHookOptions {
   async?: boolean;
   /** Spawn `runtime/packages/cli/dist/hook.js` directly (the handler unit of 02) instead of the installed stub. */
   direct?: boolean;
+  /** Spawn the hook entry `<bundle>/mcs-hook.mjs` of a bundle folder (ADR 0062 item 6); wins over `direct`. */
+  bundle?: string;
   /** Merged over a minimal environment; `MCS_HOOK_DISABLE` is not set unless it is given here. */
   env?: Record<string, string>;
   /** Sent instead of `JSON.stringify(payload)` (malformed-input cases). */
   rawStdin?: string;
 }
 
-/** Program and arguments that run the handler for `event` (02 2.1): the installed command, or the built handler with `direct`. */
+/** The hook stub of the skill folder: `<repo>/skills/monitoring-claude-sessions/scripts/mcs-hook.mjs` (ADR 0062 item 6). */
+export function hookStubPath(): string {
+  return join(skillRoot(), 'skills', 'monitoring-claude-sessions', 'scripts', 'mcs-hook.mjs');
+}
+
+/**
+ * Program and arguments that run the handler for `event` (02 2.1): the installed stub, the built handler with `direct`, or
+ * the hook entry of a bundle folder with `bundle`.
+ */
 export function hookCommand(
   event: string,
-  opts: { async?: boolean; direct?: boolean },
+  opts: { async?: boolean; direct?: boolean; bundle?: string },
 ): { file: string; args: string[] } {
   const entry =
-    opts.direct === true
-      ? join(runtimeRoot(), 'packages', 'cli', 'dist', 'hook.js')
-      : join(skillRoot(), 'scripts', 'mcs-hook.mjs');
+    opts.bundle !== undefined
+      ? join(opts.bundle, 'mcs-hook.mjs')
+      : opts.direct === true
+        ? join(runtimeRoot(), 'packages', 'cli', 'dist', 'hook.js')
+        : hookStubPath();
   const isAsync = opts.async ?? ASYNC_HOOK_EVENTS.some((name) => name === event);
   return {
     file: process.execPath,
@@ -191,7 +203,8 @@ function eventOf(payload: unknown): string | undefined {
 
 /**
  * Runs the real handler with the payload on stdin, as Claude Code does. The default spawns the installed command of 02 2.1
- * (`<skill>/scripts/mcs-hook.mjs --mcs-hook <event>`), `direct` spawns `dist/hook.js`. Both need a built runtime.
+ * (`<skillDir>/scripts/mcs-hook.mjs --mcs-hook <event>`), `direct` spawns `dist/hook.js`, `bundle` spawns
+ * `<bundle>/mcs-hook.mjs`. The first two need a built runtime.
  */
 export async function runHookHandler(
   payload: unknown,
@@ -202,6 +215,7 @@ export async function runHookHandler(
   const command = hookCommand(event, {
     ...(opts.async === undefined ? {} : { async: opts.async }),
     ...(opts.direct === undefined ? {} : { direct: opts.direct }),
+    ...(opts.bundle === undefined ? {} : { bundle: opts.bundle }),
   });
   const entry = command.args[1];
   if (entry !== undefined) assertHandlerEntry(entry);

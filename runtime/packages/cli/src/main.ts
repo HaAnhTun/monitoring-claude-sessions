@@ -10,15 +10,12 @@
 // take over the whole call before dispatch (the legacy engine, WP-63) or a provider of operation dependencies (`deps`: the
 // probe of WP-19, transcript discovery of the ingestion WPs, ...), which the kernel merges and hands to every command.
 import { realpathSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
 
 import {
   createLogger,
-  defaultRuntimeDir,
-  defaultSkillDir,
   tasksRootOf,
   testHook,
   type CheckDeps,
@@ -33,6 +30,7 @@ import {
 import { McsError, RUNTIME_VERSION, cliExitCode, systemClock, toCliError, type CliError } from '@mcs/shared';
 
 import { printErrorLine, printLine } from './io/terminal.ts';
+import { buildInfoOf, buildState, mainPathsOf } from './paths.ts';
 import { describeCommand, errorEnvelope, renderEnvelope, resultEnvelope } from './render/json.ts';
 import { renderLegacy } from './render/legacy.ts';
 import {
@@ -234,6 +232,10 @@ const REGISTRY: readonly RegistryEntry[] = [
     }),
   },
   // @wp-end WP-85
+
+  // @wp-begin WP-95
+  { names: ['migrate-workspace'], load: () => import('./commands/migrate-workspace.ts') },
+  // @wp-end WP-95
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
@@ -438,35 +440,11 @@ function opContextOf(args: ParsedArgs, paths: MainPaths): OpContext {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** `current` or `stale` from `scripts/build-stamp.mjs` (05 2.3), the module the launcher uses; read on demand. */
-async function buildState(runtimeDir: string): Promise<'current' | 'stale'> {
-  const module: unknown = await import(pathToFileURL(path.join(runtimeDir, 'scripts', 'build-stamp.mjs')).href);
-  const staleness = isRecord(module) ? module['staleness'] : undefined;
-  if (typeof staleness !== 'function') throw new McsError('INTERNAL', 'build-stamp.mjs exports no staleness()');
-  const state: unknown = Reflect.apply(staleness, undefined, [runtimeDir]);
-  if (!isRecord(state) || typeof state['install'] !== 'boolean' || typeof state['build'] !== 'boolean') {
-    throw new McsError('INTERNAL', 'build-stamp.mjs: staleness() answered an unexpected shape');
-  }
-  return state['install'] || state['build'] ? 'stale' : 'current';
-}
-
-/** The first 10 hex digits of the build stamp written by `npm run build` (01 5.2); no stamp file is an error (shown as unknown). */
-async function codeStampOf(runtimeDir: string): Promise<string> {
-  const stamp: unknown = JSON.parse(await readFile(path.join(runtimeDir, '.mcs-build.json'), 'utf8'));
-  const code = isRecord(stamp) ? stamp['codeStamp'] : undefined;
-  if (typeof code !== 'string' || code === '') throw new McsError('INTERNAL', '.mcs-build.json has no codeStamp');
-  return code;
-}
-
 /** What the kernel itself can provide: the build state of the runtime and the crash hook of `init` (01 2.10). */
 function kernelDeps(op: OpContext): OpDeps {
   return {
     buildStatus: () => buildState(op.runtimeDir),
-    buildInfo: async () => ({ code: await codeStampOf(op.runtimeDir), build: await buildState(op.runtimeDir) }),
+    buildInfo: () => buildInfoOf(op.runtimeDir),
     beforeRename: () => {
       if (testHook('INIT_CRASH', op.env) === 'before-rename') process.exit(70);
     },
@@ -636,14 +614,8 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  // a source checkout: the runtime workspace is <repo>/runtime, the skill folder <repo>/skills/monitoring-claude-sessions
-  const skillDir = defaultSkillDir();
-  const paths: MainPaths = {
-    launcherPath: path.join(skillDir, 'scripts', 'mcs.mjs'),
-    skillDir,
-    runtimeDir: defaultRuntimeDir(),
-  };
-  main(process.argv.slice(2), paths).then(
+  // run directly (a checkout's dist, or a bundle entry): the layout resolver names the folders (ADR 0062 item 2)
+  main(process.argv.slice(2), mainPathsOf(import.meta.url)).then(
     (code) => {
       process.exitCode = code;
     },

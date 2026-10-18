@@ -1,6 +1,7 @@
 // T-HK-01..14, T-HK-16 and T-HK-17 (02 2.12) against the real built handler, started through the installed stub
-// (`scripts/mcs-hook.mjs`) or directly (`dist/hook.js`). Every test runs with a temp `MCS_HOME`; none touches real
-// settings. The runtime must be built first: `scripts/ci.mjs` builds before it tests; standalone runs need `npm run build`.
+// (`skills/monitoring-claude-sessions/scripts/mcs-hook.mjs`, ADR 0062 item 6) or directly (`dist/hook.js`). Every test runs
+// with a temp `MCS_HOME`; none touches real settings. The runtime must be built first: `scripts/ci.mjs` builds before it
+// tests; standalone runs need `npm run build`.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -51,7 +52,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const makeTemp = useTempDirs();
 const SKILL = join(import.meta.dirname, '..', '..', '..', '..');
-const STUB = join(SKILL, 'scripts', 'mcs-hook.mjs');
+const STUB = join(SKILL, 'skills', 'monitoring-claude-sessions', 'scripts', 'mcs-hook.mjs');
 const HOOK_JS = join(SKILL, 'runtime', 'packages', 'cli', 'dist', 'hook.js');
 const PERF = Number(process.env['MCS_PERF_FACTOR'] ?? '1') || 1;
 const LF = String.fromCharCode(10);
@@ -740,26 +741,52 @@ describe('T-HK-10 performance (budgets of 02 2.10, times MCS_PERF_FACTOR, scaled
   }, 90_000);
 });
 
-describe('T-HK-11 runtime unavailable', () => {
-  function copiedStub(root: string, hookJs: string | null): string {
-    const skill = join(root, 'skill');
-    mkdirSync(join(skill, 'scripts'), { recursive: true });
-    copyFileSync(STUB, join(skill, 'scripts', 'mcs-hook.mjs'));
-    if (hookJs !== null) {
-      const dist = join(skill, 'runtime', 'packages', 'cli', 'dist');
+describe('T-HK-11 runtime unavailable and the handler candidates (ADR 0062 item 6)', () => {
+  /** A handler module that records which candidate ran (`<MCS_HOME>/ran.txt`) and has a version of its own. */
+  const working = (name: string): string =>
+    [
+      `export const HANDLER_VERSION = '${name}-version';`,
+      'export async function runHook(argv) {',
+      "  const { writeFileSync } = await import('node:fs');",
+      `  writeFileSync(process.env.MCS_HOME + '/ran.txt', '${name} ' + argv.join(' '));`,
+      '}',
+    ].join(LF);
+
+  /**
+   * A checkout-shaped copy of the stub: `<repo>/skills/monitoring-claude-sessions/scripts/mcs-hook.mjs`, with an optional
+   * `<repo>/runtime/packages/cli/dist/hook.js` and an optional `<skillDir>/bundle/mcs-hook.mjs`.
+   */
+  function copiedStub(root: string, files: { dist?: string; bundle?: string }): string {
+    const repo = join(root, 'checkout');
+    const skillDir = join(repo, 'skills', 'monitoring-claude-sessions');
+    mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+    copyFileSync(STUB, join(skillDir, 'scripts', 'mcs-hook.mjs'));
+    if (files.dist !== undefined) {
+      const dist = join(repo, 'runtime', 'packages', 'cli', 'dist');
       mkdirSync(dist, { recursive: true });
-      writeFileSync(join(dist, 'hook.js'), hookJs);
+      writeFileSync(join(dist, 'hook.js'), files.dist);
     }
-    return join(skill, 'scripts', 'mcs-hook.mjs');
+    if (files.bundle !== undefined) {
+      mkdirSync(join(skillDir, 'bundle'), { recursive: true });
+      writeFileSync(join(skillDir, 'bundle', 'mcs-hook.mjs'), files.bundle);
+    }
+    return join(skillDir, 'scripts', 'mcs-hook.mjs');
+  }
+
+  function ranMarker(mcsHome: string): string | null {
+    const file = join(mcsHome, 'ran.txt');
+    return existsSync(file) ? readFileSync(file, 'utf8') : null;
   }
 
   it.each([
-    ['dist/hook.js is missing', null],
-    ['dist/hook.js does not parse', 'export const = ;'],
-    ['dist/hook.js has no runHook', 'export const other = 1;'],
-  ])('%s: exit 0, empty output, HANDLER_UNAVAILABLE logged', async (_name, hookJs) => {
+    ['neither dist nor bundle', {}],
+    ['dist/hook.js does not parse', { dist: 'export const = ;' }],
+    ['dist/hook.js has no runHook', { dist: 'export const other = 1;' }],
+    ['the bundle does not parse', { bundle: 'export const = ;' }],
+    ['the bundle has no runHook', { bundle: 'export const other = 1;' }],
+  ])('%s: exit 0, empty output, HANDLER_UNAVAILABLE logged', async (_name, files) => {
     const s = setup();
-    const stub = copiedStub(s.root, hookJs);
+    const stub = copiedStub(s.root, files);
     const payload = JSON.stringify(hookPayload('Stop', s.base));
     const result = await runNode(stub, ['--mcs-hook', 'Stop'], { env: envFor(s.mcsHome), stdin: payload });
     expectSilentSuccess(result);
@@ -770,11 +797,27 @@ describe('T-HK-11 runtime unavailable', () => {
     expect(existsSync(s.spoolDir)).toBe(false);
   });
 
-  it('the disable switch is honoured before the import: nothing is logged', async () => {
+  it.each([
+    ['dist only', { dist: working('dist') }, 'dist'],
+    ['bundle only', { bundle: working('bundle') }, 'bundle'],
+    ['both: the fresh dist of the checkout wins', { dist: working('dist'), bundle: working('bundle') }, 'dist'],
+  ])('%s: the handler runs silently', async (_name, files, winner) => {
     const s = setup();
-    const stub = copiedStub(s.root, null);
+    const stub = copiedStub(s.root, files);
+    const payload = JSON.stringify(hookPayload('Stop', s.base));
+    expectSilentSuccess(await runNode(stub, ['--mcs-hook', 'Stop'], { env: envFor(s.mcsHome), stdin: payload }));
+    expect(ranMarker(s.mcsHome)).toBe(`${winner} --mcs-hook Stop`);
+    expect(handlerLog(s.mcsHome)).toHaveLength(0);
+    const version = await runNode(stub, ['--version'], { env: envFor(s.mcsHome), stdin: '' });
+    expect(version).toMatchObject({ code: 0, stdout: `${winner}-version${LF}`, stderr: '' });
+  });
+
+  it('the disable switch is honoured before the import: nothing runs and nothing is logged', async () => {
+    const s = setup();
+    const stub = copiedStub(s.root, { dist: working('dist'), bundle: working('bundle') });
     const env = envFor(s.mcsHome, { MCS_HOOK_DISABLE: '1' });
     expectSilentSuccess(await runNode(stub, ['--mcs-hook', 'Stop'], { env, stdin: '{}' }));
+    expect(ranMarker(s.mcsHome)).toBeNull();
     expect(handlerLog(s.mcsHome)).toHaveLength(0);
   });
 });

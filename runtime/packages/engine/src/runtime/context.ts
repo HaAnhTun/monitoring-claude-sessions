@@ -105,6 +105,8 @@ export interface BuildContextInput {
   readonly mcsHome?: string;
   /** The only mode there is: read-only CLI access uses the DbReader (01 6.1), never a context. */
   readonly dbMode?: 'serve';
+  /** The migrations folder of the runtime layout (ADR 0062 item 2); default: the one of the running engine module. */
+  readonly migrationsDir?: URL;
   /** Tests: fixed values. The server: live getters. */
   readonly processInfo?: Partial<RuntimeProcessInfo>;
 }
@@ -357,6 +359,7 @@ export async function buildInstanceContextWith(i: BuildContextInput, deps: Conte
       mode: i.dbMode ?? 'serve',
       runtimeVersion: i.build.runtimeVersion,
       clock,
+      ...(i.migrationsDir === undefined ? {} : { migrationsDir: i.migrationsDir }),
     });
   } catch (error) {
     await release(null);

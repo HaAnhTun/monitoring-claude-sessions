@@ -102,6 +102,22 @@ function sourceFiles(skill: string): string[] {
   } catch {
     // no skill-level scripts folder
   }
+  // the scripts of the skill folders of the plugin layout (`skills/<name>/scripts/*.mjs`, ADR 0061, 0062); never `bundle/`
+  let skills: string[] = [];
+  try {
+    skills = readdirSync(join(skill, 'skills'));
+  } catch {
+    // no plugin layout
+  }
+  for (const name of skills) {
+    try {
+      for (const file of readdirSync(join(skill, 'skills', name, 'scripts'))) {
+        if (file.endsWith('.mjs')) found.push(`skills/${name}/scripts/${file}`);
+      }
+    } catch {
+      // a skill folder without scripts
+    }
+  }
   return [...new Set(found)].sort();
 }
 
@@ -265,6 +281,19 @@ describe('scanEnvironment on throw-away trees', () => {
         'scripts/mcs.mjs',
       ].map((file) => `${file}: ${bogus}`),
     );
+  });
+
+  it('finds a name used in a skill script of the plugin layout and ignores the committed bundle/ of a skill folder', () => {
+    const skill = tree({
+      'skills/monitoring-claude-sessions/scripts/mcs-hook.mjs': `export const a = process.env.${bogus};\n`,
+      'skills/monitoring-claude-sessions/bundle/mcs-cli.mjs': `export const b = process.env.${bogus};\n`,
+      'skills/monitoring-claude-sessions/bundle/scripts/x.mjs': `export const c = process.env.${bogus};\n`,
+      'runtime/packages/engine/src/bundle/y.ts': `export const d = process.env.${bogus};\n`,
+    });
+    expect(scanEnvironment(skill, []).undocumented).toEqual([
+      `runtime/packages/engine/src/bundle/y.ts: ${bogus}`,
+      `skills/monitoring-claude-sessions/scripts/mcs-hook.mjs: ${bogus}`,
+    ]);
   });
 
   it('does not scan node_modules, dist, the declaration of the list or non-source files', () => {

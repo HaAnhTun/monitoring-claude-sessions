@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ASYNC_HOOK_EVENTS, INSTALLED_HOOK_EVENTS } from '@mcs/shared/protocol';
@@ -7,6 +8,7 @@ import {
   assertHandlerEntry,
   hookCommand,
   hookPayload,
+  hookStubPath,
   runHookHandler,
   type HookEventName,
   type RunHookOptions,
@@ -107,15 +109,11 @@ describe('hookPayload', () => {
 });
 
 describe('hookCommand', () => {
-  it('spawns the installed stub scripts/mcs-hook.mjs of the skill by default (02 2.1)', () => {
+  it('spawns the stub scripts/mcs-hook.mjs of the skill folder by default (02 2.1, ADR 0062 item 6)', () => {
     const cmd = hookCommand('SessionStart', {});
     expect(cmd.file).toBe(process.execPath);
-    expect(cmd.args).toEqual([
-      '--no-warnings',
-      join(skillRoot(), 'scripts', 'mcs-hook.mjs'),
-      '--mcs-hook',
-      'SessionStart',
-    ]);
+    expect(hookStubPath()).toBe(join(skillRoot(), 'skills', 'monitoring-claude-sessions', 'scripts', 'mcs-hook.mjs'));
+    expect(cmd.args).toEqual(['--no-warnings', hookStubPath(), '--mcs-hook', 'SessionStart']);
   });
 
   it('appends --async for the async events and honours the override both ways', () => {
@@ -133,6 +131,18 @@ describe('hookCommand', () => {
       '--mcs-hook',
       'Stop',
     ]);
+  });
+
+  it('bundle runs the hook entry of the bundle folder, also over direct', () => {
+    const bundle = join('FIXTURE', 'bundle');
+    for (const opts of [{ bundle }, { bundle, direct: true }]) {
+      expect(hookCommand('Stop', opts).args).toEqual([
+        '--no-warnings',
+        join(bundle, 'mcs-hook.mjs'),
+        '--mcs-hook',
+        'Stop',
+      ]);
+    }
   });
 });
 
@@ -168,9 +178,31 @@ describe('runHookHandler', () => {
     expect(typeof result.code).toBe('number');
   });
 
+  it('spawns the hook entry of a bundle folder with the payload on stdin', async () => {
+    const root = tempDir('hk4').path;
+    const bundle = join(root, 'bundle');
+    mkdirSync(bundle, { recursive: true });
+    const script = [
+      "import { writeFileSync } from 'node:fs';",
+      'let input = "";',
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  writeFileSync(process.env.MCS_HOME + '/ran.json', JSON.stringify({ argv: process.argv.slice(2), input }));",
+      '});',
+    ].join(String.fromCharCode(10));
+    writeFileSync(join(bundle, 'mcs-hook.mjs'), script);
+    const mcsHome = join(root, 'mcs-home');
+    const result = await runHookHandler(hookPayload('Stop', BASE), { mcsHome, bundle });
+    expect(result).toMatchObject({ code: 0, stdout: '' });
+    const ran = JSON.parse(readFileSync(join(mcsHome, 'ran.json'), 'utf8')) as { argv: string[]; input: string };
+    expect(ran.argv).toEqual(['--mcs-hook', 'Stop']);
+    expect(JSON.parse(ran.input)).toMatchObject({ hook_event_name: 'Stop' });
+  });
+
   it('exposes the documented option names', () => {
     expectTypeOf<RunHookOptions>().toHaveProperty('mcsHome');
     expectTypeOf<RunHookOptions>().toHaveProperty('direct');
     expectTypeOf<RunHookOptions>().toHaveProperty('rawStdin');
+    expectTypeOf<RunHookOptions>().toHaveProperty('bundle');
   });
 });
