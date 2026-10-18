@@ -668,7 +668,6 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `CLAUDE_CONFIG_DIR` | runtime (non-MCS) | discovery, installer user scope, external pollers | Claude home (default `~/.claude`) | 01 2.10, 02 1.3 |
 | `MCS_FS_WATCH` | runtime | `createWatchHint` | `0` = no `fs.watch` hint | 06 4.4 |
 | `MCS_LAUNCHER_NO_BOOTSTRAP` | runtime | launcher | `1` = stale build is an error | 01 5.1 |
-| `MCS_PYTHON` | runtime | legacy delegation probe | Python executable for `$V` | 01 6.5 |
 | `MCS_DEBUG` | runtime | CLI, launcher | `1` = stack traces | 01 2.10 |
 | `MCS_TEST` | test | `testHook`, installer and hooks CLI guards | `1` = test mode | 01 2.10, 02 3.5 |
 | `VITEST` | test (non-MCS) | installer guard | same guard effect as `MCS_TEST` | 01, 02 |
@@ -677,9 +676,6 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_TEST_INIT_CRASH` | test | `ops.workspace.init` | `before-rename` -> exit 70 (T-LC-10) | 01 2.10 |
 | `MCS_TEST_CASES` | test | lifecycle property tests (`engine/src/lifecycle/properties.test.ts`) | cases per scenario template, default 500; 1 replays one failing seed together with `MCS_TEST_SEED` | LF-3 |
 | `MCS_PERF_FACTOR` | test | performance tests | budget multiplier (default 1) | 01 2.10, 02 2.10 |
-| `MCS_GOLDEN_LIVE_CONFIG` | test | regex parity | path of a real `config.json` (counts only) | 01 2.8 |
-| `MCS_GOLDEN_DIR` | test | parity harness | golden folder override | 05 4.11.3, 06 5.2.6 |
-| `MCS_PARITY_LIVE` | test | parity project | `1` = run the Python oracle | 05 4.11.2 |
 | `MCS_E2E_CLAUDE` | test | optional real-provider E2E | `1` enables | 02 3.7 |
 | `MCS_DEV_API` | dev | `vite.config.ts` | proxy target (default `http://127.0.0.1:18765`) | 04 12.2, 05 A.27 |
 | `MCS_WEB_DEV_PORT` | dev | `vite.config.ts` | default 18766 | same |

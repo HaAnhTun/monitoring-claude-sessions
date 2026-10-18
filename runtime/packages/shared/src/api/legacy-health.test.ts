@@ -1,11 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
 import { describe, expect, it } from 'vitest';
 
 import { LEGACY_HEALTH_KEYS, LegacyHealthSchema } from './legacy-health.ts';
-
-const LEGACY_CLI = fileURLToPath(new URL('../../../../../src/backend/cli.py', import.meta.url));
 
 /** A copy of `value` without the key `omit` (the tests need an object with a missing field). */
 function without(value: object, omit: string): Record<string, unknown> {
@@ -67,21 +62,4 @@ describe('LegacyHealth (03 6.2, I-30)', () => {
     expect(LegacyHealthSchema.safeParse({ ...sample, errors: ['x'] }).success).toBe(false);
     expect(LegacyHealthSchema.safeParse({ ...sample, reader: { a: 1 } }).success).toBe(false);
   });
-
-  // The legacy reader is only in the full skill tree; a packaged runtime has no src/backend, and the integration test
-  // of WP-17 repeats this check there. The skip is reported by the runner with the title below.
-  it.skipIf(!existsSync(LEGACY_CLI))(
-    'covers every key the legacy status reader reads (DA-T-API-11, static part; skipped when src/backend/cli.py is absent)',
-    () => {
-      const text = readFileSync(LEGACY_CLI, 'utf8');
-      const lines = text.split('\n').filter((line) => /\bh\b/.test(line) || line.includes('health'));
-      const read = new Set<string>();
-      for (const line of lines) {
-        for (const m of line.matchAll(/\bh\['(\w+)'\]/g)) read.add(m[1] ?? '');
-        for (const m of line.matchAll(/\bh\.get\('(\w+)'\)/g)) read.add(m[1] ?? '');
-      }
-      expect(read.size).toBeGreaterThan(0);
-      for (const key of read) expect(LEGACY_HEALTH_KEYS, `legacy cli.py reads ${key}`).toContain(key);
-    },
-  );
 });

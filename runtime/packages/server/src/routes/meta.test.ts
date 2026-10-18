@@ -165,18 +165,9 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
       },
     },
     children: Object.fromEntries(
-      [
-        'powershell.processes',
-        'powershell.cmdline',
-        'git',
-        'docker',
-        'ps',
-        'taskkill',
-        'node',
-        'python',
-        'icacls',
-        'opener',
-      ].map((kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }]),
+      ['powershell.processes', 'powershell.cmdline', 'git', 'docker', 'ps', 'taskkill', 'node', 'icacls', 'opener'].map(
+        (kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }],
+      ),
     ),
     panels: {},
     alerts: [],

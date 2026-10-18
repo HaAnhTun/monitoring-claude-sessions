@@ -1,5 +1,5 @@
 // The legacy five-state view (02 7.9): `toLegacy` (T-LF-56), the port of `classify_state` checked against the golden
-// outputs of the Python oracle (T-LF-51), the agent override, `legacyDone`, and the choice between the two paths.
+// outputs of the pre-4.0 engine, frozen as committed JSON (T-LF-51, ADR 0066), the agent override, `legacyDone`, and the choice between the two paths.
 import { readFileSync } from 'node:fs';
 
 import { LIFECYCLE_STATES, type LegacyState } from '@mcs/shared';
@@ -85,6 +85,7 @@ describe('Python helpers', () => {
 });
 
 // ---- T-LF-51: the golden outputs of `classify_state` ---------------------------------------------------------------
+// Frozen data of the pre-4.0 engine, ADR 0066: the captured outputs of the legacy `classify_state`, committed as JSON.
 
 interface GoldenCase {
   readonly case: string;
@@ -104,7 +105,7 @@ interface GoldenCase {
   readonly output: readonly [string, string, string];
 }
 
-const GOLDEN_URL = new URL('../../../../../tests/legacy-parity/golden/vectors/classify_state.json', import.meta.url);
+const GOLDEN_URL = new URL('../../test/fixtures/lifecycle/classify-state.frozen.json', import.meta.url);
 const GOLDEN = JSON.parse(readFileSync(GOLDEN_URL, 'utf8')) as GoldenCase[];
 
 function inputOfGolden(g: GoldenCase['input']): LegacyClassifyInput {
@@ -125,7 +126,7 @@ function inputOfGolden(g: GoldenCase['input']): LegacyClassifyInput {
   };
 }
 
-describe('classifyLegacy against the Python golden (T-LF-51)', () => {
+describe('classifyLegacy against the frozen golden (T-LF-51)', () => {
   it('has the whole golden file (every branch, boundary seconds, fractional ages, falsy values)', () => {
     expect(GOLDEN.length).toBeGreaterThanOrEqual(130);
   });

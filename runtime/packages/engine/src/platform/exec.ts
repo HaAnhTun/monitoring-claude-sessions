@@ -170,7 +170,6 @@ function mapKinds<T>(make: (kind: ChildKind) => T): Record<ChildKind, T> {
     ps: make('ps'),
     taskkill: make('taskkill'),
     node: make('node'),
-    python: make('python'),
     icacls: make('icacls'),
     opener: make('opener'),
   };

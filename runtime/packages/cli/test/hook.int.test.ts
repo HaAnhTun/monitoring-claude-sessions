@@ -1,7 +1,7 @@
 // T-HK-01..14, T-HK-16 and T-HK-17 (02 2.12) against the real built handler, started through the installed stub
 // (`scripts/mcs-hook.mjs`) or directly (`dist/hook.js`). Every test runs with a temp `MCS_HOME`; none touches real
 // settings. The runtime must be built first: `scripts/ci.mjs` builds before it tests; standalone runs need `npm run build`.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   closeSync,
@@ -41,6 +41,7 @@ import {
   buildTaskWorkspace,
   hookPayload,
   killAllTracked,
+  runCli,
   runHookHandler,
   snapshotTree,
   useTempDirs,
@@ -847,19 +848,16 @@ describe('T-HK-16 legacy-audit-safe spool names', () => {
     }
   });
 
-  const python = spawnSync('python', ['--version'], { encoding: 'utf8', windowsHide: true });
-  it.skipIf(python.status !== 0)('the legacy audit accepts a workspace whose spool holds a segment', async () => {
+  it('the Node audit accepts a workspace whose spool holds a segment', async () => {
     const s = setup();
     expectSilentSuccess(await runHookHandler(hookPayload('Stop', s.base), { mcsHome: s.mcsHome }));
     mkdirSync(join(s.workspace, 'audit'), { recursive: true });
     writeFileSync(join(s.workspace, 'audit', 'changes.md'), '# Changes' + LF);
-    const viewer = join(SKILL, 'template', 'viewer.py');
-    const result = spawnSync('python', ['-B', viewer, 'audit', '--repo', s.repo, '--task', 'task-a'], {
-      encoding: 'utf8',
-      windowsHide: true,
-      env: { ...envFor(s.mcsHome), PYTHONDONTWRITEBYTECODE: '1' },
+    const result = await runCli(['audit', '--task', 'task-a', '--repo', s.repo], {
+      mcsHome: s.mcsHome,
+      env: envFor(s.mcsHome),
     });
-    expect(result.status).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout) as unknown).toEqual([expect.objectContaining({ task: 'task-a', ok: true })]);
   });
 });

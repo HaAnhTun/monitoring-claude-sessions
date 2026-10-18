@@ -15,13 +15,13 @@ const SKILL = join(RUNTIME, '..');
 
 /**
  * A tool stub: logs `<tool> <args>` to the log file and exits with the code configured for its key. The key is the tool
- * name, with `@ARGS` replaced by `parity` or the first argument (so `vitest:run`, `vitest:parity`, `npm:run`, `npm:audit`).
+ * name, with `@ARGS` replaced by `slow` or the first argument (so `vitest:run`, `vitest:slow`, `npm:run`, `npm:audit`).
  */
 function stubSource(name: string): string {
   return [
     "import { appendFileSync } from 'node:fs';",
     'const args = process.argv.slice(2);',
-    `const key = ${JSON.stringify(name)}.replace('@ARGS', args.includes('parity') ? 'parity' : args[0] ?? '');`,
+    `const key = ${JSON.stringify(name)}.replace('@ARGS', args.includes('slow') ? 'slow' : args[0] ?? '');`,
     "appendFileSync(process.env.STUB_LOG, `${key.split(':')[0]} ${args.join(' ')}\\n`);",
     "const codes = JSON.parse(process.env.STUB_CODES ?? '{}');",
     'process.exit(codes[key] ?? 0);',
@@ -143,11 +143,12 @@ describe('scripts/ci.mjs', () => {
     expect(run.status).toBe(0);
   });
 
-  it('--full adds the parity and e2e gates after the others', () => {
+  it('--full adds the slow and e2e gates after the others, ending test:slow, test:e2e', () => {
     const run = runCi(['--full', '--offline']);
-    expect(run.order).toEqual([...GATES.filter((gate) => gate !== 'audit'), 'test:parity', 'test:e2e']);
+    expect(run.order).toEqual([...GATES.filter((gate) => gate !== 'audit'), 'test:slow', 'test:e2e']);
+    expect(run.order).not.toContain('test:parity');
     expect(run.calls.slice(-2)).toEqual([
-      'vitest run --project parity',
+      'vitest run --project slow',
       'playwright test -c packages/web/e2e/playwright.config.ts',
     ]);
     expect(run.status).toBe(0);
@@ -449,14 +450,16 @@ describe('the inactive workflow (05 section 8.2, A.41)', () => {
     expect(scripts['ci:full']).toBe('node scripts/ci.mjs --full');
   });
 
-  it('names the gates that ci.mjs defines: the full run adds exactly test:parity and test:e2e', () => {
+  it('names the gates that ci.mjs defines: the full run adds exactly test:slow and test:e2e', () => {
     const ciSource = readFileSync(join(RUNTIME, 'scripts', 'ci.mjs'), 'utf8');
-    expect(ciSource).toContain("'test:parity'");
+    expect(ciSource).toContain("'test:slow'");
+    expect(ciSource).not.toContain('parity');
     expect(ciSource).toContain("'test:e2e'");
     const scripts = (
       JSON.parse(readFileSync(join(RUNTIME, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     ).scripts;
-    expect(scripts['test:parity']).toBe('vitest run --project parity');
+    expect(scripts['test:slow']).toBe('vitest run --project slow');
+    expect(scripts['test:parity']).toBeUndefined();
     expect(scripts['test:e2e']).toBe('playwright test -c packages/web/e2e/playwright.config.ts');
   });
 

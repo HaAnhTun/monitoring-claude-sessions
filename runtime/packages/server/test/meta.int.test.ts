@@ -1,11 +1,9 @@
 // The meta routes on a real instance: a real workspace, a real database, the real query layer and a real HTTP server
 // (03 19.3). DA-T-API-10 (headers), DA-T-API-11 (legacy health parity, I-30), DA-T-API-13 (ingest health), DA-T-API-16
 // (health resources), and the instance and config routes. Response validation is on, as it is outside production (N3).
-import { execFile, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import path from 'node:path';
-import { promisify } from 'node:util';
 
 import {
   bindPanelStats,
@@ -37,7 +35,6 @@ import { createApp, createHttpServer } from '../src/app.ts';
 import { readLegacyTask } from '../src/routes/meta.ts';
 
 const makeTemp = useTempDirs();
-const execFileAsync = promisify(execFile);
 const NOW = Date.UTC(2026, 9, 11, 14, 5, 7);
 const ID = '11111111-1111-4111-8111-111111111111';
 const META_PATHS = [
@@ -244,58 +241,6 @@ describe('DA-T-API-11: legacy health parity (I-30)', () => {
     expect(parsed.now).toBe(NOW / 1000);
     expect(parsed.uptime).toBe(0);
   });
-
-  it('keeps every key that the legacy readers read inside that set (regex over src/backend/cli.py)', () => {
-    const source = readFileSync(path.join(defaultSkillDir(), 'src', 'backend', 'cli.py'), 'utf8');
-    const read = new Set<string>();
-    for (const match of source.matchAll(/\bh\['(\w+)'\]/g)) read.add(match[1] ?? '');
-    for (const match of source.matchAll(/\bh\.get\('(\w+)'\)/g)) read.add(match[1] ?? '');
-    expect([...read].sort()).toEqual(['code_stamp', 'config_source', 'errors', 'pid', 'reader', 'task', 'uptime']);
-    for (const key of read) expect(LEGACY_HEALTH_KEYS as readonly string[], key).toContain(key);
-  });
-
-  const python = spawnSync('python', ['--version']).status === 0;
-  // the legacy CLI is run as it is (read-only), against the Node server, with bytecode writing off
-  it.skipIf(!python)(
-    'lets the legacy instance_alive see the server as alive, and makes legacy status fail on /api/sessions with HTTP 404, never a KeyError (needs Python 3)',
-    async () => {
-      const run = await startInstance();
-      const stateFile = path.join(run.root, 'legacy-state.json');
-      writeFileSync(stateFile, JSON.stringify({ pid: process.pid, url: `http://127.0.0.1:${String(run.port)}` }));
-      const script = path.join(run.root, 'legacy-probe.py');
-      writeFileSync(
-        script,
-        [
-          'import json, sys',
-          'sys.dont_write_bytecode = True',
-          'sys.path.insert(0, sys.argv[1])',
-          'from backend import cli',
-          'alive, info = cli.instance_alive(sys.argv[2])',
-          "out = {'alive': alive, 'pid': info.get('pid') if info else None}",
-          "h = cli.http_json(info['url'] + '/api/health')",
-          "for key in ('uptime', 'code_stamp', 'task', 'config_source', 'errors', 'reader'):",
-          '    h[key]',
-          'try:',
-          "    cli.http_json(info['url'] + '/api/sessions')",
-          "    out['sessions'] = 'ok'",
-          'except Exception as error:',
-          "    out['sessions'] = type(error).__name__ + ':' + str(getattr(error, 'code', ''))",
-          'print(json.dumps(out))',
-          '',
-        ].join('\n'),
-      );
-      const { stdout } = await execFileAsync('python', ['-B', script, path.join(defaultSkillDir(), 'src'), stateFile], {
-        timeout: 60_000,
-        env: {
-          ...process.env,
-          PYTHONDONTWRITEBYTECODE: '1',
-          NO_PROXY: '127.0.0.1,localhost',
-          no_proxy: '127.0.0.1,localhost',
-        },
-      });
-      expect(JSON.parse(stdout)).toEqual({ alive: true, pid: process.pid, sessions: 'HTTPError:404' });
-    },
-  );
 });
 
 describe('health (DA-T-API-16, 03 6.2)', () => {

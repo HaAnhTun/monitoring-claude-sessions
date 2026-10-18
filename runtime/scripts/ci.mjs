@@ -1,5 +1,5 @@
 // Local CI: runs every gate in a fixed order and prints a result table. Zero dependencies.
-// Usage: npm run ci [-- --offline] [-- --keep-going]   |   npm run ci:full (adds e2e + parity)
+// Usage: npm run ci [-- --offline] [-- --keep-going]   |   npm run ci:full (adds the slow suites + e2e)
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { binPath, runNode } from './lib.mjs';
@@ -56,7 +56,7 @@ const steps = [
 ];
 if (!offline) steps.push(['audit', npmCli, ['audit', '--audit-level=low']]);
 if (full) {
-  steps.push(['test:parity', binPath('vitest'), ['run', '--project', 'parity']]);
+  steps.push(['test:slow', binPath('vitest'), ['run', '--project', 'slow']]);
   steps.push([
     'test:e2e',
     binPath('@playwright/test', 'playwright'),

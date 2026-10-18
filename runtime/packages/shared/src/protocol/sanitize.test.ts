@@ -22,7 +22,8 @@ const HIGH = String.fromCharCode(0xd83d);
 const LOW = String.fromCharCode(0xde42);
 const E_ACUTE = String.fromCharCode(0xe9);
 
-const GOLDEN_CLIP = new URL('../../../../../tests/legacy-parity/golden/vectors/clip.json', import.meta.url);
+// Frozen data of the pre-4.0 engine, ADR 0066: the captured outputs of the legacy clip, committed as JSON.
+const GOLDEN_CLIP = new URL('../../test/fixtures/clip.frozen.json', import.meta.url);
 
 interface ClipVector {
   case: string;
@@ -40,7 +41,7 @@ const NOT_REPRESENTABLE = new Set([
 ]);
 
 describe('clip', () => {
-  it('matches the legacy golden (tests/legacy-parity/golden/vectors/clip.json) case by case', () => {
+  it('matches the frozen legacy golden (test/fixtures/clip.frozen.json) case by case', () => {
     const vectors = JSON.parse(readFileSync(GOLDEN_CLIP, 'utf8')) as ClipVector[];
     expect(vectors.length).toBeGreaterThanOrEqual(45);
     let checked = 0;

@@ -165,7 +165,7 @@ describe('panel contracts (06 3.3)', () => {
 });
 
 describe('child process contracts (06 3.6, registry C10, C11)', () => {
-  it('has the ten child kinds', () => {
+  it('has the nine child kinds, without python (ADR 0066)', () => {
     expect([...CHILD_KINDS]).toEqual([
       'powershell.processes',
       'powershell.cmdline',
@@ -174,12 +174,12 @@ describe('child process contracts (06 3.6, registry C10, C11)', () => {
       'ps',
       'taskkill',
       'node',
-      'python',
       'icacls',
       'opener',
     ]);
     expect(ChildKindSchema.safeParse('opener').success).toBe(true);
     expect(ChildKindSchema.safeParse('bash').success).toBe(false);
+    expect(ChildKindSchema.safeParse('python').success).toBe(false);
   });
 
   it('ChildKindStats is { spawned, failed, timedOut, totalMs } and nothing else', () => {

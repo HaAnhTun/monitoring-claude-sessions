@@ -1,11 +1,18 @@
 // The allow-listed JSON logger and its rotation (05 5.3 S-LOG-1..6, 5.7, SEC-22, SEC-31).
 // Real files cover the rotation chain and the held-file cases; an in-memory file system covers the retry schedule, the
 // budget and the 60 s pause without waiting for them.
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { FIXTURE_EPOCH_MS, FakeClock, hermeticEnv, useTempDirs, waitFor } from '@mcs/testkit';
+import {
+  FILE_HOLDER_SKIP_REASON,
+  FIXTURE_EPOCH_MS,
+  FakeClock,
+  holdFileOpen,
+  useTempDirs,
+  waitFor,
+  type FileHolder,
+} from '@mcs/testkit';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -23,7 +30,6 @@ import {
   type LoggerOptions,
 } from './logger.ts';
 
-const isWin = process.platform === 'win32';
 const makeTemp = useTempDirs();
 
 function logDir(): string {
@@ -892,69 +898,29 @@ describe('write failures and the queue (in-memory file system)', () => {
   });
 });
 
-// ---- a real holder of the file (win32: Python opens without FILE_SHARE_DELETE, E23) ------------------------------------
+// ---- a real holder of the file (win32: a PowerShell child opens without FILE_SHARE_DELETE, E23) -------------------------
 
-function findPython(): string | null {
-  const probe = spawnSync('python', ['-B', '-c', 'print(1)'], { encoding: 'utf8', windowsHide: true });
-  return probe.status === 0 && probe.stdout.trim() === '1' ? 'python' : null;
-}
+const heldSkip: string | null = FILE_HOLDER_SKIP_REASON === null ? null : `skipped: ${FILE_HOLDER_SKIP_REASON}`;
 
-const python = isWin ? findPython() : null;
-const heldSkip: string | null = !isWin
-  ? 'skipped: the held-file cases need Windows (a sharing violation on rename)'
-  : python === null
-    ? 'skipped: Python is not installed'
-    : null;
-
-interface Holder {
-  readonly child: ChildProcess;
-  stop(): Promise<void>;
-}
-
-/** Python opens `file` for reading without FILE_SHARE_DELETE and keeps it open for `seconds`. */
-async function holdFile(root: string, file: string, seconds: number): Promise<Holder> {
-  const script =
-    'import sys, time\nf = open(sys.argv[1], "rb")\nprint("ready", flush=True)\ntime.sleep(float(sys.argv[2]))\n';
-  const child = spawn(python ?? 'python', ['-B', '-c', script, file, String(seconds)], {
-    env: { ...hermeticEnv(root), PYTHONDONTWRITEBYTECODE: '1' },
-    stdio: ['ignore', 'pipe', 'ignore'],
-    windowsHide: true,
-  });
-  const exited = new Promise<void>((resolve) => {
-    child.once('exit', () => {
-      resolve();
-    });
-  });
-  await new Promise<void>((resolve, reject) => {
-    child.once('error', reject);
-    child.stdout.once('data', () => {
-      resolve();
-    });
-    child.once('exit', () => {
-      reject(new Error('the Python holder exited before it was ready'));
-    });
-  });
-  return {
-    child,
-    stop: async () => {
-      child.kill();
-      await exited;
-    },
-  };
+/** Holds `file` for `seconds` in another process; only called where `heldSkip` is null. */
+async function holdFile(file: string, seconds: number): Promise<FileHolder> {
+  const holder = await holdFileOpen(file, seconds * 1000);
+  if (holder === null) throw new Error('holdFileOpen: not supported on this platform');
+  return holder;
 }
 
 describe('rotation while another program holds the file (S-LOG-6, E23)', () => {
   const fill = (n: number) => Buffer.alloc(n, 0x61).toString('latin1');
 
   it.skipIf(heldSkip !== null)(
-    `rotation succeeds after retries when the file is held for 500 ms (${heldSkip ?? 'win32 + Python'})`,
+    `rotation succeeds after retries when the file is held for 500 ms (${heldSkip ?? 'win32'})`,
     async () => {
       const root = makeTemp('logger-held').path;
       const dir = path.join(root, 'logs');
       mkdirSync(dir);
       const file = path.join(dir, 'runtime.log');
       writeFileSync(file, `${fill(1000)}\n`);
-      const holder = await holdFile(root, file, 0.5);
+      const holder = await holdFile(file, 0.5);
       try {
         const logger = createLogger(options(file, new FakeClock(FIXTURE_EPOCH_MS), { rotateBytes: 1024 }));
         for (let i = 0; i < 5; i += 1) logger.info('line', { count: i });
@@ -970,14 +936,14 @@ describe('rotation while another program holds the file (S-LOG-6, E23)', () => {
   );
 
   it.skipIf(heldSkip !== null)(
-    `a file held past the budget fails once, loses no line and is not retried for 60 s (${heldSkip ?? 'win32 + Python'})`,
+    `a file held past the budget fails once, loses no line and is not retried for 60 s (${heldSkip ?? 'win32'})`,
     async () => {
       const root = makeTemp('logger-held').path;
       const dir = path.join(root, 'logs');
       mkdirSync(dir);
       const file = path.join(dir, 'runtime.log');
       writeFileSync(file, `${fill(1000)}\n`);
-      const holder = await holdFile(root, file, 30);
+      const holder = await holdFile(file, 30);
       const clock = new FakeClock(FIXTURE_EPOCH_MS);
       const written = () => parseLines(readFileSync(file, 'utf8').slice(1001)).map((l) => l['count']);
       try {
@@ -1010,14 +976,14 @@ describe('rotation while another program holds the file (S-LOG-6, E23)', () => {
   );
 
   it.skipIf(heldSkip !== null)(
-    `rotate: false does not rename even when the file is held (${heldSkip ?? 'win32 + Python'})`,
+    `rotate: false does not rename even when the file is held (${heldSkip ?? 'win32'})`,
     async () => {
       const root = makeTemp('logger-held').path;
       const dir = path.join(root, 'logs');
       mkdirSync(dir);
       const file = path.join(dir, 'runtime.log');
       writeFileSync(file, `${fill(2000)}\n`);
-      const holder = await holdFile(root, file, 30);
+      const holder = await holdFile(file, 30);
       try {
         const logger = createLogger(
           options(file, new FakeClock(FIXTURE_EPOCH_MS), { rotate: false, rotateBytes: 1024 }),

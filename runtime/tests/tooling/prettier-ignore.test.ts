@@ -22,6 +22,12 @@ describe('.prettierignore', () => {
     expect(await isIgnored(`${FIXTURES}/audit/decisions.md`)).toBe(true);
   });
 
+  it('skips the frozen data of the pre-4.0 engine (ADR 0066)', async () => {
+    expect(await isIgnored('packages/engine/test/fixtures/lifecycle/classify-state.frozen.json')).toBe(true);
+    expect(await isIgnored('packages/shared/test/fixtures/clip.frozen.json')).toBe(true);
+    expect(await isIgnored('packages/engine/test/fixtures/hooks.ts')).toBe(false);
+  });
+
   it('does not skip anything else of the fixture workspace or the sources', async () => {
     expect(await isIgnored(`${FIXTURES}/README.md`)).toBe(false);
     expect(await isIgnored(`${FIXTURES}/config.json`)).toBe(false);

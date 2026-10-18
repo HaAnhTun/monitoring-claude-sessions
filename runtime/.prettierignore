@@ -7,3 +7,5 @@
 package-lock.json
 # Byte-exact output of the legacy init-task, configure and decide commands (each entry ends with a blank line).
 packages/engine/test/fixtures/legacy-workspace/audit/
+# Frozen data of the pre-4.0 engine (ADR 0066): kept byte-identical to the captured files.
+**/*.frozen.json

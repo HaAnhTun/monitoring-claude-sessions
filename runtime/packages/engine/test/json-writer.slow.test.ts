@@ -33,7 +33,7 @@ const Golden = z.object({
   loneSurrogates: z.array(z.string()),
 });
 
-const GOLDEN_URL = new URL('../../../tests/legacy-parity/pyjson/pyjson-golden.json', import.meta.url);
+const GOLDEN_URL = new URL('../../../../tests/legacy-parity/pyjson/pyjson-golden.json', import.meta.url);
 const golden = Golden.parse(JSON.parse(readFileSync(fileURLToPath(GOLDEN_URL), 'utf8')));
 
 function describeValue(v: PyJsonValue): string {

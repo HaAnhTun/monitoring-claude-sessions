@@ -32,7 +32,6 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   },
   { name: 'MCS_FS_WATCH', scope: 'runtime', readers: ['runtime/packages/engine/src/platform/watch-hint.ts'] },
   { name: 'MCS_LAUNCHER_NO_BOOTSTRAP', scope: 'runtime', readers: ['scripts/mcs.mjs'] },
-  { name: 'MCS_PYTHON', scope: 'runtime', readers: ['runtime/packages/engine/src/ops/legacy.ts'] },
   { name: 'MCS_DEBUG', scope: 'runtime', readers: ['runtime/packages/cli/src/main.ts', 'scripts/mcs.mjs'] },
   {
     name: 'MCS_TEST',
@@ -46,13 +45,6 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   // 1 replays one failing seed together with MCS_TEST_SEED. Only that test file reads it.
   { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },
   { name: 'MCS_PERF_FACTOR', scope: 'test', readers: ['runtime/packages/cli/test/hook.int.test.ts'] },
-  {
-    name: 'MCS_GOLDEN_LIVE_CONFIG',
-    scope: 'test',
-    readers: ['runtime/tests/parity/pyregex.golden.test.ts'],
-  },
-  { name: 'MCS_GOLDEN_DIR', scope: 'test', readers: ['runtime/tests/parity/global-setup.ts'] },
-  { name: 'MCS_PARITY_LIVE', scope: 'test', readers: ['runtime/tests/parity/global-setup.ts'] },
   { name: 'MCS_E2E_CLAUDE', scope: 'test', readers: ['runtime/packages/engine/test/real-provider.int.test.ts'] },
   { name: 'MCS_DEV_API', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_WEB_DEV_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },

@@ -43,13 +43,12 @@ export default defineConfig({
       },
       {
         extends: true,
+        // The heavy data-driven suites (frozen corpora of the pre-4.0 engine, ADR 0066): run by `test:slow` and `ci --full`.
         test: {
-          name: 'parity',
+          name: 'slow',
           environment: 'node',
           pool: 'forks',
-          include: ['tests/parity/**/*.test.ts'],
-          // @wp-begin WP-43
-          // @wp-end WP-43
+          include: ['packages/*/test/**/*.slow.test.ts'],
         },
       },
       {

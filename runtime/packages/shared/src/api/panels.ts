@@ -192,7 +192,7 @@ export type PanelResponse<K extends PanelKey = PanelKey> = Extract<z.infer<typeo
 
 // ---- child processes and panel statistics (HealthReport.children, HealthReport.panels) ------------------------------
 
-/** The ten kinds of child process of 06 3.6; the order is the order of the registry. */
+/** The nine kinds of child process of 06 3.6 (ADR 0066 removed `python`); the order is the order of the registry. */
 export const CHILD_KINDS = [
   'powershell.processes',
   'powershell.cmdline',
@@ -201,7 +201,6 @@ export const CHILD_KINDS = [
   'ps',
   'taskkill',
   'node',
-  'python',
   'icacls',
   'opener',
 ] as const;

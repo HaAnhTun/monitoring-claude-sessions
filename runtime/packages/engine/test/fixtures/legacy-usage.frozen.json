@@ -1,0 +1,68 @@
+{
+  "usages": [
+    {
+      "in": 14,
+      "out": 250,
+      "cr": 11000,
+      "cc": 1000,
+      "turns": 5,
+      "models": [
+        "<synthetic>",
+        "model-x"
+      ],
+      "first": "2026-01-01T00:00:00.001Z",
+      "last": "2026-01-01T00:00:06.000Z",
+      "stop": "end_turn",
+      "complete": true,
+      "scanned_pct": 100
+    },
+    {
+      "in": 8,
+      "out": 420,
+      "cr": 1800,
+      "cc": 200,
+      "turns": 2,
+      "models": [
+        "model-y"
+      ],
+      "first": "2026-01-01T00:00:07.000Z",
+      "last": "2026-01-01T00:00:11.000Z",
+      "stop": "",
+      "complete": true,
+      "scanned_pct": 100
+    },
+    {
+      "in": 16,
+      "out": 270,
+      "cr": 12000,
+      "cc": 1500,
+      "turns": 2,
+      "models": [
+        "model-x"
+      ],
+      "first": "2026-01-01T00:00:12.000Z",
+      "last": "2026-01-01T00:00:14.000Z",
+      "stop": "end_turn",
+      "complete": true,
+      "scanned_pct": 100
+    }
+  ],
+  "totals": [
+    {
+      "in": 22,
+      "out": 670,
+      "cr": 12800,
+      "cc": 1200,
+      "turns": 7,
+      "complete": true
+    },
+    {
+      "in": 16,
+      "out": 270,
+      "cr": 12000,
+      "cc": 1500,
+      "turns": 2,
+      "complete": true
+    }
+  ]
+}

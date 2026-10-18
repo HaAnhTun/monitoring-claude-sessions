@@ -1,9 +1,8 @@
 // T-TK-04: the legacy parity projection (02 6.5). The numbers of the worked example are checked against the text of the design
-// AND against the legacy Python reader (read-only, `python -B`, temp files only), which is the oracle of `usage` and `usage_total`.
-import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+// AND against the frozen data of the pre-4.0 engine, ADR 0066: the `usage` of each file and the `usage_total` of each session the
+// legacy reader returned for the same example, captured once and committed as `test/fixtures/legacy-usage.frozen.json`.
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { TranscriptRecordShape, isoMsZ } from '@mcs/shared';
 import { FIXTURE_EPOCH_MS, FakeClock, useTempDirs } from '@mcs/testkit';
@@ -24,7 +23,6 @@ const S1_UID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const S2_UID = 'bbbbbbbb-0000-4000-8000-000000000002';
 const T0 = FIXTURE_EPOCH_MS;
 const MIN = 60_000;
-const LEGACY_SRC = fileURLToPath(new URL('../../../../../src', import.meta.url));
 
 const opened: InstanceDb[] = [];
 afterEach(() => {
@@ -78,6 +76,8 @@ const u = (i: number, o: number, cr: number, cc: number, split: readonly [number
 
 /** The worked example of 02 6.4 as three transcript files (plus a bookkeeping record and a torn-free tail). */
 function workedExample(): FileSpec[] {
+  // Restart the record counter so the timestamps (and so `first` and `last`) do not depend on the order the cases run in.
+  seq = 0;
   const a = u(10, 200, 5000, 1000, [0, 1000]);
   const aFinal = { ...a, iterations: [a] };
   const f1 = [
@@ -234,31 +234,14 @@ function load(specs: readonly FileSpec[], dir: string): Loaded {
   return { db, s1, s2, ids, paths };
 }
 
-const ORACLE = `
-import sys, json
-sys.path.insert(0, sys.argv[1])
-from backend.reader import TranscriptReader
-from backend.sessions import add_usage
-usages = [TranscriptReader(p).refresh().usage() for p in sys.argv[2:]]
-total = None
-for usage in usages:
-    total = add_usage(total, usage)
-print(json.dumps({'usages': usages, 'total': total}))
-`;
-
-function oracle(paths: readonly string[]): { usages: unknown[]; total: unknown } {
-  const out = execFileSync('python', ['-B', '-c', ORACLE, LEGACY_SRC, ...paths], {
-    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONUTF8: '1' },
-    encoding: 'utf8',
-    windowsHide: true,
-  });
-  const parsed: unknown = JSON.parse(out);
-  if (typeof parsed !== 'object' || parsed === null || !('usages' in parsed) || !('total' in parsed))
-    throw new Error('unexpected oracle output');
-  const { usages, total } = parsed;
-  if (!Array.isArray(usages)) throw new Error('unexpected oracle output');
-  return { usages, total };
+interface FrozenUsage {
+  readonly usages: readonly unknown[];
+  readonly totals: readonly unknown[];
 }
+
+const FROZEN = JSON.parse(
+  readFileSync(new URL('../../test/fixtures/legacy-usage.frozen.json', import.meta.url), 'utf8'),
+) as FrozenUsage;
 
 describe('legacyFileUsage (02 6.5)', () => {
   it('reproduces the numbers of the design for the worked example', () => {
@@ -293,16 +276,16 @@ describe('legacyFileUsage (02 6.5)', () => {
     });
   });
 
-  it('equals the legacy reader on every file and the legacy usage_total on the session (T-TK-04)', () => {
+  it('equals the frozen legacy reader on every file and the frozen legacy usage_total on each session (T-TK-04)', () => {
+    expect(FROZEN.usages).toHaveLength(3);
+    expect(FROZEN.totals).toHaveLength(2);
     const dir = tempDir('legacy-oracle').path;
     const loaded = load(workedExample(), dir);
-    const expected = oracle(loaded.paths);
     loaded.ids.forEach((id, n) => {
-      expect(legacyFileUsage(loaded.db, CTX, id), `file ${String(n + 1)}`).toEqual(expected.usages[n]);
+      expect(legacyFileUsage(loaded.db, CTX, id), `file ${String(n + 1)}`).toEqual(FROZEN.usages[n]);
     });
-    const s1Only = oracle(loaded.paths.slice(0, 2));
-    expect(legacyUsageTotal(loaded.db, CTX, loaded.s1)).toEqual(s1Only.total);
-    expect(legacyUsageTotal(loaded.db, CTX, loaded.s2)).toEqual(oracle(loaded.paths.slice(2)).total);
+    expect(legacyUsageTotal(loaded.db, CTX, loaded.s1)).toEqual(FROZEN.totals[0]);
+    expect(legacyUsageTotal(loaded.db, CTX, loaded.s2)).toEqual(FROZEN.totals[1]);
   });
 
   it('reports a file whose backfill was skipped as unscanned (scanned_pct 0, skipped) and incomplete', () => {

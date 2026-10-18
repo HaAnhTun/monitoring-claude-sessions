@@ -1,11 +1,11 @@
 // Atomic replace over a file another process holds open (06 4.3, ADR 0058, E10). On Windows a rename onto an open target
 // fails with EPERM, so the write must retry until the holder lets go, and give up cleanly after the 3000 ms budget.
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { useTempDirs } from '@mcs/testkit';
+import { holdFileOpen, useTempDirs, type FileHolder } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AtomicWriteError, atomicWriteFile } from '../../src/platform/fsx.ts';
@@ -13,8 +13,10 @@ import { AtomicWriteError, atomicWriteFile } from '../../src/platform/fsx.ts';
 const isWin = process.platform === 'win32';
 const makeTemp = useTempDirs();
 const holders: ChildProcess[] = [];
+const foreign: FileHolder[] = [];
 
 afterEach(async () => {
+  for (const holder of foreign.splice(0)) await holder.stop();
   for (const holder of holders.splice(0)) {
     if (holder.exitCode === null && holder.signalCode === null) {
       holder.kill();
@@ -48,21 +50,6 @@ function nodeHolder(file: string, holdMs: number): Promise<ChildProcess> {
   return holdOpen(process.execPath, ['-e', code, '--', file, String(holdMs)]);
 }
 
-const python = (() => {
-  const probe = spawnSync('python', ['-B', '--version'], {
-    windowsHide: true,
-    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
-    encoding: 'utf8',
-  });
-  return probe.status === 0 ? 'python' : null;
-})();
-
-function pythonHolder(file: string, holdMs: number): Promise<ChildProcess> {
-  const code =
-    'import sys, time\nf = open(sys.argv[1], "rb")\nprint("held", flush=True)\ntime.sleep(float(sys.argv[2]) / 1000.0)\n';
-  return holdOpen(python ?? 'python', ['-B', '-c', code, file, String(holdMs)]);
-}
-
 function setup(): { dir: string; target: string } {
   const dir = path.join(makeTemp('fsx-int').path, 'work');
   mkdirSync(dir);
@@ -85,17 +72,15 @@ describe.runIf(isWin)('atomicWriteFile over an open target (Windows sharing sema
     expect(waited).toBeLessThan(3000);
   }, 30_000);
 
-  it.runIf(python !== null)(
-    'waits for a Python holder of 600 ms (no FILE_SHARE_DELETE) and then replaces the file',
-    async () => {
-      const { dir, target } = setup();
-      await pythonHolder(target, 600);
-      await atomicWriteFile(target, 'new');
-      expect(readFileSync(target, 'utf8')).toBe('new');
-      expect(readdirSync(dir)).toEqual(['state.json']);
-    },
-    30_000,
-  );
+  it('waits for a holder of 600 ms without FILE_SHARE_DELETE (holdFileOpen) and then replaces the file', async () => {
+    const { dir, target } = setup();
+    const holder = await holdFileOpen(target, 600);
+    if (holder === null) throw new Error('holdFileOpen: not supported on this platform');
+    foreign.push(holder);
+    await atomicWriteFile(target, 'new');
+    expect(readFileSync(target, 'utf8')).toBe('new');
+    expect(readdirSync(dir)).toEqual(['state.json']);
+  }, 30_000);
 
   it('gives up after the 3000 ms budget when the holder stays for 4 s: E_ATOMIC_WRITE_BUSY, old content intact, no .tmp', async () => {
     const { dir, target } = setup();

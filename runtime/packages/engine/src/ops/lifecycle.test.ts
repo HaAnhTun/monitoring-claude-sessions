@@ -464,6 +464,32 @@ describe('start: a stopped instance (01 4.7)', () => {
     expect(w.spawns).toEqual([]);
     expect(existsSync(fileOf(w, 'logs', 'boot.log'))).toBe(false);
   });
+
+  it('a bundle runtime folder starts its mcs-server.mjs (ADR 0062)', async () => {
+    const w = world();
+    const bundle = path.join(w.root, 'skill', 'bundle');
+    mkdirSync(bundle, { recursive: true });
+    writeFileSync(path.join(bundle, 'mcs-server.mjs'), '// stand-in\n');
+    bootsOk(w);
+    const result = await start({ ...w.ctx, runtimeDir: bundle }, { task: 'demo' }, w.deps);
+    expect(result.outcome).toBe('started');
+    expect(w.spawns[0]?.args[0]).toBe(path.join(bundle, 'mcs-server.mjs'));
+    expect(w.spawns[0]?.args[1]).toBe('serve');
+  });
+
+  it('a bundle without its server entry is START_FAILED with the reinstall hint, spawning nothing', async () => {
+    const w = world();
+    const bundle = path.join(w.root, 'skill', 'bundle');
+    mkdirSync(bundle, { recursive: true });
+    writeFileSync(path.join(bundle, 'mcs-cli.mjs'), '// stand-in\n');
+    w.probes = [stopped()];
+    const error = await failure(start({ ...w.ctx, runtimeDir: bundle }, { task: 'demo' }, w.deps));
+    expectCode(error, 'START_FAILED');
+    expect(error.message).toContain('mcs-server.mjs');
+    expect(error.hint).toContain('reinstall');
+    expect(error.hint).not.toContain('npm');
+    expect(w.spawns).toEqual([]);
+  });
 });
 
 describe('start: the default workspace and adoption (01 4.7 step 2, 6.2)', () => {
@@ -1204,18 +1230,9 @@ const BODY = {
       },
     },
     children: Object.fromEntries(
-      [
-        'git',
-        'docker',
-        'powershell.processes',
-        'powershell.cmdline',
-        'ps',
-        'taskkill',
-        'icacls',
-        'node',
-        'python',
-        'opener',
-      ].map((kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }]),
+      ['git', 'docker', 'powershell.processes', 'powershell.cmdline', 'ps', 'taskkill', 'icacls', 'node', 'opener'].map(
+        (kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }],
+      ),
     ),
     panels: {},
     alerts: [],

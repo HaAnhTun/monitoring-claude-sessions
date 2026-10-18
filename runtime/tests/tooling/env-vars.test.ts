@@ -34,11 +34,6 @@ const mcs = (rest: string): string => `MCS_${rest}`;
  */
 const KNOWN_UNDOCUMENTED: readonly { file: string; name: string; reason: string }[] = [
   {
-    file: 'runtime/tests/parity/pyregex.golden.test.ts',
-    name: mcs('GOLDEN_LIVE_INPUTS'),
-    reason: 'read by the opt-in regex differential but missing from 01 section 2.10 (CR-WP-23-1)',
-  },
-  {
     file: 'runtime/packages/engine/src/platform/exec.test.ts',
     name: mcs('PROBE'),
     reason:
@@ -347,6 +342,12 @@ describe('environment variables of the repository (01 section 2.10)', () => {
 
   it('reads no MCS_* name that is not documented in DOCUMENTED_ENV_VARS', () => {
     expect(report.undocumented).toEqual([]);
+  });
+
+  it('has none of the variables of the Python era in the registry or the exceptions (ADR 0066)', () => {
+    const removed = ['PYTHON', 'GOLDEN_LIVE_CONFIG', 'GOLDEN_LIVE_INPUTS', 'GOLDEN_DIR', 'PARITY_LIVE'].map(mcs);
+    const listed = [...DOCUMENTED_ENV_VARS.map((v) => v.name), ...KNOWN_UNDOCUMENTED.map((e) => e.name)];
+    for (const name of removed) expect(listed, name).not.toContain(name);
   });
 
   it('keeps the list of known undocumented mentions honest', () => {

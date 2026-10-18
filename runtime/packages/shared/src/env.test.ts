@@ -14,7 +14,6 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['CLAUDE_CONFIG_DIR', 'runtime'],
   ['MCS_FS_WATCH', 'runtime'],
   ['MCS_LAUNCHER_NO_BOOTSTRAP', 'runtime'],
-  ['MCS_PYTHON', 'runtime'],
   ['MCS_DEBUG', 'runtime'],
   ['MCS_TEST', 'test'],
   ['MCS_TEST_IGNORE_CONTROL', 'test'],
@@ -22,9 +21,6 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_TEST_INIT_CRASH', 'test'],
   ['MCS_TEST_CASES', 'test'],
   ['MCS_PERF_FACTOR', 'test'],
-  ['MCS_GOLDEN_LIVE_CONFIG', 'test'],
-  ['MCS_GOLDEN_DIR', 'test'],
-  ['MCS_PARITY_LIVE', 'test'],
   ['MCS_E2E_CLAUDE', 'test'],
   ['MCS_DEV_API', 'dev'],
   ['MCS_WEB_DEV_PORT', 'dev'],
@@ -41,6 +37,17 @@ describe('DOCUMENTED_ENV_VARS', () => {
     const names = DOCUMENTED_ENV_VARS.map((v) => v.name);
     expect(new Set(names).size).toBe(names.length);
     for (const name of names) expect(name, name).toMatch(/^[A-Z][A-Z0-9_]*$/);
+  });
+
+  it('has none of the variables of the Python era (ADR 0066)', () => {
+    const removed = ['PYTHON', 'GOLDEN_LIVE_CONFIG', 'GOLDEN_LIVE_INPUTS', 'GOLDEN_DIR', 'PARITY_LIVE'].map(
+      (n) => `MCS_${n}`,
+    );
+    for (const name of removed)
+      expect(
+        DOCUMENTED_ENV_VARS.some((v) => v.name === name),
+        name,
+      ).toBe(false);
   });
 
   it('does not contain MCS_E2E_PORT (I-27, N-02)', () => {

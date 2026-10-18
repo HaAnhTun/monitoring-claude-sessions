@@ -67,6 +67,7 @@ export { buildClaudeHome, type ClaudeHome, type SessionSpec } from './claude-hom
 export { hookPayload, runHookHandler, type HookEventName, type RunHookOptions } from './hooks.ts';
 export { buildRepo, buildTaskWorkspace, snapshotTree } from './workspace.ts';
 export { buildDemo, type DemoLetter, type DemoOptions, type DemoResult, type DemoSession } from './demo.ts';
+export { FILE_HOLDER_SKIP_REASON, holdFileOpen, type FileHolder } from './file-holder.ts';
 // @wp-end WP-06
 
 // @wp-begin WP-42
