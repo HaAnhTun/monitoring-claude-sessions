@@ -1,6 +1,7 @@
 /// <reference types="node" />
-// Golden test of the Python-regex translator (design 01 section 2.8, ADR 0002, plan WP-05).
-// Data: <skill>/tests/legacy-parity/regex/{regex-golden.json,regex-rejects.json}, written by gen_regex_golden.py.
+// Golden test of the Python-regex translator of the workspace migration (design 01 section 2.8, ADR 0002 amended,
+// ADR 0067, plan WP-92). Every accepted pattern is translated to the dialect and read back with the runtime compiler.
+// Data: fixtures/regex-translator/{regex-golden,regex-rejects}.frozen.json, written by the pre-4.0 gen_regex_golden.py.
 // Every expectation is a result CPython produced, frozen as committed data (ADR 0066); this file only compares and
 // runs no Python.
 import { readFileSync } from 'node:fs';
@@ -9,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { McsError, compilePyRegex, translatePyRegex, type PyRegexContext } from '@mcs/shared';
+import { translateToDialect, type PyRegexContext } from '../src/migrate/regex/index.ts';
+import { compileRegex, type CompiledRegex } from '../src/regex/index.ts';
 
 const Meta = z.object({ python: z.string(), unicode: z.string(), seed: z.number() });
 const Expected = z.union([
@@ -47,9 +49,18 @@ const Rejects = z.object({
   ),
 });
 
-const DIR = new URL('../../../../tests/legacy-parity/regex/', import.meta.url);
-const golden = Golden.parse(JSON.parse(readFileSync(fileURLToPath(new URL('regex-golden.json', DIR)), 'utf8')));
-const rejects = Rejects.parse(JSON.parse(readFileSync(fileURLToPath(new URL('regex-rejects.json', DIR)), 'utf8')));
+const DIR = new URL('fixtures/regex-translator/', import.meta.url);
+const golden = Golden.parse(JSON.parse(readFileSync(fileURLToPath(new URL('regex-golden.frozen.json', DIR)), 'utf8')));
+const rejects = Rejects.parse(
+  JSON.parse(readFileSync(fileURLToPath(new URL('regex-rejects.frozen.json', DIR)), 'utf8')),
+);
+
+/** The migration path: translate, then compile the stored dialect text. Throws for a refused pattern. */
+function compilePyRegex(pattern: string, context: PyRegexContext): CompiledRegex {
+  const translated = translateToDialect(pattern, context);
+  if (!translated.ok) throw new Error(`${translated.error.code}: ${translated.error.message}`);
+  return compileRegex(translated.value.text, context);
+}
 
 type Expectation = z.infer<typeof Expected>;
 
@@ -66,7 +77,7 @@ function show(text: string): string {
   return JSON.stringify(Array.from(text).map((c) => c.codePointAt(0)));
 }
 
-function actualOf(regex: ReturnType<typeof compilePyRegex>, input: string): Expectation {
+function actualOf(regex: CompiledRegex, input: string): Expectation {
   const m = regex.exec(input);
   if (m === null) return null;
   return { span: [m.start, m.end], groups: m.groups(), groupdict: m.groupdict() };
@@ -78,9 +89,9 @@ function compareCase(
   inputs: readonly string[],
   expected: readonly Expectation[],
 ): Outcome {
-  const translated = translatePyRegex(pattern, context);
+  const translated = translateToDialect(pattern, context);
   if (!translated.ok) return { compared: 0, mismatches: [], refused: translated.error.code };
-  const regex = compilePyRegex(pattern, context);
+  const regex = compileRegex(translated.value.text, context);
   const mismatches: string[] = [];
   inputs.forEach((input, index) => {
     const want = expected[index];
@@ -193,25 +204,23 @@ describe('PyRegex golden: rejects', () => {
   it('refuses every row with the documented code and never accepts a refused pattern silently', () => {
     const wrong: string[] = [];
     for (const row of rejects.rejects) {
-      const result = translatePyRegex(row.pattern, row.context);
+      const result = translateToDialect(row.pattern, row.context);
       if (result.ok) wrong.push(`accepted ${row.context} ${JSON.stringify(row.pattern)} (want ${row.code})`);
       else if (result.error.code !== row.code)
         wrong.push(`${result.error.code} for ${JSON.stringify(row.pattern)} (want ${row.code})`);
-      expect(() => compilePyRegex(row.pattern, row.context), JSON.stringify(row.pattern)).toThrow(McsError);
     }
     expect(wrong).toEqual([]);
   });
 
-  it('reports REGEX_UNSUPPORTED with the construct code and a position', () => {
+  it('reports a message and, for parse refusals, a code point position inside the pattern', () => {
     for (const row of rejects.rejects.slice(0, 40)) {
-      try {
-        compilePyRegex(row.pattern, row.context);
-        expect.unreachable(`compiled ${JSON.stringify(row.pattern)}`);
-      } catch (error) {
-        if (!(error instanceof McsError)) throw error;
-        expect(error.code).toBe('REGEX_UNSUPPORTED');
-        expect(error.details?.['code']).toBe(row.code);
-        expect(error.message.length).toBeGreaterThan(5);
+      const result = translateToDialect(row.pattern, row.context);
+      if (result.ok) throw new Error(`accepted ${JSON.stringify(row.pattern)}`);
+      expect(result.error.message.length).toBeGreaterThan(5);
+      const position = result.error.position;
+      if (position !== null) {
+        expect(position).toBeGreaterThanOrEqual(0);
+        expect(position).toBeLessThanOrEqual(Array.from(row.pattern).length);
       }
     }
   });

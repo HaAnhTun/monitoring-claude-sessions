@@ -3,9 +3,16 @@
 // Every name, pattern and text here is invented; the CPython comparison of the same shapes is in the parity golden test.
 import { describe, expect, it } from 'vitest';
 
-import { compilePyRegex } from './compile.ts';
-import { applyLabelTemplate } from './label.ts';
-import { translatePyRegex } from './translate.ts';
+import { applyLabelTemplate, compileRegex, type CompiledRegex } from '../../regex/index.ts';
+import { translateToDialect } from './translate.ts';
+import type { PyRegexContext } from './types.ts';
+
+/** The migration path: translate the Python pattern, then read the stored text with the runtime compiler. */
+function compilePyRegex(source: string, ctx: PyRegexContext): CompiledRegex {
+  const t = translateToDialect(source, ctx);
+  if (!t.ok) throw new Error(`${t.error.code}: ${t.error.message}`);
+  return compileRegex(t.value.text, ctx);
+}
 
 const START =
   '^(?P<time>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}) JOB (?P<part>[A-Z0-9]+) BEGIN try (?P<n>[0-9]+) model (?P<model>[a-z]+) effort (?P<effort>[a-z]+)';
@@ -44,10 +51,10 @@ describe('attempts patterns of a synthetic chain task', () => {
     expect(start.exec('2026-01-02 03:04:05 JOB a1 BEGIN try 1 model alpha effort high')).toBeNull();
   });
 
-  it('translates to exactly the documented flags', () => {
-    const t = translatePyRegex(START, 'attempts');
-    expect(t.ok && t.value.jsFlags).toBe('vy');
+  it('keeps the group names in definition order', () => {
+    const t = translateToDialect(START, 'attempts');
     expect(t.ok && t.value.groupNames).toEqual(['time', 'part', 'n', 'model', 'effort']);
+    expect(compilePyRegex(START, 'attempts').groupNames).toEqual(['time', 'part', 'n', 'model', 'effort']);
   });
 });
 

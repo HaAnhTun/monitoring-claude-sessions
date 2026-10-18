@@ -1,4 +1,4 @@
-// Emitter: the translator's tree to JavaScript `v`-mode source (design 01 section 2.8).
+// Emitter: the translator's tree to the `v`-mode text of the configuration dialect (design 01 section 2.8, ADR 0067).
 //
 // The JavaScript `m` and `s` flags are never used. Line and dot semantics are emulated so that they follow Python:
 // `.` excludes only LF, `^` and `$` see only LF as a line end, and `$` also matches before a final LF.

@@ -32,7 +32,6 @@ export * from './schemas/ingest.ts';
 // @wp-end WP-04
 
 // @wp-begin WP-05
-export * from './pyregex/index.ts';
 // @wp-end WP-05
 
 // @wp-begin WP-09
