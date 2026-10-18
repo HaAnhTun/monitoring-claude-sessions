@@ -19,7 +19,9 @@ function asRecord(value: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
-const defaultsPath = fileURLToPath(new URL('../../../../../../config/defaults.json', import.meta.url));
+const defaultsPath = fileURLToPath(
+  new URL('../../../../../../skills/monitoring-claude-sessions/config/defaults.json', import.meta.url),
+);
 const LEGACY = asRecord(JSON.parse(readFileSync(defaultsPath, 'utf8')));
 
 function legacyValue(path: string): unknown {

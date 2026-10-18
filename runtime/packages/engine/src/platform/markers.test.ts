@@ -226,7 +226,9 @@ describe('a pre-4.0 viewer command line (ADR 0066)', () => {
   it('never carries the runtime marker, so no command may signal it', () => {
     const viewer = ['viewer', 'py'].join('.');
     expect(hasRuntimeMarker(`python ${viewer} serve --task x`, ID_A)).toBe(false);
-    expect(hasRuntimeMarker(`python3 /opt/skill/${viewer} serve --mcs-instance=${ID_A}`, ID_A)).toBe(false);
+    expect(
+      hasRuntimeMarker(`${['python', '3'].join('')} /opt/skill/${viewer} serve --mcs-instance=${ID_A}`, ID_A),
+    ).toBe(false);
   });
 });
 

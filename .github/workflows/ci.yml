@@ -60,6 +60,7 @@ jobs:
           cache-dependency-path: runtime/package-lock.json
       - run: npm ci
       - run: npm run ci -- --bundle --summary-json ci-summary.json
+      - run: npm run test:slow
       - if: always()
         env:
           MCS_CI_JOB: gates
@@ -100,6 +101,7 @@ jobs:
           cache-dependency-path: runtime/package-lock.json
       - run: npm ci
       - run: npm run ci -- --bundle --summary-json ci-summary.json
+      - run: npm run test:slow
       - if: always()
         env:
           MCS_CI_JOB: gates-full

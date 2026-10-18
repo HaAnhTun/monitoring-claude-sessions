@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared defaults for every monitored task. A task's config.json (or a legacy --config file) overrides single keys; dict keys (panels, ui, poll, limits) merge key by key, lists and scalars replace. Keys starting with _ are ignored.",
+  "_comment": "Shared defaults for every monitored task. A task's config.json overrides single keys; dict keys (panels, ui, poll, limits) merge key by key, lists and scalars replace. Keys starting with _ are ignored.",
   "schema_version": 1,
   "title": "Claude sessions monitor",
   "port": 8765,

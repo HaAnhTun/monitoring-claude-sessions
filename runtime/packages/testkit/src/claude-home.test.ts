@@ -32,7 +32,7 @@ function files(dir: string): string[] {
   return out.sort();
 }
 
-/** The spec that corresponds to tests/fixtures/make.py build_home (5 sessions, one subagent, one workflow agent). */
+/** The spec that corresponds to the home of the removed pre-4.0 fixture builder (5 sessions, one subagent, one workflow agent). */
 function makePySpecs(): SessionSpec[] {
   const talk = (b: Parameters<SessionSpec['build']>[0]): void => {
     b.user('FIXTURE Please run the build job');
@@ -60,7 +60,7 @@ function makePySpecs(): SessionSpec[] {
 }
 
 describe('buildClaudeHome', () => {
-  it('has the structure of make.py build_home (file list compare)', () => {
+  it('has the structure of the pre-4.0 fixture home (file list compare)', () => {
     const root = tempDir('home').path;
     const home = buildClaudeHome(root, { sessions: makePySpecs(), nowMs: NOW });
     const expected = [

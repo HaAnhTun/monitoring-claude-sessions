@@ -528,9 +528,11 @@ describe('the active workflow (ADR 0065)', () => {
     expect(runs).toEqual([
       'gates: npm ci',
       `gates: ${gateRun}`,
+      'gates: npm run test:slow',
       `gates: ${summarizeGates}`,
       'gates-full: npm ci',
       `gates-full: ${gateRun}`,
+      'gates-full: npm run test:slow',
       `gates-full: ${summarizeGates}`,
       'macos: npm ci',
       'macos: npm run build',
@@ -551,6 +553,24 @@ describe('the active workflow (ADR 0065)', () => {
     ).scripts;
     expect(scripts['ci']).toBe('node scripts/ci.mjs');
     expect(scripts['test:e2e']).toBe('playwright test -c packages/web/e2e/playwright.config.ts');
+    expect(scripts['test:slow']).toBe('vitest run --project slow');
+    expect(scripts).not.toHaveProperty('test:parity');
+  });
+
+  it('is Python-free: no step, job name or command mentions Python, its test runner or a parity gate (ADR 0066)', () => {
+    // built at run time so that the Python-free guard (python-free.test.ts) does not match this file
+    const banned = new RegExp(
+      [['setup', 'python'].join('-'), ['unit', 'test'].join(''), 'python', 'parity'].join('|'),
+      'i',
+    );
+    for (const [name, body] of Object.entries(asMap(workflow()['jobs'], 'jobs'))) {
+      expect(name, name).not.toMatch(banned);
+      expect(text(asMap(body, name)['name']), name).not.toMatch(banned);
+    }
+    for (const { job: name, step } of allSteps()) {
+      for (const key of ['name', 'run', 'uses']) expect(text(step[key]), `${name} ${key}`).not.toMatch(banned);
+    }
+    expect(readFileSync(WORKFLOW, 'utf8')).not.toMatch(banned);
   });
 
   it('keeps macOS lean: no Playwright, only the platform tests and the bundle smoke', () => {

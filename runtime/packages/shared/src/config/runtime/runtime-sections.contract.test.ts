@@ -28,7 +28,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /** The 22 legacy keys: every non-comment key of the shipped defaults (`schema_version` is shared by both files). */
-const LEGACY_DEFAULTS = asRecord(JSON.parse(readText('config/defaults.json')));
+const LEGACY_DEFAULTS = asRecord(JSON.parse(readText('skills/monitoring-claude-sessions/config/defaults.json')));
 const L_KEYS = Object.keys(LEGACY_DEFAULTS).filter((k) => !k.startsWith('_'));
 
 /** Dotted catalogue path -> value of the parsed default; `alerts.rules.<id>` is one leaf (a whole rule object). */

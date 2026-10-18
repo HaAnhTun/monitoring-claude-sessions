@@ -45,6 +45,9 @@ const CLI_COMMANDS = [
   'restart',
   'verify',
   'serve',
+  'instances',
+  'doctor',
+  'migrate-workspace',
 ];
 
 const PLUGIN_KEYS = ['name', 'displayName', 'version', 'description', 'author', 'repository', 'license', 'keywords'];
@@ -193,10 +196,13 @@ describe('skill folder', () => {
     walk(SKILLDIR);
   });
 
-  it('holds byte copies of the root config/defaults.json and reference/transcript-format.md', () => {
+  it('holds the only copies of config/defaults.json and reference/transcript-format.md (the root originals are gone)', () => {
     for (const file of ['config/defaults.json', 'reference/transcript-format.md']) {
-      expect(readFileSync(join(SKILLDIR, file)).equals(readFileSync(join(REPO, file))), file).toBe(true);
+      expect(existsSync(join(SKILLDIR, file)), file).toBe(true);
+      expect(existsSync(join(REPO, file)), file).toBe(false);
     }
+    expect(existsSync(join(REPO, 'config'))).toBe(false);
+    expect(existsSync(join(REPO, 'reference'))).toBe(false);
   });
 
   it('holds the skill-level runtime defaults', () => {

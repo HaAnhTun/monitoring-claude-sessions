@@ -1,6 +1,6 @@
 // The demo builder of 04 11.5: eight synthetic sessions (A-H) with a fake Claude home, a monitored repo with a chain log and a
 // ledger, a legacy-compatible config, the numbers a test may expect, and the raw hook payloads for `runHookHandler`.
-// It replaces tests/tools/demo.py for the new platform. All content is invented and starts with FIXTURE; ids come from a
+// It replaces the pre-4.0 Python demo builder (removed in 4.0, ADR 0066). All content is invented and starts with FIXTURE; ids come from a
 // seeded counter; timestamps and mtimes derive from `nowMs`; two runs with the same options write identical trees.
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';

@@ -1,6 +1,0 @@
-[
- 400,
- {
-  "error": "hours must be a number"
- }
-]

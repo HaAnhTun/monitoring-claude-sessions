@@ -10,11 +10,6 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./legacy": {
-      "@mcs/source": "./src/legacy/index.ts",
-      "types": "./dist/legacy/index.d.ts",
-      "default": "./dist/legacy/index.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [

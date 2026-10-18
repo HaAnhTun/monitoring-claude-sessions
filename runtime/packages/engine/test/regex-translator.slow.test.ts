@@ -56,7 +56,7 @@ const rejects = Rejects.parse(
 );
 
 /** The migration path: translate, then compile the stored dialect text. Throws for a refused pattern. */
-function compilePyRegex(pattern: string, context: PyRegexContext): CompiledRegex {
+function compileLegacyRegex(pattern: string, context: PyRegexContext): CompiledRegex {
   const translated = translateToDialect(pattern, context);
   if (!translated.ok) throw new Error(`${translated.error.code}: ${translated.error.message}`);
   return compileRegex(translated.value.text, context);
@@ -182,7 +182,7 @@ describe('PyRegex golden: Unicode class sweep (E7)', () => {
   const FULL = new Set(['\\w', '\\d', '\\s', '.', '(?i)\\w', '(?i)\\W']);
   for (const sweep of golden.classes) {
     it(`${sweep.pattern} agrees with CPython on every code point that Python's Unicode tables assign`, () => {
-      const regex = compilePyRegex(sweep.pattern, 'attempts');
+      const regex = compileLegacyRegex(sweep.pattern, 'attempts');
       const python = inRanges(sweep.ranges);
       const step = FULL.has(sweep.pattern) ? 1 : 1 + (sweep.pattern.length % 3);
       const end = FULL.has(sweep.pattern) ? 0x110000 : 0x30000;

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Golden test of the PyJson module (design 01 section 1.9, ADR 0003, plan WP-05).
-// Data: <skill>/tests/legacy-parity/pyjson/pyjson-golden.json, written by Python (gen_pyjson_golden.py).
+// Data: test/fixtures/json-writer/golden.frozen.json, captured from CPython before 4.0 removed Python (ADR 0066).
 // Every expectation below is a string that CPython 3.x produced; this file only compares.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +33,7 @@ const Golden = z.object({
   loneSurrogates: z.array(z.string()),
 });
 
-const GOLDEN_URL = new URL('../../../../tests/legacy-parity/pyjson/pyjson-golden.json', import.meta.url);
+const GOLDEN_URL = new URL('./fixtures/json-writer/golden.frozen.json', import.meta.url);
 const golden = Golden.parse(JSON.parse(readFileSync(fileURLToPath(GOLDEN_URL), 'utf8')));
 
 function describeValue(v: PyJsonValue): string {

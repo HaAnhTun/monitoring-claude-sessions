@@ -1,5 +1,5 @@
 // A fake CLAUDE_CONFIG_DIR (05 4.4): `projects/<project>/<session>.jsonl`, subagent and workflow folders, the pid registry and
-// key decoys. It mirrors `tests/fixtures/make.py build_home` and the layout of the survey (docs/research/transcript-survey.md
+// key decoys. It mirrors the home of the pre-4.0 Python fixture builder (removed in 4.0, ADR 0066) and the layout of the survey (docs/research/transcript-survey.md
 // section 1). Every mtime is set from `nowMs`, never left to the clock (05 4.6 rule 3). The real ~/.claude is never read.
 import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
