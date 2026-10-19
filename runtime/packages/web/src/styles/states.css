@@ -1,74 +1,245 @@
-/* Empty, error and loading states, load more, clamped text, copy button and disclosure (ADR 0071 decision 10). */
+/* Empty, error and loading states, load more, clamped text, copy button and disclosure (ADR 0071 decision 10).
+   Calm cards: a state is a white card with a 1 px border, a muted icon and one sentence; only a failure takes the failed tint,
+   old data the stale tint (never opacity, ADR 0033). Colours come from the tokens only. */
 
-/* Empty, error and loading states (04-ui.md section 7). */
+/* ---- states (04-ui.md section 7) ---- */
 .state {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-5);
+  min-width: 0;
+  padding: var(--sp-5);
+  color: var(--text);
   background: var(--surface);
   border: var(--border-w) solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
 }
 .state--page {
-  padding: var(--sp-6);
+  padding: var(--sp-7) var(--sp-6);
 }
 .state--inline {
-  padding: var(--sp-2) var(--sp-3);
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   font-size: var(--fs-sm);
-}
-.state--error {
-  border-color: var(--failed-fg);
+  line-height: var(--lh-sm);
+  border-radius: var(--radius);
+  box-shadow: none;
 }
 .state__title {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: var(--sp-3);
-  font-weight: 600;
+  min-width: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: var(--fw-semibold);
   overflow-wrap: anywhere;
 }
-.state__body {
+.state__title > .icon {
+  margin-top: 2px;
   color: var(--text-muted);
+}
+.state__heading {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  font-weight: var(--fw-semibold);
+}
+.state__body {
+  max-width: 64ch;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .state__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--sp-3);
 }
+
+/* Empty: centred, the icon above the sentence. */
+.state--empty {
+  align-items: center;
+  padding: var(--sp-7) var(--sp-5);
+  text-align: center;
+}
+.state--empty .state__title {
+  flex-direction: column;
+  align-items: center;
+}
+.state--empty .state__title > .icon {
+  box-sizing: content-box;
+  width: 20px;
+  height: 20px;
+  margin-top: 0;
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+}
+.state--empty .state__body {
+  text-align: center;
+}
+
+/* Error: failed tint; the session that is simply not known is a neutral note; kept old data is the stale tint. */
+.state--error {
+  color: var(--text);
+  background: var(--state-failed-bg);
+  border-color: var(--state-failed-dot);
+  box-shadow: none;
+}
+.state--error .state__title {
+  font-weight: var(--fw-medium);
+}
+.state--error .state__title > .icon {
+  color: var(--state-failed-fg);
+}
+.state--error[data-kind='refresh'] {
+  background: var(--state-stale-bg);
+  border-color: var(--state-stale-dot);
+}
+.state--error[data-kind='refresh'] .state__title > .icon {
+  color: var(--state-stale-fg);
+}
+.state--error[data-kind='not-found'] {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.state--error[data-kind='not-found'] .state__title > .icon {
+  color: var(--text-muted);
+}
+.state--error.state--page {
+  align-items: center;
+  text-align: center;
+}
+.state--error.state--page .state__title {
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ---- loading placeholders: shaped like what is coming, one opacity pulse ---- */
 .skeleton {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+.skeleton__row,
+.skeleton__title,
+.skeleton__cell {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }
 .skeleton__row {
   height: calc(20px * var(--d) + 8px);
-  background: var(--surface-2);
-  border-radius: var(--radius-sm);
-  animation: skeleton-pulse 1.2s ease-in-out infinite;
-}
-.skeleton--tiles {
-  flex-direction: row;
-  flex-wrap: wrap;
-}
-.skeleton--tiles .skeleton__row {
-  flex: 1 1 12em;
-  height: calc(56px * var(--d) + 8px);
-}
-.skeleton--text .skeleton__row {
-  height: 1em;
-  width: 80%;
 }
 @keyframes skeleton-pulse {
   50% {
     opacity: 0.55;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .skeleton__row {
-    animation: none;
-  }
+
+/* table: a card with a header bar and rows of cells; the first column is wide, the others narrower */
+.skeleton--table {
+  gap: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
 }
-/* Load more. */
+.skeleton__head,
+.skeleton--table .skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-4);
+}
+.skeleton__head {
+  height: calc(28px * var(--d) + 8px);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.skeleton--table .skeleton__row {
+  height: calc(36px * var(--d) + 8px);
+  background: none;
+  border-radius: 0;
+  border-bottom: var(--border-w) solid var(--border);
+}
+.skeleton--table .skeleton__row:last-child {
+  border-bottom: 0;
+}
+.skeleton__cell {
+  flex: 1 1 0;
+  height: 10px;
+}
+/* the same shares as the cells of a row, so a header bar stands over its column */
+.skeleton__cell:first-child {
+  flex-grow: 3;
+}
+.skeleton__cell:nth-child(2) {
+  flex-grow: 2;
+}
+.skeleton__head .skeleton__cell {
+  height: 8px;
+  background: none;
+}
+.skeleton__head .skeleton__cell::after {
+  display: block;
+  width: 56%;
+  max-width: 72px;
+  height: 8px;
+  content: '';
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+
+/* header: a title bar over a few meta lines (same height as the real page header) */
+.skeleton__title {
+  width: 42%;
+  height: calc(22px * var(--d) + 8px);
+}
+.skeleton--header .skeleton__row {
+  width: 64%;
+  height: 14px;
+}
+.skeleton--header .skeleton__row:nth-child(odd) {
+  width: 48%;
+}
+
+/* tiles: cards of the size of a headline figure */
+.skeleton--tiles {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.skeleton--tiles .skeleton__row {
+  flex: 1 1 12em;
+  height: calc(72px * var(--d) + 8px);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* list: rows of a list card */
+.skeleton--list .skeleton__row {
+  height: calc(28px * var(--d) + 8px);
+  border-radius: var(--radius);
+}
+
+/* text: lines of different length */
+.skeleton--text .skeleton__row {
+  height: 12px;
+  width: 92%;
+}
+.skeleton--text .skeleton__row:nth-child(even) {
+  width: 78%;
+}
+.skeleton--text .skeleton__row:last-child {
+  width: 56%;
+}
+
+/* ---- load more ---- */
 .load-more {
   display: flex;
   flex-wrap: wrap;
@@ -79,6 +250,8 @@
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
+
+/* ---- clamped text and copy button ---- */
 .clamped__note {
   margin: var(--sp-2) 0 0;
 }
@@ -89,7 +262,7 @@
   font-size: var(--fs-xs);
 }
 .copy-btn--compact {
-  min-height: 24px;
+  min-height: var(--ctl-h-inline);
   padding: var(--sp-1) var(--sp-3);
 }
 .copy-btn.is-copied {
@@ -98,8 +271,14 @@
 .copy-btn.is-failed {
   color: var(--failed-fg);
 }
+
+/* ---- disclosure ---- */
 .disclosure__toggle {
   padding-inline: var(--sp-2);
+  color: var(--text-muted);
+}
+.disclosure__toggle[aria-expanded='true'] {
+  color: var(--text);
 }
 .disclosure__panel {
   padding: var(--sp-2) var(--sp-4);

@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
 
+import { useT } from '../i18n/context.ts';
+
 /** Expanded text is cut here; the rest stays reachable through Copy (04-ui.md section 8, ADR 0034). */
 export const MAX_EXPANDED_CHARS = 200_000;
 /** Legacy clamp of a collapsed text. */
@@ -34,6 +36,7 @@ export function ClampedText({
   expanded,
   onToggle,
 }: ClampedTextProps) {
+  const t = useT();
   const [local, setLocal] = useState(false);
   const isExpanded = expanded ?? local;
   const bodyId = `${id}-body`;
@@ -49,11 +52,7 @@ export function ClampedText({
   return (
     <div className="clamped">
       <div id={bodyId}>{render(shown)}</div>
-      {tooLong ? (
-        <p className="clamped__note muted small">
-          {`Text too long to show here (${String(text.length)} characters). Use Copy.`}
-        </p>
-      ) : null}
+      {tooLong ? <p className="clamped__note muted small">{t('common.textTooLong', { length: text.length })}</p> : null}
       <button
         type="button"
         className="btn btn-quiet clamped__toggle"
@@ -65,7 +64,7 @@ export function ClampedText({
           onToggle?.(id, next);
         }}
       >
-        {isExpanded ? 'Show less' : 'Show more'}
+        {isExpanded ? t('common.showLess') : t('common.showMore')}
       </button>
     </div>
   );

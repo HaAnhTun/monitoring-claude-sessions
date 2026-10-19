@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { fmtClock, fmtRelative, timeTitle } from '../lib/format.ts';
+import { useFormat, useT } from '../i18n/context.ts';
 
 export type RelativeTimeMode = 'relative' | 'clock' | 'both';
 
@@ -40,18 +40,29 @@ export function useNow(enabled = true): number {
   return now;
 }
 
-/** A timestamp as text: its age, its wall-clock time or both. The `title` always has the full ISO time and the age. */
+/**
+ * A timestamp as text: its age, its wall-clock time or both, in the language of the page (`useFormat`). The
+ * `title` always has the full ISO time and the age.
+ */
 export function RelativeTime({ iso, mode = 'relative' }: RelativeTimeProps) {
+  const t = useT();
+  const format = useFormat();
   const now = useNow(mode !== 'clock' && iso !== null);
-  if (iso === null || iso === '') return <span className="muted">-</span>;
-  const relative = fmtRelative(iso, now);
-  const clock = fmtClock(iso);
+  if (iso === null || iso === '') {
+    return (
+      <span className="muted" title={t('common.notAvailable')}>
+        -
+      </span>
+    );
+  }
+  const relative = format.relative(iso, now);
+  const clock = format.clock(iso);
   let label: string;
   if (mode === 'clock') label = clock;
   else if (mode === 'both') label = relative === '' ? clock : `${clock} (${relative})`;
   else label = relative;
   return (
-    <time dateTime={iso} title={timeTitle(iso, now)}>
+    <time dateTime={iso} title={relative === '' ? iso : `${iso} (${relative})`}>
       {label === '' ? iso : label}
     </time>
   );

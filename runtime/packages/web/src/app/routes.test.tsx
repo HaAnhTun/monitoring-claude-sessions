@@ -4,6 +4,7 @@ import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { Link, MemoryRouter, Outlet, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { msg } from '../test/msg.ts';
 import { AppRoutes, ROUTES, type PageRegistry } from './routes.tsx';
 
 function lazyOf(component: ComponentType): LazyExoticComponent<ComponentType> {
@@ -79,9 +80,9 @@ describe('route table (04-ui.md section 3.1)', () => {
     renderAt('/no/such/page');
     expect(await screen.findByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
     expect(within(screen.getByRole('main')).getByText('/no/such/page')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/');
-    expect(screen.getByRole('link', { name: 'Sessions' })).toHaveAttribute('href', '/sessions');
-    expect(document.title).toBe('Not found - Claude session monitor');
+    expect(screen.getByRole('button', { name: msg('notFound.openOverview') })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: msg('notFound.openSessions') })).toHaveAttribute('href', '/sessions');
+    expect(document.title).toBe(`${msg('notFound.documentTitle')} - Claude session monitor`);
   });
 
   it('does not move focus on the first load', async () => {

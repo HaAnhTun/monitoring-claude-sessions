@@ -3,7 +3,8 @@ import { useLocation } from 'react-router';
 
 import { Button } from '../components/Button.tsx';
 import { ErrorState } from '../components/ErrorState.tsx';
-import { ErrorBoundary } from './ErrorBoundary.tsx';
+import { useT } from '../i18n/context.ts';
+import { ErrorBoundary, type ErrorBoundaryFallbackProps } from './ErrorBoundary.tsx';
 
 function copyDetails(error: Error, componentStack: string | undefined): void {
   const text = [`${error.name}: ${error.message}`, componentStack ?? ''].join('\n').trim();
@@ -12,25 +13,28 @@ function copyDetails(error: Error, componentStack: string | undefined): void {
   navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
+/** The crash state of a route: Reload view resets the boundary, Copy error details puts name, message and stack on the clipboard. */
+function CrashFallback({ error, reset, componentStack }: ErrorBoundaryFallbackProps) {
+  const t = useT();
+  return (
+    <ErrorState kind="crash" size="page" onRetry={reset}>
+      <Button
+        icon="copy"
+        onClick={() => {
+          copyDetails(error, componentStack);
+        }}
+      >
+        {t('common.copyErrorDetails')}
+      </Button>
+    </ErrorState>
+  );
+}
+
 /** Wraps one route element; navigating to another path leaves the fallback (04-ui.md 3.1 rule 2, 3.4). */
 export function RouteErrorBoundary({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   return (
-    <ErrorBoundary
-      resetKeys={[pathname]}
-      fallback={({ error, reset, componentStack }) => (
-        <ErrorState kind="crash" size="page" onRetry={reset}>
-          <Button
-            icon="copy"
-            onClick={() => {
-              copyDetails(error, componentStack);
-            }}
-          >
-            Copy error details
-          </Button>
-        </ErrorState>
-      )}
-    >
+    <ErrorBoundary resetKeys={[pathname]} fallback={(props) => <CrashFallback {...props} />}>
       {children}
     </ErrorBoundary>
   );

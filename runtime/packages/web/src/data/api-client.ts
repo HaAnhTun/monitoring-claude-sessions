@@ -141,7 +141,7 @@ export function createApiClient(o: ApiClientOptions = {}): ApiClient {
         text = await response.text();
       } catch {
         if (callerAborted()) throw fail('aborted', 0, '');
-        throw fail(timeout.fired ? 'timeout' : 'network', 0, '');
+        throw timeout.fired ? fail('timeout', 0, '', { timeoutMs }) : fail('network', 0, '');
       }
 
       const body = parseJson(text);

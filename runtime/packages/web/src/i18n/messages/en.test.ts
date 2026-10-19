@@ -74,7 +74,12 @@ describe('messages/en.ts', () => {
         .split('\n')
         .slice(1)
         .filter((line) => line.trim() !== '');
-      for (const line of inside) expect(line, `${wp}: ${line}`).toMatch(/^\s*'[^']+':\s*('[^']*'|"[^"]*"|`[^`]*`|$)/);
+      // An entry is `'key': 'text',`; Prettier moves a text that does not fit in 120 columns to a line of its own after `'key':`.
+      for (const line of inside) {
+        expect(line, `${wp}: ${line}`).toMatch(
+          /^\s*('[^']+':\s*('[^']*'|"[^"]*"|`[^`]*`|$)|('[^']*'|"[^"]*"|`[^`]*`),)/,
+        );
+      }
     }
   });
 });

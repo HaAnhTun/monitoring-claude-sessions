@@ -1,9 +1,12 @@
 // The views the visual QA tool can shoot (WP-122). One base view per route exists from the start, so that every work package can
 // capture its page before its own variants exist; a work package that adds variants (loading, error, empty, popovers, tabs)
 // writes new entries inside its own marked block below, with ids that no base view and no other block uses.
-import type { Page } from '@playwright/test';
+import type { Page as BrowserPage } from '@playwright/test';
 
-import type { FixtureApi, FixtureState } from './fixture-api.ts';
+import type { Page, SessionSummary } from '@mcs/shared';
+
+import { iso, makeSession, makeState } from '../../src/test/fixtures/index.ts';
+import { fixtureId, type FixtureApi, type FixtureState } from './fixture-api.ts';
 import type { QaInstance } from './qa-instance.ts';
 
 /** `live` shoots a real instance on synthetic data; `fixture` answers the API from the fake server (states a real instance cannot show quickly). */
@@ -17,7 +20,7 @@ export interface ViewData {
 
 /** What `setup` gets: the page as the tool loaded it and the sources behind it. */
 export interface ViewContext {
-  readonly page: Page;
+  readonly page: BrowserPage;
   readonly mode: ViewMode;
   readonly locale: 'en' | 'vi';
   /** Set in live mode. */
@@ -52,6 +55,34 @@ export const PLANNED_ROUTE_PATHS: readonly string[] = ['/search'];
 
 const detail = (data: ViewData): Record<string, string> => ({ sessionId: data.detailSessionId });
 
+/** Fixture mode: appends a session whose state is an inferred `running` to the list the app polls, and waits until it is drawn. */
+async function addInferredRunning({ page, fixture }: ViewContext): Promise<void> {
+  if (fixture === null) return;
+  const listSessions = fixture.fake.handlers.listSessions;
+  if (listSessions === undefined) throw new Error('the fixture API has no session list');
+  fixture.fake.handlers.listSessions = async (query, request) => {
+    const body = (await listSessions(query, request)) as Page<SessionSummary>;
+    const inferredRunning = makeSession({
+      id: fixtureId(13),
+      seq: 13,
+      label: 'Rebuild the search index',
+      startedAt: iso(-40 * 60),
+      lastActivityAt: iso(-14 * 60),
+      state: makeState('running', {
+        basis: 'inferred',
+        confidence: 'medium',
+        rule: 'S-7e',
+        evidence: [{ kind: 'clock:quiet', at: iso(-14 * 60), text: 'quiet 14m' }],
+      }),
+    });
+    return { ...body, items: [...body.items, inferredRunning], total: (body.total ?? body.items.length) + 1 };
+  };
+  await page
+    .locator('main [data-state="running"][data-basis="inferred"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 20_000 });
+}
+
 /** The page heading: every page has one, so it is the generic sign that the page is drawn. */
 const HEADING = 'main h1';
 
@@ -78,8 +109,43 @@ export const VIEWS: readonly ViewSpec[] = [
   // @wp-begin WP-67
   // @wp-end WP-67
   // @wp-begin WP-112
+  // The new loading and error states on the sessions page: the request never finishes, or the server answers 500 every time.
+  {
+    id: 'sessions-loading',
+    path: '/sessions',
+    mode: 'fixture',
+    state: 'loading',
+    wait: 'main[data-stale-scope] .skeleton--table',
+  },
+  {
+    id: 'sessions-error',
+    path: '/sessions',
+    mode: 'fixture',
+    state: 'error',
+    wait: 'main[data-stale-scope] .state--error',
+  },
   // @wp-end WP-112
   // @wp-begin WP-113
+  {
+    // Every lifecycle state at once, observed and inferred: the fixture list holds the ten states and the inferred variants of
+    // working, stale and unknown; setup adds an inferred "running" (the fifth shape of ADR 0074 decision 2).
+    id: 'sessions-all-states',
+    path: '/sessions',
+    mode: 'fixture',
+    wait: 'main [data-state="working"]',
+    setup: addInferredRunning,
+  },
+  {
+    // The same list scrolled to its last rows (Stale, Unknown and the inferred Running), which the first screen does not reach.
+    id: 'sessions-all-states-end',
+    path: '/sessions',
+    mode: 'fixture',
+    wait: 'main [data-state="working"]',
+    setup: async (context) => {
+      await addInferredRunning(context);
+      await context.page.locator('main [data-state="running"][data-basis="inferred"]').last().scrollIntoViewIfNeeded();
+    },
+  },
   // @wp-end WP-113
   // @wp-begin WP-114
   // @wp-end WP-114

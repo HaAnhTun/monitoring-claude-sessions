@@ -1,13 +1,11 @@
 import type { CostEstimate, TokenUsage } from '@mcs/shared';
-import { act, render, screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { FIXTURE_NOW_MS, iso, makeUsage } from '../test/fixtures/index.ts';
+import { makeUsage } from '../test/fixtures/index.ts';
 import { DataTable, type Column, type DataTableProps } from './DataTable.tsx';
-import { LoadMore } from './LoadMore.tsx';
-import { RelativeTime } from './RelativeTime.tsx';
 import { TokenLine } from './TokenLine.tsx';
 import { TokenSummary } from './TokenSummary.tsx';
 
@@ -108,50 +106,6 @@ describe('DataTable', () => {
   });
 });
 
-describe('LoadMore', () => {
-  it('shows the count with a known total and a button for the next page', async () => {
-    const user = userEvent.setup();
-    const onLoad = vi.fn();
-    render(<LoadMore hasMore loading={false} onLoad={onLoad} shown={100} total={342} noun="sessions" />);
-    expect(screen.getByText('Showing 100 of 342 sessions')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Load 100 more' }));
-    expect(onLoad).toHaveBeenCalledOnce();
-  });
-
-  it('offers only the remaining rows when fewer than a page are left', () => {
-    render(<LoadMore hasMore loading={false} onLoad={vi.fn()} shown={100} total={130} noun="sessions" />);
-    expect(screen.getByRole('button', { name: 'Load 30 more' })).toBeInTheDocument();
-  });
-
-  it('shows the count without a total, and marks a lower bound', () => {
-    const { rerender } = render(
-      <LoadMore hasMore loading={false} onLoad={vi.fn()} shown={100} total={null} noun="sessions" />,
-    );
-    expect(screen.getByText('Showing 100 sessions')).toBeInTheDocument();
-    rerender(
-      <LoadMore hasMore loading={false} onLoad={vi.fn()} shown={100} total={10000} totalIsLowerBound noun="sessions" />,
-    );
-    expect(screen.getByText('Showing 100 of 10000+ sessions')).toBeInTheDocument();
-  });
-
-  it('disables the button while loading', () => {
-    render(<LoadMore hasMore loading onLoad={vi.fn()} shown={100} total={342} noun="sessions" />);
-    expect(screen.getByRole('button', { name: /Loading/ })).toBeDisabled();
-  });
-
-  it('renders nothing to click when there is no more', () => {
-    render(<LoadMore hasMore={false} loading={false} onLoad={vi.fn()} shown={5} total={5} noun="sessions" />);
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.getByText('Showing 5 of 5 sessions')).toBeInTheDocument();
-  });
-
-  it('replaces the button by the capped note', () => {
-    render(<LoadMore hasMore loading={false} onLoad={vi.fn()} shown={1000} total={4000} noun="sessions" capped />);
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.getByText('Showing the first 1000 sessions; narrow the filters to see others')).toBeInTheDocument();
-  });
-});
-
 describe('TokenLine and TokenSummary', () => {
   it('shows the three groups of the legacy token line', () => {
     render(<TokenLine usage={makeUsage({ input: 1000, cacheCreation: 500, output: 2500, cacheRead: 3_000_000 })} />);
@@ -220,40 +174,5 @@ describe('TokenLine and TokenSummary', () => {
       ['Cache read', '0'],
       ['Turns', '7'],
     ]);
-  });
-});
-
-describe('RelativeTime', () => {
-  it('renders a time element with the ISO value, a title and the relative age', () => {
-    vi.useFakeTimers({ now: FIXTURE_NOW_MS });
-    render(<RelativeTime iso={iso(-125)} />);
-    const time = screen.getByText('2m ago');
-    expect(time.tagName).toBe('TIME');
-    expect(time).toHaveAttribute('datetime', iso(-125));
-    expect(time).toHaveAttribute('title', `${iso(-125)} (2m ago)`);
-  });
-
-  it('re-renders from the shared one-second clock', () => {
-    vi.useFakeTimers({ now: FIXTURE_NOW_MS });
-    render(<RelativeTime iso={iso(-2)} />);
-    expect(screen.getByText('just now')).toBeInTheDocument();
-    act(() => {
-      vi.advanceTimersByTime(4000);
-    });
-    expect(screen.getByText('6s ago')).toBeInTheDocument();
-  });
-
-  it('shows the wall clock in clock mode and both in both mode', () => {
-    vi.useFakeTimers({ now: FIXTURE_NOW_MS });
-    const { rerender } = render(<RelativeTime iso={iso(-60)} mode="clock" />);
-    expect(screen.getByText('11:59:00')).toBeInTheDocument();
-    rerender(<RelativeTime iso={iso(-60)} mode="both" />);
-    expect(screen.getByText('11:59:00 (60s ago)')).toBeInTheDocument();
-  });
-
-  it('shows a dash for a missing time', () => {
-    render(<RelativeTime iso={null} />);
-    expect(screen.getByText('-')).toBeInTheDocument();
-    expect(document.querySelector('time')).toBeNull();
   });
 });

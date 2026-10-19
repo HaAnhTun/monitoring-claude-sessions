@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { useT } from '../i18n/context.ts';
 import { copyText, type ClipboardDeps } from '../lib/clipboard.ts';
 import { useAnnounce } from '../state/announcer.tsx';
 
@@ -8,7 +9,7 @@ export interface CopyButtonProps {
   /** Accessible name: "Copy tool input". */
   label: string;
   compact?: boolean;
-  /** Visible content; "Copy" by default. */
+  /** Visible content; the catalogue's "Copy" by default. */
   children?: ReactNode;
   /** The clipboard environment (tests); the browser's by default. */
   clipboard?: ClipboardDeps;
@@ -16,8 +17,6 @@ export interface CopyButtonProps {
   onResult?: (ok: boolean, message: string) => void;
 }
 
-export const COPIED_MESSAGE = 'Copied';
-export const COPY_FAILED_MESSAGE = 'Copy failed: select the text and press Ctrl+C';
 const CONFIRM_MS = 2000;
 
 /**
@@ -28,6 +27,7 @@ const CONFIRM_MS = 2000;
 export function CopyButton({ text, label, compact = false, children, clipboard, onResult }: CopyButtonProps) {
   const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const announce = useAnnounce();
+  const t = useT();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -39,7 +39,7 @@ export function CopyButton({ text, label, compact = false, children, clipboard, 
   async function onClick(): Promise<void> {
     const value = typeof text === 'function' ? text() : text;
     const ok = await copyText(value, clipboard);
-    const message = ok ? COPIED_MESSAGE : COPY_FAILED_MESSAGE;
+    const message = ok ? t('common.copied') : t('common.copyFailed');
     setStatus(ok ? 'copied' : 'failed');
     announce(message, { force: true });
     onResult?.(ok, message);
@@ -52,7 +52,7 @@ export function CopyButton({ text, label, compact = false, children, clipboard, 
 
   const base = compact ? 'btn btn-quiet copy-btn copy-btn--compact' : 'btn btn-quiet copy-btn';
   const className = status === 'idle' ? base : `${base} is-${status}`;
-  const visible = status === 'copied' && children === undefined ? COPIED_MESSAGE : (children ?? 'Copy');
+  const visible = status === 'copied' && children === undefined ? t('common.copied') : (children ?? t('common.copy'));
   return (
     <button
       type="button"

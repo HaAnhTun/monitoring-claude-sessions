@@ -157,6 +157,7 @@ describe('createApiClient: failures', () => {
     const error = await pending;
     expect(error.info.kind).toBe('timeout');
     expect(error.message).toBe('No answer from the monitor within 8 s');
+    expect(error.info.timeoutMs).toBe(8000);
     expect(client.tracker.get('health')?.failures).toBe(1);
   });
 
@@ -347,98 +348,12 @@ describe('endpoint tracker', () => {
   });
 });
 
-describe('error-code table of 04 5.1 (handlingFor)', () => {
-  function http(status: number, code: ErrorCode | null, serverMessage = 'server text'): ApiError {
-    return new ApiError('m', {
-      kind: 'http',
-      status,
-      code,
-      endpoint: 'sessions',
-      requestId: 'r-0123456789ab',
-      serverMessage,
-    });
+// The key and arguments of every row of the table are covered by api-errors.test.ts; this block keeps the agreement with the
+// retry policy of the query client.
+describe('error-code table of 04 5.1 (handlingFor) and the query retry policy', () => {
+  function http(status: number, code: ErrorCode | null): ApiError {
+    return new ApiError('m', { kind: 'http', status, code, endpoint: 'sessions', requestId: 'r-0123456789ab' });
   }
-
-  it('cursor_invalid restarts the infinite list and is not retried', () => {
-    expect(handlingFor(http(400, 'cursor_invalid'))).toMatchObject({ action: 'restart-list', retry: 'no' });
-  });
-
-  it.each([
-    'validation_failed',
-    'param_repeated',
-    'range_invalid',
-    'range_too_large',
-    'filter_requires_scope',
-    'query_too_short',
-  ] as const)('%s is a rejected filter with the envelope message, not retried', (code) => {
-    const handling = handlingFor(http(400, code, 'q is too short'));
-    expect(handling.action).toBe('rejected-filter');
-    expect(handling.retry).toBe('no');
-    expect(handling.message).toBe('The monitor rejected this filter: q is too short');
-  });
-
-  it.each(['host_not_allowed', 'origin_not_allowed', 'cross_site_request'] as const)(
-    '%s is a full-page refusal that names `$MCS status`, not retried',
-    (code) => {
-      const handling = handlingFor(http(403, code));
-      expect(handling.action).toBe('refused-address');
-      expect(handling.retry).toBe('no');
-      expect(handling.message).toBe(
-        "The monitor refused this page's address. Open the URL printed by `$MCS status --task <slug>`.",
-      );
-    },
-  );
-
-  it.each([
-    'session_not_found',
-    'agent_not_found',
-    'event_not_found',
-    'work_item_not_found',
-    'route_not_found',
-  ] as const)('%s is a not-found state, not retried', (code) => {
-    expect(handlingFor(http(404, code))).toMatchObject({ action: 'not-found', retry: 'no' });
-  });
-
-  it('panel_disabled removes the panel and is not retried', () => {
-    expect(handlingFor(http(404, 'panel_disabled'))).toMatchObject({ action: 'panel-removed', retry: 'no' });
-  });
-
-  it('transcript_gone is the gone state', () => {
-    expect(handlingFor(http(410, 'transcript_gone'))).toMatchObject({ action: 'transcript-gone', retry: 'no' });
-  });
-
-  it.each(['search_busy', 'export_busy'] as const)('%s is retried once, then shows busy text', (code) => {
-    const handling = handlingFor(http(429, code));
-    expect(handling).toMatchObject({ action: 'busy', retry: 'once' });
-    expect(handling.message).toContain('busy');
-  });
-
-  it('internal_error carries the request id and is retried with backoff', () => {
-    const handling = handlingFor(http(500, 'internal_error'));
-    expect(handling).toMatchObject({ action: 'internal', retry: 'backoff' });
-    expect(handling.message).toContain('r-0123456789ab');
-  });
-
-  it.each(['db_busy', 'shutting_down', 'stream_limit'] as const)('%s is retried with backoff', (code) => {
-    expect(handlingFor(http(503, code))).toMatchObject({ action: 'unavailable', retry: 'backoff', healthNote: null });
-  });
-
-  it('disk_full is retried and adds the disk note for the health details', () => {
-    expect(handlingFor(http(503, 'disk_full'))).toMatchObject({
-      action: 'unavailable',
-      retry: 'backoff',
-      healthNote: "The monitor's disk is full",
-    });
-  });
-
-  it('any other code is grouped by status and the code goes to the health details', () => {
-    expect(handlingFor(http(409, 'instance_mismatch'))).toMatchObject({
-      action: 'other',
-      retry: 'no',
-      healthNote: 'instance_mismatch',
-    });
-    expect(handlingFor(http(502, null))).toMatchObject({ action: 'other', retry: 'backoff' });
-  });
 
   it('every catalogue code has a handling row whose retry agrees with the query retry policy', () => {
     for (const code of ERROR_CODES) {

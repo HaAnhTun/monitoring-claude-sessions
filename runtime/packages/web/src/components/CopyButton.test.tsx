@@ -1,13 +1,15 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AnnouncerProvider } from '../state/announcer.tsx';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
 import { CopyButton } from './CopyButton.tsx';
 
 function renderButton(ui: ReactElement) {
-  return render(<AnnouncerProvider>{ui}</AnnouncerProvider>);
+  return renderWithIntl(<AnnouncerProvider>{ui}</AnnouncerProvider>);
 }
 
 afterEach(() => {
@@ -30,9 +32,9 @@ describe('CopyButton', () => {
     await user.click(screen.getByRole('button', { name: 'Copy tool input' }));
     expect(writeText).toHaveBeenCalledWith('the text');
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Copied');
+      expect(screen.getByRole('status')).toHaveTextContent(msg('common.copied'));
     });
-    expect(onResult).toHaveBeenCalledWith(true, 'Copied');
+    expect(onResult).toHaveBeenCalledWith(true, msg('common.copied'));
   });
 
   it('reads a text function at click time', async () => {
@@ -66,7 +68,7 @@ describe('CopyButton', () => {
     expect(writeText).not.toHaveBeenCalled();
     expect(execCopy).toHaveBeenCalledWith('fallback');
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Copied');
+      expect(screen.getByRole('status')).toHaveTextContent(msg('common.copied'));
     });
   });
 
@@ -79,7 +81,7 @@ describe('CopyButton', () => {
     await user.click(screen.getByRole('button', { name: 'Copy it' }));
     expect(exec).toHaveBeenCalledWith('copy');
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Copied');
+      expect(screen.getByRole('status')).toHaveTextContent(msg('common.copied'));
     });
   });
 
@@ -96,9 +98,9 @@ describe('CopyButton', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Copy it' }));
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Copy failed: select the text and press Ctrl+C');
+      expect(screen.getByRole('status')).toHaveTextContent(msg('common.copyFailed'));
     });
-    expect(onResult).toHaveBeenCalledWith(false, 'Copy failed: select the text and press Ctrl+C');
+    expect(onResult).toHaveBeenCalledWith(false, msg('common.copyFailed'));
   });
 
   it('shows custom visible content and the compact style', () => {
@@ -120,18 +122,18 @@ describe('CopyButton', () => {
       button.click();
       await Promise.resolve();
     });
-    expect(button).toHaveTextContent('Copied');
+    expect(button).toHaveTextContent(msg('common.copied'));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500);
     });
-    expect(button).toHaveTextContent('Copy');
-    expect(button).not.toHaveTextContent('Copied');
+    expect(button).toHaveTextContent(msg('common.copy'));
+    expect(button).not.toHaveTextContent(msg('common.copied'));
   });
 
   it('works outside the announcer provider and still reports through onResult', async () => {
     const user = userEvent.setup();
     const onResult = vi.fn();
-    render(
+    renderWithIntl(
       <CopyButton
         text="x"
         label="Copy it"
@@ -140,7 +142,7 @@ describe('CopyButton', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Copy it' }));
-    expect(onResult).toHaveBeenCalledWith(true, 'Copied');
+    expect(onResult).toHaveBeenCalledWith(true, msg('common.copied'));
     expect(screen.queryByRole('status')).toBeNull();
   });
 
@@ -152,5 +154,17 @@ describe('CopyButton', () => {
       </>,
     );
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+  });
+
+  it('shows its default text and its confirmation in the language of the page', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(
+      <CopyButton text="x" label="Copy it" clipboard={{ isSecureContext: false, execCopy: () => true }} />,
+      { locale: 'vi' },
+    );
+    const button = screen.getByRole('button', { name: 'Copy it' });
+    expect(button).toHaveTextContent(msg('common.copy', undefined, 'vi'));
+    await user.click(button);
+    expect(button).toHaveTextContent(msg('common.copied', undefined, 'vi'));
   });
 });

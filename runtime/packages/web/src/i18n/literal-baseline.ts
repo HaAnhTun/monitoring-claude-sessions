@@ -10,16 +10,8 @@ export const LITERAL_BASELINE: readonly string[] = [
   'data/hooks/usePanel.ts',
   // @wp-end WP-65
   // @wp-begin WP-112
-  'app/NotFoundPage.tsx',
-  'app/PageSkeleton.tsx',
-  'app/RouteErrorBoundary.tsx',
-  'components/ClampedText.tsx',
-  'components/ErrorState.tsx',
-  'components/LoadMore.tsx',
   // @wp-end WP-112
   // @wp-begin WP-113
-  'components/StateBadge.tsx',
-  'lib/lifecycle-display.ts',
   // @wp-end WP-113
   // @wp-begin WP-114
   'app/routes.tsx',
@@ -77,7 +69,6 @@ export const LITERAL_BASELINE: readonly string[] = [
   // @wp-end WP-120
   // @wp-begin WP-124
   'app/usePageChrome.ts',
-  'components/CopyButton.tsx',
   'components/TokenSummary.tsx',
   'data/endpoints.ts',
   'lib/filters.ts',
