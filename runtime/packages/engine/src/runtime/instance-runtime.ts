@@ -504,6 +504,9 @@ registeredFactories.publishRouteFile = publishRouteFile;
 // @wp-end WP-35
 
 // @wp-begin WP-41
+import { createPanelService } from '../panels/service.ts';
+
+registeredFactories.createPanelService = createPanelService;
 // @wp-end WP-41
 
 // @wp-begin WP-59
