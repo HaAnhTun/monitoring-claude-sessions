@@ -3,8 +3,10 @@
 // everything else is refused here, loudly, with the construct class as `code` and a position in code points.
 //
 // The dialect compiles every pattern with fixed flags (`sv` for a session rule, `vy` for attempts) and has no `i` flag,
-// so the emitter always expands case-insensitive letters by hand and never relies on the `m` or `s` flag: the dot, the
-// anchors and the line ends are explicit in the text, which therefore means the same under the dialect flags.
+// so the emitter expands case-insensitive letters by hand and never relies on the `i` or `m` flag. The text is the
+// readable dialect text of ADR 0067 (WP-138): printable characters stay literal, `^` and `$` are used where they mean
+// the same, and only a session rule relies on the `s` flag, for a dot that DOTALL leaves in force. The text therefore
+// means the same under the dialect flags.
 import { RegexCompileError, compileRegex } from '../../regex/index.ts';
 import { PyRegexFailure } from './ast.ts';
 import { checkExactness } from './analyze.ts';
@@ -44,7 +46,7 @@ function checkDialect(text: string, ctx: PyRegexContext, groupCount: number, gro
 function translateOrThrow(source: string, ctx: PyRegexContext): DialectPattern {
   const parsed = parsePyRegex(source, ctx);
   checkExactness(parsed.root, parsed.groupCount);
-  const text = emit(parsed.root, true);
+  const text = emit(parsed.root, ctx);
   checkDialect(text, ctx, parsed.groupCount, parsed.groupNames);
   return { source, text, context: ctx, groupCount: parsed.groupCount, groupNames: parsed.groupNames };
 }

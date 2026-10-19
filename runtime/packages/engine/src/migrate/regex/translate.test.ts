@@ -51,48 +51,52 @@ describe('translateToDialect result shape', () => {
   });
 });
 
-describe('literal emission', () => {
-  it('writes [A-Za-z0-9_] raw and every other code point as a braced escape', () => {
-    expect(ok('a-b_9').text).toBe(String.raw`a\u{2d}b_9`);
-    expect(ok(String.fromCodePoint(0xe9, 0x1f600)).text).toBe(String.raw`\u{e9}\u{1f600}`);
-    expect(ok(String.raw`\.\[\(`).text).toBe(String.raw`\u{2e}\u{5b}\u{28}`);
+describe('literal emission (the readability table is in dialect.test.ts)', () => {
+  it('keeps printable characters literal, escapes the syntax characters and braces the rest', () => {
+    expect(ok('a-b_9').text).toBe('a-b_9');
+    expect(ok(String.fromCodePoint(0xe9, 0x1f600)).text).toBe(String.fromCodePoint(0xe9, 0x1f600));
+    expect(ok(String.fromCodePoint(0xa0, 0x301)).text).toBe(String.raw`\u{a0}\u{301}`);
+    expect(ok(String.raw`\.\[\(`).text).toBe(String.raw`\.\[\(`);
   });
 
   it('keeps a brace that does not form a quantifier as a literal', () => {
-    expect(ok('a{').text).toBe(String.raw`a\u{7b}`);
-    expect(ok('a{}').text).toBe(String.raw`a\u{7b}\u{7d}`);
-    expect(ok('a{b}').text).toBe(String.raw`a\u{7b}b\u{7d}`);
-    expect(ok('a{1,x}').text).toBe(String.raw`a\u{7b}1\u{2c}x\u{7d}`);
+    expect(ok('a{').text).toBe(String.raw`a\{`);
+    expect(ok('a{}').text).toBe(String.raw`a\{\}`);
+    expect(ok('a{b}').text).toBe(String.raw`a\{b\}`);
+    expect(ok('a{1,x}').text).toBe(String.raw`a\{1,x\}`);
   });
 
   it('decodes the str-pattern escapes', () => {
     expect(ok(String.raw`\x41\u0042\U00000043\n\t`).text).toBe(String.raw`ABC\u{a}\u{9}`);
-    expect(ok(String.raw`\0\012\101\377`).text).toBe(String.raw`\u{0}\u{a}A\u{ff}`);
+    expect(ok(String.raw`\0\012\101\377`).text).toBe(String.raw`\u{0}\u{a}A` + String.fromCodePoint(0xff));
   });
 });
 
 describe('dot, anchors and line semantics', () => {
-  it('emulates the Python dot: only LF is excluded unless DOTALL', () => {
+  it('emulates the Python dot: only LF is excluded unless DOTALL; only a session rule relies on the dialect s flag', () => {
     expect(ok('a.b', 'attempts').text).toBe(String.raw`a[^\n]b`);
-    expect(ok('a.b', 'session_rule').text).toBe(String.raw`a[\s\S]b`);
+    expect(ok('a.b', 'session_rule').text).toBe('a.b');
     expect(ok('(?s)a.b', 'attempts').text).toBe(String.raw`a[\s\S]b`);
+    expect(ok('(?-s:a.b)', 'session_rule').text).toBe(String.raw`(?:a[^\n]b)`);
   });
 
-  it('emulates ^ and $ without the JS m flag', () => {
-    expect(ok('^a$', 'attempts').text).toBe(String.raw`(?<![\s\S])a(?=\n?(?![\s\S]))`);
-    expect(ok('(?m)^a$', 'attempts').text).toBe(String.raw`(?:(?<![\s\S])|(?<=\n))a(?=\n|(?![\s\S]))`);
-    expect(ok(String.raw`\Aa\Z`, 'attempts').text).toBe(String.raw`(?<![\s\S])a(?![\s\S])`);
+  it('writes ^ and $ where they mean the same and emulates the Python $ and the multiline anchors without the m flag', () => {
+    expect(ok('^a$', 'attempts').text).toBe(String.raw`^a(?=\n?$)`);
+    expect(ok('(?m)^a$', 'attempts').text).toBe(String.raw`(?:^|(?<=\n))a(?=\n|$)`);
+    expect(ok(String.raw`\Aa\Z`, 'attempts').text).toBe('^a$');
   });
 
-  it('never relies on the m or s flag: the text is the same in both contexts', () => {
-    for (const source of ['(?m)^a', '(?s).', '(?ms)^.$']) expect(ok(source).text).toBe(ok(source, 'attempts').text);
+  it('never relies on the m flag: the anchors are the same in both contexts', () => {
+    for (const source of ['(?m)^a', '(?ms)^b$', String.raw`\Aa\Z`]) {
+      expect(ok(source).text).toBe(ok(source, 'attempts').text);
+    }
   });
 });
 
 describe('classes', () => {
   it('maps \\d, \\w and \\s to Unicode classes and \\b to lookarounds on \\w', () => {
-    expect(ok(String.raw`\d`).text).toBe(String.raw`[\p{Nd}]`);
-    expect(ok(String.raw`\D`).text).toBe(String.raw`[^\p{Nd}]`);
+    expect(ok(String.raw`\d`).text).toBe(String.raw`\p{Nd}`);
+    expect(ok(String.raw`\D`).text).toBe(String.raw`\P{Nd}`);
     expect(ok(String.raw`\w`).text).toBe(String.raw`[\p{L}\p{N}_]`);
     expect(ok(String.raw`\W`).text).toBe(String.raw`[^\p{L}\p{N}_]`);
     expect(ok(String.raw`\s`).text).toBe(
@@ -104,25 +108,25 @@ describe('classes', () => {
   });
 
   it('switches to ASCII classes under the a flag', () => {
-    expect(ok(String.raw`(?a)\d\w\s`).text).toBe(String.raw`[0-9][A-Za-z0-9_][\u{9}-\u{d}\u{20}]`);
-    expect(ok(String.raw`(?a:\d)\d`).text).toBe(String.raw`(?:[0-9])[\p{Nd}]`);
+    expect(ok(String.raw`(?a)\d\w\s`).text).toBe(String.raw`\d\w[\u{9}-\u{d}\u{20}]`);
+    expect(ok(String.raw`(?a:\d)\d`).text).toBe(String.raw`(?:\d)\p{Nd}`);
   });
 
   it('emits sets with nested classes and braced escapes', () => {
     expect(ok('[a-z_]').text).toBe('[a-z_]');
     expect(ok('[^abc]').text).toBe('[^abc]');
-    expect(ok('[]a]').text).toBe(String.raw`[\u{5d}a]`);
-    expect(ok('[a-]').text).toBe(String.raw`[a\u{2d}]`);
-    expect(ok(String.raw`[\d.]`).text).toBe(String.raw`[\p{Nd}\u{2e}]`);
-    expect(ok(String.raw`[\D\W]`).text).toBe(String.raw`[[^\p{Nd}][^\p{L}\p{N}_]]`);
+    expect(ok('[]a]').text).toBe(String.raw`[\]a]`);
+    expect(ok('[a-]').text).toBe(String.raw`[a\-]`);
+    expect(ok(String.raw`[\d.]`).text).toBe(String.raw`[\p{Nd}.]`);
+    expect(ok(String.raw`[\D\W]`).text).toBe(String.raw`[\P{Nd}[^\p{L}\p{N}_]]`);
     expect(ok(String.raw`[\b]`).text).toBe(String.raw`[\u{8}]`);
   });
 });
 
 describe('groups, quantifiers and flags', () => {
   it('translates named groups and backreferences', () => {
-    expect(ok('(?P<n>a)(?P=n)').text).toBe(String.raw`(?<n>a)(?:\1)`);
-    expect(ok(String.raw`(a)(b)\2\1`).text).toBe(String.raw`(a)(b)(?:\2)(?:\1)`);
+    expect(ok('(?P<n>a)(?P=n)').text).toBe(String.raw`(?<n>a)\k<n>`);
+    expect(ok(String.raw`(a)(b)\2\1`).text).toBe(String.raw`(a)(b)\2\1`);
   });
 
   it('wraps a repeated multi-token body and keeps lazy suffixes', () => {
@@ -157,7 +161,8 @@ describe('groups, quantifiers and flags', () => {
 
   it('expands a global (?i) by hand also when no scope switches the case mode', () => {
     expect(ok('(?i)(?i:a)b').text).toBe('(?:[aA])[bB]');
-    expect(ok('(?s:.)a(?-s:.)').text).toBe(String.raw`(?:[\s\S])a(?:[^\n])`);
+    expect(ok('(?s:.)a(?-s:.)').text).toBe(String.raw`(?:.)a(?:[^\n])`);
+    expect(ok('(?s:.)a(?-s:.)', 'attempts').text).toBe(String.raw`(?:[\s\S])a(?:[^\n])`);
   });
 
   it('adds U+0130 and U+0131 wherever IGNORECASE letter i or I is matched', () => {
@@ -206,7 +211,7 @@ describe('IGNORECASE with the word class (U+0345 does not fold into \\w for Pyth
   });
 
   it('leaves \\d unchanged under a global (?i) and expands the letters by hand', () => {
-    expect(ok(String.raw`(?i)\d`).text).toBe(String.raw`[\p{Nd}]`);
+    expect(ok(String.raw`(?i)\d`).text).toBe(String.raw`\p{Nd}`);
     expect(ok(String.raw`(?i)abc`).text).toBe('[aA][bB][cC]');
     expect(ok(String.raw`(?i)\wa`).text).toBe(String.raw`[\p{L}\p{N}_][aA]`);
   });
@@ -332,5 +337,48 @@ describe('rejections', () => {
 
   it('refuses a lone surrogate in the pattern', () => {
     expect(fail('a' + String.fromCharCode(0xd800)).code).toBe('SYNTAX');
+  });
+});
+
+describe('hostile patterns', () => {
+  const CODES = ['SYNTAX', 'UNSUPPORTED_CONSTRUCT', 'UNSUPPORTED_FLAG', 'INEXACT_SEMANTICS', 'JS_COMPILE'];
+  const HOSTILE = [
+    '('.repeat(5000) + 'a' + ')'.repeat(5000),
+    '['.repeat(5000),
+    '(?:'.repeat(5000),
+    'a{1,4294967294}',
+    'a{4294967295}',
+    'a{99999999999999999999}',
+    '(?:a{1000}){1000}',
+    String.raw`\ud800`,
+    String.raw`\U0010ffff`,
+    String.raw`\U00110000`,
+    String.raw`\x`,
+    String.raw`\u12`,
+    String.raw`\N{DASH}`,
+    '(?P<',
+    '(?P<n>',
+    '(?P=',
+    '[',
+    String.fromCharCode(0x5b, 0x5c),
+    String.fromCharCode(0x5c),
+    '(?i)' + 'a'.repeat(20000),
+    'a|'.repeat(20000),
+    String.fromCharCode(0xdc00, 0xd800),
+    String.fromCodePoint(0x1f600).repeat(3000),
+  ];
+
+  it('is refused with a documented code or compiles, and never throws', () => {
+    for (const source of HOSTILE) {
+      for (const ctx of ['session_rule', 'attempts'] as const) {
+        const result = translateToDialect(source, ctx);
+        if (result.ok) {
+          expect(compileRegex(result.value.text, ctx).groupCount).toBe(result.value.groupCount);
+        } else {
+          expect(CODES).toContain(result.error.code);
+          expect(result.error.message.length).toBeLessThan(400);
+        }
+      }
+    }
   });
 });

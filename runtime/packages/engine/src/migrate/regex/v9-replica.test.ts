@@ -1,6 +1,7 @@
 // A synthetic replica of the construct inventory of a real chain task (named groups, ^ at position 0, ranges, counted
 // quantifiers, greedy +, lazy *?, dot under DOTALL, one plain group; no backslashes, no flags, no lookarounds).
-// Every name, pattern and text here is invented; the CPython comparison of the same shapes is in the parity golden test.
+// Every name, pattern and text here is invented; the CPython comparison of the same shapes is in the frozen corpus test
+// (test/regex-translator.slow.test.ts). The stored text is the readable dialect text of WP-138 (dialect.test.ts).
 import { describe, expect, it } from 'vitest';
 
 import { applyLabelTemplate, compileRegex, type CompiledRegex } from '../../regex/index.ts';

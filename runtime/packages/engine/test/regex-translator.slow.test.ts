@@ -160,6 +160,40 @@ describe('PyRegex golden: random grammar', () => {
   });
 });
 
+describe('PyRegex golden: readable text (WP-138)', () => {
+  /** The leftovers of the old escape-only emitter: lookbehind anchors on [\s\S], and a braced escape of a letter or digit. */
+  const OLD_ANCHOR = /\(\?<?!\[\\s\\S\]\)/;
+  const ALNUM_ESCAPE = /\\u\{(?:3[0-9]|4[1-9a-f]|5[0-9a]|6[1-9a-f]|7[0-9a])\}/;
+  /** An inline flag or modifier group: the dialect has none. */
+  const MODIFIER = /\(\?[A-Za-z-]+[:)]/;
+
+  it('spells no anchor with a lookaround, no letter or digit with an escape and no flag with a modifier group', () => {
+    const offenders: string[] = [];
+    let checked = 0;
+    for (const c of golden.cases) {
+      const translated = translateToDialect(c.pattern, c.context);
+      if (!translated.ok) continue;
+      checked++;
+      const text = translated.value.text;
+      if (OLD_ANCHOR.test(text) || ALNUM_ESCAPE.test(text) || MODIFIER.test(text)) {
+        offenders.push(`${c.context} ${JSON.stringify(c.pattern)} -> ${JSON.stringify(text)}`);
+      }
+    }
+    expect(offenders.slice(0, 10)).toEqual([]);
+    expect(checked).toBeGreaterThan(600);
+  });
+
+  it('keeps a V9-shaped pattern as it was written, apart from the group syntax', () => {
+    const v9 = golden.cases.filter((c) => c.kind === 'v9' && c.context === 'attempts' && c.pattern.includes('(?P<'));
+    expect(v9.length).toBeGreaterThan(0);
+    for (const c of v9) {
+      const translated = translateToDialect(c.pattern, c.context);
+      if (!translated.ok) throw new Error(`refused ${JSON.stringify(c.pattern)}`);
+      expect(translated.value.text).toBe(c.pattern.replaceAll('(?P<', '(?<'));
+    }
+  });
+});
+
 function inRanges(ranges: readonly (readonly [number, number])[]): (cp: number) => boolean {
   // ranges are sorted and disjoint: binary search
   return (cp) => {
