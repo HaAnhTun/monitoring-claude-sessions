@@ -16,6 +16,8 @@ export interface DocumentedEnvVar {
 }
 
 const TEST_HOOKS = 'runtime/packages/engine/src/runtime/test-hooks.ts';
+const QA_CONFIG = 'runtime/packages/web/e2e/qa/global-setup.ts';
+const QA_PLAYWRIGHT = 'runtime/packages/web/e2e/qa/playwright.config.ts';
 
 export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_LOG_LEVEL', scope: 'runtime', readers: ['runtime/packages/engine/src/config/resolve.ts'] },
@@ -51,6 +53,15 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },
   { name: 'MCS_PERF_FACTOR', scope: 'test', readers: ['runtime/packages/cli/test/hook.int.test.ts'] },
   { name: 'MCS_E2E_CLAUDE', scope: 'test', readers: ['runtime/packages/engine/test/real-provider.int.test.ts'] },
+  // The visual QA tool (WP-122): where the PNGs and index.json go (never inside the repository), the views, viewports, themes,
+  // languages and mode to shoot, and the browser channel (default: the installed Chrome; an empty value uses the bundled one).
+  { name: 'MCS_SHOTS_DIR', scope: 'test', readers: [QA_CONFIG] },
+  { name: 'MCS_SHOTS_VIEWS', scope: 'test', readers: [QA_CONFIG] },
+  { name: 'MCS_SHOTS_VIEWPORTS', scope: 'test', readers: [QA_CONFIG] },
+  { name: 'MCS_SHOTS_THEMES', scope: 'test', readers: [QA_CONFIG] },
+  { name: 'MCS_SHOTS_LOCALES', scope: 'test', readers: [QA_CONFIG] },
+  { name: 'MCS_SHOTS_MODE', scope: 'test', readers: [QA_CONFIG] },
+  { name: 'MCS_PW_CHANNEL', scope: 'test', readers: [QA_PLAYWRIGHT] },
   { name: 'MCS_DEV_API', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_WEB_DEV_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_WEB_PREVIEW_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
