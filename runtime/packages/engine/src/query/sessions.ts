@@ -144,7 +144,7 @@ const SESSION_COLUMNS = `s.id AS id, s.session_uid AS uid, s.label AS label, s.l
 const SESSION_FROM = 'sessions s LEFT JOIN projects p ON p.id = s.project_id';
 
 /** The last path segment of a project root (either separator), else the folder name; the label of a project in lists. */
-function projectLabelOf(root: string | null, dir: string | null): string | null {
+export function projectLabelOf(root: string | null, dir: string | null): string | null {
   const segments = (root ?? '').split(/[\\/]/).filter((segment) => segment !== '');
   return segments[segments.length - 1] ?? dir;
 }

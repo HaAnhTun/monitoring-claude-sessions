@@ -299,3 +299,148 @@ export function aggregateByHour(
   const complete = filesComplete(db, sql.files, sql.fileParams);
   return rows.map((row) => ({ hourStart: num(row, 'hour_start'), agg: toAggregate(row, complete, 0) }));
 }
+
+// ---- grouped aggregates for analytics (03 8.2, WP-58) -------------------------------------------------------------------------
+
+/** The filter as SQL (the `FROM`, the `WHERE`, and the condition on `transcript_files f`): analytics adds its own statements to it. */
+export type UsageFilterSql = FilterSql;
+export function usageFilterSql(filter: UsageFilter): UsageFilterSql {
+  return filterSql(filter);
+}
+
+/** How `aggregateGroups` splits the selected messages. */
+export type UsageGrouping =
+  | { readonly by: 'none' }
+  | { readonly by: 'model' }
+  | { readonly by: 'session' }
+  | { readonly by: 'agent' }
+  /** `bucketStart = floor((ts + offsetMs) / sizeMs) * sizeMs - offsetMs`; with `model` one group per bucket and model. */
+  | { readonly by: 'bucket'; readonly sizeMs: number; readonly offsetMs: number; readonly model?: boolean };
+
+export interface UsageGroup {
+  /** `null` for `none`; the model id, `usage.session_id`, `usage.agent_id` or the bucket start (epoch ms). */
+  readonly key: string | number | null;
+  /** The model of a `bucket` group made with `model`, else `null`. */
+  readonly model: string | null;
+  /** Distinct owner sessions of the group's messages. */
+  readonly sessions: number;
+  readonly agg: UsageAggregate;
+}
+
+interface GroupingSql {
+  readonly columns: string;
+  readonly extraWhere: string;
+  readonly groupBy: string;
+}
+
+function groupingSql(grouping: UsageGrouping): GroupingSql {
+  switch (grouping.by) {
+    case 'none':
+      return { columns: '', extraWhere: '', groupBy: '' };
+    case 'model':
+      // synthetic messages count in no model (02 6.2 rule 10)
+      return {
+        columns: 'model AS k, ',
+        extraWhere: ' AND synthetic = 0',
+        groupBy: ' GROUP BY model ORDER BY model',
+      };
+    case 'session':
+      return { columns: 'session_id AS k, ', extraWhere: '', groupBy: ' GROUP BY session_id ORDER BY session_id' };
+    case 'agent':
+      return { columns: 'agent_id AS k, ', extraWhere: '', groupBy: ' GROUP BY agent_id ORDER BY agent_id' };
+    case 'bucket': {
+      const { sizeMs, offsetMs } = grouping;
+      if (!Number.isSafeInteger(sizeMs) || sizeMs <= 0 || !Number.isSafeInteger(offsetMs)) {
+        throw new RangeError('the bucket size must be a positive integer and the offset an integer');
+      }
+      const size = String(sizeMs);
+      const shifted = `(ts + (${String(offsetMs)}))`;
+      // a floor that also holds for a negative shifted time: x - ((x % size) + size) % size
+      const start = `(${shifted} - ((${shifted} % ${size}) + ${size}) % ${size} - (${String(offsetMs)}))`;
+      return grouping.model === true
+        ? {
+            columns: `${start} AS k, model AS m, `,
+            extraWhere: ' AND synthetic = 0',
+            groupBy: ' GROUP BY k, m ORDER BY k, m',
+          }
+        : { columns: `${start} AS k, `, extraWhere: '', groupBy: ' GROUP BY k ORDER BY k' };
+    }
+  }
+}
+
+function keyOf(row: AggregateDbRow): string | number | null {
+  const value = row['k'];
+  if (typeof value === 'number' || typeof value === 'string') return value;
+  return typeof value === 'bigint' ? Number(value) : null;
+}
+
+/**
+ * The aggregate of the selected messages split by `grouping`, one entry per non-empty group in key order (`none` always has one
+ * entry, with zero messages when nothing is selected). The sums are the columns of every other function of this file.
+ */
+export function aggregateGroups(
+  db: InstanceDb,
+  ctx: RepoContext,
+  filter: UsageFilter,
+  grouping: UsageGrouping,
+): UsageGroup[] {
+  db.assertScope(ctx);
+  const sql = filterSql(filter);
+  const g = groupingSql(grouping);
+  const rows = db.driver
+    .prepare<AggregateDbRow>(
+      `SELECT ${g.columns}count(DISTINCT session_id) AS sessions, ${AGGREGATE_COLUMNS}
+         FROM ${sql.from} WHERE ${sql.where}${g.extraWhere}${g.groupBy}`,
+    )
+    .all(sql.params);
+  const complete = filesComplete(db, sql.files, sql.fileParams);
+  return rows.map((row) => {
+    const model = row['m'];
+    return {
+      key: keyOf(row),
+      model: typeof model === 'string' ? model : grouping.by === 'model' ? String(row['k']) : null,
+      sessions: num(row, 'sessions'),
+      agg: toAggregate(row, complete, 0),
+    };
+  });
+}
+
+/** The sum of several aggregates (groups merged into a larger group, such as the sessions of a project). */
+export function mergeAggregates(parts: readonly UsageAggregate[]): UsageAggregate {
+  const sum: UsageFields = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheCreation: 0,
+    cacheCreation5m: 0,
+    cacheCreation1h: 0,
+    thinking: 0,
+    webSearch: 0,
+    webFetch: 0,
+  };
+  const missing: UsageFields = { ...sum };
+  let messages = 0;
+  let synthetic = 0;
+  let unfinalized = 0;
+  let complete = true;
+  for (const part of parts) {
+    for (const { key } of FIELD_COLUMNS) {
+      sum[key] += part.sum[key];
+      missing[key] += part.missing[key];
+    }
+    messages += part.messages;
+    synthetic += part.synthetic;
+    unfinalized += part.unfinalized;
+    complete = complete && part.complete;
+  }
+  return {
+    sum,
+    missing,
+    messages,
+    synthetic,
+    unfinalized,
+    outputIsLowerBound: unfinalized > 0,
+    complete,
+    copiedMessages: 0,
+  };
+}

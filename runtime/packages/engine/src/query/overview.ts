@@ -265,4 +265,12 @@ export function createOverviewQueries(db: InstanceDb, deps: QueryDeps): Overview
 
 // The block of the work package that adds the token and cost rows (see the header). It is empty until that package lands.
 // @wp-begin WP-58
+import { usageMetrics } from '../analytics/metrics.ts';
+
+// the `tokens.*` and `cost.*` rows (03 8.1): the sessions of `cost.reported` are the ones the state tiles count
+registerMetricProvider((input) => {
+  const bind = new Binder();
+  const where = sessionsInWindow(input.window, input.includeUnmatched, bind).join(' AND ');
+  return usageMetrics(input, { where, params: bind.params });
+});
 // @wp-end WP-58

@@ -69,4 +69,10 @@ export const sessionRoutes: RouteModule = (app, { ctx }) => {
 };
 
 // @wp-begin WP-58
+/** `sessionUsage` (03 6.1): the token usage of one session by agent or model; an unknown session is `session_not_found`. */
+export const sessionUsageRoutes: RouteModule = (app, { ctx }) => {
+  registerRoute(app, routes.sessionUsage, ({ params, query }) =>
+    answering(() => ctx.queries.sessionUsage(ctx.scope, params.sessionId, query)),
+  );
+};
 // @wp-end WP-58

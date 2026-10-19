@@ -13,7 +13,7 @@ import {
   type Logger,
   type SqlValue,
 } from '@mcs/engine';
-import { ErrorEnvelopeSchema, RUNTIME_VERSION, routes } from '@mcs/shared';
+import { ErrorEnvelopeSchema, OVERVIEW_METRIC_KEYS, RUNTIME_VERSION, routes } from '@mcs/shared';
 import { FakeClock, allocatePort, assertPortClosed, httpRequest, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -60,7 +60,7 @@ function silentLogger(): Logger {
 }
 
 /** A real instance (workspace, database, query layer) behind a real HTTP server; response validation is on (registry N3). */
-async function startInstance(): Promise<Running> {
+async function startInstance(runtime?: Record<string, unknown>): Promise<Running> {
   const root = makeTemp('contract-int').path;
   const skill = path.join(root, 'skill');
   const runtimeDir = path.join(skill, 'runtime');
@@ -72,6 +72,9 @@ async function startInstance(): Promise<Running> {
   mkdirSync(repo);
   const clock = new FakeClock(NOW);
   const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock, newId: () => ID });
+  if (runtime !== undefined) {
+    writeFileSync(path.join(ws.dir, 'runtime.json'), `${JSON.stringify({ schema_version: 1, ...runtime })}\n`);
+  }
   const ctx = await buildInstanceContext({
     instanceDir: ws.dir,
     env: { MCS_HOME: path.join(root, 'mcs-home'), CLAUDE_CONFIG_DIR: path.join(root, 'claude-home') },
@@ -227,13 +230,24 @@ describe('GET /api/v3/overview', () => {
       'sessions.unknown',
       'agents.running',
       'events.errors',
+      'tokens.input',
+      'tokens.input_new',
+      'tokens.output',
+      'tokens.cache_creation',
+      'tokens.cache_read',
+      'cost.estimate',
+      'cost.reported',
       'alerts.open',
     ]);
+    expect(overview.metrics.map((m) => m.key)).toEqual([...OVERVIEW_METRIC_KEYS]);
     for (const metric of overview.metrics) {
       expect(metric.source, metric.key).not.toBe('');
       expect(metric.rule, metric.key).not.toBe('');
-      expect(metric.completeness, metric.key).toBe('complete');
       expect(metric.link, metric.key).toMatch(/^\//);
+      // an empty instance has counts of 0 and no token or cost figure: a missing value is null, never 0
+      if (metric.key.startsWith('tokens.') || metric.key.startsWith('cost.'))
+        expect(metric.value, metric.key).toBeNull();
+      else expect(metric.completeness, metric.key).toBe('complete');
     }
     expect(overview.window.source).toBe('window_hours');
   });
@@ -296,6 +310,102 @@ describe('GET /api/v3/overview', () => {
     expect(overview.alerts.critical).toBe(1);
     expect(tile(overview, 'alerts.open')).toBe(2);
     expect(overview.alerts.items.map((a) => a.severity)).toEqual(['critical', 'warning']);
+  });
+
+  it('adds the token and cost rows between events.errors and alerts.open, equal to GET /analytics/usage of the same window', async () => {
+    const run = await startInstance({
+      pricing: {
+        currency: 'USD',
+        models: [
+          {
+            match: 'model-*',
+            effectiveFrom: '2026-01-01',
+            inputPerMTok: 1,
+            outputPerMTok: 2,
+            cacheReadPerMTok: 0.5,
+            cacheWrite5mPerMTok: 1.5,
+            cacheWrite1hPerMTok: 3,
+          },
+        ],
+      },
+    });
+    const s = addSession(run.ctx, 1, { state: 'working' });
+    const message = (key: string, ts: number, values: Record<string, number | null>): void => {
+      put(run.ctx, 'usage', {
+        message_key: key,
+        session_id: s.id,
+        agent_id: s.agentId,
+        owner_file_id: 1,
+        model: 'model-x',
+        ts,
+        input_tokens: values['input'] ?? 0,
+        output_tokens: values['output'] ?? 0,
+        cache_read_tokens: values['cacheRead'] ?? 0,
+        cache_creation_tokens: values['cacheCreation'] ?? 0,
+        cache_creation_5m_tokens: values['cacheCreation'] ?? 0,
+        cache_creation_1h_tokens: 0,
+        finalized: 1,
+        usage_source: 'top',
+        synthetic: 0,
+        updated_at: NOW,
+      });
+    };
+    message('msg_1', NOW - 10 * MINUTE, {
+      input: 1_000_000,
+      output: 500_000,
+      cacheRead: 2_000_000,
+      cacheCreation: 1_000_000,
+    });
+    message('msg_2', NOW - 2 * HOUR, { input: 10, output: 20, cacheRead: 30, cacheCreation: 40 });
+    message('msg_3', NOW - 20 * HOUR, { input: 7, output: 7, cacheRead: 7, cacheCreation: 7 }); // outside the default window of 8 hours
+    put(run.ctx, 'cost_states', {
+      file_id: 1,
+      session_id: s.id,
+      total_cost_usd: 12.5,
+      byte_offset: 1,
+      observed_at: NOW - HOUR,
+    });
+
+    const reply = await get(run, OVERVIEW);
+    const overview = parseOverview(reply);
+    const keys = overview.metrics.map((m) => m.key);
+    expect(keys.slice(keys.indexOf('events.errors'))).toEqual([
+      'events.errors',
+      'tokens.input',
+      'tokens.input_new',
+      'tokens.output',
+      'tokens.cache_creation',
+      'tokens.cache_read',
+      'cost.estimate',
+      'cost.reported',
+      'alerts.open',
+    ]);
+    expect(tile(overview, 'tokens.input')).toBe(1_000_010);
+    expect(tile(overview, 'tokens.input_new')).toBe(1_000_010 + 1_000_040);
+    expect(tile(overview, 'tokens.output')).toBe(500_020);
+    expect(tile(overview, 'tokens.cache_creation')).toBe(1_000_040);
+    expect(tile(overview, 'tokens.cache_read')).toBe(2_000_030);
+    const estimate = overview.metrics.find((m) => m.key === 'cost.estimate');
+    // 1 x 1 + 0.5 x 2 + 2 x 0.5 + 1 x 1.5 (millions of tokens), plus the few tokens of the second message
+    expect(estimate?.value).toBeCloseTo(1 + 1 + 1 + 1.5, 3);
+    expect(estimate).toMatchObject({ unit: 'currency', currency: 'USD', completeness: 'complete' });
+    expect(overview.metrics.find((m) => m.key === 'cost.reported')).toMatchObject({
+      value: 12.5,
+      unit: 'currency',
+      currency: 'USD',
+      completeness: 'complete',
+    });
+
+    // the rows equal the usage report of the same window
+    const usage = routes.analyticsUsage.response.parse(
+      (await get(run, `/api/v3/analytics/usage?window=1&groupBy=none`)).json,
+    );
+    expect(tile(overview, 'tokens.input')).toBe(usage.totals.usage.input);
+    expect(tile(overview, 'tokens.output')).toBe(usage.totals.usage.output);
+    expect(tile(overview, 'tokens.cache_read')).toBe(usage.totals.usage.cacheRead);
+    expect(tile(overview, 'tokens.cache_creation')).toBe(usage.totals.usage.cacheCreation);
+    const wide = parseOverview(await get(run, `${OVERVIEW}?range=7d`));
+    expect(tile(wide, 'tokens.input')).toBe(1_000_017);
   });
 
   it('answers the envelope of the right code for a bad request', async () => {
