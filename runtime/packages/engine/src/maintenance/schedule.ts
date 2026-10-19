@@ -8,7 +8,7 @@
 //   announcements  every 1 s       the throttled session and agent announcements (03 3.6), when the writer binds a flush
 //   wal            15 min / 64 MiB `PRAGMA wal_checkpoint(PASSIVE)`
 //   optimize       every 6 h       `PRAGMA optimize` (the close of a writer connection does it too)
-//   alert sweep    WP-59           empty block below
+//   alerts         every 15 s, first after 10 s: the alert service sweeps once `alerts.sweepSeconds` have passed (WP-59)
 //   retention      60 s after start, then every 6 h: the bookkeeping retention (03 3.8), then `incremental_vacuum`
 //
 // A job whose work belongs to a service that is created after the context (the alert sweep) is declared here with
@@ -197,6 +197,8 @@ export function createDbSchedulerWith(ctx: SchedulerContext, seams: SchedulerSea
       },
     },
     // @wp-begin WP-59
+    // the poll is the finest sweep interval (15 s); the alert service decides whether `alerts.sweepSeconds` have passed
+    { name: 'alerts', intervalMs: 15_000, firstAfterMs: 10_000, run: boundRun(ctx, 'alerts') },
     // @wp-end WP-59
     // @wp-begin WP-60
     {

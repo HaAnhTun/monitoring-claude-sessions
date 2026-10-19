@@ -510,4 +510,7 @@ registeredFactories.createPanelService = createPanelService;
 // @wp-end WP-41
 
 // @wp-begin WP-59
+import { createAlertComponents } from '../alerts/service.ts';
+
+registeredFactories.createAlertComponents = createAlertComponents;
 // @wp-end WP-59

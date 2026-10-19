@@ -6,7 +6,7 @@
 // client invalidates that entity) or, for the kinds that carry lists, an empty list with `truncated: true` (the client refetches).
 // The seq sequence therefore stays gap free (03 9.2). Only the `health/upsert` frame has no such answer; its failure reaches the hub.
 import type { ChangeRow, Logger } from '@mcs/engine';
-import { AlertListQuerySchema, WorkItemSchema, isoMsZ } from '@mcs/shared';
+import { WorkItemSchema, isoMsZ } from '@mcs/shared';
 import type {
   ActivityEvent,
   AgentNode,
@@ -50,8 +50,6 @@ const MAX_ITEMS = 50;
 const HEALTH_CACHE_MS = 1000;
 /** `HealthReport.errors` of the route has at most 20 entries (03 6.2). */
 const HEALTH_ERRORS = 20;
-/** The alerts query has no get-by-id; the newest alerts of both statuses are looked through (CR-WP-36-2). */
-const ALERT_LOOKUP_LIMIT = 200;
 
 const EventPayloadSchema = z.object({ from: z.number().int(), to: z.number().int(), count: z.number().int().min(0) });
 const IdsPayloadSchema = z.object({ ids: z.array(z.number().int().positive()).max(MAX_ITEMS), truncated: z.boolean() });
@@ -75,7 +73,6 @@ function payloadOf<S extends z.ZodType>(schema: S, text: string): z.output<S> | 
 /** Binds the engine query layer of an instance to the shape the hydrator needs. */
 export function hydrationQueriesOf(ctx: AppContext): HydrationQueries {
   const { queries, scope } = ctx;
-  const alertQuery = AlertListQuerySchema.parse({ status: 'open,resolved', limit: String(ALERT_LOOKUP_LIMIT) });
   return {
     sessionSummaries: (ids) => queries.sessionSummaries(scope, ids),
     agentNode: (id) => queries.agentNode(scope, id),
@@ -89,7 +86,8 @@ export function hydrationQueriesOf(ctx: AppContext): HydrationQueries {
         Object.fromEntries(Object.entries(full).filter(([key]) => key in WorkItemSchema.shape)),
       );
     },
-    alert: (id) => queries.listAlerts(scope, alertQuery).items.find((item) => item.id === id) ?? null,
+    // one lookup by id: an alert older than the newest 200 is hydrated exactly (CR-WP-36-2)
+    alert: (id) => queries.alertById(scope, id),
     health: () => ({ ...queries.health(scope), errors: ctx.errors.list(HEALTH_ERRORS) }),
   };
 }

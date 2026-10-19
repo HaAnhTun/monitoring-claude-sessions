@@ -384,6 +384,13 @@ export function createQueries(db: InstanceDb, deps: QueryDeps): Queries {
 
 // The blocks of the work packages that add their part (see the header). They are empty until those packages land.
 // @wp-begin WP-29
+// Completion evidence (03 6.3, I-08): `explainCompletion` over a lookup of the repositories; it throws `CompletionTargetError`.
+import { createCompletionQueries, type CompletionQueries } from './completion.ts';
+
+export interface EngineQueries {
+  explainCompletion: CompletionQueries['explainCompletion'];
+}
+registerQueryPart(createCompletionQueries, ['explainCompletion']);
 // @wp-end WP-29
 
 // @wp-begin WP-30
@@ -415,7 +422,7 @@ import { createWorkItemQueries, type WorkItemQueries } from './work-items.ts';
 export interface EngineQueries extends OverviewQueries, WorkItemQueries, AlertQueries, ErrorQueries {}
 registerQueryPart(createOverviewQueries, ['overview']);
 registerQueryPart(createWorkItemQueries, ['workItemBoard', 'getWorkItem']);
-registerQueryPart(createAlertQueries, ['listAlerts', 'alertRules']);
+registerQueryPart(createAlertQueries, ['listAlerts', 'alertById', 'alertRules']);
 registerQueryPart(createErrorQueries, ['errors']);
 // @wp-end WP-31
 

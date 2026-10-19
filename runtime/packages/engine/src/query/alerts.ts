@@ -28,6 +28,8 @@ import {
 
 export interface AlertQueries {
   listAlerts(ctx: RepoContext, q: AlertListQuery): Page<AlertItem>;
+  /** One alert of any status by its id (the hydration of `alert/upsert` frames, CR-WP-36-2); null for an id this instance does not have. */
+  alertById(ctx: RepoContext, id: number): AlertItem | null;
   alertRules(ctx: RepoContext): AlertRulesView;
 }
 
@@ -103,6 +105,12 @@ export function createAlertQueries(db: InstanceDb, deps: QueryDeps): AlertQuerie
           page.map((entry) => entry.item),
           { nextCursor, asOfSeq, limit: q.limit },
         );
+      }),
+
+    alertById: (ctx, id) =>
+      snapshot(db, ctx, () => {
+        const bind = new Binder();
+        return selectAlerts(db, [`a.id = ${bind.bind(id)}`], bind, 1)[0]?.item ?? null;
       }),
 
     alertRules: (ctx) =>
