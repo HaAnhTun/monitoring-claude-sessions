@@ -209,7 +209,7 @@ describe('schemaVersionOf and checkSchemaVersion (the gate of 01 2.6)', () => {
       });
       expect(e.code).toBe('CONFIG_SCHEMA_MISSING');
       expect(e.message).toBe(
-        `${d.where} has no schema_version; refusing to guess (add "schema_version": 1 after checking the keys against docs/configuration.md)`,
+        `${d.where} has no schema_version; refusing to guess (add "schema_version": 1 after checking the keys against reference/configuration.md in the skill folder)`,
       );
     }
   });

@@ -169,7 +169,7 @@ describe('legacy layer: shared defaults, task.json and config.json', () => {
     const e = await failure(() => resolveConfig(input(f)));
     expect(e.code).toBe('CONFIG_SCHEMA_MISSING');
     expect(e.message).toBe(
-      `${path.join(f.ws, 'config.json')} has no schema_version; refusing to guess (add "schema_version": 1 after checking the keys against docs/configuration.md)`,
+      `${path.join(f.ws, 'config.json')} has no schema_version; refusing to guess (add "schema_version": 1 after checking the keys against reference/configuration.md in the skill folder)`,
     );
     put(f, 'config.json', { schema_version: 2 });
     expect((await failure(() => resolveConfig(input(f)))).code).toBe('CONFIG_SCHEMA_UNSUPPORTED');

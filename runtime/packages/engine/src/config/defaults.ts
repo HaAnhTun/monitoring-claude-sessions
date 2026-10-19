@@ -179,7 +179,7 @@ export function checkSchemaVersion(doc: PyObject, where: string, file: 'config.j
   if (v === undefined || v.k === 'null') {
     throw new McsError(
       'CONFIG_SCHEMA_MISSING',
-      `${where} has no schema_version; refusing to guess (add "schema_version": 1 after checking the keys against docs/configuration.md)`,
+      `${where} has no schema_version; refusing to guess (add "schema_version": 1 after checking the keys against reference/configuration.md in the skill folder)`,
       { details: { file } },
     );
   }
