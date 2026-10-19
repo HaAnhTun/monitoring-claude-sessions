@@ -6,6 +6,7 @@ import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- WP-03 CR-WP-03-3: the rule reads `../cli/` inside @mcs/shared as the workspace package `cli`; this is shared's own folder src/cli/
 import { ConfigInspectionSchema } from '../cli/results.ts';
 import { IngestHealthSchema, NudgeBodySchema } from '../schemas/ingest.ts';
+import { CompletionQuerySchema, CompletionResponseSchema } from './completion.ts';
 import {
   ActivityEventSchema,
   AlertItemSchema,
@@ -611,6 +612,20 @@ export const routes = {
     contentType: 'text/event-stream',
   }),
   // @wp-begin WP-29
+  explainCompletion: defineRoute({
+    id: 'explainCompletion',
+    method: 'GET',
+    path: '/api/v3/completion',
+    params: null,
+    query: CompletionQuerySchema,
+    body: null,
+    response: CompletionResponseSchema,
+    successStatus: 200,
+    errors: ['completion_target_not_found'],
+    summary:
+      'Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only.',
+    contentType: 'application/json',
+  }),
   // @wp-end WP-29
 } as const;
 

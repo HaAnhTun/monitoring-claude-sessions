@@ -39,6 +39,7 @@ export * from './db-constants.ts';
 // @wp-end WP-09
 
 // @wp-begin WP-29
+export * from './api/completion.ts';
 // @wp-end WP-29
 
 // @wp-begin WP-100

@@ -265,6 +265,9 @@ export interface AppDeps extends RouteDeps {
 const ROUTE_MODULES: RouteModule[] = [metaRoutes, ingestRoutes];
 
 // @wp-begin WP-29
+import { completionRoutes } from './routes/completion.ts';
+
+ROUTE_MODULES.push(completionRoutes);
 // @wp-end WP-29
 
 // @wp-begin WP-30

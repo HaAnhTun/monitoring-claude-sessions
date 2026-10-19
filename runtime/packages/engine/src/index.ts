@@ -927,6 +927,12 @@ export type {
 } from './config/key-support.ts';
 // @wp-end WP-105
 
+// @wp-begin WP-107
+export * as opsCleanup from './ops/cleanup.ts';
+export type { CleanupDeps, CleanupInput } from './ops/cleanup.ts';
+export type { ConfigMigrateDeps, ConfigMigrateInput } from './ops/config.ts';
+// @wp-end WP-107
+
 // @wp-begin WP-141
 export * as opsDiagnostics from './ops/diagnostics.ts';
 export type {
