@@ -438,6 +438,44 @@ describe('disconnect cleanup (DA-T-RT-5)', () => {
   });
 });
 
+describe('the health gauge of the open streams (CR-WP-17-3)', () => {
+  it('reports sseClients as the number of open streams while they are open and 0 after they closed, with no timer left', async () => {
+    const { ctx } = await openInstance();
+    const watch = watchHeartbeats();
+    const port = await serveMini(ctx, { limits: { heartbeatMs: OWN_HEARTBEAT_MS } });
+    const sseClients = (): number => ctx.queries.health(ctx.scope).runtime.sseClients;
+    expect(sseClients()).toBe(0); // no hub yet: nobody connected
+
+    const readers: StreamReader[] = [];
+    for (let i = 0; i < 3; i += 1) readers.push(await openStream(port));
+    await waitFor(() => readers.every((reader) => reader.of('hello').length === 1));
+    expect(sseClients()).toBe(3);
+    expect(watch.live()).toBe(3);
+
+    readers[0]?.close();
+    await waitFor(() => sseClients() === 2, { what: 'one stream to be forgotten' });
+    for (const reader of readers) reader.close();
+    await waitFor(() => sseClients() === 0, { what: 'every stream to be forgotten' });
+    await waitFor(() => watch.live() === 0, { what: 'the timers of the closed streams to be cleared' });
+    expect(sseClients()).toBe(0);
+  });
+
+  it('shows the count on GET /api/v3/health of the whole app, which mounts the stream route itself', async () => {
+    const { ctx } = await openInstance();
+    const port = await serve(ctx);
+    const health = async (): Promise<number> => {
+      const reply = await httpRequest(port, '/api/v3/health');
+      return (JSON.parse(reply.body) as { runtime: { sseClients: number } }).runtime.sseClients;
+    };
+    expect(await health()).toBe(0);
+    const readers = [await openStream(port), await openStream(port)];
+    await waitFor(() => readers.every((reader) => reader.of('hello').length === 1));
+    expect(await health()).toBe(2);
+    for (const reader of readers) reader.close();
+    await waitFor(async () => (await health()) === 0, { what: 'the health report to show no stream' });
+  });
+});
+
 describe('epoch per process (DA-T-RT-8)', () => {
   it('a restarted server has a new epoch, and a client that sends the old one gets reset(epoch_changed)', async () => {
     const first = await openInstance();

@@ -297,6 +297,8 @@ function metaQueries(db: InstanceDb, deps: QueryDeps): MetaQueries & AuditQuerie
           outdated: proc?.outdated().outdated ?? false,
           pid: proc?.pid ?? process.pid,
           startedAtMs: startedAtMs(),
+          previousRunUnclean: proc?.previousRunUnclean ?? false,
+          ownershipConflict: proc?.ownershipConflict() ?? false,
         },
         resources: {
           eventLoopDelayP99Ms: eventLoopDelayP99Ms(nowMs),
@@ -316,6 +318,7 @@ function metaQueries(db: InstanceDb, deps: QueryDeps): MetaQueries & AuditQuerie
         backlogWarnMs: deps.config.runtime.health.backlogWarnMs,
         children: deps.childStats?.(),
         panels: deps.panelStats?.(),
+        gauges: deps.healthGauges?.(),
         alerts: openAlerts(ctx),
         criticalAlertsOpen: alertRepo.countOpen(ctx).critical > 0,
       });
@@ -432,4 +435,13 @@ registerQueryPart(createTranscriptQueryPart, ['window', 'locate']);
 // @wp-end WP-57
 
 // @wp-begin WP-58
+import { createSeriesQueries, type SeriesQueries } from '../analytics/series.ts';
+import { createToolFrequencyQueries, type ToolFrequencyQueries } from '../analytics/tools.ts';
+import { createUsageQueries, type UsageQueries } from '../analytics/usage.ts';
+
+// the part of 03 12.1 that WP-58 owns: token usage, the time series and the tool frequency
+export interface EngineQueries extends UsageQueries, SeriesQueries, ToolFrequencyQueries {}
+registerQueryPart(createUsageQueries, ['usage', 'sessionUsage']);
+registerQueryPart(createSeriesQueries, ['series']);
+registerQueryPart(createToolFrequencyQueries, ['tools']);
 // @wp-end WP-58

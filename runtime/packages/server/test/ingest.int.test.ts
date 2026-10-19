@@ -1,19 +1,23 @@
 // The ingest routes on a real instance (03 19.3): DA-T-API-5 (the nudge and every refusal of 02 2.8 and 05 5.3 S-NET-5) and
 // DA-T-API-14 (the probe route, I-37). A real workspace, a real database, the real guards and a real HTTP server.
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { appendFileSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import path from 'node:path';
 
 import {
   buildInstanceContext,
+  createInstanceRuntime,
   defaultSkillDir,
   initWorkspace,
   withWriteTx,
   type InstanceContext,
+  type InstanceRuntime,
   type Logger,
 } from '@mcs/engine';
 import { ErrorEnvelopeSchema, HookProbeResultSchema, RUNTIME_VERSION, isoMsZ, type ErrorCode } from '@mcs/shared';
-import { allocatePort, assertPortClosed, FakeClock, httpRequest, useTempDirs } from '@mcs/testkit';
+import { spoolSegmentName, type HookEnvelopeV1 } from '@mcs/shared/protocol';
+import { allocatePort, assertPortClosed, FakeClock, httpRequest, useTempDirs, waitFor } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createApp, createHttpServer } from '../src/app.ts';
@@ -300,5 +304,136 @@ describe('DA-T-API-14: the probe route (I-37)', () => {
       const row = run.ctx.db.driver.prepare<{ n: number }>(`SELECT count(*) AS n FROM ${table}`).get();
       expect(row?.n, table).toBe(0);
     }
+  });
+});
+
+// ---- the nudge reaches the ingest service (CR-WP-17-4, CR-WP-18-3) ----------------------------------------------------------------
+
+/** The longest spool poll the configuration allows: nothing but the nudge can make a new line visible quickly. */
+const MAX_POLL_MS = 10_000;
+
+interface RealRun {
+  readonly ctx: InstanceContext;
+  readonly runtime: InstanceRuntime;
+  readonly port: number;
+  readonly spoolDir: string;
+}
+
+const realRuns: { server: Server; ctx: InstanceContext; runtime: InstanceRuntime; port: number }[] = [];
+afterEach(async () => {
+  for (const { server, ctx, runtime, port } of realRuns.splice(0)) {
+    await new Promise<void>((resolve) => {
+      server.closeAllConnections();
+      server.close(() => {
+        resolve();
+      });
+    });
+    await runtime.stop(Date.now() + 5000);
+    ctx.db.close();
+    await ctx.logger.close();
+    await assertPortClosed(port);
+  }
+});
+
+/** A real instance with the real ingest service behind `runtime.nudge()`, the way `boot.ts` wires the app. */
+async function startRealInstance(): Promise<RealRun> {
+  const root = makeTemp('ingest-nudge').path;
+  const skill = path.join(root, 'skill');
+  const runtimeDir = path.join(skill, 'runtime');
+  mkdirSync(path.join(skill, 'config'), { recursive: true });
+  mkdirSync(runtimeDir, { recursive: true });
+  copyFileSync(path.join(defaultSkillDir(), 'config', 'defaults.json'), path.join(skill, 'config', 'defaults.json'));
+  writeFileSync(path.join(runtimeDir, 'defaults.json'), '{"schema_version": 1}\n');
+  const repo = path.join(root, 'repo');
+  mkdirSync(repo);
+  const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', newId: () => ID });
+  writeFileSync(
+    path.join(ws.dir, 'runtime.json'),
+    JSON.stringify({ schema_version: 1, spool: { pollMs: MAX_POLL_MS } }),
+  );
+  const ctx = await buildInstanceContext({
+    instanceDir: ws.dir,
+    env: { MCS_HOME: path.join(root, 'mcs-home'), CLAUDE_CONFIG_DIR: path.join(root, 'claude-home') },
+    cli: {},
+    skillDir: skill,
+    runtimeDir,
+    build: { runtimeVersion: RUNTIME_VERSION, codeStamp: 'abcdef0123' },
+    logger: silentLogger(),
+  });
+  const runtime = createInstanceRuntime(ctx);
+  await runtime.start();
+  const port = await allocatePort();
+  const app = createApp({
+    ctx,
+    port: () => port,
+    nudge: () => {
+      runtime.nudge();
+    },
+    task: await readLegacyTask(ws.dir),
+    runtime,
+  });
+  const server = createHttpServer(app, ctx.config.runtime.server.requestTimeoutMs);
+  await new Promise<void>((resolve) => {
+    server.listen(port, '127.0.0.1', () => {
+      resolve();
+    });
+  });
+  realRuns.push({ server, ctx, runtime, port });
+  return { ctx, runtime, port, spoolDir: path.join(ctx.instanceDir, 'data', 'spool') };
+}
+
+/** One `SessionStart` line of the hook handler (02 2.4), appended to the segment of its hour. */
+function appendSessionStart(run: RealRun): string {
+  const sessionId = randomUUID();
+  const receivedAt = Date.now();
+  const envelope: HookEnvelopeV1 = {
+    v: 1,
+    kind: 'hook',
+    instance_id: ID,
+    event_uid: randomUUID(),
+    received_at: receivedAt,
+    event: 'SessionStart',
+    argv_event: 'SessionStart',
+    session_id: sessionId,
+    transcript_path: null,
+    cwd: null,
+    prompt_id: null,
+    agent_id: null,
+    agent_type: null,
+    tool_use_id: null,
+    permission_mode: 'default',
+    claude_pid: null,
+    payload_bytes: 2,
+    content_hash: '0123456789abcdef0123456789abcdef',
+    handler: { version: RUNTIME_VERSION, pid: 100, async: false },
+    flags: [],
+    data: { source: 'startup', model: 'FIXTURE-model' },
+  };
+  mkdirSync(run.spoolDir, { recursive: true });
+  appendFileSync(path.join(run.spoolDir, spoolSegmentName(receivedAt)), `${JSON.stringify(envelope)}\n`);
+  return sessionId;
+}
+
+function sessionCount(run: RealRun): number {
+  return run.ctx.db.driver.prepare<{ n: number }>('SELECT count(*) AS n FROM sessions').get({})?.n ?? -1;
+}
+
+describe('the nudge drains the spool at once (CR-WP-17-4, CR-WP-18-3)', () => {
+  it('commits a spool line within 1 s of POST /ingest/nudge although the poll interval is 10 s', async () => {
+    const run = await startRealInstance();
+    expect(run.ctx.config.runtime.spool.pollMs).toBe(MAX_POLL_MS);
+    expect(sessionCount(run)).toBe(0);
+    appendSessionStart(run);
+    // the poll is ten seconds away, so only the nudge below can explain a commit inside the budget of one second
+    expect(sessionCount(run)).toBe(0);
+    const startedAt = Date.now();
+    const reply = await httpRequest(run.port, NUDGE, {
+      method: 'POST',
+      headers: JSON_TYPE,
+      body: JSON.stringify({ instanceId: ID }),
+    });
+    expect(reply.status).toBe(204);
+    await waitFor(() => sessionCount(run) === 1, { timeoutMs: 1000, intervalMs: 20, what: 'the session of the nudge' });
+    expect(Date.now() - startedAt).toBeLessThan(1000);
   });
 });

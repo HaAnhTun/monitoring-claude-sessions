@@ -304,6 +304,10 @@ ROUTE_MODULES.push(streamRoutes);
 // @wp-end WP-57
 
 // @wp-begin WP-58
+import { analyticsRoutes } from './routes/analytics.ts';
+import { sessionUsageRoutes } from './routes/sessions.ts';
+
+ROUTE_MODULES.push(analyticsRoutes, sessionUsageRoutes);
 // @wp-end WP-58
 
 // @wp-begin WP-60
@@ -326,18 +330,21 @@ function routeIdOf(res: Response): string {
 }
 
 /**
- * One line per finished request: route id, method, status, duration. Nothing else: the logger never sees a query string, a
- * path value, a body or a search text (03 5.1 "Request id", DA-T-PRIV-4). Successes are debug, client errors info, 5xx error.
+ * One line per finished request: route id, method, status, duration and the request id of the `X-Request-Id` header. Nothing
+ * else: the logger never sees a query string, a path value, a body or a search text (03 5.1 "Request id", DA-T-PRIV-4).
+ * Successes are debug, client errors info, 5xx error.
  */
 function accessLog(logger: Pick<Logger, 'debug' | 'info' | 'error'>, now: () => number): RequestHandler {
   return (req, res, next) => {
     const startedAtMs = now();
     res.once('finish', () => {
+      const requestId = res.getHeader('X-Request-Id');
       const fields = {
         route: routeIdOf(res),
         method: req.method,
         status: res.statusCode,
         durationMs: Math.max(0, now() - startedAtMs),
+        ...(typeof requestId === 'string' ? { requestId } : {}),
       };
       if (res.statusCode >= 500) logger.error('http_request', fields);
       else if (res.statusCode >= 400) logger.info('http_request', fields);

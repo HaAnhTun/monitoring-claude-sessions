@@ -8,6 +8,7 @@ import { connect } from 'node:net';
 import path from 'node:path';
 
 import type { ControlPhase, ControlResponse, ControlShutdownReason } from '@mcs/shared/protocol';
+import { controlAddress as sharedControlAddress } from '@mcs/shared';
 import { CONTROL_REQUEST_MAX_BYTES, parseControlResponse } from '@mcs/shared/protocol';
 import { makeJunction, useTempDirs, waitFor } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -103,28 +104,20 @@ function request(h: Harness, body: Record<string, unknown>): Promise<ControlResp
 }
 
 describe('controlAddress (01 4.3)', () => {
+  // the per-platform table is tested once, in packages/shared/src/control-address.test.ts; this is the wrapper's consistency check
   const id = 'abcdef01-abcd-4bcd-8bcd-abcdef012345';
 
-  it('is a named pipe on Windows, an abstract socket on Linux and a socket file in a per-user folder elsewhere', () => {
-    expect(controlAddress(id, { platform: 'win32', tmpdir: 'C:/tmp', uid: null })).toBe(String.raw`\\.\pipe\mcs-` + id);
-    expect(controlAddress(id, { platform: 'linux', tmpdir: '/tmp', uid: 1000 })).toBe(`\0mcs-${id}`);
-    expect(controlAddress(id, { platform: 'darwin', tmpdir: '/var/tmp', uid: 501 })).toBe(
-      path.join('/var/tmp', 'mcs-501', `${id}.sock`),
-    );
-    expect(controlAddress(id, { platform: 'other', tmpdir: '/tmp', uid: 7 })).toBe(
-      path.join('/tmp', 'mcs-7', `${id}.sock`),
-    );
-  });
-
-  it('refuses anything that is not a version 4 uuid (the id becomes part of a path)', () => {
-    for (const bad of ['', 'x', '../evil', `${id}/..`, id.toUpperCase(), `${id}\0`]) {
-      expect(() => controlAddress(bad), bad).toThrow(RangeError);
+  it('is the shared controlAddress for the host it is given', () => {
+    for (const platform of ['win32', 'linux', 'darwin', 'other'] as const) {
+      const host = { platform, tmpdir: '/var/tmp', uid: 501 };
+      expect(controlAddress(id, host), platform).toBe(sharedControlAddress(id, host));
     }
   });
 
-  it('is the address of this host by default', () => {
+  it('is the address of this host by default, and refuses what is not a version 4 uuid', () => {
     const address = controlAddress(id);
     expect(address.endsWith(id) || address.endsWith(`${id}.sock`)).toBe(true);
+    expect(() => controlAddress('../evil')).toThrow(RangeError);
   });
 });
 
@@ -346,7 +339,7 @@ describe('ingest-replay', () => {
     expect(h.replays).toEqual([]);
   });
 
-  it('maps the outcome NOT_READY, and closes the connection without a reply when the service throws', async () => {
+  it('maps the outcome NOT_READY', async () => {
     const h = await start();
     h.state.replay = { ok: false, error: 'NOT_READY' };
     expect(await request(h, { op: 'ingest-replay', fromSegment: null })).toEqual({
@@ -354,15 +347,61 @@ describe('ingest-replay', () => {
       ok: false,
       error: 'NOT_READY',
     });
-    const thrower = await start({ onIngestReplay: () => Promise.reject(new Error('writer closed')) });
-    const line = await sendControlLine(
-      thrower.address,
-      JSON.stringify({ v: 1, op: 'ingest-replay', instanceId: thrower.id, token: TOKEN, fromSegment: null }),
-      { timeoutMs: 5000 },
-    );
-    expect(line).toBeNull();
+  });
+});
+
+describe('a service that throws (CR-WP-18-6)', () => {
+  const SECRET_MESSAGE = 'writer closed at a secret-looking place';
+
+  function raw(h: Harness, body: Record<string, unknown>): Promise<string | null> {
+    return sendControlLine(h.address, JSON.stringify({ v: 1, instanceId: h.id, token: TOKEN, ...body }), {
+      timeoutMs: 5000,
+    });
+  }
+
+  it('answers INTERNAL for ingest-replay, closes that connection and serves the next request', async () => {
+    const thrower = await start({ onIngestReplay: () => Promise.reject(new Error(SECRET_MESSAGE)) });
+    const line = await raw(thrower, { op: 'ingest-replay', fromSegment: null });
+    expect(line).not.toBeNull();
+    expect(parseControlResponse(line ?? '')).toEqual({ v: 1, ok: false, error: 'INTERNAL' });
+    expect(line).toBe(JSON.stringify({ v: 1, ok: false, error: 'INTERNAL' }));
     expect(thrower.logs.some((l) => l.level === 'warn' && l.event === 'control_failed')).toBe(true);
     expect(await requestControl(thrower.address, { v: 1, op: 'identify' })).toMatchObject({ ok: true });
+    expect(await request(thrower, { op: 'shutdown', reason: 'stop' })).toMatchObject({ ok: true });
+  });
+
+  it('answers INTERNAL when the shutdown trigger throws', async () => {
+    const thrower = await start({
+      onShutdown: () => {
+        throw new Error(SECRET_MESSAGE);
+      },
+    });
+    const line = await raw(thrower, { op: 'shutdown', reason: 'stop' });
+    expect(parseControlResponse(line ?? '')).toEqual({ v: 1, ok: false, error: 'INTERNAL' });
+    expect(await requestControl(thrower.address, { v: 1, op: 'identify' })).toMatchObject({ ok: true });
+  });
+
+  it('answers INTERNAL when identify cannot be built, and still BACKUP_FAILED when the backup service throws', async () => {
+    const broken = await start({
+      identity: () => {
+        throw new Error(SECRET_MESSAGE);
+      },
+    });
+    const line = await sendControlLine(broken.address, JSON.stringify({ v: 1, op: 'identify' }), { timeoutMs: 5000 });
+    expect(parseControlResponse(line ?? '')).toEqual({ v: 1, ok: false, error: 'INTERNAL' });
+    const backup = await start({ onBackup: () => Promise.reject(new Error(SECRET_MESSAGE)) });
+    expect(await request(backup, { op: 'backup', dest: 'x' })).toEqual({ v: 1, ok: false, error: 'BACKUP_FAILED' });
+  });
+
+  it('never puts the token or the message of the error into the reply or the log', async () => {
+    const thrower = await start({ onIngestReplay: () => Promise.reject(new Error(`${SECRET_MESSAGE} ${TOKEN}`)) });
+    const line = await raw(thrower, { op: 'ingest-replay', fromSegment: null });
+    expect(line).not.toContain(TOKEN);
+    expect(line).not.toContain('secret-looking');
+    const text = JSON.stringify(thrower.logs);
+    expect(text).not.toContain(TOKEN);
+    expect(text).not.toContain('secret-looking');
+    expect(text).not.toContain('writer closed');
   });
 });
 

@@ -267,6 +267,10 @@ export interface HealthFacts {
     readonly outdated: boolean;
     readonly pid: number;
     readonly startedAtMs: number;
+    /** `RuntimeProcessInfo.previousRunUnclean` (01 4.13). */
+    readonly previousRunUnclean: boolean;
+    /** `RuntimeProcessInfo.ownershipConflict()` (01 4.6). */
+    readonly ownershipConflict: boolean;
   };
   readonly resources: {
     readonly eventLoopDelayP99Ms: number;
@@ -289,6 +293,8 @@ export interface HealthFacts {
   readonly children: Record<ChildKind, ChildKindStats> | undefined;
   /** `QueryDeps.panelStats()`; absent for the DbReader (`{}`). */
   readonly panels: PanelStats | undefined;
+  /** `QueryDeps.healthGauges()`: the stream and search counters; absent for the DbReader (zeros). */
+  readonly gauges: Pick<HealthReport['runtime'], 'sseClients' | 'search'> | undefined;
   /** Open alerts, newest first, at most 20. */
   readonly alerts: readonly AlertItem[];
   readonly criticalAlertsOpen: boolean;
@@ -304,7 +310,8 @@ function dbOk(report: IngestHealth | null): boolean {
  * `HealthReport` from gathered facts (03 6.2): `status` is `error` when the database is not ok or ingestion is down,
  * `degraded` when ingestion is not `ok` (also `unknown`) or a critical alert is open, else `ok`. The server error ring
  * is not known to the query layer: the route fills `errors` (`HealthReport.errors` is `[]` here). `sseClients` and the
- * search counters are zero until the stream hub and the search service report theirs.
+ * search counters come from the late-bound gauges (`bindHealthGauges`) and are zero while no gauge is bound. The two flags
+ * (`previousRunUnclean`, `ownershipConflict`) only report: they never change `status`.
  */
 export function buildHealthReport(f: HealthFacts): HealthReport {
   const ingestion = projectIngestion(f.report, {
@@ -334,8 +341,13 @@ export function buildHealthReport(f: HealthFacts): HealthReport {
       heapUsedBytes: f.resources.heapUsedBytes,
       cpuUserMicros: f.resources.cpuUserMicros,
       cpuSystemMicros: f.resources.cpuSystemMicros,
-      sseClients: 0,
-      search: { total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } },
+      sseClients: f.gauges?.sseClients ?? 0,
+      previousRunUnclean: f.runtime.previousRunUnclean,
+      ownershipConflict: f.runtime.ownershipConflict,
+      search: f.gauges?.search ?? {
+        total: 0,
+        byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 },
+      },
     },
     db: {
       ok,

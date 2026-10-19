@@ -31,12 +31,15 @@ import {
   readSmallFile,
   readTaskFile,
   resolveWorkspace,
+  setChildLogSink,
   SpoolSegmentNotFoundError,
   testHook,
   workspacePath,
   type InstanceContext,
+  type ChildLogSink,
   type InstanceRuntime,
   type LogLevel,
+  type Logger,
   type RuntimeFactories,
   type RuntimeLayoutMode,
   type WorkspaceRef,
@@ -46,11 +49,16 @@ import {
   LogLevelSchema,
   McsError,
   RUNTIME_VERSION,
+  SERVER_EXIT_CODES,
   UUID_V4_RE,
   isoMsZ,
+  serverExitNameOf,
   systemClock,
   type CliErrorCode,
   type Clock,
+  type ServerExitCode,
+  type ServerExitName,
+  type ServerFailureCode,
 } from '@mcs/shared';
 import type { ControlPhase } from '@mcs/shared/protocol';
 import { z } from 'zod';
@@ -83,43 +91,12 @@ import {
 
 // ---- exit codes (01 4.1, registry 7.3) -------------------------------------------------------------------------------------
 
-export const SERVER_EXIT_CODES = {
-  OK: 0,
-  CONFIG_INVALID: 10,
-  IDENTITY_MISMATCH: 11,
-  INSTANCE_LOCKED: 12,
-  PORT_EXHAUSTED: 13,
-  DB_ERROR: 14,
-  DB_NEWER_THAN_RUNTIME: 15,
-  DB_UPGRADE_REQUIRED: 16,
-  WORKSPACE_INVALID: 17,
-  BUILD_INVALID: 18,
-  INTERNAL: 70,
-} as const;
-
-export type ServerExitName = keyof typeof SERVER_EXIT_CODES;
-export type ServerExitCode = (typeof SERVER_EXIT_CODES)[ServerExitName];
-/** An exit code that says the boot failed. */
-export type ServerFailureCode = Exclude<ServerExitCode, 0>;
-
-/** Every exit code once, so that a code added to the table above is also named here (a missing key does not compile). */
-const NAME_OF_CODE: Readonly<Record<ServerExitCode, ServerExitName>> = {
-  0: 'OK',
-  10: 'CONFIG_INVALID',
-  11: 'IDENTITY_MISMATCH',
-  12: 'INSTANCE_LOCKED',
-  13: 'PORT_EXHAUSTED',
-  14: 'DB_ERROR',
-  15: 'DB_NEWER_THAN_RUNTIME',
-  16: 'DB_UPGRADE_REQUIRED',
-  17: 'WORKSPACE_INVALID',
-  18: 'BUILD_INVALID',
-  70: 'INTERNAL',
-};
+// The table lives in `@mcs/shared` (the engine's lifecycle commands read the names from it too); this module re-exports it.
+export { SERVER_EXIT_CODES, type ServerExitCode, type ServerExitName, type ServerFailureCode };
 
 /** The name of an exit code; `INTERNAL` for a number that is not one of ours. */
 export function exitNameOf(code: number): ServerExitName {
-  return Object.entries(NAME_OF_CODE).find(([key]) => Number(key) === code)?.[1] ?? 'INTERNAL';
+  return serverExitNameOf(code) ?? 'INTERNAL';
 }
 
 /** The CLI error codes that a failed boot step can carry, and the exit code of each (01 4.1); the rest is INTERNAL. */
@@ -175,6 +152,31 @@ export async function ingestReplayOutcome(
     warn('ingest_replay_failed', { code: errorCodeOf(error) });
     return { ok: false, error: 'NOT_READY' };
   }
+}
+
+/**
+ * Wires the one debug line per spawned child (06 3.6 rule 9, CR-WP-16-3) to the instance logger: event `child_run` with the
+ * `kind`, the `durationMs` and the numeric exit `code` (absent when the child did not exit with one). Never the arguments,
+ * the output or the error text. `setChildLogSink` is process-wide, so the composition root calls this once per boot and runs
+ * the returned undo at shutdown (and when the boot fails); the undo is idempotent. `setSink` is a test seam.
+ */
+export function wireChildLog(
+  logger: Pick<Logger, 'debug'>,
+  setSink: (sink: ChildLogSink | null) => void = setChildLogSink,
+): () => void {
+  setSink((entry) => {
+    logger.debug('child_run', {
+      kind: entry.kind,
+      durationMs: entry.durationMs,
+      ...(entry.code === null ? {} : { code: entry.code }),
+    });
+  });
+  let wired = true;
+  return () => {
+    if (!wired) return;
+    wired = false;
+    setSink(null);
+  };
 }
 
 function firstLine(text: string): string {
@@ -549,6 +551,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
   const currentPhase = (): ControlPhase =>
     stopping || gate.reason !== null ? 'stopping' : ready ? 'ready' : 'starting';
   const res: Resources = {};
+  let unwireChildLog: () => void = () => undefined;
   // events before the logger exists (identify at the very start) are not worth a log file
   const lateLog = (level: 'debug' | 'info' | 'warn') => (event: string, fields?: Readonly<Record<string, unknown>>) => {
     res.ctx?.logger[level](event, fields);
@@ -653,6 +656,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
   /** A failed boot: stop what started, close what opened, take back what was written, and report the failure. */
   const abort = async (result: BootResult): Promise<BootResult> => {
     await quietly(() => res.runtime?.stop(clock.now() + FAILURE_STOP_MS));
+    unwireChildLog();
     await quietly(closeHttp);
     await quietly(closeDatabase);
     await quietly(removeFiles);
@@ -691,6 +695,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
       return await abort(failFrom(error));
     }
     res.ctx = ctx;
+    unwireChildLog = wireChildLog(ctx.logger);
     if (existing.kind === 'stale') ctx.logger.warn('previous_run_unclean', { code: existing.reason });
 
     const runtime = createInstanceRuntime(ctx, {
@@ -733,6 +738,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
           await quietly(closeDatabase);
           await quietly(() => openChannel.close());
         }
+        unwireChildLog();
         await ctx.logger.close();
         resolveClosed(outcome);
       })();
@@ -792,8 +798,9 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
     const app = createApp({
       ctx,
       port: () => port ?? ctx.config.effectivePort,
-      // the ingest service is private to the runtime until it exposes `nudge()` (CR-WP-18-3): the spool poll reads the same segment
-      nudge: () => undefined,
+      nudge: () => {
+        runtime.nudge();
+      },
       task,
       runtime,
       site,

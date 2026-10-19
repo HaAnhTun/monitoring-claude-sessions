@@ -7,7 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { RUNTIME_VERSION } from '@mcs/shared';
+import { RUNTIME_VERSION, controlAddress } from '@mcs/shared';
 import type { ControlRequest, ControlResponse } from '@mcs/shared/protocol';
 import { allocatePort, buildRepo, buildTaskWorkspace, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,7 +36,6 @@ const REAL_ID = '77777777-6666-4555-8444-333333333333';
 const OTHER_ID = '99999999-8888-4777-8666-555555555555';
 const BACKSLASH = String.fromCharCode(92);
 const LF = String.fromCharCode(10);
-const NUL = String.fromCharCode(0);
 const PORT = 18000;
 const URL_OF = (port: number): string => `http://127.0.0.1:${String(port)}`;
 
@@ -459,24 +458,20 @@ describe('state predicates', () => {
 // ---- the control address -----------------------------------------------------------------------------------------------------
 
 describe('controlAddressOf (01 4.3)', () => {
-  const host = (platform: 'win32' | 'linux' | 'darwin' | 'other', uid: number | null) => ({
-    platform,
-    tmpdir: path.join(path.sep, 'tmp'),
-    uid,
-  });
-
-  it('is the named pipe mcs-<id> on Windows, an abstract socket on Linux, a socket file elsewhere', () => {
-    expect(controlAddressOf(ID, host('win32', null))).toBe(
-      `${BACKSLASH}${BACKSLASH}.${BACKSLASH}pipe${BACKSLASH}mcs-${ID}`,
+  // the per-platform table is tested once, in packages/shared/src/control-address.test.ts; this is the wrapper's consistency check
+  it('is the shared controlAddress for the host it is given, and for this host by default', () => {
+    for (const platform of ['win32', 'linux', 'darwin', 'other'] as const) {
+      const host = { platform, tmpdir: path.join(path.sep, 'tmp'), uid: 501 };
+      expect(controlAddressOf(ID, host), platform).toBe(controlAddress(ID, host));
+    }
+    expect(controlAddressOf(ID)).toBe(
+      controlAddress(ID, {
+        platform: hostPlatform,
+        tmpdir: os.tmpdir(),
+        uid: typeof process.getuid === 'function' ? process.getuid() : null,
+      }),
     );
-    expect(controlAddressOf(ID, host('linux', 1000))).toBe(`${NUL}mcs-${ID}`);
-    expect(controlAddressOf(ID, host('darwin', 501))).toBe(path.join(path.sep, 'tmp', 'mcs-501', `${ID}.sock`));
-    expect(controlAddressOf(ID, host('other', null))).toBe(path.join(path.sep, 'tmp', 'mcs-0', `${ID}.sock`));
-  });
-
-  it('refuses an id that is not a version 4 uuid (it becomes part of a path)', () => {
-    expect(() => controlAddressOf(`..${BACKSLASH}evil`, host('win32', null))).toThrow(RangeError);
-    expect(() => controlAddressOf('', host('linux', 1))).toThrow(RangeError);
+    expect(() => controlAddressOf('not-a-uuid')).toThrow(RangeError);
   });
 });
 

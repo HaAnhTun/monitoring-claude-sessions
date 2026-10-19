@@ -413,6 +413,30 @@ describe('health (DA-T-API-16, 03 6.2)', () => {
     expect(report.panels).toEqual(stats);
   });
 
+  it('reports the flags of ctx.process and the bound gauges, and is zero and false for the DbReader deps (CR-WP-18-5, CR-WP-17-3)', async () => {
+    const ctx = await build(await fixture());
+    const flagged = createQueries(
+      ctx.db,
+      serverDeps(ctx, {
+        process: { ...ctx.process, previousRunUnclean: true, ownershipConflict: () => true },
+        healthGauges: () => ({
+          sseClients: 6,
+          search: { total: 2, byStoppedBy: { complete: 2, match_limit: 0, time_budget: 0, cancelled: 0 } },
+        }),
+      }),
+    );
+    const report = flagged.health(ctx.scope);
+    expect(HealthReportSchema.safeParse(report).success).toBe(true);
+    expect(report.runtime).toMatchObject({ previousRunUnclean: true, ownershipConflict: true, sseClients: 6 });
+    expect(report.runtime.search.total).toBe(2);
+
+    const quiet = ctx.queries.health(ctx.scope);
+    expect(quiet.runtime).toMatchObject({ previousRunUnclean: false, ownershipConflict: false, sseClients: 0 });
+
+    const reader = createQueries(ctx.db, { config: ctx.config, now: () => NOW, audit: noAudit }).health(ctx.scope);
+    expect(reader.runtime).toMatchObject({ previousRunUnclean: false, ownershipConflict: false, sseClients: 0 });
+  });
+
   it('cpuUserMicros does not decrease across two calls', async () => {
     const ctx = await build(await fixture());
     const first = ctx.queries.health(ctx.scope);

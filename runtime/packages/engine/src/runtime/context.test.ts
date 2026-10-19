@@ -20,11 +20,13 @@ import { initWorkspace } from '../workspace/init.ts';
 import { writeInstanceFile } from '../workspace/adopt.ts';
 import type { WorkspaceRef } from '../workspace/paths.ts';
 import {
+  bindHealthGauges,
   bindOwnershipConflict,
   bindPanelStats,
   buildInstanceContext,
   buildInstanceContextWith,
   contextFactories,
+  healthGaugesOf,
   mapDbOpenError,
   panelStatsOf,
   type BuildContextInput,
@@ -376,7 +378,15 @@ describe('buildInstanceContext: query deps (registry C09, 01 4.4a "Query deps")'
     expect(seen).toHaveLength(1);
     const deps = seen[0]?.deps as Record<string, unknown>;
     expect(seen[0]?.db).toBe(ctx.db);
-    expect(Object.keys(deps).sort()).toEqual(['audit', 'childStats', 'config', 'now', 'panelStats', 'process']);
+    expect(Object.keys(deps).sort()).toEqual([
+      'audit',
+      'childStats',
+      'config',
+      'healthGauges',
+      'now',
+      'panelStats',
+      'process',
+    ]);
     expect(deps['config']).toBe(ctx.config);
     expect(deps['process']).toBe(ctx.process);
     expect(deps['childStats']).toBe(childStatsFake);
@@ -410,6 +420,76 @@ describe('buildInstanceContext: query deps (registry C09, 01 4.4a "Query deps")'
     bindPanelStats(ctx, () => stats);
     expect(panelStats()).toBe(stats);
     expect(panelStatsOf(ctx)).toBe(stats);
+  });
+
+  it('answers zero gauges until they are bound, and follows each bound gauge (CR-WP-17-3)', async () => {
+    const fx = await fixture();
+    let deps: Record<string, unknown> = {};
+    const ctx = await buildInstanceContextWith(fx.input, {
+      createQueries: (_db, d) => {
+        deps = Object.fromEntries(Object.entries(d));
+        return {} as never;
+      },
+    });
+    opened.push(ctx);
+    const gauges = deps['healthGauges'] as () => unknown;
+    const none = {
+      sseClients: 0,
+      search: { total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } },
+    };
+    expect(gauges()).toEqual(none);
+    expect(healthGaugesOf(ctx)).toEqual(none);
+
+    let open = 3;
+    bindHealthGauges(ctx, { sseClients: () => open });
+    expect(gauges()).toEqual({ ...none, sseClients: 3 });
+    open = 0;
+    expect(healthGaugesOf(ctx).sseClients).toBe(0);
+
+    const search = { total: 5, byStoppedBy: { complete: 4, match_limit: 1, time_budget: 0, cancelled: 0 } };
+    bindHealthGauges(ctx, { search: () => search });
+    open = 2;
+    expect(gauges()).toEqual({ sseClients: 2, search });
+  });
+
+  it('makes a gauge that answers nonsense a count: negative, fractional and non-finite values become whole numbers', async () => {
+    const ctx = await build(await fixture());
+    let value = -4;
+    bindHealthGauges(ctx, { sseClients: () => value });
+    expect(healthGaugesOf(ctx).sseClients).toBe(0);
+    value = 2.9;
+    expect(healthGaugesOf(ctx).sseClients).toBe(2);
+    value = Number.NaN;
+    expect(healthGaugesOf(ctx).sseClients).toBe(0);
+    value = Number.POSITIVE_INFINITY;
+    expect(healthGaugesOf(ctx).sseClients).toBe(0);
+  });
+
+  it('binds each gauge once and throws on a second bind of the same one; a context assembled by hand is ignored', async () => {
+    const ctx = await build(await fixture());
+    bindHealthGauges(ctx, { sseClients: () => 1 });
+    expect(() => {
+      bindHealthGauges(ctx, { sseClients: () => 2 });
+    }).toThrow(/already/);
+    expect(healthGaugesOf(ctx).sseClients).toBe(1);
+    expect(() => {
+      bindHealthGauges(ctx, {
+        search: () => ({ total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } }),
+      });
+    }).not.toThrow();
+    expect(() => {
+      bindHealthGauges(ctx, {
+        search: () => ({ total: 1, byStoppedBy: { complete: 1, match_limit: 0, time_budget: 0, cancelled: 0 } }),
+      });
+    }).toThrow(/already/);
+    expect(() => {
+      bindHealthGauges(ctx, {});
+    }).not.toThrow();
+    const byHand = { ...ctx };
+    expect(() => {
+      bindHealthGauges(byHand, { sseClients: () => 9 });
+    }).not.toThrow();
+    expect(healthGaugesOf(byHand).sseClients).toBe(0);
   });
 
   it('allows bindPanelStats once only, and ignores a context that was assembled by hand', async () => {

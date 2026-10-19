@@ -974,6 +974,22 @@ describe('stop: the forced path verifies the marker before any kill (01 4.9, ADR
     expect(existsSync(fileOf(w, 'run', 'control.token'))).toBe(false);
   });
 
+  it('names INTERNAL when the server answered that a service behind the channel threw (CR-WP-18-6)', async () => {
+    const w = world();
+    writeToken(w);
+    writeState(w, stateFileOf(SERVER_PID));
+    w.alive.add(SERVER_PID);
+    w.commandLines.set(SERVER_PID, markerLine(w));
+    w.controlAnswer = () => ({ kind: 'refusal', error: 'INTERNAL' });
+    w.probes = [running()];
+    const result = await stop(w.ctx, { task: 'demo' }, w.deps);
+    expect(result).toMatchObject({ outcome: 'stopped-forced', forced: true });
+    expect(result.message).toEqual([
+      `stopped runtime pid ${String(SERVER_PID)} (${URL_OF(PORT)}) (forced: shutdown refused (INTERNAL))`,
+    ]);
+    expect(w.killed).toEqual([SERVER_PID]);
+  });
+
   it('kills a hung runtime straight away, without a shutdown request', async () => {
     const w = world();
     writeToken(w);
@@ -1197,6 +1213,8 @@ const BODY = {
       cpuUserMicros: 1000,
       cpuSystemMicros: 500,
       sseClients: 0,
+      previousRunUnclean: false,
+      ownershipConflict: false,
       search: { total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } },
     },
     db: {

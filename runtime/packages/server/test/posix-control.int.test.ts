@@ -42,12 +42,10 @@ describe('control address per host (runs everywhere)', () => {
     expect(controlAddress(ID, { platform: 'win32', tmpdir: 'C:\\t', uid: null })).toBe(`\\\\.\\pipe\\mcs-${ID}`);
     for (const platform of ['darwin', 'other'] as const) {
       expect(controlAddress(ID, { platform, tmpdir: '/var/folders/x/T', uid: 501 })).toBe(
-        path.join('/var/folders/x/T', 'mcs-501', `${ID}.sock`),
+        `/var/folders/x/T/mcs-501/${ID}.sock`,
       );
     }
-    expect(controlAddress(ID, { platform: 'darwin', tmpdir: '/tmp', uid: null })).toBe(
-      path.join('/tmp', 'mcs-0', `${ID}.sock`),
-    );
+    expect(controlAddress(ID, { platform: 'darwin', tmpdir: '/tmp', uid: null })).toBe(`/tmp/mcs-0/${ID}.sock`);
     expect(() => controlAddress('not-a-uuid', { platform: 'linux', tmpdir: '/tmp', uid: 1 })).toThrow(RangeError);
   });
 });

@@ -345,6 +345,7 @@ function unusedRuntime(): InstanceRuntime {
     stop: unused,
     ingestUntilIdle: unused,
     ingestReplay: unused,
+    nudge: unused,
     health: unused,
     panels: { get: unused, tickAttempts: unused, stats: unused, close: unused },
   };
@@ -436,23 +437,30 @@ describe('the error mapper at the end of the chain (03 5.2 step 9)', () => {
 });
 
 describe('the access log (DA-T-PRIV-4)', () => {
-  it('records route id, method, status and duration, and never a query string, a path value or a body', async () => {
+  it('records route id, method, status, duration and request id, and never a query string, a path value or a body', async () => {
     const h = await start();
-    await httpRequest(h.port, `/api/v3/ingest/probes/${PROBE}?q=SECRET-QUERY`);
-    await httpRequest(h.port, '/api/v3/ingest/nudge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{"instanceId":"SECRET-BODY"}',
-    });
-    await httpRequest(h.port, '/api/v3/not-a-route/SECRET-PATH');
+    const replies = [
+      await httpRequest(h.port, `/api/v3/ingest/probes/${PROBE}?q=SECRET-QUERY`),
+      await httpRequest(h.port, '/api/v3/ingest/nudge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"instanceId":"SECRET-BODY"}',
+      }),
+      await httpRequest(h.port, '/api/v3/not-a-route/SECRET-PATH'),
+    ];
     const lines = h.logs.filter((line) => line.event === 'http_request');
     expect(lines.length).toBe(3);
     expect(lines.map((line) => line.fields?.['route'])).toEqual(['ingestProbe', 'ingestNudge', 'unmatched']);
     expect(lines.map((line) => line.fields?.['status'])).toEqual([400, 400, 404]);
     for (const line of lines) {
-      expect(Object.keys(line.fields ?? {}).sort()).toEqual(['durationMs', 'method', 'route', 'status']);
+      expect(Object.keys(line.fields ?? {}).sort()).toEqual(['durationMs', 'method', 'requestId', 'route', 'status']);
       expect(typeof line.fields?.['durationMs']).toBe('number');
     }
+    // the request id of the line is the one of the X-Request-Id header of the response (CR-WP-17-9), one per request
+    const ids = lines.map((line) => line.fields?.['requestId']);
+    expect(ids).toEqual(replies.map((reply) => reply.headers['x-request-id']));
+    for (const id of ids) expect(id).toMatch(/^r-[0-9a-z]{12}$/);
+    expect(new Set(ids).size).toBe(3);
     const text = JSON.stringify(h.logs);
     for (const secret of ['SECRET-QUERY', 'SECRET-BODY', 'SECRET-PATH', PROBE]) expect(text).not.toContain(secret);
   });

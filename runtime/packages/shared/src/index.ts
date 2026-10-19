@@ -40,3 +40,8 @@ export * from './db-constants.ts';
 
 // @wp-begin WP-29
 // @wp-end WP-29
+
+// @wp-begin WP-100
+export * from './control-address.ts';
+export * from './server-exit.ts';
+// @wp-end WP-100

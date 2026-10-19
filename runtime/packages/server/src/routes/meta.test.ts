@@ -21,6 +21,7 @@ import {
   LegacyHealthSchema,
   RUNTIME_VERSION,
   toConfigInspection,
+  type HealthReport,
   type InstanceFile,
 } from '@mcs/shared';
 import { allocatePort, assertPortClosed, FakeClock, httpRequest, useTempDirs } from '@mcs/testkit';
@@ -94,11 +95,13 @@ const INSTANCE: InstanceFile = {
 
 interface Stubs {
   readonly calls: string[];
+  /** Merged into `runtime` of the health report the stubbed query layer answers. */
+  runtime: Partial<HealthReport['runtime']>;
   readonly ring: { source: string; code: string; where: string | null; message: string }[];
 }
 
 function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppContext; stubs: Stubs } {
-  const stubs: Stubs = { calls: [], ring: [] };
+  const stubs: Stubs = { calls: [], ring: [], runtime: {} };
   const clock = new FakeClock(NOW);
   const errors: AppContext['errors'] = {
     push: (entry) => {
@@ -136,6 +139,8 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
       cpuUserMicros: 1,
       cpuSystemMicros: 1,
       sseClients: 0,
+      previousRunUnclean: false,
+      ownershipConflict: false,
       search: { total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } },
     },
     db: { ok: true, sizeBytes: 1, walBytes: 0, freeDiskBytes: null, schemaVersion: 1, lastError: null },
@@ -274,7 +279,7 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
       },
       health: () => {
         stubs.calls.push('health');
-        return baseHealth;
+        return { ...baseHealth, runtime: { ...baseHealth.runtime, ...stubs.runtime } };
       },
       ingestHealth: () => {
         stubs.calls.push('ingestHealth');
@@ -375,6 +380,16 @@ describe('health, healthIngest, instance, config', () => {
     expect(report.errors[19]?.where).toBe('route5');
     expect(stubs.calls).toEqual(['health']);
     expect(report.instanceId).toBe(ID);
+  });
+
+  it('serves the stream count and the crash and ownership flags that the query layer reports (CR-WP-17-3, CR-WP-18-5)', async () => {
+    const { ctx, stubs } = context();
+    const port = await serveMeta(ctx, TASK);
+    const quiet = HealthReportSchema.parse(JSON.parse((await httpRequest(port, '/api/v3/health')).body));
+    expect(quiet.runtime).toMatchObject({ sseClients: 0, previousRunUnclean: false, ownershipConflict: false });
+    stubs.runtime = { sseClients: 3, previousRunUnclean: true, ownershipConflict: true };
+    const report = HealthReportSchema.parse(JSON.parse((await httpRequest(port, '/api/v3/health')).body));
+    expect(report.runtime).toMatchObject({ sseClients: 3, previousRunUnclean: true, ownershipConflict: true });
   });
 
   it('serves the ingest health with asOfSeq, and the instance info', async () => {

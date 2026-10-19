@@ -32,6 +32,8 @@ export interface InstanceRuntime {
   ingestUntilIdle(o: { timeoutMs: number }): Promise<{ idle: boolean; waitedMs: number; stats: IngestStats }>;
   /** Control op `ingest-replay` (01 4.3): the number of segments reset. */
   ingestReplay(fromSegment: string | null): Promise<{ segments: number }>;
+  /** `POST /ingest/nudge` (02 2.8): asks the ingest service to drain now. Coalesced, never waits, never throws. */
+  nudge(): void;
   /** `ctx.queries.health(ctx.scope)` (03 6.2). */
   health(): HealthReport;
   /** The panel service, created with the one writer of the ingest service (06 3.4); the panels route uses it. */
@@ -480,6 +482,9 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
     start,
     stop,
     ingestUntilIdle,
+    nudge: () => {
+      ingest.nudge();
+    },
     ingestReplay: async (fromSegment) => ({ segments: (await ingest.replay(fromSegment)).segmentsReset }),
     health: () => ctx.queries.health(ctx.scope),
     panels,

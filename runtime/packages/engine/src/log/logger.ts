@@ -38,6 +38,10 @@ export const LOG_FIELD_NAMES = [
   'version',
   'schemaVersion',
   'phase',
+  /** The request id of an HTTP request (`r-` and 12 base36 characters; 03 5.1). */
+  'requestId',
+  /** The kind of a spawned child process (`ChildKind`; 06 3.6 rule 9). */
+  'kind',
 ] as const;
 
 /** What a caller may pass: anything. The logger keeps the allow-listed names whose values are safe. */

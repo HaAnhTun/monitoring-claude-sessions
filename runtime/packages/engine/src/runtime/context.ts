@@ -117,6 +117,25 @@ export interface BuildContextInput {
 interface LateBindings {
   panelStats: (() => PanelStats) | null;
   ownershipConflict: (() => boolean) | null;
+  sseClients: (() => number) | null;
+  search: (() => SearchGauge) | null;
+}
+
+/** `HealthReport.runtime.search`: the search counters of the health report (03 6.2). */
+export type SearchGauge = HealthReport['runtime']['search'];
+
+/** What `QueryDeps.healthGauges` answers: the health numbers whose source is created after the context. */
+export interface HealthGaugeValues {
+  readonly sseClients: number;
+  readonly search: SearchGauge;
+}
+
+/** The sources `bindHealthGauges` takes; a gauge that is not bound answers zero. */
+export interface HealthGaugeSources {
+  /** The number of open event streams (the stream hub). */
+  readonly sseClients?: () => number;
+  /** The search counters (the search service). */
+  readonly search?: () => SearchGauge;
 }
 
 /** Keyed by the context object; a context assembled by hand has no entry and so nothing to bind. */
@@ -143,6 +162,44 @@ export function bindOwnershipConflict(ctx: InstanceContext, get: () => boolean):
   if (late === undefined) return;
   if (late.ownershipConflict !== null) throw new Error('bindOwnershipConflict: the ownership flag is already bound');
   late.ownershipConflict = get;
+}
+
+/**
+ * Late binding of the health gauges (CR-WP-17-3): the stream hub and, later, the search service are created after the context.
+ * `QueryDeps.healthGauges` answers zeros until a gauge is bound. Each gauge is bound once (a second bind of the same one
+ * throws, so two owners cannot fight over it); different gauges may be bound by different calls. A context that
+ * `buildInstanceContext` did not make is ignored.
+ */
+export function bindHealthGauges(ctx: Pick<InstanceContext, 'instanceId'>, sources: HealthGaugeSources): void {
+  const late = lateBindings.get(ctx);
+  if (late === undefined) return;
+  if (sources.sseClients !== undefined && late.sseClients !== null) {
+    throw new Error('bindHealthGauges: the sseClients gauge is already bound');
+  }
+  if (sources.search !== undefined && late.search !== null) {
+    throw new Error('bindHealthGauges: the search gauge is already bound');
+  }
+  if (sources.sseClients !== undefined) late.sseClients = sources.sseClients;
+  if (sources.search !== undefined) late.search = sources.search;
+}
+
+const ZERO_SEARCH: SearchGauge = {
+  total: 0,
+  byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 },
+};
+
+/** A gauge value is a count: whole and not negative, zero for anything else. */
+function toCount(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
+function gaugeValues(late: LateBindings | undefined): HealthGaugeValues {
+  return { sseClients: toCount(late?.sseClients?.() ?? 0), search: late?.search?.() ?? ZERO_SEARCH };
+}
+
+/** What `QueryDeps.healthGauges` answers for this context right now. */
+export function healthGaugesOf(ctx: InstanceContext): HealthGaugeValues {
+  return gaugeValues(lateBindings.get(ctx));
 }
 
 /** What `QueryDeps.panelStats` answers for this context right now. */
@@ -306,6 +363,7 @@ interface QueryDepsParts {
   readonly process: RuntimeProcessInfo;
   readonly exec: ExecApi;
   readonly panelStats: () => PanelStats;
+  readonly healthGauges: () => HealthGaugeValues;
 }
 
 /** The six deps of 03 12.1 `QueryDeps` for the server (registry C09); the DbReader passes `config`, `now` and `audit` only. */
@@ -317,6 +375,7 @@ function queryDepsOf(p: QueryDepsParts): QueryDeps {
     process: p.process,
     childStats: p.exec.childStats,
     panelStats: p.panelStats,
+    healthGauges: p.healthGauges,
   };
 }
 
@@ -368,7 +427,7 @@ export async function buildInstanceContextWith(i: BuildContextInput, deps: Conte
 
   try {
     const exec = i.exec ?? DEFAULT_EXEC;
-    const late: LateBindings = { panelStats: null, ownershipConflict: null };
+    const late: LateBindings = { panelStats: null, ownershipConflict: null, sseClients: null, search: null };
     const processInfo = createProcessInfo(i, clock, late);
     const queries = deps.createQueries(
       db,
@@ -380,6 +439,7 @@ export async function buildInstanceContextWith(i: BuildContextInput, deps: Conte
         process: processInfo,
         exec,
         panelStats: () => late.panelStats?.() ?? {},
+        healthGauges: () => gaugeValues(late),
       }),
     );
     const ctx: InstanceContext = Object.freeze({
@@ -432,6 +492,8 @@ export interface QueryDeps {
   readonly process?: RuntimeProcessInfo;
   readonly childStats?: () => Record<ChildKind, ChildKindStats>;
   readonly panelStats?: () => PanelStats;
+  /** `bindHealthGauges`; absent for the DbReader (zeros). */
+  readonly healthGauges?: () => HealthGaugeValues;
 }
 
 export interface EngineQueries {

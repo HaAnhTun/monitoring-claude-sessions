@@ -269,6 +269,14 @@ describe('health (DA-T-API-16, 03 6.2)', () => {
     expect(second.panels).toEqual(stats);
   });
 
+  it('reports no open stream and no crash or ownership flag on a quiet instance (the stream route binds the gauge)', async () => {
+    const run = await startInstance();
+    const report = HealthReportSchema.parse(await getJson(run.port, '/api/v3/health'));
+    expect(report.runtime.sseClients).toBe(0);
+    expect(report.runtime.previousRunUnclean).toBe(false);
+    expect(report.runtime.ownershipConflict).toBe(false);
+  });
+
   it('lists the server error ring, newest first', async () => {
     const run = await startInstance();
     run.ctx.errors.push({ source: 'server', code: 'INTERNAL', where: 'one', message: 'first failure' });

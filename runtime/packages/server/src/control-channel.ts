@@ -13,8 +13,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { hostPlatform, isMissingFileError, samePath, type HostPlatform, type Logger } from '@mcs/engine';
-import { McsError, UUID_V4_RE } from '@mcs/shared';
+import { hostPlatform, isMissingFileError, samePath, type Logger } from '@mcs/engine';
+import { McsError, controlAddress as sharedControlAddress, type AddressHost as SharedAddressHost } from '@mcs/shared';
 import {
   CONTROL_IDLE_TIMEOUT_MS,
   CONTROL_REQUEST_MAX_BYTES,
@@ -31,12 +31,7 @@ import {
 // ---- the address ---------------------------------------------------------------------------------------------------------
 
 /** What the address depends on; tests pass other hosts, the default is this one. */
-export interface AddressHost {
-  readonly platform: HostPlatform;
-  readonly tmpdir: string;
-  /** The user id on POSIX, `null` on Windows. */
-  readonly uid: number | null;
-}
+export type AddressHost = SharedAddressHost;
 
 function currentHost(): AddressHost {
   return {
@@ -49,21 +44,11 @@ function currentHost(): AddressHost {
 const WINDOWS_PIPE_PREFIX = String.raw`\\.\pipe\mcs-`;
 
 /**
- * Windows `\\.\pipe\mcs-<instanceId>`; Linux the abstract socket `\0mcs-<instanceId>` (the kernel frees it with the
- * process); other POSIX `<tmpdir>/mcs-<uid>/<instanceId>.sock` (a folder of mode 0700). The id becomes part of a path, so
- * only a version 4 uuid is accepted.
+ * The address of the control channel of an instance on this host: `controlAddress` of `@mcs/shared` (one rule for the server, the
+ * engine probe and the CLI; 01 4.3) with the host this process runs on.
  */
 export function controlAddress(instanceId: string, host: AddressHost = currentHost()): string {
-  if (!UUID_V4_RE.test(instanceId)) throw new RangeError('controlAddress: the instance id is not a version 4 uuid');
-  switch (host.platform) {
-    case 'win32':
-      return `${WINDOWS_PIPE_PREFIX}${instanceId}`;
-    case 'linux':
-      return `\0mcs-${instanceId}`;
-    case 'darwin':
-    case 'other':
-      return path.join(host.tmpdir, `mcs-${String(host.uid ?? 0)}`, `${instanceId}.sock`);
-  }
+  return sharedControlAddress(instanceId, host);
 }
 
 /** True for an address the OS frees by itself: a Windows pipe or a Linux abstract socket (no file to clean). */
@@ -358,9 +343,10 @@ class ChannelServer {
       if (response.ok) this.reply(socket, response, request.op);
       else this.refuse(socket, response, request.op);
     } catch (error) {
-      // a service that threw: say nothing to the client (it times out or sees the close), keep serving, name the failure by code
+      // a service that threw: the client gets INTERNAL and nothing else (no message, no detail), the log names the failure by code
       this.o.logger.warn('control_failed', { route: `control:${request.op}`, code: errorCode(error) ?? 'INTERNAL' });
-      socket.destroy();
+      socket.setTimeout(this.idleMs);
+      socket.end(`${JSON.stringify(refusal('INTERNAL'))}\n`);
     }
   }
 

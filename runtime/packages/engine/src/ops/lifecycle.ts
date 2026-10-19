@@ -17,8 +17,10 @@ import { setTimeout as sleepMs } from 'node:timers/promises';
 
 import {
   McsError,
+  SERVER_EXIT_CODES,
   queryString,
   routes,
+  serverExitNameOf,
   toQuery,
   type InstanceFile,
   type LegacyState,
@@ -301,26 +303,11 @@ function recordOf(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/** The server exit codes of 01 4.1 by name (registry 7.3); the server module has the same table (CR-WP-19-1). */
-const SERVER_EXIT_NAMES: Readonly<Record<number, string>> = {
-  0: 'OK',
-  10: 'CONFIG_INVALID',
-  11: 'IDENTITY_MISMATCH',
-  12: 'INSTANCE_LOCKED',
-  13: 'PORT_EXHAUSTED',
-  14: 'DB_ERROR',
-  15: 'DB_NEWER_THAN_RUNTIME',
-  16: 'DB_UPGRADE_REQUIRED',
-  17: 'WORKSPACE_INVALID',
-  18: 'BUILD_INVALID',
-  70: 'INTERNAL',
-};
-
-const INSTANCE_LOCKED = 12;
+const INSTANCE_LOCKED = SERVER_EXIT_CODES.INSTANCE_LOCKED;
 
 function exitName(code: number | null, signal: string | null): string {
   if (code === null) return signal === null ? 'killed' : `killed by ${signal}`;
-  return SERVER_EXIT_NAMES[code] ?? `exit code ${String(code)}`;
+  return serverExitNameOf(code) ?? `exit code ${String(code)}`;
 }
 
 /** Whole seconds when it is, else one decimal: `20`, `1.5`. */

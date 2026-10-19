@@ -4,7 +4,7 @@
 // and live as long as the app: an instance that nobody watches holds no listener and no timer.
 import type { ServerResponse } from 'node:http';
 
-import { onCommitted, type InstanceDb } from '@mcs/engine';
+import { bindHealthGauges, onCommitted, type InstanceDb } from '@mcs/engine';
 import { routes } from '@mcs/shared';
 import type { Response } from 'express';
 
@@ -86,6 +86,8 @@ export interface StreamRouteOptions {
 export function createStreamRoutes(options: StreamRouteOptions = {}): RouteModule {
   return (app, { ctx }) => {
     let hub: StreamHub | undefined;
+    // the health report counts the open streams (CR-WP-17-3); the hub exists only once somebody connected, so no hub is zero
+    bindHealthGauges(ctx, { sseClients: () => hub?.size ?? 0 });
     const hubOf = (): StreamHub => {
       if (hub !== undefined) return hub;
       if (!hasDatabase(ctx)) throw new ApiError('internal_error');

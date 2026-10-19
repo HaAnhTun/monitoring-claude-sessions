@@ -78,6 +78,8 @@ export function makeHealth(status: HealthReport['status'] = 'ok', overrides: Par
       cpuUserMicros: 1000,
       cpuSystemMicros: 500,
       sseClients: 0,
+      previousRunUnclean: false,
+      ownershipConflict: false,
       search: { total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } },
     },
     db: {

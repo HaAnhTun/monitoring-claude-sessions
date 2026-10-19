@@ -317,7 +317,7 @@ describe('control protocol (01 4.3, zod-free)', () => {
     { v: 1, op: 'ingest-replay', instanceId: ID, token: TOKEN, fromSegment: null },
   ];
 
-  it('lists the four ops, three phases and five error codes of the registry', () => {
+  it('lists the four ops, three phases and six error codes (INTERNAL is WP-100)', () => {
     expect([...CONTROL_OPS]).toEqual(['identify', 'shutdown', 'backup', 'ingest-replay']);
     expect([...CONTROL_PHASES]).toEqual(['starting', 'ready', 'stopping']);
     expect([...CONTROL_ERROR_CODES]).toEqual([
@@ -326,6 +326,7 @@ describe('control protocol (01 4.3, zod-free)', () => {
       'INSTANCE_MISMATCH',
       'NOT_READY',
       'BACKUP_FAILED',
+      'INTERNAL',
     ]);
     expect(CONTROL_REQUEST_MAX_BYTES).toBe(4096);
   });

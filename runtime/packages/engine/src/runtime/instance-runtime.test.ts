@@ -143,6 +143,7 @@ interface Mocks {
   readonly ingestStop: Mock<(deadlineMs: number) => Promise<void>>;
   readonly ingestUntilIdle: Mock<(o: { timeoutMs: number }) => Promise<void>>;
   readonly ingestReplay: Mock<(from: string | null) => Promise<{ segmentsReset: number }>>;
+  readonly ingestNudge: Mock<() => void>;
   readonly ingestStats: Mock<() => ReturnType<Ingest['stats']>>;
   readonly sweeperStart: Mock<() => void>;
   readonly sweeperStop: Mock<(deadlineMs: number) => Promise<void>>;
@@ -185,6 +186,7 @@ function makeFakes(): Fakes {
     }),
     ingestUntilIdle: vi.fn(() => Promise.resolve()),
     ingestReplay: vi.fn(() => Promise.resolve({ segmentsReset: 3 })),
+    ingestNudge: vi.fn(() => undefined),
     ingestStats: vi.fn(() => ZERO_STATS),
     sweeperStart: vi.fn(() => {
       log.push('sweeper.start');
@@ -215,7 +217,9 @@ function makeFakes(): Fakes {
     start: (...args) => m.ingestStart(...args),
     stop: (deadlineMs) => m.ingestStop(deadlineMs),
     untilIdle: (o) => m.ingestUntilIdle(o),
-    nudge: () => undefined,
+    nudge: () => {
+      m.ingestNudge();
+    },
     replay: (from) => m.ingestReplay(from),
     stats: () => m.ingestStats(),
   };
@@ -365,6 +369,19 @@ describe('createInstanceRuntime: creation (01 4.4a component order)', () => {
     ]);
     expect(fakes.factories.createAlertComponents).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fakes.factories.createAlertComponents).mock.calls[0]?.[0]).toBe(env.ctx);
+  });
+
+  it('forwards nudge to the ingest service, once per call, without waiting (CR-WP-17-4, CR-WP-18-3)', async () => {
+    const env = await makeEnv();
+    const fakes = makeFakes();
+    const runtime = createInstanceRuntime(env.ctx, { factories: fakes.factories });
+    runtimes.push(runtime);
+    expect(fakes.m.ingestNudge).not.toHaveBeenCalled();
+    runtime.nudge();
+    expect(fakes.m.ingestNudge).toHaveBeenCalledTimes(1);
+    runtime.nudge();
+    runtime.nudge();
+    expect(fakes.m.ingestNudge).toHaveBeenCalledTimes(3);
   });
 
   it('exposes the panel service and delegates ingestReplay and health', async () => {

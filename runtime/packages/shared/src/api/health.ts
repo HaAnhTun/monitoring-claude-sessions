@@ -44,6 +44,10 @@ export const HealthReportSchema = z.strictObject({
     cpuUserMicros: CountSchema,
     cpuSystemMicros: CountSchema,
     sseClients: CountSchema,
+    /** True when the previous run of this instance ended without a clean shutdown (01 4.13). */
+    previousRunUnclean: z.boolean(),
+    /** True while `state.json` names another live process (the state watchdog, 01 4.6). */
+    ownershipConflict: z.boolean(),
     search: z.strictObject({
       total: CountSchema,
       byStoppedBy: z.strictObject({

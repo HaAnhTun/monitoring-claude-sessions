@@ -17,6 +17,8 @@ export const CONTROL_ERROR_CODES = [
   'INSTANCE_MISMATCH',
   'NOT_READY',
   'BACKUP_FAILED',
+  /** A service behind the channel threw: the reply carries no detail (the cause is in the log). */
+  'INTERNAL',
 ] as const;
 export type ControlErrorCode = (typeof CONTROL_ERROR_CODES)[number];
 

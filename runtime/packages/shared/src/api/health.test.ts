@@ -40,6 +40,8 @@ const report = {
     cpuUserMicros: 123,
     cpuSystemMicros: 45,
     sseClients: 1,
+    previousRunUnclean: false,
+    ownershipConflict: false,
     search: { total: 3, byStoppedBy: { complete: 2, match_limit: 1, time_budget: 0, cancelled: 0 } },
   },
   db: { ok: true, sizeBytes: 1000, walBytes: 0, freeDiskBytes: null, schemaVersion: 1, lastError: null },
@@ -114,6 +116,26 @@ const info = {
 describe('HealthReport (03 6.2, registry C51)', () => {
   it('parses the full report, including resources, children and panels (I-21)', () => {
     expect(HealthReportSchema.parse(report)).toEqual(report);
+  });
+
+  it('requires the two crash and ownership flags as booleans (CR-WP-18-5)', () => {
+    for (const flag of ['previousRunUnclean', 'ownershipConflict']) {
+      expect(HealthReportSchema.safeParse({ ...report, runtime: without(report.runtime, flag) }).success, flag).toBe(
+        false,
+      );
+      expect(
+        HealthReportSchema.safeParse({ ...report, runtime: { ...report.runtime, [flag]: 'no' } }).success,
+        flag,
+      ).toBe(false);
+      expect(
+        HealthReportSchema.safeParse({ ...report, runtime: { ...report.runtime, [flag]: null } }).success,
+        flag,
+      ).toBe(false);
+      expect(
+        HealthReportSchema.safeParse({ ...report, runtime: { ...report.runtime, [flag]: true } }).success,
+        flag,
+      ).toBe(true);
+    }
   });
 
   it('children must hold every ChildKind (zeros when never spawned)', () => {

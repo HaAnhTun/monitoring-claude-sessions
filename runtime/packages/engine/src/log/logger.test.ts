@@ -96,6 +96,8 @@ describe('constants (S-LOG-6)', () => {
       'version',
       'schemaVersion',
       'phase',
+      'requestId',
+      'kind',
     ]);
   });
 });
@@ -154,12 +156,35 @@ describe('line format and the field allow-list (S-LOG-1, SEC-22)', () => {
       version: '3.0.0',
       schemaVersion: 1,
       phase: true,
+      requestId: 'r-0123456789ab',
+      kind: 'powershell.processes',
     };
     const { lines, logger } = await capture({}, (log) => {
       log.warn('all', fields);
     });
     expect(lines[0]).toMatchObject({ level: 'warn', event: 'all', ...fields });
     expect(logger.stats.droppedFields).toBe(0);
+  });
+
+  it('keeps requestId and kind when they are safe strings and drops them otherwise (CR-WP-17-9, CR-WP-16-3)', async () => {
+    const { lines, logger } = await capture({}, (log) => {
+      log.debug('child_run', { kind: 'git', requestId: 'r-0123456789ab', durationMs: 3, code: 0 });
+      log.debug('child_run', { kind: 'has space', requestId: 'line' + String.fromCharCode(10) + 'break' });
+      log.debug('child_run', { kind: 42, requestId: { id: 'r-1' } });
+      log.debug('child_run', { kind: 'x'.repeat(129) });
+    });
+    expect(lines[0]).toMatchObject({
+      event: 'child_run',
+      requestId: 'r-0123456789ab',
+      kind: 'git',
+      durationMs: 3,
+      code: 0,
+    });
+    expect(lines[1]).toEqual({ ts: '2026-01-01T00:00:00.000Z', level: 'debug', event: 'child_run' });
+    expect(lines[2]).toMatchObject({ kind: 42 });
+    expect(lines[2]).not.toHaveProperty('requestId');
+    expect(lines[3]).not.toHaveProperty('kind');
+    expect(logger.stats.droppedFields).toBe(4);
   });
 
   it('drops fields that are not on the list and counts each one', async () => {

@@ -3,15 +3,13 @@
 // the instance id and the pid, and a free channel with a live pid in `state.json` is by construction not our runtime. The
 // command line is needed only to kill, and that is `stop`'s business (lifecycle.ts).
 //
-// The address of the control channel has one more copy, in the server (`server/src/control-channel.ts`), because the
-// engine cannot import the server and `@mcs/shared/protocol` is free of Node (CR-WP-19-1). The integration tests start a
-// real server and talk to it through this module, so a drift between the two fails there.
+// The address of the control channel is `controlAddress` of `@mcs/shared`, the same function the server listens with
+// (CR-WP-19-1); `controlAddressOf` below only supplies the host this process runs on.
 import { request } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
-import path from 'node:path';
 
-import { StateFileSchema, UUID_V4_RE, type StateFile } from '@mcs/shared';
+import { StateFileSchema, controlAddress, type AddressHost as SharedAddressHost, type StateFile } from '@mcs/shared';
 import {
   CONTROL_CLIENT_TIMEOUT_MS,
   parseControlResponse,
@@ -21,25 +19,18 @@ import {
 } from '@mcs/shared/protocol';
 
 import { readSmallFile } from '../platform/fsx.ts';
-import { hostPlatform, type HostPlatform } from '../platform/host.ts';
+import { hostPlatform } from '../platform/host.ts';
 import { listRuntimeProcesses, type RuntimeProcess } from '../platform/markers.ts';
 import { pidAlive } from '../platform/process.ts';
 import { readInstanceFile } from '../workspace/adopt.ts';
 import { workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
 
 const LF = String.fromCharCode(10);
-const NUL = String.fromCharCode(0);
-const BACKSLASH = String.fromCharCode(92);
 
 // ---- the control address (01 4.3) ----------------------------------------------------------------------------------------
 
 /** What the address depends on; tests pass other hosts, the default is this one. */
-export interface AddressHost {
-  readonly platform: HostPlatform;
-  readonly tmpdir: string;
-  /** The user id on POSIX, `null` on Windows. */
-  readonly uid: number | null;
-}
+export type AddressHost = SharedAddressHost;
 
 function currentHost(): AddressHost {
   return {
@@ -49,21 +40,9 @@ function currentHost(): AddressHost {
   };
 }
 
-/**
- * Windows `\\.\pipe\mcs-<instanceId>`; Linux the abstract socket `\0mcs-<instanceId>`; other POSIX
- * `<tmpdir>/mcs-<uid>/<instanceId>.sock`. The id becomes part of a path, so only a version 4 uuid is accepted.
- */
+/** The control address of an instance on this host: the rule is `controlAddress` of `@mcs/shared`, which the server uses too. */
 export function controlAddressOf(instanceId: string, host: AddressHost = currentHost()): string {
-  if (!UUID_V4_RE.test(instanceId)) throw new RangeError('controlAddressOf: the instance id is not a version 4 uuid');
-  switch (host.platform) {
-    case 'win32':
-      return `${BACKSLASH}${BACKSLASH}.${BACKSLASH}pipe${BACKSLASH}mcs-${instanceId}`;
-    case 'linux':
-      return `${NUL}mcs-${instanceId}`;
-    case 'darwin':
-    case 'other':
-      return path.join(host.tmpdir, `mcs-${String(host.uid ?? 0)}`, `${instanceId}.sock`);
-  }
+  return controlAddress(instanceId, host);
 }
 
 // ---- the control client ------------------------------------------------------------------------------------------------------

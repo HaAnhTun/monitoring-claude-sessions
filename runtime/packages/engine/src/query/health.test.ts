@@ -279,7 +279,15 @@ function facts(over: Partial<HealthFacts> = {}): HealthFacts {
     instanceId: ID,
     asOfSeq: 12,
     epoch: 'deadbeef',
-    runtime: { version: '3.0.0', codeStamp: 'abc123', outdated: false, pid: 4242, startedAtMs: STARTED },
+    runtime: {
+      version: '3.0.0',
+      codeStamp: 'abc123',
+      outdated: false,
+      pid: 4242,
+      startedAtMs: STARTED,
+      previousRunUnclean: false,
+      ownershipConflict: false,
+    },
     resources: {
       eventLoopDelayP99Ms: 3.5,
       rssBytes: 100_000_000,
@@ -293,6 +301,7 @@ function facts(over: Partial<HealthFacts> = {}): HealthFacts {
     backlogWarnMs: BACKLOG_WARN_MS,
     children: undefined,
     panels: undefined,
+    gauges: undefined,
     alerts: [],
     criticalAlertsOpen: false,
     ...over,
@@ -322,6 +331,29 @@ function alertRow(over: Partial<AlertRow> = {}): AlertRow {
 }
 
 describe('buildHealthReport (03 6.2 status rules)', () => {
+  it('reports the crash and ownership flags of the process (CR-WP-18-5) without changing the status', () => {
+    const base = facts().runtime;
+    const unclean = buildHealthReport(facts({ runtime: { ...base, previousRunUnclean: true } }));
+    expect(unclean.runtime.previousRunUnclean).toBe(true);
+    expect(unclean.runtime.ownershipConflict).toBe(false);
+    const conflict = buildHealthReport(facts({ runtime: { ...base, ownershipConflict: true } }));
+    expect(conflict.runtime.previousRunUnclean).toBe(false);
+    expect(conflict.runtime.ownershipConflict).toBe(true);
+    expect(conflict.status).toBe('ok');
+    expect(HealthReportSchema.safeParse(conflict).success).toBe(true);
+  });
+
+  it('takes sseClients and the search counters from the gauges, and is zero without them (CR-WP-17-3)', () => {
+    const search = { total: 7, byStoppedBy: { complete: 5, match_limit: 1, time_budget: 1, cancelled: 0 } };
+    const report = buildHealthReport(facts({ gauges: { sseClients: 4, search } }));
+    expect(report.runtime.sseClients).toBe(4);
+    expect(report.runtime.search).toEqual(search);
+    expect(HealthReportSchema.safeParse(report).success).toBe(true);
+    const bare = buildHealthReport(facts());
+    expect(bare.runtime.sseClients).toBe(0);
+    expect(bare.runtime.search.total).toBe(0);
+  });
+
   it('builds a valid report: ok, zero children for every kind, no panels, uptime from the process start', () => {
     const report = buildHealthReport(facts());
     expect(HealthReportSchema.safeParse(report).success).toBe(true);
@@ -343,6 +375,8 @@ describe('buildHealthReport (03 6.2 status rules)', () => {
       cpuUserMicros: 1_200_000,
       cpuSystemMicros: 300_000,
       sseClients: 0,
+      previousRunUnclean: false,
+      ownershipConflict: false,
       search: { total: 0, byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 } },
     });
     expect(report.db).toEqual({

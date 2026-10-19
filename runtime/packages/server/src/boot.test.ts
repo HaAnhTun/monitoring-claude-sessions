@@ -4,8 +4,8 @@ import { writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import path from 'node:path';
 
-import { DbError, SpoolSegmentNotFoundError } from '@mcs/engine';
-import { McsError, RUNTIME_VERSION } from '@mcs/shared';
+import { DbError, SpoolSegmentNotFoundError, execFileText, type ChildLogEntry, type ChildSpec } from '@mcs/engine';
+import { McsError, RUNTIME_VERSION, SERVER_EXIT_CODES as SharedExitCodes, serverExitNameOf } from '@mcs/shared';
 import { allocatePort, assertPortClosed, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,6 +20,7 @@ import {
   readBuildStamp,
   scanPorts,
   serveMain,
+  wireChildLog,
 } from './boot.ts';
 
 const makeTemp = useTempDirs();
@@ -27,30 +28,13 @@ const ID = 'abcdef01-abcd-4bcd-8bcd-abcdef012345';
 const DIR = path.resolve('some', 'workspace');
 
 describe('server exit codes (01 4.1, registry 7.3)', () => {
-  it('has exactly the documented table', () => {
-    expect(SERVER_EXIT_CODES).toEqual({
-      OK: 0,
-      CONFIG_INVALID: 10,
-      IDENTITY_MISMATCH: 11,
-      INSTANCE_LOCKED: 12,
-      PORT_EXHAUSTED: 13,
-      DB_ERROR: 14,
-      DB_NEWER_THAN_RUNTIME: 15,
-      DB_UPGRADE_REQUIRED: 16,
-      WORKSPACE_INVALID: 17,
-      BUILD_INVALID: 18,
-      INTERNAL: 70,
-    });
-  });
-
-  it('never uses 1, which is what Windows reports for a forced termination', () => {
-    expect(Object.values(SERVER_EXIT_CODES)).not.toContain(1);
-  });
-
-  it('names a code, and says INTERNAL for one it does not know', () => {
-    expect(exitNameOf(13)).toBe('PORT_EXHAUSTED');
+  // the table and its names are tested once, in packages/shared/src/server-exit.test.ts; this is the wrapper's consistency check
+  it('re-exports the shared table and names a code, with INTERNAL for one it does not know', () => {
+    expect(SERVER_EXIT_CODES).toBe(SharedExitCodes);
+    expect(exitNameOf(13)).toBe(serverExitNameOf(13));
     expect(exitNameOf(0)).toBe('OK');
     expect(exitNameOf(99)).toBe('INTERNAL');
+    expect(serverExitNameOf(99)).toBeNull();
   });
 });
 
@@ -341,6 +325,82 @@ describe('ingestReplayOutcome (01 4.3, 02 2.7)', () => {
     warn.mockClear();
     await ingestReplayOutcome({ ingestReplay: () => Promise.reject(new Error('plain')) }, null, warn);
     expect(warn).toHaveBeenCalledWith('ingest_replay_failed', { code: 'INTERNAL' });
+  });
+});
+
+const NODE_CHILD: ChildSpec = {
+  kind: 'node',
+  file: process.execPath,
+  args: ['-e', '0'],
+  timeoutMs: 20_000,
+  maxOutputBytes: 1_048_576,
+  encoding: 'utf8',
+};
+
+describe('wireChildLog (06 3.6 rule 9, CR-WP-16-3)', () => {
+  function harness(): {
+    readonly lines: { event: string; fields: Readonly<Record<string, unknown>> | undefined }[];
+    readonly sinks: (((entry: ChildLogEntry) => void) | null)[];
+    readonly setSink: (sink: ((entry: ChildLogEntry) => void) | null) => void;
+    readonly logger: { debug: (event: string, fields?: Readonly<Record<string, unknown>>) => void };
+  } {
+    const lines: { event: string; fields: Readonly<Record<string, unknown>> | undefined }[] = [];
+    const sinks: (((entry: ChildLogEntry) => void) | null)[] = [];
+    return {
+      lines,
+      sinks,
+      setSink: (sink) => {
+        sinks.push(sink);
+      },
+      logger: {
+        debug: (event, fields) => {
+          lines.push({ event, fields });
+        },
+      },
+    };
+  }
+
+  it('logs child_run at debug with the kind, the duration and the numeric exit code, and nothing else', () => {
+    const h = harness();
+    wireChildLog(h.logger, h.setSink);
+    const sink = h.sinks[0];
+    expect(sink).toBeTypeOf('function');
+    sink?.({ kind: 'git', durationMs: 12, code: 0, error: null });
+    expect(h.lines).toEqual([{ event: 'child_run', fields: { kind: 'git', durationMs: 12, code: 0 } }]);
+  });
+
+  it('leaves the code out when the child did not exit with one, and never logs the error text', () => {
+    const h = harness();
+    wireChildLog(h.logger, h.setSink);
+    h.sinks[0]?.({ kind: 'powershell.processes', durationMs: 30_000, code: null, error: 'TIMEOUT' });
+    expect(h.lines).toEqual([{ event: 'child_run', fields: { kind: 'powershell.processes', durationMs: 30_000 } }]);
+    expect(JSON.stringify(h.lines)).not.toContain('TIMEOUT');
+  });
+
+  it('wires once and undoes itself: the undo clears the sink, and a second undo does nothing', () => {
+    const h = harness();
+    const undo = wireChildLog(h.logger, h.setSink);
+    expect(h.sinks).toHaveLength(1);
+    undo();
+    expect(h.sinks).toHaveLength(2);
+    expect(h.sinks[1]).toBeNull();
+    undo();
+    expect(h.sinks).toHaveLength(2);
+  });
+
+  it('is wired to the real process-wide sink by default and cleared by the undo', async () => {
+    const h = harness();
+    const undo = wireChildLog(h.logger);
+    try {
+      const result = await execFileText(NODE_CHILD);
+      expect(result.ok).toBe(true);
+      expect(h.lines.map((line) => line.event)).toEqual(['child_run']);
+      expect(h.lines[0]?.fields).toMatchObject({ kind: 'node', code: 0 });
+    } finally {
+      undo();
+    }
+    await execFileText(NODE_CHILD);
+    expect(h.lines).toHaveLength(1);
   });
 });
 
