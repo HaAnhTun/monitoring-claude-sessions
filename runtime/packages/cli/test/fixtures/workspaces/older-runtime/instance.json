@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "instanceId": "00000000-0000-4000-8000-000000000062",
+  "slug": "older-runtime",
+  "createdAt": "2026-01-01T00:00:00Z",
+  "createdBy": "mcs 3.0.0",
+  "runtimeVersion": "3.0.0",
+  "dbSchemaVersion": 1,
+  "engine": "node",
+  "hooks": {
+    "enabled": false
+  },
+  "upgradedAt": null
+}

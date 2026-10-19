@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "older-runtime",
+  "name": "FIXTURE older runtime",
+  "description": "A synthetic workspace as the 3.0.0 runtime left it.",
+  "created": "2026-01-01T00:00:00Z",
+  "repo": "../../../..",
+  "links": []
+}

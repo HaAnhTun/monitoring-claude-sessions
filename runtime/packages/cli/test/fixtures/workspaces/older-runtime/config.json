@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "title": "FIXTURE older runtime",
+  "port": 18950,
+  "window_hours": 6
+}

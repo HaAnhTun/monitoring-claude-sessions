@@ -123,5 +123,131 @@ describe('config write isolation (T-ISO-06): the commands of task A leave task B
   // @wp-end WP-39
 
   // @wp-begin WP-62
+  /** Task A with a database written by the real engine (no server runs), an `instance.json` of an older runtime, and a backup. */
+  async function taskAWithDatabase(t: TwoTasks): Promise<{ backupId: string }> {
+    const { openInstanceDb } = await import('@mcs/engine');
+    const { writeFileSync } = await import('node:fs');
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    const file = join(t.dirA, 'instance.json');
+    const instance = JSON.parse(readFileSync(file, 'utf8')) as { instanceId: string };
+    writeFileSync(file, `${JSON.stringify({ ...instance, runtimeVersion: '3.0.0' }, null, 2)}\n`);
+    openInstanceDb({
+      path: join(t.dirA, 'data', 'monitor.db'),
+      expectedInstanceId: instance.instanceId,
+      mode: 'serve',
+      runtimeVersion: '3.0.0',
+    }).close();
+    const made = await t.mcs(['backup', '--task', 'a', '--json']);
+    expect(made.code, made.stderr).toBe(0);
+    return { backupId: (JSON.parse(made.stdout) as { data: { id: string } }).data.id };
+  }
+
+  it('upgrade --task a (dry run) and upgrade --task a --yes', async () => {
+    const t = await twoTasks();
+    await taskAWithDatabase(t);
+    const before = t.snapshotB();
+    const dry = await t.mcs(['upgrade', '--task', 'a']);
+    expect(dry.code, dry.stderr).toBe(0);
+    expect(dry.stdout).toContain('upgrade plan (dry run, nothing written)');
+    expect(t.snapshotB()).toBe(before);
+    const run = await t.mcs(['upgrade', '--task', 'a', '--yes']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("upgraded task 'a'");
+    expect(readFileSync(join(t.dirA, 'instance.json'), 'utf8')).toContain('"runtimeVersion": "4.');
+    expect(t.snapshotB()).toBe(before);
+  });
+
+  it('backup --task a', async () => {
+    const t = await twoTasks();
+    const before = t.snapshotB();
+    await taskAWithDatabase(t);
+    const run = await t.mcs(['backup', '--task', 'a', '--label', 'isolation']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain('created backup');
+    expect(existsSync(join(t.dirB, 'data', 'backups'))).toBe(false);
+    expect(t.snapshotB()).toBe(before);
+  });
+
+  it('backup restore --task a --id <id> (dry run) and with --yes', async () => {
+    const t = await twoTasks();
+    const { backupId } = await taskAWithDatabase(t);
+    const before = t.snapshotB();
+    const dry = await t.mcs(['backup', 'restore', '--task', 'a', '--id', backupId]);
+    expect(dry.code, dry.stderr).toBe(0);
+    expect(t.snapshotB()).toBe(before);
+    const run = await t.mcs(['backup', 'restore', '--task', 'a', '--id', backupId, '--yes']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain(`restored backup ${backupId}`);
+    expect(t.snapshotB()).toBe(before);
+  });
+
+  it('db migrate --task a --yes', async () => {
+    const t = await twoTasks();
+    await taskAWithDatabase(t);
+    const before = t.snapshotB();
+    const run = await t.mcs(['db', 'migrate', '--task', 'a', '--yes']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain('already current');
+    expect(t.snapshotB()).toBe(before);
+  });
+
+  it('db rebuild --task a --yes --confirm a', async () => {
+    const t = await twoTasks();
+    await taskAWithDatabase(t);
+    const before = t.snapshotB();
+    const dry = await t.mcs(['db', 'rebuild', '--task', 'a']);
+    expect(dry.code, dry.stderr).toBe(0);
+    expect(t.snapshotB()).toBe(before);
+    const run = await t.mcs(['db', 'rebuild', '--task', 'a', '--yes', '--confirm', 'a']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain('moved the database to data/backups/');
+    expect(existsSync(join(t.dirA, 'data', 'monitor.db'))).toBe(false);
+    expect(t.snapshotB()).toBe(before);
+  });
   // @wp-end WP-62
+
+  // @wp-begin WP-140
+  /** Two pre-4.0 workspaces (no instance.json, a pattern in Python syntax): both need the conversion, so a visit of the other would show. */
+  async function twoOldTasks(t: TwoTasks): Promise<{ oldA: string; oldB: string }> {
+    const { buildTaskWorkspace } = await import('@mcs/testkit');
+    const config = (port: number): Record<string, unknown> => ({
+      title: 'FIXTURE old task',
+      port,
+      attempts: {
+        start: '^(?P<time>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}) JOB BEGIN',
+        end: '^(?P<time>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}) JOB END',
+        time_format: '%Y-%m-%d %H:%M:%S',
+      },
+    });
+    return {
+      oldA: buildTaskWorkspace(t.repo, { slug: 'old-a', config: config(18790) }),
+      oldB: buildTaskWorkspace(t.repo, { slug: 'old-b', config: config(18791) }),
+    };
+  }
+
+  it('migrate-workspace --task old-a (dry run) writes nothing in either workspace', async () => {
+    const t = await twoTasks();
+    const { oldA, oldB } = await twoOldTasks(t);
+    const before = [snapshotTree(oldA), snapshotTree(oldB), t.snapshotB()];
+    const run = await t.mcs(['migrate-workspace', '--task', 'old-a']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("task 'old-a': needs-migration (dry run, nothing written)");
+    expect([snapshotTree(oldA), snapshotTree(oldB), t.snapshotB()]).toEqual(before);
+  });
+
+  it('migrate-workspace --task old-a --apply converts A only and leaves B, also an old-format one, byte for byte as it was', async () => {
+    const t = await twoTasks();
+    const { oldA, oldB } = await twoOldTasks(t);
+    const before = [snapshotTree(oldB), t.snapshotB()];
+    const configA = readFileSync(join(oldA, 'config.json'), 'utf8');
+    const run = await t.mcs(['migrate-workspace', '--task', 'old-a', '--apply']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("task 'old-a': needs-migration (applied)");
+    expect(existsSync(join(oldA, 'instance.json'))).toBe(true);
+    expect(readFileSync(join(oldA, 'config.json'), 'utf8')).not.toBe(configA);
+    expect(existsSync(join(oldB, 'instance.json'))).toBe(false);
+    expect(existsSync(join(oldB, 'data'))).toBe(false);
+    expect([snapshotTree(oldB), t.snapshotB()]).toEqual(before);
+  });
+  // @wp-end WP-140
 });

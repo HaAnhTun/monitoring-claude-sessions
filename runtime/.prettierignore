@@ -9,3 +9,5 @@ package-lock.json
 packages/engine/test/fixtures/legacy-workspace/audit/
 # Frozen data of the pre-4.0 engine (ADR 0066): kept byte-identical to the captured files.
 **/*.frozen.json
+# Byte-exact audit entries of the workspace that an older runtime wrote (T-ISO-24: the old bytes must stay a prefix of the new).
+packages/cli/test/fixtures/workspaces/older-runtime/audit/
