@@ -21,6 +21,10 @@ export interface PrefsData {
   collapsed: Record<string, boolean>;
   navOpen: boolean;
   lastInstanceId: string;
+  /** The UI language (ADR 0072): `auto` follows the browser languages. */
+  locale: 'auto' | 'en' | 'vi';
+  /** The columns a user chose per table, by table id (ADR 0073). The ids are the column ids of the table. */
+  tableColumns: Record<string, string[]>;
 }
 
 export type PrefName = keyof PrefsData;
@@ -37,6 +41,25 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+const TABLE_LIMIT = 30;
+const COLUMNS_LIMIT = 40;
+const ID = /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/;
+const UNSAFE_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
+const isId = (v: unknown): v is string => typeof v === 'string' && ID.test(v) && !UNSAFE_KEYS.has(v);
+
+function isTableColumns(v: unknown): v is PrefsData['tableColumns'] {
+  if (!isRecord(v)) return false;
+  const entries = Object.entries(v);
+  return (
+    entries.length <= TABLE_LIMIT &&
+    entries.every(
+      ([table, columns]) =>
+        isId(table) && Array.isArray(columns) && columns.length <= COLUMNS_LIMIT && columns.every(isId),
+    )
+  );
+}
+
 const VALIDATORS: Validators = {
   theme: (v): v is PrefsData['theme'] => v === 'auto' || v === 'light' || v === 'dark',
   density: (v): v is PrefsData['density'] => v === 'comfortable' || v === 'compact',
@@ -49,6 +72,8 @@ const VALIDATORS: Validators = {
     isRecord(v) && Object.keys(v).length < 50 && Object.values(v).every(isBool),
   navOpen: isBool,
   lastInstanceId: isStr(64),
+  locale: (v): v is PrefsData['locale'] => v === 'auto' || v === 'en' || v === 'vi',
+  tableColumns: isTableColumns,
 };
 
 const PREF_NAMES = Object.keys(VALIDATORS).filter((k): k is PrefName => Object.hasOwn(VALIDATORS, k));

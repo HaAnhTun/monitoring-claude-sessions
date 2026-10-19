@@ -160,3 +160,77 @@ describe('prefs', () => {
     expect(safeLocalStorage()).toBeNull();
   });
 });
+
+describe('language and table columns (ADR 0072, ADR 0073)', () => {
+  it('accepts the three language values and drops everything else', () => {
+    for (const locale of ['auto', 'en', 'vi'] as const) expect(sanitize({ locale }).locale).toBe(locale);
+    for (const locale of ['fr', 'VI', '', 5, null, ['vi'], { vi: true }]) {
+      expect(sanitize({ locale }).locale).toBeUndefined();
+    }
+  });
+
+  it('stores the language through set and reads it back from storage', () => {
+    const st = new MemStorage();
+    const p = createPrefs(st);
+    expect(p.get('locale', 'auto')).toBe('auto');
+    expect(p.set('locale', 'vi')).toBe(true);
+    expect(p.set('locale', 'klingon' as never)).toBe(false);
+    expect(p.get('locale')).toBe('vi');
+    expect(createPrefs(st).get('locale')).toBe('vi');
+    expect(JSON.parse(st.m.get(PREFS_KEY) ?? '{}')).toEqual({ locale: 'vi' });
+  });
+
+  it('accepts a map of column ids per table', () => {
+    const good = { sessions: ['state', 'session', 'last-activity'], tasks: [] };
+    expect(sanitize({ tableColumns: good }).tableColumns).toEqual(good);
+    expect(sanitize({ tableColumns: {} }).tableColumns).toEqual({});
+  });
+
+  it('rejects a column map of the wrong shape', () => {
+    const bad: unknown[] = [
+      'sessions',
+      ['state'],
+      null,
+      { sessions: 'state' },
+      { sessions: [1, 2] },
+      { sessions: [''] },
+      { sessions: ['has space'] },
+      { sessions: ['x'.repeat(65)] },
+      { '': ['state'] },
+      { 'bad key': ['state'] },
+      { sessions: Array.from({ length: 41 }, (_, i) => `c${String(i)}`) },
+      Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`t${String(i)}`, ['a']])),
+    ];
+    for (const tableColumns of bad) expect(sanitize({ tableColumns }).tableColumns).toBeUndefined();
+  });
+
+  it('rejects the names that could reach the prototype', () => {
+    for (const name of ['__proto__', 'constructor', 'prototype']) {
+      const parsed: unknown = JSON.parse(`{"${name}": ["a"]}`);
+      expect(sanitize({ tableColumns: parsed }).tableColumns).toBeUndefined();
+      expect(sanitize({ tableColumns: { sessions: [name] } }).tableColumns).toBeUndefined();
+    }
+  });
+
+  it('drops keys of the old versions and still keeps the old fields intact', () => {
+    const st = new MemStorage({
+      [PREFS_KEY]: JSON.stringify({
+        theme: 'dark',
+        sel: { sid: 'x', agent: '' },
+        lang: 'vi',
+        columns: ['state'],
+        locale: 'vi',
+        tableColumns: { sessions: ['state'] },
+      }),
+    });
+    const p = createPrefs(st);
+    expect(p.all()).toEqual({ theme: 'dark', locale: 'vi', tableColumns: { sessions: ['state'] } });
+  });
+
+  it('does not import language or columns from the legacy key by accident when they are invalid', () => {
+    const st = new MemStorage({
+      [LEGACY_PREFS_KEY]: JSON.stringify({ theme: 'light', locale: 'xx', tableColumns: 3 }),
+    });
+    expect(createPrefs(st).all()).toEqual({ theme: 'light' });
+  });
+});

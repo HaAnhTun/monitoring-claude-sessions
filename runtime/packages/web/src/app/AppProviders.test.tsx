@@ -9,6 +9,9 @@ import { InstanceIdContext, useApi, useInstance } from '../data/hooks/useInstanc
 import { createFakeApi, type FakeApi } from '../test/fake-api.ts';
 import { createFakeEventSources, type FakeEventSources } from '../test/fake-event-source.ts';
 import { iso, makeHealth, makeInstance, makeSession, makeSessionPage, sessionId } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
+import { createPrefs } from '../lib/prefs.ts';
+import { createPrefsStore, PrefsStoreContext } from '../state/prefs-store.ts';
 import { useFreshness } from '../stream/useFreshness.ts';
 import { App } from './App.tsx';
 import { AppProviders } from './AppProviders.tsx';
@@ -79,8 +82,50 @@ describe('AppProviders', () => {
         <Boom />
       </AppProviders>,
     );
-    expect(screen.getByText('This view failed to render.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reload page' })).toBeInTheDocument();
+    expect(screen.getByText(msg('common.viewFailed'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('common.reloadPage') })).toBeInTheDocument();
+  });
+
+  it('translates the crash fallback without any language context, from the stored language', async () => {
+    const prefsStore = createPrefsStore(createPrefs(null));
+    prefsStore.setPref('locale', 'vi');
+    render(
+      <PrefsStoreContext value={prefsStore}>
+        <AppProviders>
+          <Boom />
+        </AppProviders>
+      </PrefsStoreContext>,
+    );
+    // The fallback sits above the language provider: it fetches the Vietnamese catalogue itself.
+    expect(await screen.findByText(msg('common.viewFailed', undefined, 'vi'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('common.reloadPage', undefined, 'vi') })).toBeInTheDocument();
+    expect(screen.queryByText(msg('common.viewFailed'))).toBeNull();
+  });
+
+  it('reloads the page from the fallback button', () => {
+    const reload = vi.fn();
+    vi.stubGlobal('location', { reload });
+    render(
+      <AppProviders>
+        <Boom />
+      </AppProviders>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: msg('common.reloadPage') }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets the page language from the stored choice and draws the app in it', async () => {
+    const prefsStore = createPrefsStore(createPrefs(null));
+    prefsStore.setPref('locale', 'vi');
+    render(
+      <PrefsStoreContext value={prefsStore}>
+        <AppProviders>
+          <Probe />
+        </AppProviders>
+      </PrefsStoreContext>,
+    );
+    expect(await screen.findByTestId('probe')).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('vi');
   });
 
   it('provides the API client to the data hooks', () => {
