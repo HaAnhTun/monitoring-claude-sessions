@@ -24,6 +24,8 @@ import { defaultSkillDir } from '../config/defaults.ts';
 import type { SqlValue } from '../db/driver.ts';
 import { isDbError } from '../db/errors.ts';
 import { openInstanceDb } from '../db/open.ts';
+import { CostStatesRepo } from '../db/repos/cost-states.ts';
+import { SessionsRepo } from '../db/repos/sessions.ts';
 import { withWriteTx } from '../db/write.ts';
 import type { Logger } from '../log/logger.ts';
 import { buildInstanceContext, type InstanceContext } from '../runtime/context.ts';
@@ -614,6 +616,60 @@ describe('summaries: missing versus zero, state, freshness', () => {
         usageState: 'partial',
       },
     ]);
+  });
+});
+
+describe('the reported cost and its trailing flag (CR-WP-28-2, 02 6.6)', () => {
+  const LABEL = 'Reported by Claude Code (cumulative, not a bill)';
+
+  it('has none for a session the provider reported no cost for', async () => {
+    const { ctx } = await instance();
+    const s = addSession(ctx, { n: 1 });
+    expect(ctx.queries.getSession(ctx.scope, s.uid).reportedCost).toBeNull();
+  });
+
+  it('shows the amount with trailing true, and keeps the amount with trailing false after a later record', async () => {
+    const { ctx } = await instance();
+    const s = addSession(ctx, { n: 1 });
+    const fileId = put(ctx, 'transcript_files', {
+      path: 'x',
+      path_key: 'x',
+      kind: 'session',
+      session_uid: s.uid,
+      session_id: s.id,
+      discovered_at: NOW,
+      updated_at: NOW,
+    });
+    const costs = new CostStatesRepo(ctx.db);
+    const reportedAt = NOW - 3000;
+    withWriteTx(ctx.db, ctx.scope, (tx) => {
+      costs.upsert(ctx.scope, tx, {
+        fileId,
+        sessionId: s.id,
+        totalCostUsd: 2.5,
+        modelUsage: {},
+        byteOffset: 800,
+        isTrailing: true,
+        observedAt: reportedAt,
+      });
+      new SessionsRepo(ctx.db).update(ctx.scope, tx, s.id, { reportedCostUsd: 2.5, reportedCostAt: reportedAt }, null);
+    });
+    const trailing = {
+      amountUsd: 2.5,
+      at: new Date(reportedAt).toISOString(),
+      trailing: true,
+      label: LABEL,
+    };
+    expect(ctx.queries.getSession(ctx.scope, s.uid).reportedCost).toEqual(trailing);
+    expect(ctx.queries.sessionSummaries(ctx.scope, [s.id])[0]?.reportedCost).toEqual(trailing);
+
+    // a record after the cost-state record: the flag goes, the amount and its time stay
+    withWriteTx(ctx.db, ctx.scope, (tx) => costs.markNotTrailing(ctx.scope, tx, fileId, 900));
+    expect(ctx.queries.getSession(ctx.scope, s.uid).reportedCost).toEqual({ ...trailing, trailing: false });
+    expect(ctx.queries.listSessions(ctx.scope, parseQuery()).items[0]?.reportedCost).toEqual({
+      ...trailing,
+      trailing: false,
+    });
   });
 });
 

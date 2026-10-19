@@ -223,9 +223,16 @@ export interface SessionFacts {
   readonly job: Lww<{ readonly jobId: string; readonly state: string }> | null;
   /** A register holding `null` is a retraction by `external.attempt_cleared` (I-18): "no evidence". */
   readonly attempt: Lww<AttemptFact | null> | null;
-  /** Stamp `at` = byte offset of the cost-state record (file order). */
+  /**
+   * Deprecated (CR-WP-28-2): no event writes it any more and no rule reads it. Whether a cost-state record is still the last
+   * record of its file is a row-level fact (`cost_states.is_trailing`), handed to the derivation as an input
+   * (`SessionRows.costStateTrailing`). The key stays in the stored facts so that the facts of an existing database parse.
+   */
   readonly costStateTrailing: Lww<boolean> | null;
-  /** Max count reported per file scan (monotone per file). */
+  /**
+   * Deprecated (CR-WP-28-2): a Max counter fed by one event could only be 0 or 1 and nothing read it. The health counts the
+   * `hook.handler_error` rows of `events`. The key stays in the stored facts so that existing databases parse.
+   */
   readonly hookHandlerErrors: number;
   readonly legacy: LegacyFacts;
 }
@@ -472,11 +479,9 @@ export function sessionFactsOfEvent(event: LogicalEvent, origin: EventOrigin): S
     case 'compaction':
       return delta({ lastActivity: event.stamp });
     case 'cost_state':
-      return sessionFactsWith({
-        costStateTrailing: { stamp: NO_RANK_TIE(event.byteOffset), value: true },
-      });
     case 'hook.handler_error':
-      return delta({ hookHandlerErrors: 1 });
+      // no fact (CR-WP-28-2): the cost state is a row of its own, the handler errors are rows of `events`
+      return null;
     case 'external.registry':
       return sessionFactsWith({
         registry: {

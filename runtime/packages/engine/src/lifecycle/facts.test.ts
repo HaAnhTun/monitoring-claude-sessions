@@ -244,22 +244,37 @@ describe('session facts of an event (02 7.3)', () => {
     ).toEqual(st(110, 53));
   });
 
-  it('cost_state: costStateTrailing LWW at the byte offset', () => {
-    expect(
-      sessionFactsOfEvent(
-        { k: 'cost_state', sessionId: SID, fileId: 1, byteOffset: 4096, totalCostUsd: 0.5, modelUsage: {} },
-        'transcript',
-      )?.costStateTrailing,
-    ).toEqual({ stamp: st(4096), value: true });
+  it('cost_state contributes no fact: the trailing flag is an input of the derivation, not a register (CR-WP-28-2)', () => {
+    const event: LogicalEvent = {
+      k: 'cost_state',
+      sessionId: SID,
+      fileId: 1,
+      byteOffset: 4096,
+      totalCostUsd: 0.5,
+      modelUsage: {},
+    };
+    for (const origin of ['hook', 'transcript', 'external'] as const) {
+      expect(sessionFactsOfEvent(event, origin)).toBeNull();
+    }
+    const model = applyEvent(emptyModel(), event, 'transcript');
+    expect(model.session.costStateTrailing).toBeNull();
+    expect(model).toEqual(emptyModel());
   });
 
-  it('hook.handler_error: hookHandlerErrors', () => {
-    expect(
-      sessionFactsOfEvent(
-        { k: 'hook.handler_error', sessionId: SID, hookEvent: 'Stop', exitCode: 1, stamp: st(120) },
-        'transcript',
-      )?.hookHandlerErrors,
-    ).toBe(1);
+  it('hook.handler_error contributes no fact: the health counts its events row, not a Max register (CR-WP-28-2)', () => {
+    const event: LogicalEvent = {
+      k: 'hook.handler_error',
+      sessionId: SID,
+      hookEvent: 'Stop',
+      exitCode: 1,
+      stamp: st(120),
+    };
+    for (const origin of ['hook', 'transcript', 'external'] as const) {
+      expect(sessionFactsOfEvent(event, origin)).toBeNull();
+    }
+    const model = applyEvent(emptyModel(), event, 'transcript');
+    expect(model.session.hookHandlerErrors).toBe(0);
+    expect(model).toEqual(emptyModel());
   });
 
   it('external.registry, external.job and external.pid: LWW registers stamped by observation time', () => {
@@ -569,6 +584,24 @@ describe('persisted facts (facts_json boundary)', () => {
     expect(row).toBeDefined();
     expect(parseToolCallRow(JSON.parse(JSON.stringify(row)))).toStrictEqual(row);
     expect(parseSessionFacts(emptySessionFacts())).toStrictEqual(emptySessionFacts());
+  });
+
+  it('a stored facts blob that still carries the two deprecated keys parses, and a fresh fact set carries them at their defaults', () => {
+    const stored = JSON.parse(JSON.stringify(model.session)) as Record<string, unknown>;
+    const old = {
+      ...stored,
+      costStateTrailing: { stamp: st(4096), value: true },
+      hookHandlerErrors: 3,
+    };
+    const parsed = parseSessionFacts(old);
+    expect(parsed).toStrictEqual({
+      ...model.session,
+      costStateTrailing: { stamp: st(4096), value: true },
+      hookHandlerErrors: 3,
+    });
+    // never written again: the empty set and every fold of events keep the defaults
+    expect(emptySessionFacts()).toMatchObject({ costStateTrailing: null, hookHandlerErrors: 0 });
+    expect(model.session).toMatchObject({ costStateTrailing: null, hookHandlerErrors: 0 });
   });
 
   it('refuses another version, an unknown key, a missing key and a value of the wrong type', () => {

@@ -1,6 +1,7 @@
 // The ingest service (02 4.10, ADR 0012, 0015): the one object that makes an instance ingest on its own. It owns the single writer
 // (02 4.6), the spool drainer (priority P0), the transcript importer with its scheduler (P1 to P3) and the two external pollers
-// of 02 7.10 (registry, jobs), and it publishes the figures that the ingestion health needs (`bindHealthSources`).
+// of 02 7.10 (registry, jobs), and it publishes the figures that the ingestion health needs (`bindHealthSources`). The writer has
+// the activity throttle of 03 3.6; `start()` binds its flush (`bindActivityFlush`) to the one-second job of the schedule.
 //
 // `start()` (in order): resolve the transcripts folder, write the route file, drain every unsealed spool segment once (this is
 // where `runtime_unavailable` is recorded), then start the import scheduler and the pollers. `stop(deadlineMs)` stops them, gives
@@ -15,6 +16,7 @@ import path from 'node:path';
 import { McsError } from '@mcs/shared';
 import { SID_RE } from '@mcs/shared/protocol';
 
+import { createActivityThrottle } from '../db/change-sink.ts';
 import { onCommitted } from '../db/write.ts';
 import { SessionsRepo } from '../db/repos/sessions.ts';
 import type { ResolvedConfig } from '../config/resolve.ts';
@@ -23,6 +25,7 @@ import { createJobsReader } from '../external/jobs.ts';
 import { createRegistryReader } from '../external/registry.ts';
 import { bindHealthSources } from '../health/ingest-health.ts';
 import { DEFAULT_LIFECYCLE_CFG, type LifecycleCfg } from '../lifecycle/facts.ts';
+import { bindActivityFlush } from '../maintenance/schedule.ts';
 import { pidAlive as realPidAlive } from '../platform/process.ts';
 import type { InstanceContext } from '../runtime/context.ts';
 import { IngestWriterClosedError, ingestError } from './errors.ts';
@@ -222,6 +225,8 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     logger,
     queueMaxItems: ctx.config.runtime.ingest.queueMaxItems,
     queueMaxBytes: ctx.config.runtime.ingest.queueMaxBytes,
+    // activity-only announcements at most once per second (03 3.6); the one-second job of the schedule flushes the rest
+    throttle: createActivityThrottle(),
     ...options.writer,
     beforeCommit: (tx, batches) => {
       txStartedAt = tx.now;
@@ -458,6 +463,7 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     try {
       unsubscribeCommits = onCommitted(db, noteCommit);
       accepting = true;
+      bindActivityFlush(ctx, () => writer.flushActivity());
       transcriptsDir = await resolveTranscriptsDir(ctx);
       importer.setTranscriptsDir(transcriptsDir);
       await writeRoute({ stoppedAt: null });

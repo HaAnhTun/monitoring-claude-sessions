@@ -1,16 +1,23 @@
 // The lifecycle sweeper (02 4.10, 7.8, ADR 0019): time passing changes a view without any event (a tool that has been open too
-// long, a session that went quiet), so every `lifecycle.sweepIntervalMs` the sweeper looks at the rows whose `next_check_at` has
-// passed (`idx_sessions_next_check`), probes the pid of the open ones that have a known Claude Code process, and hands the
-// writer one `derive` item per row; the writer re-derives inside its own transaction and publishes a change only when the view
-// changed (`viewChanged`, 02 7.1), so time passing alone never creates churn.
+// long, a session that went quiet, a subagent that stopped writing), so every `lifecycle.sweepIntervalMs` the sweeper looks at
+// the rows whose `next_check_at` has passed (`idx_sessions_next_check`, `idx_agents_next_check`, `idx_workflow_runs_next_check`),
+// probes the pid of the open sessions that have a known Claude Code process, and hands the writer one `derive` item per
+// session. The item names the due subagents and workflow runs of that session; the writer re-derives the session inside its own
+// transaction, writes the views of the named rows and publishes a change only when a view changed (`viewChanged`, 02 7.1), so
+// time passing alone never creates churn (CR-WP-35-2).
 //
-// At most 200 rows are taken per tick (02 4.7). Only sessions are swept: a derive item names its session and the writer
-// re-derives it with its main agent; due rows of subagents and workflow runs wait for the next event of their session (CR-WP-35-2).
+// At most 200 sessions are taken per tick (02 4.7), and at most 200 subagents and 200 workflow runs are looked at: the earliest
+// due come first, the rest wait for the next tick. A row that was derived has a new `next_check_at` after `now` (or none), so it
+// is not selected again until its time has come. The main agent row mirrors its session: when it is due the session is
+// re-derived and the agent is not named.
 import type { Clock } from '@mcs/shared';
 
+import type { RepoContext, InstanceDb } from '../db/open.ts';
+import { AgentsRepo } from '../db/repos/agents.ts';
+import { SessionsRepo } from '../db/repos/sessions.ts';
+import { WorkflowRunsRepo } from '../db/repos/workflow-runs.ts';
 import { pidEvents } from '../external/pid.ts';
 import type { IngestBatch, IngestItem } from '../ingest/writer.ts';
-import type { RepoContext, InstanceDb } from '../db/open.ts';
 import type { Logger } from '../log/logger.ts';
 import type { ErrorRing } from '../runtime/error-ring.ts';
 import { pidAlive as realPidAlive } from '../platform/process.ts';
@@ -44,7 +51,7 @@ export interface LifecycleSweeper {
 export interface SweeperOptions {
   /** `pidAlive` of 06 4.2 (signal 0); tests pass a fake. */
   readonly pidAlive?: (pid: number) => boolean;
-  /** Rows per tick (default 200, 02 4.7). */
+  /** Sessions per tick, and the most subagents and the most workflow runs looked at per tick (default 200, 02 4.7). */
   readonly maxPerTick?: number;
 }
 
@@ -59,6 +66,15 @@ interface DueRow {
   readonly presence: string;
 }
 
+/** What one tick does for one session: the session itself may be due, and so may some of its subagents and runs. */
+interface SessionWork {
+  readonly sessionUid: string;
+  /** The row of the session if the session itself is due (it carries the pid to probe); null if only its children are. */
+  readonly due: DueRow | null;
+  readonly agents: string[];
+  readonly runs: string[];
+}
+
 /** What a log line or the error ring may say about a failure: its code or its name, never its message (a path may be in it). */
 function errorCodeOf(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string')
@@ -71,8 +87,11 @@ export function createLifecycleSweeper(
   deps: { writer: SweeperWriter },
   options: SweeperOptions = {},
 ): LifecycleSweeper {
-  const { db, clock } = ctx;
+  const { db, clock, scope } = ctx;
   const { writer } = deps;
+  const sessionsRepo = new SessionsRepo(db);
+  const agentsRepo = new AgentsRepo(db);
+  const runsRepo = new WorkflowRunsRepo(db);
   const intervalMs = ctx.config.runtime.lifecycle.sweepIntervalMs;
   const maxPerTick = options.maxPerTick ?? DEFAULT_MAX_PER_TICK;
   const alive = options.pidAlive ?? realPidAlive;
@@ -96,12 +115,55 @@ export function createLifecycleSweeper(
       .all({ now, limit: maxPerTick });
   }
 
-  /** A derive item names its session through one event; the writer opens the session and applies none of the events (02 4.6). */
-  function deriveItem(sessionUid: string, now: number): IngestItem {
+  /**
+   * The due work of this tick grouped by session: the sessions that are due themselves first (earliest due first), then the
+   * sessions that are only due through a subagent or a workflow run. At most `maxPerTick` sessions; a child of a session that
+   * did not fit stays due for the next tick.
+   */
+  function dueWork(now: number): SessionWork[] {
+    const work = new Map<string, SessionWork>();
+    for (const row of dueRows(now)) {
+      work.set(row.sessionUid, { sessionUid: row.sessionUid, due: row, agents: [], runs: [] });
+    }
+    const agentRows = agentsRepo.dueForCheck(scope, now, maxPerTick);
+    const runRows = runsRepo.dueForCheck(scope, now, maxPerTick);
+    const uids = sessionsRepo.uidsByRowIds(scope, [
+      ...agentRows.map((row) => row.sessionId),
+      ...runRows.map((row) => row.sessionId),
+    ]);
+    const workOf = (sessionRowId: number): SessionWork | undefined => {
+      const sessionUid = uids.get(sessionRowId);
+      if (sessionUid === undefined) return undefined;
+      const known = work.get(sessionUid);
+      if (known !== undefined) return known;
+      if (work.size >= maxPerTick) return undefined;
+      const added: SessionWork = { sessionUid, due: null, agents: [], runs: [] };
+      work.set(sessionUid, added);
+      return added;
+    };
+    for (const row of agentRows) {
+      // the main agent shows the state of its session: the session is re-derived and there is nothing to name
+      if (row.agentUid === 'main') workOf(row.sessionId);
+      else workOf(row.sessionId)?.agents.push(row.agentUid);
+    }
+    for (const row of runRows) workOf(row.sessionId)?.runs.push(row.runUid);
+    return [...work.values()];
+  }
+
+  /**
+   * The derive item of a session: the writer re-derives the session and writes the views of the named subagents and workflow
+   * runs (02 4.6). It carries no event.
+   */
+  function deriveItem(work: SessionWork): IngestItem {
     return {
       kind: 'derive',
-      events: [{ k: 'external.job', sessionId: sessionUid, jobId: 'sweeper', state: 'derive', observedAt: now }],
+      events: [],
       rows: [],
+      derive: {
+        sessionId: work.sessionUid,
+        ...(work.agents.length === 0 ? {} : { agents: work.agents }),
+        ...(work.runs.length === 0 ? {} : { runs: work.runs }),
+      },
     };
   }
 
@@ -120,18 +182,21 @@ export function createLifecycleSweeper(
 
   async function tick(): Promise<void> {
     const now = clock.now();
-    const due = dueRows(now);
+    const due = dueWork(now);
     if (due.length === 0) return;
     const items: IngestItem[] = [];
-    for (const row of due) {
-      if (row.claudePid !== null && row.presence === 'open') {
-        const events = pidEvents([{ sessionUid: row.sessionUid, pid: row.claudePid }], now, alive);
+    for (const work of due) {
+      const row = work.due;
+      if (row !== null && row.claudePid !== null && row.presence === 'open') {
+        // the pid probe re-derives the session through its event; the due children still need an item of their own
+        const events = pidEvents([{ sessionUid: work.sessionUid, pid: row.claudePid }], now, alive);
         if (events.length > 0) {
           items.push({ kind: 'external', events, rows: [] });
+          if (work.agents.length > 0 || work.runs.length > 0) items.push(deriveItem(work));
           continue;
         }
       }
-      items.push(deriveItem(row.sessionUid, now));
+      items.push(deriveItem(work));
     }
     await give({ source: 'sweeper', items, bytes: items.length * ITEM_BYTES });
   }

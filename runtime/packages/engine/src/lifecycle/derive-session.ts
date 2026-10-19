@@ -340,7 +340,7 @@ function decideSession(facts: SessionFacts, s: SessionSignals, cfg: LifecycleCfg
         evidence: [quiet, turnEndEvidence(turnEnd)],
       };
     }
-    const endedInferred = facts.costStateTrailing?.value === true && !s.pidAlive && !s.registryLive;
+    const endedInferred = s.costStateTrailing && !s.pidAlive && !s.registryLive;
     const presence: Presence = endedInferred ? 'ended' : 'open';
     return {
       ruleId: 'S-8e',
@@ -436,6 +436,15 @@ export function deriveSession(facts: SessionFacts, rows: SessionRows, now: numbe
 
 // ---- a whole model ---------------------------------------------------------------------------------------------------
 
+/**
+ * What the derivation is given besides the facts: row-level state that is not a register, so that a later record can clear it
+ * (CR-WP-28-2). Nothing given is the same as every flag not set.
+ */
+export interface ModelInputs {
+  /** The main transcript file of the session ends in a cost-state record (`CostStatesRepo.sessionTrailing`). */
+  readonly costStateTrailing?: boolean;
+}
+
 /** The views of every entity of a model at one time. */
 export interface ModelViews {
   readonly session: LifecycleView;
@@ -454,7 +463,12 @@ function sortedEntries<T>(map: ReadonlyMap<string, T>): [string, T][] {
  * parent needs the states of its agents; presence only depends on the states of the rules that end a session, so the
  * two are settled by a short fixed-point loop (at most three rounds).
  */
-export function deriveModel(model: LifecycleModel, now: number, cfg: LifecycleCfg): ModelViews {
+export function deriveModel(
+  model: LifecycleModel,
+  now: number,
+  cfg: LifecycleCfg,
+  inputs: ModelInputs = {},
+): ModelViews {
   const agentIds = Object.keys(model.agents).sort();
   const runIds = [...new Set([...Object.keys(model.workflows), ...Object.values(model.agentRuns)])].sort();
   const toolRows: ToolCallRow[] = Object.values(model.tools);
@@ -502,7 +516,12 @@ export function deriveModel(model: LifecycleModel, now: number, cfg: LifecycleCf
     }
     const session = deriveSession(
       model.session,
-      { tools: toolRows, agents: summaries, workflows: runSummaries },
+      {
+        tools: toolRows,
+        agents: summaries,
+        workflows: runSummaries,
+        ...(inputs.costStateTrailing === undefined ? {} : { costStateTrailing: inputs.costStateTrailing }),
+      },
       now,
       cfg,
     );

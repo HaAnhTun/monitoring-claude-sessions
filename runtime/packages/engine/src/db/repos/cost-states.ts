@@ -123,6 +123,41 @@ export class CostStatesRepo {
       .get({ sessionId });
   }
 
+  /**
+   * A record of the file was stored at byte `beforeOffset`: every state of that file at a smaller offset is no longer the last
+   * record of the file, so its flag goes. The amount, the offset and the time stay (the provider did report that cost). True
+   * when a flag was cleared; a file without a state, or a state at an equal or greater offset, changes nothing. Idempotent, and
+   * the same whatever order the records arrive in: the writer also derives the flag of a state from the rows already stored.
+   */
+  markNotTrailing(ctx: RepoContext, _tx: WriteTx, fileId: number, beforeOffset: number): boolean {
+    this.db.assertScope(ctx);
+    return (
+      this.db.driver
+        .prepare(
+          `UPDATE cost_states SET is_trailing = 0
+           WHERE file_id = :fileId AND is_trailing = 1 AND byte_offset < :beforeOffset`,
+        )
+        .run({ fileId, beforeOffset }).changes > 0
+    );
+  }
+
+  /**
+   * True while the main transcript file of the session (kind `session`) ends in a cost-state record, the input of the
+   * inferred "ended" presence of rule S-8e (02 7.4). The state of a subagent or workflow file says nothing about the process of
+   * the session.
+   */
+  sessionTrailing(ctx: RepoContext, sessionId: number): boolean {
+    this.db.assertScope(ctx);
+    return (
+      this.db.driver
+        .prepare(
+          `SELECT 1 FROM cost_states c JOIN transcript_files f ON f.id = c.file_id
+           WHERE c.session_id = :sessionId AND c.is_trailing = 1 AND f.kind = 'session' LIMIT 1`,
+        )
+        .get({ sessionId }) !== undefined
+    );
+  }
+
   /** On a file identity reset (02 5.3). True when a row existed. */
   deleteByFile(ctx: RepoContext, _tx: WriteTx, fileId: number): boolean {
     this.db.assertScope(ctx);

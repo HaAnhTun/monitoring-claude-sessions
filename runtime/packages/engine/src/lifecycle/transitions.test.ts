@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { FIXTURE_AGENT_ID, FIXTURE_SESSION_ID, fixtureEnvelope } from '../../test/fixtures/hooks.ts';
 import type { LogicalEvent } from '../ingest/event-row.ts';
 import { normalizeEnvelope } from '../ingest/hooks/normalize-envelope.ts';
-import { deriveModel, type ModelViews } from './derive-session.ts';
+import { deriveModel, type ModelInputs, type ModelViews } from './derive-session.ts';
 import { DEFAULT_LIFECYCLE_CFG, sessionFactsWith, type Lww, type SessionFacts } from './facts.ts';
 import { legacyOfSession } from './legacy.ts';
 import { applyEvent, emptyModel, mergeSessionFacts, type EventOrigin, type LifecycleModel } from './merge.ts';
@@ -191,6 +191,8 @@ interface Step {
   readonly agents?: Readonly<Record<string, { state: LifecycleState; rule: string }>>;
   readonly check?: (views: ModelViews, model: LifecycleModel, priorViews: ModelViews) => void;
   readonly legacy?: string;
+  /** What the derivation is given besides the facts (the trailing flag of the cost-state record, WP-99). */
+  readonly inputs?: ModelInputs;
 }
 
 interface Row {
@@ -225,9 +227,9 @@ function runRow(row: Row): void {
     // the facts, rows and views do not depend on the delivery order
     expect(inputFirst).toEqual(listed);
     expect(reversed).toEqual(listed);
-    const views = deriveModel(listed, now, CFG);
-    expect(deriveModel(inputFirst, now, CFG)).toEqual(views);
-    expect(deriveModel(reversed, now, CFG)).toEqual(views);
+    const views = deriveModel(listed, now, CFG, step.inputs);
+    expect(deriveModel(inputFirst, now, CFG, step.inputs)).toEqual(views);
+    expect(deriveModel(reversed, now, CFG, step.inputs)).toEqual(views);
 
     matchSession(views, step.expect);
     for (const [agentId, expected] of Object.entries(step.agents ?? {})) {
@@ -241,7 +243,7 @@ function runRow(row: Row): void {
       expect(legacyOfSession(listed.session, rows, views.session, now, CFG).state).toBe(step.legacy);
     }
     if (step.check !== undefined) {
-      step.check(views, listed, deriveModel(fold([...row.prior], row.patch), now, CFG));
+      step.check(views, listed, deriveModel(fold([...row.prior], row.patch), now, CFG, step.inputs));
     }
   }
   ran.add(row.id);
@@ -896,6 +898,64 @@ describe('transition table of 02 7.7 (T-LF-01..47)', () => {
 
 describe('rows added by ADR 0069 (both delivery orders, and fully reversed)', () => {
   ADR_0069_ROWS.forEach((row) => {
+    it(`${row.id}: ${row.title}`, () => {
+      runRow(row);
+    });
+  });
+});
+
+/** CE-7 (02 8.1): the trailing flag of the cost-state record is an input of the derivation, not a fact (CR-WP-28-2, WP-99). */
+const COST_STATE_ROWS: readonly Row[] = [
+  {
+    id: 'CE7',
+    title:
+      'a trailing cost-state record and no live pid: turn_ended, ended and inferred; a later record or prompt clears it',
+    prior: [],
+    steps: [
+      {
+        input: [...tx.prompt(0), ...tx.assistant(sec(1)), ...tx.endTurn(sec(1))],
+        now: sec(1) + min(5),
+        inputs: { costStateTrailing: true },
+        expect: { state: 'turn_ended', rule: 'S-8e', presence: 'ended', basis: 'inferred', confidence: 'medium' },
+      },
+      {
+        input: [],
+        now: sec(1) + min(5),
+        inputs: { costStateTrailing: false },
+        expect: { state: 'turn_ended', rule: 'S-8e', presence: 'open', basis: 'observed', confidence: 'high' },
+      },
+      {
+        input: tx.prompt(min(6)),
+        now: min(6) + sec(5),
+        inputs: { costStateTrailing: true },
+        expect: { state: 'working', rule: 'S-7e', presence: 'open' },
+      },
+    ],
+  },
+  {
+    id: 'CE7b',
+    title:
+      'the flag never completes a session: a stop hook plus the flag stays turn_ended, and a live pid keeps it open',
+    prior: [],
+    steps: [
+      {
+        input: stopped(),
+        now: sec(30),
+        inputs: { costStateTrailing: true },
+        expect: { state: 'turn_ended', rule: 'S-8e', presence: 'ended', basis: 'inferred' },
+      },
+      {
+        input: external.pid(true, sec(25)),
+        now: sec(30),
+        inputs: { costStateTrailing: true },
+        expect: { state: 'turn_ended', rule: 'S-8e', presence: 'open', basis: 'observed' },
+      },
+    ],
+  },
+];
+
+describe('rows for the trailing cost-state flag (both delivery orders, and fully reversed)', () => {
+  COST_STATE_ROWS.forEach((row) => {
     it(`${row.id}: ${row.title}`, () => {
       runRow(row);
     });

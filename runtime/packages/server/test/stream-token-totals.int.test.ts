@@ -2,6 +2,14 @@
 // committed token totals, i.e. it equals `GET /sessions/:id` (03 9.3, DA-I6: the frame data is the committed rollups). The usage
 // of a slice is committed by the importer after the batch that announced the session change, so a frame hydrated at the first
 // commit would carry the new `lastActivityAt` with the old totals.
+//
+// WP-99 (CR-WP-35-1): the writer now has the activity throttle (03 3.6; 03 9.1: "usage rollups throttled like sessions"). The
+// announcement of the usage commit is an activity-only update, so it is held back for up to ACTIVITY_INTERVAL_MS (1 s) and the
+// one-second `announcements` job of the schedule flushes it. The REST read and the head of the stream (health frames) therefore
+// reach the new totals before the flushed `session/upsert` is on the wire. The invariant of CR-LF-7-1 is unchanged, only its
+// moment is: once the flushed frame has arrived (about two seconds at most), the last `session/upsert` of the session is
+// hydrated from the committed rollups and equals `GET /sessions/:id`. The rollup announcement is not exempted from the throttle
+// on purpose: the backfill traffic the throttle bounds is made of exactly these announcements.
 import { request, type ClientRequest } from 'node:http';
 
 import { routes, type SessionSummary } from '@mcs/shared';
@@ -118,6 +126,18 @@ describe('stream session/upsert frames carry the committed token totals (CR-LF-7
       timeoutMs: 30_000,
       intervalMs: 50,
     });
+
+    // the throttled announcement of the usage commit is flushed by the one-second job: wait for the frame that carries it
+    await waitFor(
+      () =>
+        (lastSessionUpsert(stream, FIXTURE_SESSION_A)?.data as SessionSummary | null | undefined)?.usage.output ===
+        want.own.output,
+      {
+        what: 'the flushed session/upsert frame with the committed token totals (03 3.6)',
+        timeoutMs: 15_000,
+        intervalMs: 50,
+      },
+    );
 
     const last = lastSessionUpsert(stream, FIXTURE_SESSION_A);
     expect(last, 'a session/upsert frame of the session').toBeDefined();

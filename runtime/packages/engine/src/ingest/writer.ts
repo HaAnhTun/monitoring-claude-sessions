@@ -10,19 +10,30 @@
 // Delivery is at-least-once and idempotent: a line read twice is a dedupe hit (D-1 to D-4, `dedupe.ts`), and the facts merge
 // (02 7.2) is idempotent by construction. No file I/O happens inside a transaction: producers read before they `submit`.
 //
-// Deviations from 02 4.6 (reported in the WP-32 answer): the activity throttle of `change-sink.ts` is not wired (every
-// committed activity is announced once per transaction and entity, never twice); a transaction takes at most `maxItemsPerTx`
-// items (it does not measure the 8 ms of work, it adapts the cap to the last transaction's duration).
+// Activity-only announcements (a session or an agent that changed without a change of its lifecycle view, the ingestion health)
+// go through the activity throttle of `change-sink.ts` when the owner passes one (`IngestWriterOptions.throttle`, the ingest
+// service does): at most one per second and entity, the rest is held back and `flushActivity` announces it from the one-second
+// job of the schedule (03 3.6). Without a throttle every committed activity is announced once per transaction and entity.
+//
+// Deviation from 02 4.6: a transaction takes at most `maxItemsPerTx` items (it does not measure the 8 ms of work, it adapts the
+// cap to the last transaction's duration).
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleepFor } from 'node:timers/promises';
 
 import { AGENT_RE, canonicalJsonHash, type HookEnvelopeV1 } from '@mcs/shared/protocol';
 import { z } from 'zod';
 
-import { createChangeSink, INSTANCE_KEY, type ChangeSink } from '../db/change-sink.ts';
+import {
+  createChangeSink,
+  INSTANCE_KEY,
+  type ActivityThrottle,
+  type ChangeSink,
+  type ReservedChange,
+} from '../db/change-sink.ts';
 import { isDbError } from '../db/errors.ts';
 import type { InstanceDb, RepoContext } from '../db/open.ts';
 import { AgentsRepo, type NewAgent } from '../db/repos/agents.ts';
+import { CostStatesRepo } from '../db/repos/cost-states.ts';
 import { EventsRepo } from '../db/repos/events.ts';
 import { HookProbesRepo } from '../db/repos/hook-probes.ts';
 import { IngestErrorsRepo } from '../db/repos/ingest-errors.ts';
@@ -88,10 +99,23 @@ export type RowWrite =
       readonly detail: ReconciliationDetail;
     };
 
+/**
+ * What a `derive` item re-derives (02 4.6, 7.8): the session, and the views of the named subagents (`agent_uid`) and workflow
+ * runs (`run_uid`) of that session, which are written even though none of their events arrived. A session that does not exist
+ * (retention removed it) is not created again; a name that is not a row of the session is ignored.
+ */
+export interface DeriveTarget {
+  readonly sessionId: string;
+  readonly agents?: readonly string[];
+  readonly runs?: readonly string[];
+}
+
 export interface IngestItem {
   readonly kind: 'envelope' | 'record' | 'external' | 'derive';
   readonly events: readonly LogicalEvent[];
   readonly rows: readonly RowWrite[];
+  /** Only for `kind: 'derive'`, which carries no event (the sweeper). */
+  readonly derive?: DeriveTarget;
 }
 
 export type CursorUpdate =
@@ -136,6 +160,14 @@ export interface IngestWriterHandle extends IngestWriter {
    * `withWriteTx`: no writer transaction is open at that moment.
    */
   runExclusive<T>(fn: () => T): Promise<T>;
+  /**
+   * Announces the activity-only updates the throttle held back, once their window has passed (03 3.6): the job of the schedule
+   * that runs every second calls it. It runs between two transactions, ahead of the batches that are queued (it depends on none
+   * of them), stamps `updated_seq` of the rows it announces, and puts the announcements back when its transaction fails (the
+   * error is thrown). Nothing to do without a throttle, while nothing is deferred or before the window has passed; resolves
+   * after `close`.
+   */
+  flushActivity(): Promise<void>;
   /** Stops taking work; resolves when the transaction in progress (if any) is finished. Queued batches are dropped (they are re-read). */
   close(): Promise<void>;
 }
@@ -145,6 +177,12 @@ export interface IngestWriterOptions {
   readonly scope: RepoContext;
   readonly lifecycle?: LifecycleCfg;
   readonly logger?: Logger;
+  /**
+   * The activity throttle of this writer (03 3.6): one per writer, shared by every transaction. Without one every commit
+   * announces its activity. The state of a throttle is not rolled back with a transaction: a batch that is retried records its
+   * updates again, they are deferred and flushed, never lost.
+   */
+  readonly throttle?: ActivityThrottle;
   /** `ingest.queueMaxItems` (default 5000). */
   readonly queueMaxItems?: number;
   /** `ingest.queueMaxBytes` (default 32 MiB). */
@@ -177,6 +215,8 @@ const TRIM_EVERY_ERRORS = 100;
 const TOOLS_KEPT_IN_MODEL = 1000;
 /** Usage rows per item (about 8 ms of work): the adaptive item cap of a transaction then bounds the usage work too. */
 export const USAGE_ROWS_PER_ITEM = 50;
+/** The limit of `cost_states.model_usage_json`: a longer record keeps its total and loses the per-model split. */
+const MODEL_USAGE_JSON_MAX = 8192;
 
 // ---- small helpers ---------------------------------------------------------------------------------------------------
 
@@ -318,6 +358,8 @@ interface Working {
   titleCustom?: string;
   continuedIn?: string;
   copiedFrom?: string;
+  /** The total of the cost-state record this transaction stored (the newest record of its file): mirrored into the session. */
+  reportedCost?: { readonly usd: number; readonly at: number };
 }
 
 interface TxState {
@@ -337,6 +379,20 @@ interface TxState {
   readonly rollupAgents: Set<number>;
   /** Files linked in this transaction. */
   readonly linkedFiles: Set<number>;
+  /** The greatest byte offset of an event row of each transcript file stored in this transaction (the cost-state flag). */
+  readonly fileTails: Map<number, number>;
+  /**
+   * The view changes of this transaction that the activity throttle is told about once the transaction has committed: the
+   * state of the throttle is not rolled back, so a view change that is rolled back must not drop an announcement that an earlier
+   * commit deferred (a poison batch, 03 3.6).
+   */
+  readonly viewAnnouncements: ViewAnnouncement[];
+}
+
+interface ViewAnnouncement {
+  readonly entity: 'session' | 'agent';
+  readonly key: string;
+  readonly at: number;
 }
 
 interface Queued {
@@ -379,6 +435,8 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
   const spoolCursors = new SpoolCursorsRepo(db);
   const transcriptFiles = new TranscriptFilesRepo(db);
   const usage = new UsageRepo(db);
+  const costStates = new CostStatesRepo(db);
+  const { throttle } = options;
   const linkRepos: LinkRepos = { sessions, agents, runs: workflowRuns, files: transcriptFiles };
 
   // the facts cache: session uid -> committed model (insertion order = recency)
@@ -676,6 +734,39 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     if (event.k === 'tool.start' && event.promptId !== null) w.turnPrompts.add(event.promptId);
   }
 
+  /**
+   * The cost-state record of a transcript file (02 6.6, CR-WP-28-2): the newest record per file is kept with its amount, and it
+   * is trailing while no stored event row of the file lies after it. The flag is a row, not a fact, so that a record that
+   * arrives later can clear it (`clearTrailing`) and the result is the same whatever order the records arrive in: a record read
+   * again finds the later rows already stored. The amount of the newest record is mirrored into the session (`reportedCost`).
+   */
+  function writeCostState(c: TxState, w: Working, event: Extract<LogicalEvent, { k: 'cost_state' }>): void {
+    const followed =
+      db.driver
+        .prepare(
+          'SELECT 1 FROM events WHERE session_id = :session AND file_id = :fileId AND byte_offset > :offset LIMIT 1',
+        )
+        .get({ session: w.rowId, fileId: event.fileId, offset: event.byteOffset }) !== undefined;
+    // the same record read again keeps the time it was first observed
+    const known = costStates.byFile(scope, event.fileId);
+    const observedAt = known?.byteOffset === event.byteOffset ? known.observedAt : c.tx.now;
+    const written = costStates.upsert(scope, c.tx, {
+      fileId: event.fileId,
+      sessionId: w.rowId,
+      totalCostUsd: event.totalCostUsd,
+      modelUsage: JSON.stringify(event.modelUsage).length <= MODEL_USAGE_JSON_MAX ? event.modelUsage : {},
+      byteOffset: event.byteOffset,
+      isTrailing: !followed,
+      observedAt,
+    });
+    if (written && event.totalCostUsd !== null) w.reportedCost = { usd: event.totalCostUsd, at: observedAt };
+  }
+
+  /** The event rows stored in this transaction are records of their files: the cost states they follow are not trailing. */
+  function clearTrailing(c: TxState): void {
+    for (const [fileId, offset] of c.fileTails) costStates.markNotTrailing(scope, c.tx, fileId, offset);
+  }
+
   const TURN_END_KINDS: Readonly<Record<'stop' | 'stop_failure' | 'end_turn' | 'turn_duration', TurnEndKind>> = {
     stop: 'stop',
     stop_failure: 'stop_failure',
@@ -827,12 +918,14 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
       case 'assistant.ok':
         if (event.agentId !== null) agentRowOf(c, w, event.agentId, event.stamp.at);
         break;
+      case 'cost_state':
+        writeCostState(c, w, event);
+        break;
       case 'session.end':
       case 'permission.request':
       case 'notification':
       case 'agent.notification':
       case 'compaction':
-      case 'cost_state':
       case 'hook.handler_error':
       case 'external.registry':
       case 'external.job':
@@ -880,10 +973,17 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         const result = events.insert(scope, c.tx, r);
         if (result.outcome === 'duplicate') {
           c.dups[layerOfSilentInsert(r)] += 1;
-        } else if (result.outcome === 'inserted') {
+          return;
+        }
+        if (result.outcome === 'inserted') {
           w.eventsInserted += 1;
           if (r.severity === 2) w.errorEvents += 1;
           else if (r.severity === 1) w.warningEvents += 1;
+        }
+        // a row of a transcript file is stored (new, or merged into the row a hook made): a cost-state record before it is
+        // not the last record of the file any more
+        if (r.fileId !== null && r.byteOffset !== null) {
+          c.fileTails.set(r.fileId, Math.max(c.fileTails.get(r.fileId) ?? 0, r.byteOffset));
         }
         return;
       }
@@ -954,6 +1054,10 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
    * The sessions and agents whose rollup columns changed in this transaction are announced (`session/upsert`, `agent/upsert`,
    * coalesced with the other announcements of the transaction) and stamped with that seq, so a frame hydrated for the commit
    * carries the committed totals (03 9.3, CR-LF-7-1). The owner of a message key may be another session (a resume copy).
+   *
+   * This is an activity-only update, so with a throttle it is held back inside the window and `flushActivity` announces it later
+   * (03 9.1: usage rollups are throttled like sessions). The frame of that later announcement is hydrated from the committed
+   * rollups, so the last `session/upsert` still equals the REST read, up to about two seconds after the commit.
    */
   function announceRollups(c: TxState): void {
     if (c.rollupSessions.size === 0 && c.rollupAgents.size === 0) return;
@@ -985,9 +1089,27 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
       for (const event of item.events) applyEventToEntities(c, event, origin, named);
       if (origin === 'hook') c.drained = true;
     } else {
-      for (const event of item.events) openWorking(c, event.sessionId, atOf(event, c.tx.now));
+      applyDerive(c, item);
     }
     for (const row of item.rows) applyRow(c, row);
+  }
+
+  /**
+   * A derive item (02 4.6, 7.8): opens the session so that it is derived again, and marks the named subagents and workflow runs
+   * of the session so that their views are written. It applies no event. A session that is gone (retention) is left alone, and
+   * a name that is no row of the session is ignored: nothing is created for a derive item.
+   */
+  function applyDerive(c: TxState, item: IngestItem): void {
+    const target = item.derive;
+    if (target === undefined) return;
+    if (!c.working.has(target.sessionId) && sessions.idByUid(scope, target.sessionId) === undefined) return;
+    const w = openWorking(c, target.sessionId, c.tx.now);
+    for (const agentUid of target.agents ?? []) {
+      if (agentUid !== 'main' && w.agentIds.has(agentUid)) w.touchedAgents.add(agentUid);
+    }
+    for (const runUid of target.runs ?? []) {
+      if (w.runIds.has(runUid)) w.touchedRuns.add(runUid);
+    }
   }
 
   function applyCursor(c: TxState, cursor: CursorUpdate): void {
@@ -1008,7 +1130,9 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
 
   /**
    * Hook coverage of a session (02 8.1): `none` without envelopes; otherwise the transcript calls and prompts that started
-   * after the first envelope without a hook counterpart (a call older than 10 s, not within 5 s of the session end).
+   * after the first envelope without a hook counterpart (a call older than 10 s, not within 5 s of the session end). Only the
+   * prompts of the main agent count: Claude Code fires no UserPromptSubmit for the prompt a subagent receives, so the first
+   * prompt record of a subagent file has no hook by design (CR-WP-35-3).
    */
   function hookCoverageOf(
     w: Working,
@@ -1037,9 +1161,9 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         .prepare<{ n: number }>(
           `SELECT count(*) AS n FROM events
              WHERE session_id = :session AND kind = 'prompt.submit' AND (sources & 2) != 0 AND (sources & 1) = 0
-               AND ts > :first AND ts < :cutoff`,
+               AND (agent_id IS NULL OR agent_id = :mainAgent) AND ts > :first AND ts < :cutoff`,
         )
-        .get({ session: w.rowId, first, cutoff })?.n ?? 0;
+        .get({ session: w.rowId, mainAgent: w.mainAgentId, first, cutoff })?.n ?? 0;
     return {
       coverage: missingTools === 0 && missingTurns === 0 ? 'full' : 'partial',
       missingTools,
@@ -1050,7 +1174,9 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
 
   function finalizeSession(c: TxState, w: Working): void {
     const now = c.tx.now;
-    const views = deriveModel(w.model, now, cfg);
+    // whether the main transcript file still ends in a cost-state record is a row of its own, read after this transaction wrote
+    // the records and the rows that follow them (CR-WP-28-2)
+    const views = deriveModel(w.model, now, cfg, { costStateTrailing: costStates.sessionTrailing(scope, w.rowId) });
     const facts = w.model.session;
 
     // agents first: the session row reads their count
@@ -1062,6 +1188,9 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
       const view = Object.hasOwn(views.agents, agentUid) ? views.agents[agentUid] : undefined;
       const result =
         view === undefined ? undefined : agents.writeView(scope, c.tx, id, storedView(view), JSON.stringify(facts_));
+      // a change of the view is announced at once and restarts the window of the activity throttle
+      if (result?.changed === true)
+        c.viewAnnouncements.push({ entity: 'agent', key: `${String(id)}:${w.uid}`, at: now });
       if (row === undefined) continue;
       const wanted = {
         lastActivityAt: Math.max(row.startedAt, maxOf(row.lastActivityAt, facts_.lastActivity?.at)),
@@ -1080,8 +1209,14 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     }
 
     const written = sessions.writeView(scope, c.tx, w.rowId, storedView(views.session), JSON.stringify(facts));
+    if (written?.changed === true) {
+      c.viewAnnouncements.push({ entity: 'session', key: `${String(w.rowId)}:${w.uid}`, at: now });
+    }
     // the main agent shows the state of the session
     const mainWritten = agents.writeView(scope, c.tx, w.mainAgentId, storedView(views.session), '{}');
+    if (mainWritten?.changed === true) {
+      c.viewAnnouncements.push({ entity: 'agent', key: `${String(w.mainAgentId)}:${w.uid}`, at: now });
+    }
 
     const row = sessions.byUid(scope, w.uid);
     if (row !== undefined) {
@@ -1113,10 +1248,13 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           hookCoverage: string;
           hookMissingTools: number;
           hookMissingTurns: number;
+          reportedCostUsd: number | null;
+          reportedCostAt: number | null;
         }>(
           `SELECT entrypoint, cc_version AS ccVersion, git_branch AS gitBranch, last_model AS lastModel, title_ai AS titleAi,
                   title_custom AS titleCustom, continued_in AS continuedIn, copied_from AS copiedFrom,
-                  hook_coverage AS hookCoverage, hook_missing_tools AS hookMissingTools, hook_missing_turns AS hookMissingTurns
+                  hook_coverage AS hookCoverage, hook_missing_tools AS hookMissingTools, hook_missing_turns AS hookMissingTurns,
+                  reported_cost_usd AS reportedCostUsd, reported_cost_at AS reportedCostAt
              FROM sessions WHERE id = ?`,
         )
         .get([w.rowId]);
@@ -1130,6 +1268,10 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         ...(w.titleCustom === undefined ? {} : { titleCustom: w.titleCustom }),
         ...(w.continuedIn === undefined ? {} : { continuedIn: w.continuedIn }),
         ...(w.copiedFrom === undefined ? {} : { copiedFrom: w.copiedFrom }),
+        // the amount the provider reported last stays when a later record clears the trailing flag (CR-WP-28-2)
+        ...(w.reportedCost === undefined
+          ? {}
+          : { reportedCostUsd: w.reportedCost.usd, reportedCostAt: w.reportedCost.at }),
         hookCoverage: coverage.coverage,
         hookMissingTools: coverage.missingTools,
         hookMissingTurns: coverage.missingTurns,
@@ -1249,16 +1391,57 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     }
   }
 
+  // ---- the throttled announcements (03 3.6) ----------------------------------------------------------------------------------
+
+  /** The change sink of one transaction: it shares the activity throttle of this writer when the writer has one. */
+  function sinkOf(tx: WriteTx): ChangeSink {
+    return createChangeSink(tx, throttle === undefined ? {} : { throttle });
+  }
+
+  /** Stamps `updated_seq` of a row the flush announced, so that a frame hydrated for the change shows the committed totals. */
+  function stampAnnounced(tx: WriteTx, change: ReservedChange): void {
+    const colon = change.key.indexOf(':');
+    const rowId = colon === -1 ? Number.NaN : Number(change.key.slice(0, colon));
+    if (!Number.isSafeInteger(rowId)) return;
+    if (change.entity === 'session' || change.entity === 'turn') {
+      const row = sessions.byUid(scope, change.key.slice(colon + 1));
+      // the patch repeats a value the row holds: the write only stamps `updated_seq` (and `updated_at`)
+      if (row?.id === rowId) sessions.update(scope, tx, rowId, { lastActivityAt: row.lastActivityAt }, change.seq);
+    } else if (change.entity === 'agent') {
+      const row = db.driver
+        .prepare<{ lastActivityAt: number }>('SELECT last_activity_at AS lastActivityAt FROM agents WHERE id = ?')
+        .get([rowId]);
+      if (row !== undefined) agents.update(scope, tx, rowId, { lastActivityAt: row.lastActivityAt }, change.seq);
+    }
+  }
+
+  /** One transaction that announces what the throttle held back. A failure puts the announcements back and is thrown. */
+  function flushDeferred(): void {
+    let reserved: ReservedChange[] = [];
+    try {
+      withWriteTx(db, scope, (tx) => {
+        if (throttle === undefined) return;
+        reserved = throttle.flush(tx);
+        for (const change of reserved) stampAnnounced(tx, change);
+      });
+    } catch (error) {
+      // the state of the throttle is not rolled back with the transaction: what the flush took goes back to be flushed again
+      throttle?.restore(reserved);
+      throw error;
+    }
+  }
+
   // ---- one transaction ---------------------------------------------------------------------------------------------------
 
   function commit(group: readonly Queued[]): void {
     const working = new Map<string, Working>();
+    const viewAnnouncements: ViewAnnouncement[] = [];
     pending = working;
     try {
       withWriteTx(db, scope, (tx) => {
         const c: TxState = {
           tx,
-          sink: createChangeSink(tx),
+          sink: sinkOf(tx),
           working,
           dups: emptyDuplicateCounts(),
           errors: {},
@@ -1271,9 +1454,12 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           rollupSessions: new Set(),
           rollupAgents: new Set(),
           linkedFiles: new Set(),
+          fileTails: new Map(),
+          viewAnnouncements,
         };
         for (const { batch } of group) for (const item of batch.items) applyItem(c, item);
         for (const { batch } of group) if (batch.cursor !== undefined) applyCursor(c, batch.cursor);
+        clearTrailing(c);
         for (const w of working.values()) finalizeSession(c, w);
         announceRollups(c);
         finalizeHealth(
@@ -1285,6 +1471,8 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           group.map(({ batch }) => batch),
         );
       });
+      // the state of the throttle is not rolled back with a transaction: it hears of a view change only once it is committed
+      for (const { entity, key, at } of viewAnnouncements) throttle?.announced(entity, key, at);
       stats.lastCommitAt = db.clock.now();
     } catch (error) {
       pending = null;
@@ -1299,7 +1487,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
       withWriteTx(db, scope, (tx) => {
         const c: TxState = {
           tx,
-          sink: createChangeSink(tx),
+          sink: sinkOf(tx),
           working: new Map(),
           dups: emptyDuplicateCounts(),
           errors: {},
@@ -1312,6 +1500,8 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           rollupSessions: new Set(),
           rollupAgents: new Set(),
           linkedFiles: new Set(),
+          fileTails: new Map(),
+          viewAnnouncements: [],
         };
         recordError(c, {
           code: 'PERSIST_FAILED',
@@ -1482,6 +1672,30 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     if (looping === null && !closed) looping = Promise.resolve().then(loop);
   }
 
+  /** A job runs between two transactions, never inside one. `front` puts it ahead of the queued batches. */
+  function enqueueJob<T>(fn: () => T, front: boolean): Promise<T> {
+    if (closed) return Promise.reject(new IngestWriterClosedError());
+    return new Promise<T>((resolve, reject) => {
+      let result: { readonly value: T } | undefined;
+      const entry: Entry = {
+        kind: 'job',
+        job: {
+          run: () => {
+            result = { value: fn() };
+          },
+          resolve: () => {
+            if (result === undefined) reject(new Error('the exclusive job produced no result'));
+            else resolve(result.value);
+          },
+          reject,
+        },
+      };
+      if (front) queue.unshift(entry);
+      else queue.push(entry);
+      kick();
+    });
+  }
+
   const writer: IngestWriterHandle = {
     submit(batch) {
       if (closed) throw new IngestWriterClosedError();
@@ -1515,24 +1729,19 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     },
     stats,
     runExclusive<T>(fn: () => T): Promise<T> {
-      if (closed) return Promise.reject(new IngestWriterClosedError());
-      return new Promise<T>((resolve, reject) => {
-        let result: { readonly value: T } | undefined;
-        queue.push({
-          kind: 'job',
-          job: {
-            run: () => {
-              result = { value: fn() };
-            },
-            resolve: () => {
-              if (result === undefined) reject(new Error('the exclusive job produced no result'));
-              else resolve(result.value);
-            },
-            reject,
-          },
-        });
-        kick();
-      });
+      return enqueueJob(fn, false);
+    },
+    async flushActivity() {
+      if (throttle === undefined || closed) return;
+      const due = throttle.nextDueAt();
+      if (due === null || due > db.clock.now()) return;
+      try {
+        // ahead of the batches that are queued: it depends on none of them, and a long backlog must not hold the schedule up
+        await enqueueJob(flushDeferred, true);
+      } catch (error) {
+        if (error instanceof IngestWriterClosedError) return;
+        throw error;
+      }
     },
     async close() {
       closed = true;

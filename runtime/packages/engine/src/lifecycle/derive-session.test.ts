@@ -656,18 +656,36 @@ describe('S-8: after a turn end', () => {
   });
 
   it('S-8e: a trailing cost-state record without a live pid or registry says the process ended (inferred, still turn_ended)', () => {
-    const facts = stoppedFacts(5 * MIN, { costStateTrailing: lww(st(4096), true) });
-    expect(derive(facts)).toMatchObject({
+    const facts = stoppedFacts(5 * MIN);
+    const trailing: Partial<SessionRows> = { costStateTrailing: true };
+    expect(derive(facts, trailing)).toMatchObject({
       state: 'turn_ended',
       presence: 'ended',
       basis: 'inferred',
       confidence: 'medium',
     });
-    expect(derive({ ...facts, pid: lww(st(NOW), { pid: 1, alive: true }) })).toMatchObject({
+    expect(derive({ ...facts, pid: lww(st(NOW), { pid: 1, alive: true }) }, trailing)).toMatchObject({
       presence: 'open',
       basis: 'observed',
     });
-    expect(derive({ ...facts, costStateTrailing: lww(st(4096), false) })).toMatchObject({ presence: 'open' });
+    expect(derive(facts, { costStateTrailing: false })).toMatchObject({ presence: 'open', basis: 'observed' });
+    // no input at all is the same as a flag that is not set
+    expect(derive(facts)).toMatchObject({ presence: 'open', basis: 'observed' });
+  });
+
+  it('S-8e: the flag is an input of the derivation; the deprecated fact of an old database is read by nothing (CR-WP-28-2)', () => {
+    const facts = stoppedFacts(5 * MIN, { costStateTrailing: lww(st(4096), true) });
+    expect(derive(facts)).toMatchObject({ state: 'turn_ended', presence: 'open', basis: 'observed' });
+    expect(derive(facts, { costStateTrailing: false })).toMatchObject({ presence: 'open' });
+    expect(derive(facts, { costStateTrailing: true })).toMatchObject({ presence: 'ended', basis: 'inferred' });
+  });
+
+  it('S-8e: the flag moves nothing but the presence, and a later hour does not clear it by itself', () => {
+    const facts = stoppedFacts(5 * MIN);
+    const open = derive(facts, { costStateTrailing: false });
+    const ended = derive(facts, { costStateTrailing: true });
+    expect({ ...ended, presence: open.presence, basis: open.basis, confidence: open.confidence }).toEqual(open);
+    expect(derive(facts, { costStateTrailing: true }, NOW + 30 * MIN)).toMatchObject({ presence: 'ended' });
   });
 
   it('S-8f: SessionStart with no prompt yet waits for the user (medium); a compact start alone does not', () => {

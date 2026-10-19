@@ -157,6 +157,12 @@ export interface SessionRows {
   readonly tools: readonly ToolCallRow[];
   readonly agents: readonly AgentSummary[];
   readonly workflows: readonly WorkflowSummary[];
+  /**
+   * The main transcript file of the session ends in a cost-state record (`cost_states.is_trailing`): with no live pid and no
+   * live registry entry S-8e says the process ended (inferred, CHALLENGES C2). A row-level input and not a fact, so that a
+   * later record can clear it (CR-WP-28-2). Absent = not set.
+   */
+  readonly costStateTrailing?: boolean;
 }
 
 /** A turn boundary: a Stop / StopFailure hook, a transcript end_turn / turn_duration, or an interrupt marker. */
@@ -194,6 +200,8 @@ export interface SessionSignals {
   readonly ended: boolean;
   /** The job fact is older than later activity (`isJobSuperseded`): S-4a and S-4b are skipped. */
   readonly jobSuperseded: boolean;
+  /** `SessionRows.costStateTrailing`. */
+  readonly costStateTrailing: boolean;
 }
 
 const ACTIVE_CHILD_STATES: ReadonlySet<LifecycleState> = new Set<LifecycleState>([
@@ -361,6 +369,7 @@ export function sessionSignals(facts: SessionFacts, rows: SessionRows, now: numb
     reopened,
     ended: facts.end !== null && !reopened,
     jobSuperseded: isJobSuperseded(facts, cfg),
+    costStateTrailing: rows.costStateTrailing === true,
   };
 }
 

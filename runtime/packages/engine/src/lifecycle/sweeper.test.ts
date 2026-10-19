@@ -1,5 +1,6 @@
 // The lifecycle sweeper (02 4.10, 7.8; T-LF-50 sweeper part, T-LF-54): only rows past `next_check_at` are looked at, the work goes
 // to the injected writer, `stop` waits for a running tick, and the timer runs on the interval of `lifecycle.sweepIntervalMs`.
+// Due sessions, due subagents and due workflow runs are grouped into one derive item per session (CR-WP-35-2, WP-99).
 import path from 'node:path';
 
 import { FakeClock, useTempDirs } from '@mcs/testkit';
@@ -7,9 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FIXTURE_INSTANCE_ID } from '../../test/fixtures/hooks.ts';
 import { openInstanceDb, type InstanceDb } from '../db/open.ts';
+import { AgentsRepo } from '../db/repos/agents.ts';
 import { SessionsRepo, type StoredView } from '../db/repos/sessions.ts';
+import { WorkflowRunsRepo } from '../db/repos/workflow-runs.ts';
 import { withWriteTx } from '../db/write.ts';
-import type { IngestBatch } from '../ingest/writer.ts';
+import { createIngestWriter, type IngestBatch, type IngestItem, type IngestWriterHandle } from '../ingest/writer.ts';
 import { createLifecycleSweeper, type SweeperContext, type SweeperWriter } from './sweeper.ts';
 
 const tempDir = useTempDirs();
@@ -118,8 +121,12 @@ function recordingWriter(): RecordingWriter {
   return writer;
 }
 
+const sessionOfItem = (item: IngestItem): string | undefined => item.derive?.sessionId ?? item.events[0]?.sessionId;
 const sessionsOf = (batch: IngestBatch): string[] =>
-  batch.items.flatMap((item) => item.events.map((event) => event.sessionId));
+  batch.items.flatMap((item) => {
+    const id = sessionOfItem(item);
+    return id === undefined ? [] : [id];
+  });
 
 describe('T-LF-50 the sweeper looks only at rows past next_check_at', () => {
   it('submits derive items for the due sessions of 1000 and for no other', async () => {
@@ -195,9 +202,10 @@ describe('T-LF-50 the sweeper looks only at rows past next_check_at', () => {
     expect(external?.events).toEqual([
       { k: 'external.pid', sessionId: uid(1), pid: 4242, alive: false, checkedAt: NOW },
     ]);
-    expect(
-      items.filter((item) => item.kind === 'derive').flatMap((item) => item.events.map((e) => e.sessionId)),
-    ).toEqual([uid(2), uid(3)]);
+    expect(items.filter((item) => item.kind === 'derive').flatMap((item) => item.derive?.sessionId ?? [])).toEqual([
+      uid(2),
+      uid(3),
+    ]);
   });
 });
 
@@ -313,5 +321,252 @@ describe('T-LF-54 the sweeper service shape', () => {
     writer.drain();
     await first;
     expect(writer.batches).toHaveLength(1);
+  });
+});
+
+// ---- due subagents and workflow runs (CR-WP-35-2, WP-99) -------------------------------------------------------------------
+
+const agentUidOf = (n: number): string => `a${n.toString(16).padStart(16, '0')}`;
+const runUidOf = (n: number): string => `wf_${n.toString(16).padStart(12, '0')}`;
+
+interface SeedChild {
+  readonly n: number;
+  /** The session (by its seed number) the child belongs to. */
+  readonly session: number;
+  readonly nextCheckAt: number | null;
+}
+
+function seedAgents(db: InstanceDb, children: readonly SeedChild[]): void {
+  const sessions = new SessionsRepo(db);
+  const repo = new AgentsRepo(db);
+  withWriteTx(db, SCOPE, (tx) => {
+    for (const child of children) {
+      const sessionId = sessions.idByUid(SCOPE, uid(child.session));
+      const mainId = sessionId === undefined ? undefined : repo.byUid(SCOPE, sessionId, 'main')?.id;
+      if (sessionId === undefined || mainId === undefined) throw new Error('seed the session first');
+      const { id } = repo.upsert(
+        SCOPE,
+        tx,
+        {
+          sessionId,
+          agentUid: agentUidOf(child.n),
+          parentAgentId: mainId,
+          kind: 'subagent',
+          depth: 1,
+          startedAt: NOW - 60_000,
+        },
+        null,
+      );
+      repo.writeView(SCOPE, tx, id, viewOf({ state: 'working', nextCheckAt: child.nextCheckAt }), '{}');
+    }
+  });
+}
+
+function seedRuns(db: InstanceDb, children: readonly SeedChild[]): void {
+  const sessions = new SessionsRepo(db);
+  const repo = new WorkflowRunsRepo(db);
+  withWriteTx(db, SCOPE, (tx) => {
+    for (const child of children) {
+      const sessionId = sessions.idByUid(SCOPE, uid(child.session));
+      if (sessionId === undefined) throw new Error('seed the session first');
+      const { id } = repo.upsert(
+        SCOPE,
+        tx,
+        { sessionId, runUid: runUidOf(child.n), workflowName: null, launchToolUseId: null, startedAt: NOW - 60_000 },
+        null,
+      );
+      repo.writeView(SCOPE, tx, id, viewOf({ state: 'running', nextCheckAt: child.nextCheckAt }), '{}');
+    }
+  });
+}
+
+const deriveItems = (writer: RecordingWriter): IngestItem[] =>
+  writer.batches.flatMap((batch) => batch.items).filter((item) => item.kind === 'derive');
+
+describe('due subagents and workflow runs are swept with their session (CR-WP-35-2)', () => {
+  it('names a due subagent of a session that is not due, in the one derive item of that session', async () => {
+    const { db, clock } = open();
+    seed(db, [{ n: 1, nextCheckAt: NOW + 3_600_000 }]);
+    seedAgents(db, [
+      { n: 1, session: 1, nextCheckAt: NOW - 1000 },
+      { n: 2, session: 1, nextCheckAt: NOW + 60_000 },
+    ]);
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    const items = deriveItems(writer);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.derive).toEqual({ sessionId: uid(1), agents: [agentUidOf(1)] });
+    expect(items[0]?.events).toEqual([]);
+  });
+
+  it('names a due workflow run of a session that is not due', async () => {
+    const { db, clock } = open();
+    seed(db, [{ n: 1, nextCheckAt: null }]);
+    seedRuns(db, [{ n: 1, session: 1, nextCheckAt: NOW - 1000 }]);
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    expect(deriveItems(writer).map((item) => item.derive)).toEqual([{ sessionId: uid(1), runs: [runUidOf(1)] }]);
+  });
+
+  it('submits one item per session however many of its sessions, subagents and runs are due', async () => {
+    const { db, clock } = open();
+    seed(db, [
+      { n: 1, nextCheckAt: NOW - 5000 },
+      { n: 2, nextCheckAt: NOW + 3_600_000 },
+      { n: 3, nextCheckAt: NOW + 3_600_000 },
+    ]);
+    seedAgents(db, [
+      { n: 1, session: 1, nextCheckAt: NOW - 4000 },
+      { n: 2, session: 1, nextCheckAt: NOW - 3000 },
+      { n: 3, session: 2, nextCheckAt: NOW - 2000 },
+    ]);
+    seedRuns(db, [
+      { n: 1, session: 1, nextCheckAt: NOW - 1000 },
+      { n: 2, session: 2, nextCheckAt: NOW - 500 },
+    ]);
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    expect(deriveItems(writer).map((item) => item.derive)).toEqual([
+      { sessionId: uid(1), agents: [agentUidOf(1), agentUidOf(2)], runs: [runUidOf(1)] },
+      { sessionId: uid(2), agents: [agentUidOf(3)], runs: [runUidOf(2)] },
+    ]);
+  });
+
+  it('a due main agent re-derives its session and is never named (it mirrors the session view)', async () => {
+    const { db, clock } = open();
+    seed(db, [{ n: 1, nextCheckAt: NOW + 3_600_000 }]);
+    db.driver.prepare("UPDATE agents SET next_check_at = :at WHERE agent_uid = 'main'").run({ at: NOW - 1 });
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    expect(deriveItems(writer).map((item) => item.derive)).toEqual([{ sessionId: uid(1) }]);
+  });
+
+  it('takes at most 200 sessions per tick, however they are due; the rest wait for the next tick', async () => {
+    const { db, clock } = open();
+    // 150 sessions due on their own and 150 other sessions that are only due through a subagent
+    seed(db, [
+      ...Array.from({ length: 150 }, (_, i) => ({ n: i + 1, nextCheckAt: NOW - 400_000 + i * 1000 })),
+      ...Array.from({ length: 150 }, (_, i) => ({ n: i + 151, nextCheckAt: NOW + 3_600_000 })),
+    ]);
+    seedAgents(
+      db,
+      Array.from({ length: 150 }, (_, i) => ({ n: i + 1, session: i + 151, nextCheckAt: NOW - 200_000 + i * 1000 })),
+    );
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    const sessions = writer.batches.flatMap(sessionsOf);
+    expect(sessions).toHaveLength(200);
+    expect(new Set(sessions).size).toBe(200);
+    // the 150 due sessions come first, then the 50 earliest due subagents
+    expect(sessions.slice(0, 150)).toEqual(Array.from({ length: 150 }, (_, i) => uid(i + 1)));
+    expect(sessions.slice(150)).toEqual(Array.from({ length: 50 }, (_, i) => uid(i + 151)));
+  });
+
+  it('names at most 200 subagents of one session in a tick', async () => {
+    const { db, clock } = open();
+    seed(db, [{ n: 1, nextCheckAt: NOW + 3_600_000 }]);
+    seedAgents(
+      db,
+      Array.from({ length: 300 }, (_, i) => ({ n: i + 1, session: 1, nextCheckAt: NOW - 300_000 + i * 1000 })),
+    );
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    const items = deriveItems(writer);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.derive?.agents).toHaveLength(200);
+    expect(items[0]?.derive?.agents?.[0]).toBe(agentUidOf(1));
+  });
+
+  it('a session with a live pid gets the pid probe and, for its due children, a derive item that names them', async () => {
+    const { db, clock } = open();
+    seed(db, [{ n: 1, nextCheckAt: NOW - 1, claudePid: 4242 }]);
+    seedAgents(db, [{ n: 1, session: 1, nextCheckAt: NOW - 1 }]);
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }, { pidAlive: () => true }).tickNow();
+    const items = writer.batches.flatMap((batch) => batch.items);
+    expect(items.map((item) => item.kind)).toEqual(['external', 'derive']);
+    expect(items[0]?.events).toEqual([
+      { k: 'external.pid', sessionId: uid(1), pid: 4242, alive: true, checkedAt: NOW },
+    ]);
+    expect(items[1]?.derive).toEqual({ sessionId: uid(1), agents: [agentUidOf(1)] });
+  });
+
+  it('never submits the fake external.job event that used to name a session', async () => {
+    const { db, clock } = open();
+    seed(db, [{ n: 1, nextCheckAt: NOW - 1 }]);
+    seedAgents(db, [{ n: 1, session: 1, nextCheckAt: NOW - 1 }]);
+    const writer = recordingWriter();
+    await createLifecycleSweeper(context(db, clock), { writer }).tickNow();
+    const events = writer.batches.flatMap((batch) => batch.items).flatMap((item) => item.events);
+    expect(events).toEqual([]);
+  });
+});
+
+describe('over the real writer: a subagent that stopped writing flips to stale after one tick (T-LF-49 style)', () => {
+  const writers: IngestWriterHandle[] = [];
+  afterEach(async () => {
+    for (const writer of writers.splice(0)) await writer.close();
+  });
+
+  it('derives the due subagent with no new event, moves its next_check_at past now, and then has nothing to sweep', async () => {
+    const { db, clock } = open();
+    const real = createIngestWriter({ db, scope: SCOPE });
+    writers.push(real);
+    const submitted: IngestBatch[] = [];
+    const counting: SweeperWriter = {
+      submit: (batch) => {
+        submitted.push(batch);
+        return real.submit(batch);
+      },
+      onDrain: (cb) => {
+        real.onDrain(cb);
+      },
+    };
+    // a session whose only evidence is one started subagent
+    const started: IngestBatch = {
+      source: 'transcript',
+      items: [
+        {
+          kind: 'record',
+          events: [
+            {
+              k: 'agent.start',
+              sessionId: uid(1),
+              agentId: agentUidOf(1),
+              agentType: 'general-purpose',
+              stamp: { at: NOW - 5000, rank: 44, tie: 'agent-start' },
+            },
+          ],
+          rows: [],
+        },
+      ],
+      bytes: 10,
+    };
+    expect(real.submit(started)).toBe(true);
+    await real.flushNow();
+    const agent = (): { state: string; next: number | null } | undefined =>
+      db.driver
+        .prepare<{ state: string; next: number | null }>(
+          'SELECT state, next_check_at AS next FROM agents WHERE agent_uid = ?',
+        )
+        .get([agentUidOf(1)]);
+    expect(agent()?.state).toBe('working');
+    const sweeper = createLifecycleSweeper(context(db, clock), { writer: counting });
+    await sweeper.tickNow();
+    expect(submitted).toHaveLength(0);
+
+    clock.advance(31 * 60_000);
+    await sweeper.tickNow();
+    await real.flushNow();
+    expect(submitted).toHaveLength(1);
+    expect(agent()?.state).toBe('stale');
+    const next = agent()?.next ?? null;
+    expect(next === null || next > clock.now()).toBe(true);
+
+    // the derived rows moved after now: the next tick selects none of them again
+    const sessionNext = db.driver.prepare<{ next: number | null }>('SELECT next_check_at AS next FROM sessions').get();
+    expect(sessionNext?.next === null || (sessionNext?.next ?? 0) > clock.now()).toBe(true);
+    await sweeper.tickNow();
+    expect(submitted).toHaveLength(1);
   });
 });

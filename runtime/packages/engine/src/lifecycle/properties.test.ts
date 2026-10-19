@@ -889,3 +889,59 @@ describe('T-LF-55 retraction and republish', () => {
     expect(cleared.ruleId).not.toBe('S-1');
   });
 });
+
+describe('P2 and P7 with the trailing cost-state input (CR-WP-28-2, WP-99)', () => {
+  const FLAGS = [true, false] as const;
+
+  forCases('P2 trailing flag', (rng, events) => {
+    const noisy = arrival(rng, events);
+    const model = fold(noisy);
+    const now = pickNow(rng, events);
+    for (const costStateTrailing of FLAGS) {
+      const inputs = { costStateTrailing };
+      const views = deriveModel(model, now, CFG, inputs);
+      for (let round = 0; round < 2; round += 1) {
+        const shuffled = fold(rng.shuffle(noisy));
+        expect(viewsEqual(deriveModel(shuffled, now, CFG, inputs), views)).toBe(true);
+      }
+    }
+    // no input is the flag not set
+    expect(viewsEqual(deriveModel(model, now, CFG), deriveModel(model, now, CFG, { costStateTrailing: false }))).toBe(
+      true,
+    );
+    // the flag decides the presence of rule S-8e and nothing about the rule or the state
+    const on = deriveModel(model, now, CFG, { costStateTrailing: true }).session;
+    const off = deriveModel(model, now, CFG, { costStateTrailing: false }).session;
+    expect([on.state, on.ruleId]).toEqual([off.state, off.ruleId]);
+    if (on.presence !== off.presence) expect(on.ruleId).toBe('S-8e');
+  });
+
+  forCases('P7 trailing flag', (rng, events) => {
+    const built = fold(arrival(rng, dropSome(rng, events, 0.1)));
+    const evaluatedAt = pickNow(rng, events);
+    const withoutPid: LifecycleModel = { ...built, session: { ...built.session, claudePid: null } };
+    for (const model of [built, withoutPid]) {
+      const inputs = { costStateTrailing: true };
+      const base = deriveModel(model, evaluatedAt, CFG, inputs);
+      const entities: [string, LifecycleView][] = [
+        ['session', base.session],
+        ...Object.entries(base.agents).map(([id, view]): [string, LifecycleView] => [`agent ${id}`, view]),
+        ...Object.entries(base.workflows).map(([id, view]): [string, LifecycleView] => [`workflow ${id}`, view]),
+      ];
+      for (const [name, view] of entities) {
+        expect(
+          view.nextCheckAt === null || view.nextCheckAt > evaluatedAt,
+          `${name} nextCheckAt is in the future`,
+        ).toBe(true);
+      }
+      const nexts = entities.flatMap(([, view]) => (view.nextCheckAt === null ? [] : [view.nextCheckAt]));
+      const horizon = nexts.length === 0 ? evaluatedAt + 3 * 86_400_000 : Math.min(...nexts);
+      for (let sample = 0; sample < 25; sample += 1) {
+        const at = sample === 24 ? horizon - 1 : evaluatedAt + Math.floor(((horizon - evaluatedAt) * sample) / 24);
+        if (at >= horizon || at < evaluatedAt) continue;
+        const later = deriveModel(model, at, CFG, inputs);
+        expect(frozen(later.session), `session at +${String(at - evaluatedAt)} ms`).toEqual(frozen(base.session));
+      }
+    }
+  });
+});

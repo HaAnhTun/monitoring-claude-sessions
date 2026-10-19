@@ -7,6 +7,7 @@ import { IngestHealthSchema, RUNTIME_VERSION } from '@mcs/shared';
 import { sanitizeProjectName, type HookEnvelopeV1 } from '@mcs/shared/protocol';
 import {
   bigTranscript,
+  FakeClock,
   buildClaudeHome,
   killAllTracked,
   spawnTracked,
@@ -81,6 +82,8 @@ interface HarnessOptions {
   readonly sessions?: (repo: string) => SessionSpec[];
   readonly registry?: (claudeHome: string) => void;
   readonly service?: IngestServiceOptions;
+  /** A fixed clock for the whole instance: time passes only when the test moves it (the sweeper tests). */
+  readonly clock?: FakeClock;
 }
 
 async function harness(o: HarnessOptions = {}): Promise<Harness> {
@@ -106,6 +109,7 @@ async function harness(o: HarnessOptions = {}): Promise<Harness> {
     skillDir: skill,
     runtimeDir: path.join(skill, 'runtime'),
     build: { runtimeVersion: RUNTIME_VERSION, codeStamp: 'abcdef0123' },
+    ...(o.clock === undefined ? {} : { clock: o.clock }),
   });
   contexts.push(ctx);
   const service = createIngestService(ctx, o.service);
@@ -244,8 +248,17 @@ describe('T-PL-13 start, untilIdle, stop', () => {
     expect(h.one("SELECT count(*) AS n FROM agents WHERE agent_uid <> 'main'")).toBe(1);
     expect(h.one('SELECT count(*) AS n FROM tool_calls WHERE tool_use_id = :id', { id: TOOL_READ })).toBe(1);
     expect(h.one('SELECT sources AS n FROM tool_calls WHERE tool_use_id = :id', { id: TOOL_READ }) & 15).toBe(15);
-    // the coverage of this session is not asserted: the writer counts the first prompt record of the subagent file as a
-    // transcript prompt without a hook (CR-WP-35-3), which makes the coverage `partial`
+    // the first prompt record of the subagent file has no hook by design (Claude Code fires no UserPromptSubmit for it): the
+    // coverage stays full and no hook_gap record is made (CR-WP-35-3)
+    expect(
+      h.all<{ coverage: string; tools: number; turns: number }>(
+        'SELECT hook_coverage AS coverage, hook_missing_tools AS tools, hook_missing_turns AS turns FROM sessions',
+      ),
+    ).toEqual([{ coverage: 'full', tools: 0, turns: 0 }]);
+    expect(h.one("SELECT count(*) AS n FROM reconciliations WHERE kind = 'hook_gap'")).toBe(0);
+    expect(
+      h.one("SELECT count(*) AS n FROM events WHERE kind = 'prompt.submit' AND agent_id IS NOT NULL AND sources = 2"),
+    ).toBeGreaterThanOrEqual(1);
     await h.service.stop(NOW() + 2000);
   });
 
@@ -633,6 +646,84 @@ describe('the lifecycle sweeper over the real writer (T-LF-50)', () => {
     expect(after?.changed).toBe(before?.changed);
     expect(h.one("SELECT count(*) AS n FROM changes WHERE kind = 'session'")).toBe(changes);
     await h.service.stop(NOW() + 2000);
+  });
+
+  it('a due subagent flips to stale after one sweeper tick with no new event (T-LF-49, CR-WP-35-2)', async () => {
+    const clock = new FakeClock(Date.now());
+    const h = await harness({ clock });
+    // the lab sequence up to SubagentStart: the subagent started five minutes ago and has said nothing since
+    appendEnvelopes(h.spoolDir, hooksFor(h, clock.now() - 5 * MIN).slice(0, 7));
+    await h.service.start();
+    await h.service.untilIdle({ timeoutMs: 10_000 });
+    const agent = (): { state: string; rule: string; next: number | null } | undefined =>
+      h.all<{ state: string; rule: string; next: number | null }>(
+        'SELECT state, state_rule AS rule, next_check_at AS next FROM agents WHERE agent_uid = :uid',
+        { uid: SUBAGENT_ID },
+      )[0];
+    expect(agent()).toMatchObject({ state: 'working' });
+    const events = h.one('SELECT count(*) AS n FROM events');
+
+    // time passes and nothing is written: the subagent is due, its session too
+    clock.advance(40 * MIN);
+    expect(agent()?.next ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(clock.now());
+    const sweeper = createLifecycleSweeper(h.ctx, h.service, { pidAlive: () => true });
+    await sweeper.tickNow();
+    await h.service.writer.flushNow();
+    expect(agent()).toMatchObject({ state: 'stale', rule: 'A-9' });
+    expect(h.one('SELECT count(*) AS n FROM events')).toBe(events);
+    // the derived rows moved past now, so the next tick has nothing to do
+    expect(agent()?.next === null || (agent()?.next ?? 0) > clock.now()).toBe(true);
+    const batches = h.one('SELECT count(*) AS n FROM changes');
+    await sweeper.tickNow();
+    await h.service.writer.flushNow();
+    expect(h.one('SELECT count(*) AS n FROM changes')).toBe(batches);
+    await h.service.stop(clock.now() + 2000);
+  });
+});
+
+describe('the provider cost state over the real service (CR-WP-28-2)', () => {
+  const costSession = (repo: string): SessionSpec =>
+    session(repo, NOW() - 10 * MIN, (b) => {
+      b.user('FIXTURE prompt');
+      b.assistant({ messageId: 'msg_fixture_cost', stop: 'end_turn' });
+      b.bookkeeping('cost-state');
+    });
+  const row = (h: Harness): { presence: string; basis: string; state: string; rule: string } | undefined =>
+    h.all<{ presence: string; basis: string; state: string; rule: string }>(
+      'SELECT presence, state_basis AS basis, state, state_rule AS rule FROM sessions WHERE session_uid = :uid',
+      { uid: SESSION },
+    )[0];
+  const cost = (h: Harness): { trailing: number; total: number | null } | undefined =>
+    h.all<{ trailing: number; total: number | null }>(
+      'SELECT is_trailing AS trailing, total_cost_usd AS total FROM cost_states',
+    )[0];
+
+  it('a transcript that ends in a cost-state record shows ended (inferred); a later record clears it, also after a restart', async () => {
+    const h = await harness({ sessions: (repo) => [costSession(repo)] });
+    await h.service.start();
+    await h.service.untilIdle({ timeoutMs: 30_000 });
+    expect(row(h)).toEqual({ presence: 'ended', basis: 'inferred', state: 'turn_ended', rule: 'S-8e' });
+    expect(cost(h)).toMatchObject({ trailing: 1 });
+    // the amount the provider reported is on the session row the API reads it from
+    expect(h.all<{ usd: number | null }>('SELECT reported_cost_usd AS usd FROM sessions')[0]?.usd).not.toBeNull();
+
+    appendFileSync(
+      path.join(h.projectDir, `${SESSION}.jsonl`),
+      `${JSON.stringify({ type: 'user', uuid: 'u-after-cost', sessionId: SESSION, timestamp: new Date().toISOString(), message: { role: 'user', content: 'FIXTURE later' } })}\n`,
+    );
+    await h.service.untilIdle({ timeoutMs: 30_000 });
+    expect(row(h)).toMatchObject({ presence: 'open' });
+    expect(cost(h)).toMatchObject({ trailing: 0 });
+    expect(h.all<{ usd: number | null }>('SELECT reported_cost_usd AS usd FROM sessions')[0]?.usd).not.toBeNull();
+
+    // a restart reads nothing again and the flag stays cleared
+    await h.service.stop(NOW() + 2000);
+    const again = h.another();
+    await again.start();
+    await again.untilIdle({ timeoutMs: 30_000 });
+    expect(row(h)).toMatchObject({ presence: 'open' });
+    expect(cost(h)).toMatchObject({ trailing: 0 });
+    await again.stop(NOW() + 2000);
   });
 });
 
