@@ -40,8 +40,13 @@ export type { AtomicWriteOptions } from './platform/fsx.ts';
 export { canonicalPath, isMsysPath, pathKey, samePath, toPosixRel } from './platform/paths.ts';
 export { globFiles } from './platform/glob.ts';
 export type { GlobOptions, GlobResult } from './platform/glob.ts';
-export { PyStrptimeFormatError, pyStrptime, pyStrptimeValidate, toEpochMs } from './platform/pytime.ts';
-export type { PyTimeFields } from './platform/pytime.ts';
+export {
+  TimeFormatError,
+  parseTimeWithFormat,
+  timeFieldsToEpochMs,
+  validateTimeFormat,
+} from './platform/time-format.ts';
+export type { TimeFields } from './platform/time-format.ts';
 export {
   PYTHON_SYNTAX_HINT,
   RegexCompileError,
@@ -679,6 +684,8 @@ export type {
 // @wp-end WP-57
 
 // @wp-begin WP-58
+export { COST_NOTE, matchesModel, resolvePrice } from './analytics/cost.ts';
+export { bucketStart } from './analytics/series.ts';
 // @wp-end WP-58
 
 // @wp-begin WP-59
@@ -723,3 +730,8 @@ export { defaultMigrationsDir } from './db/migrations.ts';
 export * as opsMigrate from './ops/migrate-workspace.ts';
 export type { MigrateDeps, MigrateInput, PatternStep, WorkspaceMigrationReport } from './ops/migrate-workspace.ts';
 // @wp-end WP-95
+
+// @wp-begin WP-100
+export { bindHealthGauges, healthGaugesOf } from './runtime/context.ts';
+export type { HealthGaugeSources, HealthGaugeValues, SearchGauge } from './runtime/context.ts';
+// @wp-end WP-100

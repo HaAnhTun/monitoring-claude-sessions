@@ -344,10 +344,23 @@ describe('Node-only additions (01 2.4; stricter than legacy, all CONFIG_INVALID 
     ]);
   });
 
-  it('checks attempts.time_format with pyStrptimeValidate and reports its message', () => {
+  it('checks attempts.time_format with validateTimeFormat and reports its message', () => {
     expect(check('{"attempts": {"start": "a", "end": "b", "time_format": "%Y-%m-%d %H:%M:%S"}}')).toEqual([]);
     expect(check('{"attempts": {"start": "a", "end": "b", "time_format": "%Y %X"}}')).toEqual([
       'attempts.time_format: unsupported directive %X (supported: %Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%)',
+    ]);
+  });
+
+  it('refuses %j with a month or day directive, a long format and too many directives in time_format', () => {
+    expect(check('{"attempts": {"start": "a", "end": "b", "time_format": "%Y %j %H:%M:%S"}}')).toEqual([]);
+    expect(check('{"attempts": {"start": "a", "end": "b", "time_format": "%Y %m %j"}}')).toEqual([
+      'attempts.time_format: %j cannot be combined with %m, %d, %b or %B',
+    ]);
+    expect(check(JSON.stringify({ attempts: { start: 'a', end: 'b', time_format: 'x'.repeat(201) } }))).toEqual([
+      'attempts.time_format: longer than 200 characters',
+    ]);
+    expect(check(JSON.stringify({ attempts: { start: 'a', end: 'b', time_format: '%d'.repeat(17) } }))).toEqual([
+      'attempts.time_format: more than 16 directives',
     ]);
   });
 
@@ -419,7 +432,7 @@ describe('compileConfigPatterns (step 7 of resolveConfig)', () => {
     );
     expect(e.code).toBe('CONFIG_INVALID');
     expect(e.message).toContain(`session_rules[1]: invalid regex (Invalid group; ${PYTHON_SYNTAX_HINT})`);
-    expect(e.hint).toContain('mcs migrate-workspace');
+    expect(e.hint).toBe('Run `mcs migrate-workspace --task <slug>` (dry run first) to convert Python regex syntax.');
     expect(e.message).toContain('session_rules[1]: ');
     expect(e.message).toContain('session_rules[2]: ');
     expect(e.message).toContain('attempts.end: ');
@@ -428,5 +441,14 @@ describe('compileConfigPatterns (step 7 of resolveConfig)', () => {
     expect(e.message).not.toContain('secret');
     expect(JSON.stringify(e.details)).not.toContain('secret');
     expect(e.details?.['patterns']).toHaveLength(3);
+  });
+
+  it('points a pattern that is only a JavaScript error at the key reference of the skill folder', () => {
+    const e = failure(() => compileConfigPatterns({ session_rules: [{ match: 'a*+' }], attempts: null }));
+    expect(e.code).toBe('CONFIG_INVALID');
+    expect(e.hint).toBe(
+      'Write the pattern as a JavaScript regular expression (v flag rules; see reference/configuration.md in the skill folder).',
+    );
+    expect(e.details?.['patterns']).toEqual([{ where: 'session_rules[0]', pythonSyntax: false }]);
   });
 });

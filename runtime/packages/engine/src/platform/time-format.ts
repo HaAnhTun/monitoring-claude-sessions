@@ -1,8 +1,23 @@
-// Port of CPython `_strptime` for the directives the chain-log time format needs (06 3.10.4, registry C42).
-// `pyStrptime` returns the parsed fields or null when the text does not match; an unsupported directive in the format is a
-// programming or configuration error and throws `PyStrptimeFormatError` (config load validates with `pyStrptimeValidate`).
+// The `attempts.time_format` subset (ADR 0067, design 01 section 2.8): how the time column of a chain-log line is read.
+//
+// Rules of the time format:
+//   - Directives: `%Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%`. Any other directive, and a lone `%` at the end, is
+//     refused (`validateTimeFormat` at config load, `TimeFormatError` when a format is used anyway).
+//   - Names (`%b %B %a %A %p %Z`) are English and case-insensitive; literal characters of the format match case-insensitively too.
+//   - Whitespace in the format (a run of it) matches one or more whitespace characters of the text.
+//   - The whole text must match: text left over after the format means no match.
+//   - `%S` is 00 to 59 (no leap seconds). `%f` is one to six digits, kept as whole milliseconds. `%y` pivots at 69.
+//   - A field the format does not carry defaults to year 1900, January 1st, midnight, so a format without a year cannot
+//     parse 29 February (1900 is not a leap year).
+//   - `%z` is `Z`, `+HH:MM` or `+HHMM` (hours 00 to 23, minutes 00 to 59). Without `%z` the fields are local time of the host.
+//   - `%j` sets month and day from the day of the year; a day past the end of its year is refused (no roll-over into the next
+//     year). `%j` together with `%m`, `%d`, `%b` or `%B` is refused by `validateTimeFormat`.
+//   - A format is at most 200 characters with at most 16 directives, so a hostile format cannot cost much to compile or to match.
+//
+// `parseTimeWithFormat` returns the parsed fields or null when the text does not match; a format that breaks the rules above
+// is a configuration error and throws `TimeFormatError` (config load validates with `validateTimeFormat` first).
 
-export interface PyTimeFields {
+export interface TimeFields {
   year: number;
   month: number;
   day: number;
@@ -17,13 +32,22 @@ export interface PyTimeFields {
 
 const SUPPORTED_DIRECTIVES = '%Y %m %d %H %M %S %f %y %b %B %a %A %I %p %j %z %Z %%';
 const SUPPORTED: ReadonlySet<string> = new Set('YmdHMSfybBaAIpjzZ%'.split(''));
+/** Directives that name a month or a day of the month: they cannot be combined with `%j`. */
+const DATE_DIRECTIVES: ReadonlySet<string> = new Set(['m', 'd', 'b', 'B']);
 
-export class PyStrptimeFormatError extends Error {
-  readonly directive: string;
+const MAX_FORMAT_LENGTH = 200;
+const MAX_DIRECTIVES = 16;
+/** A time column is short; a longer text cannot match and is not given to the matcher. */
+const MAX_TEXT_LENGTH = 256;
 
-  constructor(directive: string) {
-    super(`unsupported directive ${directive} (supported: ${SUPPORTED_DIRECTIVES})`);
-    this.name = 'PyStrptimeFormatError';
+/** A format that breaks the rules of the time format. The message carries no key name; `validateTimeFormat` adds it. */
+export class TimeFormatError extends Error {
+  /** The offending directive (`%` plus its character, or a lone `%`), or null when the problem is not one directive. */
+  readonly directive: string | null;
+
+  constructor(message: string, directive: string | null = null) {
+    super(message);
+    this.name = 'TimeFormatError';
     this.directive = directive;
   }
 }
@@ -59,7 +83,7 @@ const MONTH_ABBREVIATIONS = [
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 const DAY_ABBREVIATIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-/** Longest alternative first, like CPython's `__seqToRE`, so `May` and `March` cannot shadow each other. */
+/** Longest alternative first, so `May` and `March` cannot shadow each other. */
 function alternation(words: readonly string[]): string {
   return [...words].sort((a, b) => b.length - a.length).join('|');
 }
@@ -72,7 +96,7 @@ const DIRECTIVE_PATTERNS: Readonly<Record<string, string>> = {
   H: '(2[0-3]|[0-1]\\d|\\d| \\d)',
   I: '(1[0-2]|0[1-9]|[1-9]| [1-9])',
   M: '([0-5]\\d|\\d)',
-  S: '(6[0-1]|[0-5]\\d|\\d)',
+  S: '([0-5]\\d|\\d)',
   f: '(\\d{1,6})',
   y: '(\\d\\d)',
   b: `(${alternation(MONTH_ABBREVIATIONS)})`,
@@ -81,7 +105,7 @@ const DIRECTIVE_PATTERNS: Readonly<Record<string, string>> = {
   A: `(${alternation(DAYS)})`,
   p: '(AM|PM)',
   j: '(36[0-6]|3[0-5]\\d|[1-2]\\d\\d|0[1-9]\\d|00[1-9]|[1-9]\\d|0[1-9]|[1-9])',
-  z: '([+-]\\d\\d:?[0-5]\\d(?::?[0-5]\\d(?:\\.\\d{1,6})?)?|Z)',
+  z: '([+-](?:[01]\\d|2[0-3]):?[0-5]\\d|Z)',
   Z: '(UTC|GMT)',
 };
 
@@ -104,22 +128,36 @@ interface Compiled {
 const compiledByFormat = new Map<string, Compiled>();
 const MAX_CACHED_FORMATS = 64;
 
-/** The first unsupported directive of `format` (`%` plus its character, or a lone `%`), or null. */
-function firstUnsupported(format: string): string | null {
+/** Why `format` breaks the rules (message without a key name, and the directive when there is one), or null when it is fine. */
+function formatProblem(format: string): { message: string; directive: string | null } | null {
+  if (format.length > MAX_FORMAT_LENGTH) {
+    return { message: `longer than ${String(MAX_FORMAT_LENGTH)} characters`, directive: null };
+  }
+  let count = 0;
+  let hasJulian = false;
+  let hasDate = false;
   for (let i = 0; i < format.length; i += 1) {
     if (format.charAt(i) !== '%') continue;
     const next = format.charAt(i + 1);
-    if (next === '' || !SUPPORTED.has(next)) return `%${next}`;
+    if (next === '' || !SUPPORTED.has(next)) {
+      return { message: `unsupported directive %${next} (supported: ${SUPPORTED_DIRECTIVES})`, directive: `%${next}` };
+    }
     i += 1;
+    if (next === '%') continue;
+    count += 1;
+    if (next === 'j') hasJulian = true;
+    if (DATE_DIRECTIVES.has(next)) hasDate = true;
   }
+  if (count > MAX_DIRECTIVES) return { message: `more than ${String(MAX_DIRECTIVES)} directives`, directive: null };
+  if (hasJulian && hasDate) return { message: '%j cannot be combined with %m, %d, %b or %B', directive: '%j' };
   return null;
 }
 
 function compile(format: string): Compiled {
   const cached = compiledByFormat.get(format);
   if (cached !== undefined) return cached;
-  const unsupported = firstUnsupported(format);
-  if (unsupported !== null) throw new PyStrptimeFormatError(unsupported);
+  const problem = formatProblem(format);
+  if (problem !== null) throw new TimeFormatError(problem.message, problem.directive);
 
   let source = '^';
   const groups: string[] = [];
@@ -147,11 +185,13 @@ function compile(format: string): Compiled {
   return compiled;
 }
 
-/** `null` when `format` uses only supported directives, otherwise the message `<key>: unsupported directive %X (supported: ...)`. */
-export function pyStrptimeValidate(format: string, key = 'attempts.time_format'): string | null {
-  const unsupported = firstUnsupported(format);
-  if (unsupported === null) return null;
-  return `${key}: unsupported directive ${unsupported} (supported: ${SUPPORTED_DIRECTIVES})`;
+/**
+ * `null` when `format` follows the rules of the time format, otherwise a message that starts with `key` (for example
+ * `attempts.time_format: unsupported directive %X (supported: ...)`).
+ */
+export function validateTimeFormat(format: string, key = 'attempts.time_format'): string | null {
+  const problem = formatProblem(format);
+  return problem === null ? null : `${key}: ${problem.message}`;
 }
 
 function isLeapYear(year: number): boolean {
@@ -168,37 +208,20 @@ function lookupMonth(names: readonly string[], text: string): number {
   return names.findIndex((name) => name.toLowerCase() === wanted) + 1;
 }
 
-/**
- * The `%z` text as minutes east of UTC, like CPython 3.14: `Z` (upper case only), `+HHMM`, `+HH:MM` and the same with
- * seconds (`+HH:MM:SS`, `+HHMMSS`, an optional fraction that is ignored). Seconds are cut off: the result is whole
- * minutes. A colon that is used in only one of the two places is an error (null), as in CPython.
- */
+/** The `%z` text as minutes east of UTC: `Z`, `+HHMM` or `+HH:MM`. Null for anything else (a lower case `z` included). */
 function parseOffset(text: string): number | null {
-  if (text === 'z') return null;
   if (text === 'Z') return 0;
-  let z = text;
-  if (z.charAt(3) === ':') {
-    z = z.slice(0, 3) + z.slice(4);
-    if (z.length > 5) {
-      if (z.charAt(5) !== ':') return null;
-      z = z.slice(0, 5) + z.slice(6);
-    }
-  }
-  const hours = Number.parseInt(z.slice(1, 3), 10);
-  const minutes = Number.parseInt(z.slice(3, 5), 10);
-  const secondsText = z.slice(5, 7);
-  const seconds =
-    secondsText === '' ? 0 : /^[0-9]{2}$/.test(secondsText) ? Number.parseInt(secondsText, 10) : Number.NaN;
-  if (Number.isNaN(hours) || Number.isNaN(minutes) || Number.isNaN(seconds)) return null;
-  const total = Math.trunc((hours * 3600 + minutes * 60 + seconds) / 60);
-  return z.startsWith('-') ? -total : total;
+  const match = /^([+-])(\d\d):?(\d\d)$/.exec(text);
+  if (match === null) return null;
+  const total = Number.parseInt(match[2] ?? '', 10) * 60 + Number.parseInt(match[3] ?? '', 10);
+  return match[1] === '-' ? -total : total;
 }
 
-/** Parses `text` with a Python `strptime` format. Returns null when the text does not match the whole format. */
-export function pyStrptime(text: string, format: string): PyTimeFields | null {
+/** Parses `text` with a time format. Returns null when the text does not match the whole format. */
+export function parseTimeWithFormat(text: string, format: string): TimeFields | null {
   const { regex, groups } = compile(format);
+  if (text.length > MAX_TEXT_LENGTH) return null;
   const match = regex.exec(text);
-  // CPython: `re.match`, then "unconverted data remains" when the match is shorter than the text.
   if (match?.[0].length !== text.length) return null;
 
   const found = new Map<string, string>();
@@ -207,13 +230,13 @@ export function pyStrptime(text: string, format: string): PyTimeFields | null {
     if (value !== undefined) found.set(directive, value);
   });
 
-  let year: number | null = null;
-  let month: number | null = null;
-  let day: number | null = null;
+  let year = 1900;
+  let month = 1;
+  let day = 1;
   let hour = 0;
   let minute = 0;
   let second = 0;
-  let microseconds = 0;
+  let milliseconds = 0;
   let julian: number | null = null;
   let utcOffsetMin: number | null = null;
 
@@ -252,11 +275,10 @@ export function pyStrptime(text: string, format: string): PyTimeFields | null {
         minute = Number.parseInt(value, 10);
         break;
       case 'S':
-        // 60 and 61 are leap seconds in CPython; `Date` cannot represent them, so they clamp to 59 (documented, 06 3.10.4).
-        second = Math.min(Number.parseInt(value, 10), 59);
+        second = Number.parseInt(value, 10);
         break;
       case 'f':
-        microseconds = Number.parseInt(value.padEnd(6, '0'), 10);
+        milliseconds = Math.floor(Number.parseInt(value.padEnd(6, '0'), 10) / 1000);
         break;
       case 'j':
         julian = Number.parseInt(value, 10);
@@ -273,44 +295,24 @@ export function pyStrptime(text: string, format: string): PyTimeFields | null {
     }
   }
 
-  let resolvedYear = year ?? 1900;
-  let resolvedMonth = month ?? 1;
-  let resolvedDay = day ?? 1;
-  let reportYear = resolvedYear;
   if (julian !== null) {
-    // CPython: a day of year overrides month and day; the date rolls over like `date.fromordinal`.
+    if (julian > (isLeapYear(year) ? 366 : 365)) return null;
     const date = new Date(0);
-    date.setUTCFullYear(resolvedYear, 0, julian);
-    resolvedYear = date.getUTCFullYear();
-    resolvedMonth = date.getUTCMonth() + 1;
-    resolvedDay = date.getUTCDate();
-    reportYear = resolvedYear;
-  } else if (year === null && resolvedMonth === 2 && resolvedDay === 29) {
-    // CPython validates a year-less February 29th against a leap year, then reports the default year 1900.
-    reportYear = 1900;
-    resolvedYear = 1904;
+    date.setUTCFullYear(year, 0, julian);
+    month = date.getUTCMonth() + 1;
+    day = date.getUTCDate();
   }
-  // CPython: `year must be in 1..9999`; a day of year past December 31st of 9999 rolls over into year 10000.
-  if (resolvedYear < 1 || resolvedYear > 9999) return null;
-  if (resolvedDay < 1 || resolvedDay > daysInMonth(resolvedYear, resolvedMonth)) return null;
+  if (year < 1 || year > 9999) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
 
-  return {
-    year: reportYear,
-    month: resolvedMonth,
-    day: resolvedDay,
-    hour,
-    minute,
-    second,
-    ms: Math.floor(microseconds / 1000),
-    utcOffsetMin,
-  };
+  return { year, month, day, hour, minute, second, ms: milliseconds, utcOffsetMin };
 }
 
 /**
- * Epoch milliseconds of parsed fields. With an offset the offset is applied (deliberate fix: the legacy `time.mktime`
- * ignored `%z`, D21); without one the fields are local time of the host, like `time.mktime` with `tm_isdst = -1`.
+ * Epoch milliseconds of parsed fields. With an offset the offset is applied; without one the fields are local time of the
+ * host (daylight saving decided by the host).
  */
-export function toEpochMs(fields: PyTimeFields): number {
+export function timeFieldsToEpochMs(fields: TimeFields): number {
   const date = new Date(0);
   if (fields.utcOffsetMin !== null) {
     date.setUTCFullYear(fields.year, fields.month - 1, fields.day);

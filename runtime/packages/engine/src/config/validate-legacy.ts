@@ -6,7 +6,7 @@ import { McsError } from '@mcs/shared';
 import { dumpPyJson, pyRepr, type PyJsonValue } from '../pyjson/index.ts';
 import { hostPlatform, type HostPlatform } from '../platform/host.ts';
 import { isMsysPath } from '../platform/paths.ts';
-import { pyStrptimeValidate } from '../platform/pytime.ts';
+import { validateTimeFormat } from '../platform/time-format.ts';
 import {
   PYTHON_SYNTAX_HINT,
   tryCompileRegex,
@@ -157,7 +157,7 @@ function attemptsProblems(a: PyJsonValue): string[] {
   if (timeFormat !== undefined) {
     if (!isStr(timeFormat)) out.push('attempts.time_format: expected string');
     else {
-      const message = pyStrptimeValidate(timeFormat.v);
+      const message = validateTimeFormat(timeFormat.v);
       if (message !== null) out.push(message);
     }
   }
@@ -315,7 +315,7 @@ export function compileConfigPatterns(source: PatternSource): CompiledPatterns {
     throw new McsError('CONFIG_INVALID', failures.map((f) => `${f.where}: invalid regex (${f.message})`).join('; '), {
       hint: python
         ? 'Run `mcs migrate-workspace --task <slug>` (dry run first) to convert Python regex syntax.'
-        : 'Write the pattern as a JavaScript regular expression (v flag rules; see docs/configuration.md).',
+        : 'Write the pattern as a JavaScript regular expression (v flag rules; see reference/configuration.md in the skill folder).',
       details: { patterns: failures.map((f) => ({ where: f.where, pythonSyntax: f.pythonSyntax })) },
     });
   }
