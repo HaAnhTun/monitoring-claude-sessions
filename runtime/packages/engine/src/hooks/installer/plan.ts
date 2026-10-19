@@ -152,7 +152,12 @@ function locationOf(body: string, error: unknown): string | null {
   return `line ${String(line)}, column ${String(offset - lineStart + 1)}`;
 }
 
-function parseSettings(text: string | null): Record<string, unknown> {
+/**
+ * Steps 1 and 2 of the plan: the settings object in `text` (`{}` for a missing or blank file). Throws `HOOKS_FAILED`
+ * (`SETTINGS_INVALID_JSON` or `SETTINGS_NOT_OBJECT`) for a file that is not a JSON object. `hooks verify` (check V1) reads a
+ * file with it, so it judges a file exactly as an install would.
+ */
+export function parseSettings(text: string | null): Record<string, unknown> {
   if (text === null) return {};
   const body = text.startsWith(BOM) ? text.slice(1) : text;
   if (body.trim() === '') return {};
