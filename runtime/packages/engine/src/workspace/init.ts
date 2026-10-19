@@ -87,11 +87,11 @@ function invalid(message: string, cause?: unknown): McsError {
 // ---- step 3: leftovers of crashed inits
 
 /**
- * Removes staging folders of crashed inits from `root`: names that match `.init-<slug>-<pid>-<rand8>`, whose pid is not
- * alive and that are older than 10 minutes. Only folders of that name inside the root, never through a link. Returns the
- * names removed.
+ * The staging folders of crashed inits in `root`: names that match `.init-<slug>-<pid>-<rand8>`, whose pid is not alive and
+ * that are older than 10 minutes. Only real folders of that name inside the root, never a link. Reads only; `cleanupStaging`
+ * and `mcs cleanup --scope init-leftovers` remove what it lists.
  */
-export async function cleanupStaging(root: string, clock: Clock = systemClock): Promise<string[]> {
+export async function findStaging(root: string, clock: Clock = systemClock): Promise<string[]> {
   let names: string[];
   try {
     names = await readdir(root);
@@ -99,14 +99,13 @@ export async function cleanupStaging(root: string, clock: Clock = systemClock): 
     if (isMissingFileError(error)) return [];
     throw invalid(`cannot list the tasks root ${root}`, error);
   }
-  const removed: string[] = [];
+  const found: string[] = [];
   for (const name of names.sort()) {
     const match = STAGING_RE.exec(name);
     if (match === null) continue;
-    const full = path.join(root, name);
     let stats: Awaited<ReturnType<typeof lstat>>;
     try {
-      stats = await lstat(full);
+      stats = await lstat(path.join(root, name));
     } catch (error) {
       if (isMissingFileError(error)) continue;
       throw invalid(`cannot inspect ${name}`, error);
@@ -114,7 +113,16 @@ export async function cleanupStaging(root: string, clock: Clock = systemClock): 
     if (stats.isSymbolicLink() || !stats.isDirectory()) continue;
     if (pidAlive(Number(match[1]))) continue;
     if (clock.now() - stats.mtimeMs <= STAGING_MAX_AGE_MS) continue;
-    await rm(full, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    found.push(name);
+  }
+  return found;
+}
+
+/** Removes the folders `findStaging` lists from `root`. Returns the names removed. */
+export async function cleanupStaging(root: string, clock: Clock = systemClock): Promise<string[]> {
+  const removed: string[] = [];
+  for (const name of await findStaging(root, clock)) {
+    await rm(path.join(root, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
     removed.push(name);
   }
   return removed;

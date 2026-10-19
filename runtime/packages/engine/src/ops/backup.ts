@@ -162,7 +162,7 @@ export async function renameWithRetry(from: string, to: string, budgetMs: number
 }
 
 /** Deletes a file (retrying sharing violations); a file that is not there is fine. */
-async function removeFile(file: string): Promise<void> {
+export async function removeFile(file: string): Promise<void> {
   try {
     await unlinkWithRetry(file);
   } catch (error) {
@@ -591,6 +591,8 @@ async function copyDatabaseDirect(
 
 export interface MakeBackupOptions {
   readonly reason: BackupReason;
+  /** Copy the reference files only and record `dbCopy: 'none'` (the backup of `config migrate`), even when a database exists. */
+  readonly filesOnly?: boolean;
   /** Copy the database files as they are when the online copy fails (the `pre-restore` backup of a damaged database). */
   readonly rawFallback?: boolean;
 }
@@ -643,7 +645,7 @@ export async function make(
 ): Promise<MadeBackup> {
   const dbFile = workspacePath(ws, 'data', DB_FILE);
   assertNotLink(dbFile);
-  const hasDb = (await entryOf(dbFile)) !== null;
+  const hasDb = o.filesOnly !== true && (await entryOf(dbFile)) !== null;
   let viaServer = false;
   if (hasDb) {
     const probe = await probeOf(ctx, ws, deps);
@@ -748,18 +750,21 @@ export async function moveDatabase(
 // ---- pruning ------------------------------------------------------------------------------------------------------------------------
 
 /** Deletes the files the manifest lists, the manifest, and the folder if nothing else is in it. */
-async function removeBackup(listed: ListedBackup): Promise<void> {
+export async function removeBackup(listed: ListedBackup): Promise<void> {
   for (const file of listed.manifest.files) await removeFile(path.join(listed.dir, file.path));
   await removeFile(path.join(listed.dir, MANIFEST_FILE));
   await rmdir(listed.dir).catch(() => undefined);
 }
 
 /**
- * Removes the backups beyond the `keep` newest, oldest first (01 5.5 create step 4). The newest `upgrade` and the newest
- * `db-rebuild` backup are never removed, nor the ids in `protect`. Only folders with a valid manifest are considered.
- * Returns the removed ids.
+ * The backups beyond the `keep` newest, oldest first. The newest `upgrade` and the newest `db-rebuild` backup are never
+ * listed, nor the ids in `protect`. Only folders with a valid manifest are considered. Reads only.
  */
-export async function prune(ws: WorkspaceRef, keep: number, protect: readonly string[] = []): Promise<string[]> {
+export async function pruneCandidates(
+  ws: WorkspaceRef,
+  keep: number,
+  protect: readonly string[] = [],
+): Promise<ListedBackup[]> {
   const listed = await listBackups(ws);
   const kept = new Set<string>(listed.slice(0, keep).map((b) => b.id));
   for (const reason of PROTECTED_REASONS) {
@@ -767,8 +772,16 @@ export async function prune(ws: WorkspaceRef, keep: number, protect: readonly st
     if (newest !== undefined) kept.add(newest.id);
   }
   for (const id of protect) kept.add(id);
+  return listed.filter((b) => !kept.has(b.id)).reverse();
+}
+
+/**
+ * Removes the backups beyond the `keep` newest, oldest first (01 5.5 create step 4), see `pruneCandidates`.
+ * Returns the removed ids.
+ */
+export async function prune(ws: WorkspaceRef, keep: number, protect: readonly string[] = []): Promise<string[]> {
   const removed: string[] = [];
-  for (const backup of listed.filter((b) => !kept.has(b.id)).reverse()) {
+  for (const backup of await pruneCandidates(ws, keep, protect)) {
     await removeBackup(backup);
     removed.push(backup.id);
   }

@@ -294,6 +294,119 @@ export type HooksStatusResult = z.infer<typeof HooksStatusResultSchema>;
 // @wp-end WP-37
 
 // @wp-begin WP-61
+// Result types of the data commands (01 6.4): `sessions list`, `sessions show`, `usage` and `errors`. Every one carries the task and
+// the mode of the reader that answered (`api`: the instance runs; `db`: it is stopped), which is for debugging and not part of the data.
+import {
+  AgentNodeSchema,
+  EntryKindSchema,
+  EventCategorySchema,
+  EventKindSchema,
+  SessionDetailSchema,
+  SessionSummarySchema,
+  ToolFrequencyReportSchema,
+  ToolStatusSchema,
+  UsageReportSchema,
+  UsageSeriesSchema,
+} from '../api/entities.ts';
+import { ErrorItemSchema } from '../api/health.ts';
+import { AgentIdSchema, CountSchema } from '../api/ids.ts';
+import { IsoTimeSchema } from '../api/time.ts';
+
+export const READER_MODES = ['api', 'db'] as const;
+
+export type ReaderMode = (typeof READER_MODES)[number];
+
+export const ReaderModeSchema = z.enum(READER_MODES);
+
+/** `mcs sessions list`: the sessions of the page, and whether more match than were returned. */
+export const SessionsListResultSchema = z.strictObject({
+  task: z.string(),
+  mode: ReaderModeSchema,
+  items: z.array(SessionSummarySchema),
+  /** The number of matching sessions (capped at 10000). */
+  total: CountSchema.nullable(),
+  totalIsLowerBound: z.boolean(),
+  limit: z.number().int().min(1).max(500),
+  /** More sessions match than `items` holds. */
+  hasMore: z.boolean(),
+});
+
+export type SessionsListResult = z.infer<typeof SessionsListResultSchema>;
+
+/** One activity event of `mcs sessions show`; `summary` (the tool summary) is `null` unless `--include-text` was given. */
+export const SessionEventLineSchema = z.strictObject({
+  id: CountSchema,
+  at: IsoTimeSchema,
+  agentId: AgentIdSchema.nullable(),
+  type: EventKindSchema,
+  category: EventCategorySchema,
+  severity: z.enum(['info', 'warning', 'error']),
+  toolName: z.string().nullable(),
+  toolStatus: ToolStatusSchema.nullable(),
+  durationMs: CountSchema.nullable(),
+  summary: z.string().nullable(),
+});
+
+export type SessionEventLine = z.infer<typeof SessionEventLineSchema>;
+
+/** The newest transcript entries of the main agent, only with `--include-text`; each text is clipped to `clipChars` characters. */
+export const SessionTranscriptTailSchema = z.strictObject({
+  agentId: AgentIdSchema,
+  /** Entries in the transcript file. */
+  total: CountSchema,
+  clipChars: z.number().int().min(1),
+  entries: z.array(
+    z.strictObject({
+      i: CountSchema,
+      t: z.string(),
+      k: EntryKindSchema,
+      name: z.string().nullable(),
+      text: z.string(),
+    }),
+  ),
+});
+
+export type SessionTranscriptTail = z.infer<typeof SessionTranscriptTailSchema>;
+
+/** `mcs sessions show`: the session with its state and evidence, its agents, its newest events and, on request, transcript text. */
+export const SessionsShowResultSchema = z.strictObject({
+  task: z.string(),
+  mode: ReaderModeSchema,
+  session: SessionDetailSchema,
+  agents: z.array(AgentNodeSchema),
+  /** More agents exist than `agents` holds. */
+  agentsTruncated: z.boolean(),
+  /** Oldest first. */
+  events: z.array(SessionEventLineSchema),
+  /** Older events exist than `events` holds. */
+  eventsTruncated: z.boolean(),
+  transcript: SessionTranscriptTailSchema.nullable(),
+});
+
+export type SessionsShowResult = z.infer<typeof SessionsShowResultSchema>;
+
+export const USAGE_GROUPS = ['session', 'model', 'day', 'tool'] as const;
+
+export type UsageGroup = (typeof USAGE_GROUPS)[number];
+
+/** `mcs usage --by session|model|day|tool`: the report of the matching analytics route. */
+export const UsageResultSchema = z.discriminatedUnion('by', [
+  z.strictObject({ task: z.string(), mode: ReaderModeSchema, by: z.literal('session'), report: UsageReportSchema }),
+  z.strictObject({ task: z.string(), mode: ReaderModeSchema, by: z.literal('model'), report: UsageReportSchema }),
+  z.strictObject({ task: z.string(), mode: ReaderModeSchema, by: z.literal('day'), series: UsageSeriesSchema }),
+  z.strictObject({ task: z.string(), mode: ReaderModeSchema, by: z.literal('tool'), tools: ToolFrequencyReportSchema }),
+]);
+
+export type UsageResult = z.infer<typeof UsageResultSchema>;
+
+/** `mcs errors`: the recent errors of the instance, newest first. */
+export const ErrorsResultSchema = z.strictObject({
+  task: z.string(),
+  mode: ReaderModeSchema,
+  items: z.array(ErrorItemSchema),
+});
+
+export type ErrorsResult = z.infer<typeof ErrorsResultSchema>;
 // @wp-end WP-61
 
 // @wp-begin WP-62

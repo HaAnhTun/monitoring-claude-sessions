@@ -120,6 +120,64 @@ describe('config write isolation (T-ISO-06): the commands of task A leave task B
   // @wp-end WP-38
 
   // @wp-begin WP-39
+  it('T-ISO-08 A ingests hook and transcript activity for 10 s while B is stopped: the full tree of B, runtime-mutable paths included, is unchanged', async () => {
+    const hooks = await import('./_hooks.ts');
+    const { allocatePort, startInstance, waitFor } = await import('@mcs/testkit');
+    const t = await twoTasks();
+    const portA = await allocatePort();
+    const portB = await allocatePort();
+
+    // B has run once and is stopped: its database, logs and run folder exist, so a stray write would show
+    const runB = await startInstance({ repo: t.repo, slug: 'b', env: t.env }, { port: portB });
+    await runB.stop();
+    const dirB = join(t.tasksRoot, 'b');
+    expect(existsSync(join(dirB, 'data', 'monitor.db'))).toBe(true);
+
+    // A watches a folder of its own (B watches the folder of the repository) and has hooks on
+    const made = await t.mcs(['init', '--name', 'Task A', '--slug', 'a', '--port', String(portA)]);
+    expect(made.code, made.stderr).toBe(0);
+    const wsA = { slug: 'a', dir: t.dirA, mcs: (args: readonly string[]) => t.mcs(args) };
+    hooks.enableHooks(wsA);
+    const folderA = hooks.transcriptsFolder(t.env, 'a');
+    await hooks.watchTranscriptsIn(wsA, folderA);
+
+    const before = snapshotTree(dirB);
+    const runA = await startInstance({ repo: t.repo, slug: 'a', env: t.env }, { port: portA });
+    try {
+      const session = 'a0a0a0a0-0000-4000-8000-00000000000a';
+      const source = hooks.hookSource(t.env, folderA, session);
+      const transcript = new hooks.GrowingTranscript(folderA, session, hooks.forward(folderA), Date.now() - 60_000);
+      transcript.turn();
+      const until = Date.now() + 10_000;
+      let sent = 0;
+      while (Date.now() < until) {
+        await hooks.fireNotification(source, sent);
+        sent += 1;
+        if (sent % 4 === 0) transcript.turn();
+      }
+      expect(sent).toBeGreaterThan(0);
+      expect(transcript.turns).toBeGreaterThan(1);
+
+      // A took it all in
+      const dbA = join(t.dirA, 'data', 'monitor.db');
+      await waitFor(() => hooks.countNotifications(dbA) === sent, {
+        what: `${String(sent)} notification events in the database of A`,
+        timeoutMs: 30_000,
+        intervalMs: 200,
+      });
+      await waitFor(async () => (await hooks.tokenTotals(portA)).output === transcript.expected().output, {
+        what: 'the turns of the transcript of A in its token totals',
+        timeoutMs: 30_000,
+        intervalMs: 200,
+      });
+      expect(snapshotTree(dirB)).toBe(before);
+    } finally {
+      // a failure in the middle must not leave the instance (and its port) behind
+      await runA.stop();
+    }
+
+    expect(snapshotTree(dirB)).toBe(before);
+  }, 180_000);
   // @wp-end WP-39
 
   // @wp-begin WP-62
@@ -205,6 +263,123 @@ describe('config write isolation (T-ISO-06): the commands of task A leave task B
     expect(t.snapshotB()).toBe(before);
   });
   // @wp-end WP-62
+
+  // @wp-begin WP-107
+  /** A file of `days` days ago in `dir` (created when missing). */
+  async function agedFile(file: string, days: number, content = 'x'): Promise<string> {
+    const { mkdirSync, utimesSync, writeFileSync } = await import('node:fs');
+    const nodePath = await import('node:path');
+    mkdirSync(nodePath.dirname(file), { recursive: true });
+    writeFileSync(file, content);
+    const when = new Date(Date.now() - days * 86_400_000);
+    utimesSync(file, when, when);
+    return file;
+  }
+
+  /** Task A with a database (written by the real engine; no server runs) that holds one old and one recent session. */
+  async function taskAWithSessions(t: TwoTasks): Promise<void> {
+    const { openInstanceDb } = await import('@mcs/engine');
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    const instance = JSON.parse(readFileSync(join(t.dirA, 'instance.json'), 'utf8')) as { instanceId: string };
+    const db = openInstanceDb({
+      path: join(t.dirA, 'data', 'monitor.db'),
+      expectedInstanceId: instance.instanceId,
+      mode: 'serve',
+      runtimeVersion: '4.0.0',
+    });
+    for (const [index, ageDays] of [100, 1].entries()) {
+      const at = Date.now() - ageDays * 86_400_000;
+      db.driver
+        .prepare(
+          `INSERT INTO sessions (session_uid, first_seen_at, started_at, last_activity_at, updated_at, state)
+           VALUES (:uid, :at, :at, :at, :at, 'completed')`,
+        )
+        .run({ uid: `dddddddd-0000-4000-8000-${String(index).padStart(12, '0')}`, at });
+    }
+    db.close();
+  }
+
+  it('config migrate --task a (dry run) and --yes: nothing is pending, nothing is written in either workspace', async () => {
+    const t = await twoTasks();
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    const before = [snapshotTree(t.dirA), snapshotTree(t.dirB)];
+    for (const extra of [[], ['--yes']]) {
+      const run = await t.mcs(['config', 'migrate', '--task', 'a', ...extra]);
+      expect(run.code, run.stderr).toBe(0);
+      expect(run.stdout).toContain('already current');
+    }
+    expect([snapshotTree(t.dirA), snapshotTree(t.dirB)]).toEqual(before);
+  });
+
+  it('cleanup --task a --scope logs --yes deletes the old rotated logs of A and nothing of B, whose old logs stay', async () => {
+    const t = await twoTasks();
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    const oldA = await agedFile(join(t.dirA, 'logs', 'runtime.log.1'), 60);
+    const oldB = await agedFile(join(t.dirB, 'logs', 'runtime.log.1'), 60);
+    const before = snapshotTree(t.dirB);
+    const dry = await t.mcs(['cleanup', '--task', 'a', '--scope', 'logs']);
+    expect(dry.code, dry.stderr).toBe(0);
+    expect(existsSync(oldA)).toBe(true);
+    const run = await t.mcs(['cleanup', '--task', 'a', '--scope', 'logs', '--yes']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain('logs/runtime.log.1');
+    expect(existsSync(oldA)).toBe(false);
+    expect(existsSync(oldB)).toBe(true);
+    expect(snapshotTree(t.dirB)).toBe(before);
+  });
+
+  it('cleanup --task a --scope backups --keep 0 --yes removes the backups of A only', async () => {
+    const { readdirSync } = await import('node:fs');
+    const t = await twoTasks();
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    expect((await t.mcs(['backup', '--task', 'a'])).code).toBe(0);
+    expect((await t.mcs(['backup', '--task', 'b'])).code).toBe(0);
+    const before = snapshotTree(t.dirB);
+    expect(readdirSync(join(t.dirA, 'data', 'backups'))).toHaveLength(1);
+    const run = await t.mcs(['cleanup', '--task', 'a', '--scope', 'backups', '--keep', '0', '--yes']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(readdirSync(join(t.dirA, 'data', 'backups'))).toEqual([]);
+    expect(readdirSync(join(t.dirB, 'data', 'backups'))).toHaveLength(1);
+    expect(snapshotTree(t.dirB)).toBe(before);
+  });
+
+  it('cleanup --task a --scope data --older-than 30 --yes --confirm a deletes the old sessions of A and touches nothing of B', async () => {
+    const t = await twoTasks();
+    await taskAWithSessions(t);
+    const before = snapshotTree(t.dirB);
+    const wrong = await t.mcs([
+      'cleanup',
+      '--task',
+      'a',
+      '--scope',
+      'data',
+      '--older-than',
+      '30',
+      '--yes',
+      '--confirm',
+      'b',
+    ]);
+    expect(wrong.code).toBe(1);
+    expect(wrong.stderr).toContain('--confirm a');
+    const run = await t.mcs([
+      'cleanup',
+      '--task',
+      'a',
+      '--scope',
+      'data',
+      '--older-than',
+      '30',
+      '--yes',
+      '--confirm',
+      'a',
+      '--json',
+    ]);
+    expect(run.code, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({ data: { applied: true, count: 1 } });
+    expect(readFileSync(join(t.dirA, 'audit', 'changes.md'), 'utf8')).toContain('data: deleted 1 sessions');
+    expect(snapshotTree(t.dirB)).toBe(before);
+  });
+  // @wp-end WP-107
 
   // @wp-begin WP-140
   /** Two pre-4.0 workspaces (no instance.json, a pattern in Python syntax): both need the conversion, so a visit of the other would show. */

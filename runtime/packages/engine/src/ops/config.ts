@@ -803,3 +803,241 @@ export async function check(ctx: OpContext, input: CheckInput, deps: CheckDeps =
 
 // @wp-begin WP-62
 // @wp-end WP-62
+
+// @wp-begin WP-107
+import { InstanceFileSchema, type ConfigMigrateResult, type ConfigMigrateStep } from '@mcs/shared';
+
+import {
+  FILE_MIGRATIONS,
+  applyMigrations,
+  assertMigrationRegistry,
+  planFileMigrations,
+  type FileMigration,
+  type MigratedFile,
+} from '../config/migrations.ts';
+import { schemaVersionOf } from '../config/defaults.ts';
+import { writeWorkspaceFile } from '../workspace/fsio.ts';
+import { folderName, make, pruneAfter, requireInstance, type BackupOpDeps } from './backup.ts';
+
+// ---- migrate (01 2.7): the explicit migration of the schema version of config.json, runtime.json and instance.json
+
+export interface ConfigMigrateInput {
+  readonly task: string;
+  /** Without it the run is a dry run. */
+  readonly yes?: boolean;
+  /** Wins over `yes`. */
+  readonly dryRun?: boolean;
+}
+
+export interface ConfigMigrateDeps extends Pick<BackupOpDeps, 'mutexTimeoutMs'> {
+  /** The migration registry; the shipped `FILE_MIGRATIONS` unless a test brings its own. */
+  readonly registry?: readonly FileMigration[];
+  /** The problems of a migrated document; the validators of the file kind unless a test brings its own. */
+  readonly validate?: (file: MigratedFile, doc: JsonObject) => string[];
+  /** Whether a runtime of the task runs (default: the cheap look at `state.json`); only `restartNeeded` depends on it. */
+  readonly isRunning?: (ws: WorkspaceRef) => Promise<boolean>;
+  /** Runs before the named step of an applied run (the ordering and failure hook of the tests). */
+  readonly beforeStep?: (step: 'backup' | 'write' | 'audit', file?: MigratedFile) => void | Promise<void>;
+}
+
+const MIGRATED_FILES: readonly MigratedFile[] = ['config.json', 'runtime.json', 'instance.json'];
+
+interface LoadedFile {
+  readonly file: MigratedFile;
+  readonly path: string;
+  readonly doc: JsonObject;
+  readonly version: number;
+  readonly chain: readonly FileMigration[];
+}
+
+/** The version a file declares: a whole number, else the refusal of 01 2.6 (a missing one is never guessed). */
+function declaredVersion(file: MigratedFile, doc: JsonObject): number {
+  const version = schemaVersionOf(doc);
+  if (version !== null && Number.isInteger(version)) return version;
+  const raw = getEntry(doc, 'schema_version');
+  if (raw === undefined || raw.k === 'null') {
+    throw new McsError(
+      file === 'instance.json' ? 'WORKSPACE_INVALID' : 'CONFIG_SCHEMA_MISSING',
+      `${file} has no schema_version; refusing to guess`,
+      { details: { file } },
+    );
+  }
+  throw new McsError('CONFIG_SCHEMA_UNSUPPORTED', `${file} schema_version is not a whole number; nothing was changed`, {
+    details: { file },
+  });
+}
+
+async function loadMigratable(ws: WorkspaceRef, registry: readonly FileMigration[]): Promise<LoadedFile[]> {
+  const loaded: LoadedFile[] = [];
+  for (const file of MIGRATED_FILES) {
+    const where = workspacePath(ws, file);
+    const doc = await readOptionalConfigJson(where);
+    if (doc === null) continue;
+    const version = declaredVersion(file, doc);
+    loaded.push({ file, path: where, doc, version, chain: planFileMigrations(file, version, registry) });
+  }
+  return loaded;
+}
+
+function stepsOf(loaded: readonly LoadedFile[]): ConfigMigrateStep[] {
+  return loaded.flatMap((f) => f.chain.map((s) => ({ file: s.file, from: s.from, to: s.to, describe: s.describe })));
+}
+
+function defaultValidate(file: MigratedFile, doc: JsonObject): string[] {
+  if (file === 'config.json') return validateLegacy(doc, { strict: true });
+  if (file === 'runtime.json') return runtimeProblems(doc);
+  const parsed = InstanceFileSchema.safeParse(plainOf(doc, file));
+  return parsed.success
+    ? []
+    : parsed.error.issues.map((issue) => {
+        const where = formatZodPath(issue.path);
+        return where === '' ? `${file}: ${issue.message}` : `${file}: ${where}: ${issue.message}`;
+      });
+}
+
+interface Migrated {
+  readonly file: LoadedFile;
+  readonly doc: JsonObject;
+}
+
+/** The migrated documents, in memory: every step ran, every result sets its new version and passes its validators. */
+function migratedDocuments(loaded: readonly LoadedFile[], deps: ConfigMigrateDeps): Migrated[] {
+  const out: Migrated[] = [];
+  for (const f of loaded) {
+    if (f.chain.length === 0) continue;
+    const result = applyMigrations(structuredClone(f.doc), f.chain);
+    const last = f.chain.at(-1);
+    if (result.k !== 'obj') throw rejected('INTERNAL', `the migration of ${f.file} did not return an object`);
+    if (last !== undefined && schemaVersionOf(result) !== last.to) {
+      throw rejected('INTERNAL', `the migration of ${f.file} did not set schema_version ${String(last.to)}`);
+    }
+    const problems = (deps.validate ?? defaultValidate)(f.file, result);
+    if (problems.length > 0) throw rejected('CONFIG_INVALID', problems.join('; '));
+    out.push({ file: f, doc: result });
+  }
+  return out;
+}
+
+/** Writes every migrated file and reads it back; any failure puts the files written so far back from their original bytes. */
+async function writeMigrated(migrated: readonly Migrated[], backupId: string, deps: ConfigMigrateDeps): Promise<void> {
+  const written: { path: string; name: string; original: Buffer }[] = [];
+  try {
+    for (const { file, doc } of migrated) {
+      await deps.beforeStep?.('write', file.file);
+      const original = await readFile(file.path);
+      await writeVerified(file.path, doc, () => written.push({ path: file.path, name: file.file, original }));
+      const again = await readConfigJson(file.path);
+      const problems = (deps.validate ?? defaultValidate)(file.file, again);
+      if (problems.length > 0) throw new McsError('CONFIG_INVALID', problems.join('; '));
+    }
+  } catch (error) {
+    const stuck: string[] = [];
+    for (const w of written.reverse()) {
+      try {
+        await writeWorkspaceFile(w.path, w.original);
+      } catch {
+        stuck.push(w.name);
+      }
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    const restored =
+      stuck.length === 0
+        ? 'the files already written were put back'
+        : `these files could not be put back, restore them from the backup: ${stuck.join(', ')}`;
+    throw new McsError('CONFIG_INVALID', `${reason}; ${restored} (backup ${backupId})`, {
+      details: { backup: backupId, written: written.map((w) => w.name), notRestored: stuck },
+      cause: error,
+    });
+  }
+}
+
+/**
+ * `ops.config.migrate` (`mcs config migrate`, 01 2.7): for each of `config.json`, `runtime.json` and `instance.json` that exists,
+ * plans the chain of registered steps from its `schema_version` to the newest one (a version above the newest is
+ * `CONFIG_SCHEMA_UNSUPPORTED`, a missing one is never guessed). Nothing pending: nothing is written. A dry run lists the steps.
+ * `yes` runs every step in memory and validates the results first (a failure there writes nothing, not even a backup), then
+ * makes the `config-migrate` backup (files only) and writes each file atomically, reading it back; a failure while writing puts
+ * the written files back from their original bytes and reports `CONFIG_INVALID` with the backup id. The registry is empty in
+ * 4.0: the first version 2 of a file adds a step, its tests and its documentation.
+ */
+export async function migrate(
+  ctx: OpContext,
+  input: ConfigMigrateInput,
+  deps: ConfigMigrateDeps = {},
+): Promise<ConfigMigrateResult> {
+  const registry = deps.registry ?? FILE_MIGRATIONS;
+  assertMigrationRegistry(registry);
+  const ws = await openWorkspace(ctx, input.task);
+  const apply = input.yes === true && input.dryRun !== true;
+  return withTaskMutex(
+    ws,
+    async (): Promise<ConfigMigrateResult> => {
+      const loaded = await loadMigratable(ws, registry);
+      const steps = stepsOf(loaded);
+      const base = {
+        task: ws.slug,
+        files: loaded.map((f) => ({ file: f.file, version: f.version })),
+        steps,
+        backup: null,
+        restartNeeded: false,
+        pruned: [],
+      };
+      if (steps.length === 0) return { ...base, outcome: 'current' };
+      if (!apply) return { ...base, outcome: 'dry-run' };
+
+      const migrated = migratedDocuments(loaded, deps);
+      const instance = await requireInstance(ws);
+      await deps.beforeStep?.('backup');
+      const made = await make(ctx, ws, instance, { reason: 'config-migrate', filesOnly: true });
+      await writeMigrated(migrated, made.id, deps);
+      await deps.beforeStep?.('audit');
+      await appendChange(
+        ws,
+        {
+          action: 'config-migrate',
+          summary: steps.map((s) => `${s.file} schema_version ${String(s.from)} -> ${String(s.to)}`).join('; '),
+          reason: null,
+          files: migrated.map((m) => m.file.file),
+          validation: 'schema ok (strict)',
+          outcome: `migrated; backup ${made.id}`,
+        },
+        ctx.clock.now(),
+      );
+      const pruned = await pruneAfter(ctx, ws, [made.id]);
+      const restartNeeded = await (deps.isRunning ?? runtimeIsRunning)(ws);
+      return { ...base, outcome: 'migrated', backup: made.id, restartNeeded, pruned };
+    },
+    deps.mutexTimeoutMs === undefined ? {} : { timeoutMs: deps.mutexTimeoutMs },
+  );
+}
+
+function versionsText(result: ConfigMigrateResult): string {
+  return result.files.map((f) => `${f.file} v${String(f.version)}`).join(', ');
+}
+
+/** The text of `config migrate`. */
+export function migrateLines(result: ConfigMigrateResult): string[] {
+  const stepLines = result.steps.map((s) => `  ${s.file}: v${String(s.from)} -> v${String(s.to)} (${s.describe})`);
+  switch (result.outcome) {
+    case 'current':
+      return [`already current: nothing to migrate (${versionsText(result)})`];
+    case 'dry-run':
+      return [
+        `task '${result.task}': config migrate plan (dry run, nothing written)`,
+        ...stepLines,
+        `  backup first: ${folderName('<UTC stamp>-config-migrate')}`,
+        'run again with --yes to apply',
+      ];
+    case 'migrated':
+      return [
+        `migrated task '${result.task}':`,
+        ...stepLines,
+        `backup: ${result.backup === null ? '-' : folderName(result.backup)}`,
+        ...(result.restartNeeded ? ['restart the server (mcs restart) to read the migrated files'] : []),
+        ...(result.pruned.length > 0
+          ? [`removed ${String(result.pruned.length)} older backups: ${result.pruned.join(', ')}`]
+          : []),
+      ];
+  }
+}
+// @wp-end WP-107

@@ -1194,3 +1194,306 @@ describe('version', () => {
     expect(result.text).toBe(`mcs ${result.version} (code abcdef0123, node ${process.versions.node}, build current)`);
   });
 });
+
+// @wp-begin WP-107
+import { createHash } from 'node:crypto';
+
+import { listBackups } from './backup.ts';
+import { migrate, migrateLines } from './config.ts';
+import { assertMigrationRegistry, type FileMigration } from '../config/migrations.ts';
+import { fromPlain as docOf, toPlain as plainOf } from '../json/index.ts';
+
+/** A test step: config.json version 1 to 2 adds a key (a known one, so the strict validation of the result passes). */
+const CONFIG_V2: FileMigration = {
+  file: 'config.json',
+  from: 1,
+  to: 2,
+  describe: 'FIXTURE adds window_hours',
+  apply(doc) {
+    const plain = plainOf(doc);
+    return docOf({ ...(plain as Record<string, unknown>), schema_version: 2, window_hours: 7 });
+  },
+};
+
+const CONFIG_V3: FileMigration = {
+  file: 'config.json',
+  from: 2,
+  to: 3,
+  describe: 'FIXTURE renames the title',
+  apply(doc) {
+    const plain = plainOf(doc) as Record<string, unknown>;
+    return docOf({ ...plain, schema_version: 3, title: `${String(plain['title'])} (v3)` });
+  },
+};
+
+const RUNTIME_V2: FileMigration = {
+  file: 'runtime.json',
+  from: 1,
+  to: 2,
+  describe: 'FIXTURE touches runtime.json',
+  apply: (doc) => docOf({ ...(plainOf(doc) as Record<string, unknown>), schema_version: 2 }),
+};
+
+const anyValid = (): string[] => [];
+
+function sha(bytes: Buffer | string): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function withRuntimeFile(slug = 'demo'): { repo: string; ctx: OpContext } {
+  const { repo } = buildRepo(makeTemp('migrate').path);
+  buildTaskWorkspace(repo, {
+    slug,
+    config: { title: 'Fixture demo' },
+    runtime: { logLevel: 'info' },
+    instance: { slug },
+  });
+  return { repo, ctx: contextFor(repo) };
+}
+
+describe('config migrate (01 2.7)', () => {
+  it('with nothing pending says it is current and writes nothing, also with --yes', async () => {
+    const { ctx } = withRuntimeFile();
+    const before = snapshotTree(wsPath(ctx, 'demo'));
+    const dry = await migrate(ctx, { task: 'demo' });
+    expect(dry).toMatchObject({ outcome: 'current', steps: [], backup: null });
+    expect(dry.files.map((f) => `${f.file} v${String(f.version)}`)).toEqual([
+      'config.json v1',
+      'runtime.json v1',
+      'instance.json v1',
+    ]);
+    expect(migrateLines(dry)).toEqual([
+      'already current: nothing to migrate (config.json v1, runtime.json v1, instance.json v1)',
+    ]);
+    const applied = await migrate(ctx, { task: 'demo', yes: true });
+    expect(applied.outcome).toBe('current');
+    expect(snapshotTree(wsPath(ctx, 'demo'))).toBe(before);
+    expect(existsSync(wsPath(ctx, 'demo', 'data'))).toBe(false);
+    expect(existsSync(wsPath(ctx, 'demo', 'audit', 'changes.md'))).toBe(false);
+  });
+
+  it('lists only the files that exist', async () => {
+    const { ctx } = repoWith('demo');
+    const result = await migrate(ctx, { task: 'demo' });
+    expect(result.files.map((f) => f.file)).toEqual(['config.json', 'instance.json']);
+  });
+
+  it('refuses a file with a newer schema_version as CONFIG_SCHEMA_UNSUPPORTED and writes nothing', async () => {
+    for (const file of ['config.json', 'runtime.json', 'instance.json']) {
+      const { ctx } = withRuntimeFile();
+      const target = wsPath(ctx, 'demo', file);
+      const plain = JSON.parse(readFileSync(target, 'utf8')) as Record<string, unknown>;
+      writeFileSync(target, fileText({ ...plain, schema_version: 9 }));
+      const before = snapshotTree(wsPath(ctx, 'demo'));
+      for (const yes of [false, true]) {
+        const error = await failure(migrate(ctx, { task: 'demo', yes }));
+        expect(error.code, file).toBe('CONFIG_SCHEMA_UNSUPPORTED');
+        expect(error.message).toContain(file);
+      }
+      expect(snapshotTree(wsPath(ctx, 'demo'))).toBe(before);
+    }
+  });
+
+  it('refuses a missing schema_version: CONFIG_SCHEMA_MISSING for the two configuration files, WORKSPACE_INVALID for instance.json', async () => {
+    const cases: [string, string][] = [
+      ['config.json', 'CONFIG_SCHEMA_MISSING'],
+      ['runtime.json', 'CONFIG_SCHEMA_MISSING'],
+      ['instance.json', 'WORKSPACE_INVALID'],
+    ];
+    for (const [file, code] of cases) {
+      const { ctx } = withRuntimeFile();
+      const target = wsPath(ctx, 'demo', file);
+      const plain = JSON.parse(readFileSync(target, 'utf8')) as Record<string, unknown>;
+      delete plain['schema_version'];
+      writeFileSync(target, fileText(plain));
+      expect((await failure(migrate(ctx, { task: 'demo' }))).code, file).toBe(code);
+    }
+  });
+
+  it('rejects a registry with a gap or a step that skips a version', async () => {
+    const { ctx } = repoWith('demo');
+    const skipping: FileMigration = { ...CONFIG_V2, to: 3 };
+    expect(() => {
+      assertMigrationRegistry([skipping]);
+    }).toThrow(/exactly one version/);
+    await expect(migrate(ctx, { task: 'demo' }, { registry: [skipping] })).rejects.toThrow(/exactly one version/);
+    await expect(migrate(ctx, { task: 'demo' }, { registry: [CONFIG_V3] })).rejects.toThrow(/gap/);
+  });
+
+  it('a dry run lists the steps and the backup that would be made, and writes nothing (T-ISO-27)', async () => {
+    const { ctx } = repoWith('demo');
+    const before = snapshotTree(wsPath(ctx, 'demo'));
+    const plan = await migrate(ctx, { task: 'demo' }, { registry: [CONFIG_V2] });
+    expect(plan.outcome).toBe('dry-run');
+    expect(plan.steps).toEqual([{ file: 'config.json', from: 1, to: 2, describe: 'FIXTURE adds window_hours' }]);
+    const text = migrateLines(plan);
+    expect(text[0]).toBe("task 'demo': config migrate plan (dry run, nothing written)");
+    expect(text).toContain('  config.json: v1 -> v2 (FIXTURE adds window_hours)');
+    expect(text).toContain('  backup first: data/backups/<UTC stamp>-config-migrate/');
+    expect(snapshotTree(wsPath(ctx, 'demo'))).toBe(before);
+    const explicit = await migrate(ctx, { task: 'demo', yes: true, dryRun: true }, { registry: [CONFIG_V2] });
+    expect(explicit.outcome).toBe('dry-run');
+    expect(snapshotTree(wsPath(ctx, 'demo'))).toBe(before);
+  });
+
+  it('--yes makes the backup first, whose bytes equal the originals, and only then writes (T-ISO-27)', async () => {
+    const { ctx } = repoWith('demo');
+    const originals = new Map(
+      ['config.json', 'instance.json', 'task.json'].map((n) => [n, readFileSync(wsPath(ctx, 'demo', n))] as const),
+    );
+    const seen: string[] = [];
+    const result = await migrate(
+      ctx,
+      { task: 'demo', yes: true },
+      {
+        registry: [CONFIG_V2],
+        beforeStep: (step) => {
+          seen.push(step);
+          if (step !== 'write') return;
+          // at this moment the backup is whole and the configuration is still the original
+          const backups = readdirSync(wsPath(ctx, 'demo', 'data', 'backups'));
+          expect(backups).toHaveLength(1);
+          for (const [name, bytes] of originals) {
+            expect(readFileSync(wsPath(ctx, 'demo', 'data', 'backups', backups[0] ?? '', name)).equals(bytes)).toBe(
+              true,
+            );
+          }
+          expect(
+            readFileSync(wsPath(ctx, 'demo', 'config.json')).equals(originals.get('config.json') ?? Buffer.alloc(0)),
+          ).toBe(true);
+        },
+      },
+    );
+    expect(seen).toEqual(['backup', 'write', 'audit']);
+    expect(result).toMatchObject({ outcome: 'migrated', restartNeeded: false, pruned: [] });
+    expect(result.backup).toMatch(/-config-migrate$/);
+
+    const [backup] = await listBackups(resolveWorkspace(ctx.root, 'demo'));
+    expect(backup?.id).toBe(result.backup);
+    expect(backup?.manifest).toMatchObject({ reason: 'config-migrate', dbCopy: 'none' });
+    for (const file of backup?.manifest.files ?? []) {
+      expect(file.sha256).toBe(sha(originals.get(file.path) ?? ''));
+    }
+
+    const migrated = JSON.parse(read(ctx, 'demo', 'config.json')) as Record<string, unknown>;
+    expect(migrated).toMatchObject({ schema_version: 2, window_hours: 7, title: 'Fixture demo' });
+    expect(read(ctx, 'demo', 'instance.json')).toBe(originals.get('instance.json')?.toString('utf8'));
+    expect(read(ctx, 'demo', 'task.json')).toBe(originals.get('task.json')?.toString('utf8'));
+    const audit = read(ctx, 'demo', 'audit', 'changes.md');
+    expect(audit).toContain('| config-migrate');
+    expect(audit).toContain('config.json schema_version 1 -> 2');
+    expect(audit).toContain(`migrated; backup ${result.backup ?? ''}`);
+    expect(migrateLines(result)).toContain(`backup: data/backups/${result.backup ?? ''}/`);
+  });
+
+  it('copies no database into the backup even when there is one', async () => {
+    const { ctx } = repoWith('demo');
+    mkdirSync(wsPath(ctx, 'demo', 'data'), { recursive: true });
+    writeFileSync(wsPath(ctx, 'demo', 'data', 'monitor.db'), 'not a database');
+    const result = await migrate(ctx, { task: 'demo', yes: true }, { registry: [CONFIG_V2] });
+    const [backup] = await listBackups(resolveWorkspace(ctx.root, 'demo'));
+    expect(backup?.id).toBe(result.backup);
+    expect(backup?.manifest.dbCopy).toBe('none');
+    expect(backup?.manifest.files.map((f) => f.path)).not.toContain('monitor.db');
+  });
+
+  it('runs a chain of steps of one file in order and writes the file once', async () => {
+    const { ctx } = repoWith('demo');
+    const result = await migrate(ctx, { task: 'demo', yes: true }, { registry: [CONFIG_V3, CONFIG_V2] });
+    expect(result.steps.map((s) => `${String(s.from)}->${String(s.to)}`)).toEqual(['1->2', '2->3']);
+    expect(JSON.parse(read(ctx, 'demo', 'config.json'))).toMatchObject({
+      schema_version: 3,
+      title: 'Fixture demo (v3)',
+    });
+    expect(read(ctx, 'demo', 'audit', 'changes.md')).toContain(
+      'config.json schema_version 1 -> 2; config.json schema_version 2 -> 3',
+    );
+  });
+
+  it('migrates a file already at version 2 only from there', async () => {
+    const { ctx } = repoWith('demo');
+    const target = wsPath(ctx, 'demo', 'config.json');
+    writeFileSync(target, fileText({ ...(JSON.parse(readFileSync(target, 'utf8')) as object), schema_version: 2 }));
+    const result = await migrate(ctx, { task: 'demo' }, { registry: [CONFIG_V2, CONFIG_V3] });
+    expect(result.steps.map((s) => s.to)).toEqual([3]);
+  });
+
+  it('migrates several files in one backup and says that a running server needs a restart', async () => {
+    const { ctx } = withRuntimeFile();
+    const result = await migrate(
+      ctx,
+      { task: 'demo', yes: true },
+      { registry: [CONFIG_V2, RUNTIME_V2], validate: anyValid, isRunning: () => Promise.resolve(true) },
+    );
+    expect(result.steps.map((s) => s.file)).toEqual(['config.json', 'runtime.json']);
+    expect(result.restartNeeded).toBe(true);
+    expect(migrateLines(result)).toContain('restart the server (mcs restart) to read the migrated files');
+    expect(await listBackups(resolveWorkspace(ctx.root, 'demo'))).toHaveLength(1);
+    expect(JSON.parse(read(ctx, 'demo', 'runtime.json'))).toMatchObject({ schema_version: 2, logLevel: 'info' });
+  });
+
+  it('a step whose result fails the validation writes nothing, not even a backup', async () => {
+    const { ctx } = repoWith('demo');
+    const broken: FileMigration = {
+      ...CONFIG_V2,
+      apply: (doc) => docOf({ ...(plainOf(doc) as Record<string, unknown>), schema_version: 2, window_hours: 'soon' }),
+    };
+    const before = snapshotTree(wsPath(ctx, 'demo'));
+    const error = await failure(migrate(ctx, { task: 'demo', yes: true }, { registry: [broken] }));
+    expect(error.code).toBe('CONFIG_INVALID');
+    expect(error.message).toContain('rejected, nothing written');
+    expect(snapshotTree(wsPath(ctx, 'demo'))).toBe(before);
+    expect(existsSync(wsPath(ctx, 'demo', 'data'))).toBe(false);
+  });
+
+  it('a step that does not set its new schema_version is an internal error and writes nothing', async () => {
+    const { ctx } = repoWith('demo');
+    const lazy: FileMigration = { ...CONFIG_V2, apply: (doc) => doc };
+    const before = snapshotTree(wsPath(ctx, 'demo'));
+    const error = await failure(migrate(ctx, { task: 'demo', yes: true }, { registry: [lazy] }));
+    expect(error.code).toBe('INTERNAL');
+    expect(error.message).toContain('did not set schema_version 2');
+    expect(snapshotTree(wsPath(ctx, 'demo'))).toBe(before);
+  });
+
+  it('a write that fails puts the files already written back and names the backup', async () => {
+    const { ctx } = withRuntimeFile();
+    const config = read(ctx, 'demo', 'config.json');
+    const runtime = read(ctx, 'demo', 'runtime.json');
+    writeFailure.file = 'runtime.json';
+    try {
+      const error = await failure(
+        migrate(ctx, { task: 'demo', yes: true }, { registry: [CONFIG_V2, RUNTIME_V2], validate: anyValid }),
+      );
+      expect(error.code).toBe('CONFIG_INVALID');
+      expect(error.message).toContain('the files already written were put back');
+      const [backup] = await listBackups(resolveWorkspace(ctx.root, 'demo'));
+      expect(error.message).toContain(backup?.id ?? 'missing backup');
+      expect(error.details).toMatchObject({ written: ['config.json'], notRestored: [] });
+    } finally {
+      writeFailure.file = null;
+    }
+    expect(read(ctx, 'demo', 'config.json')).toBe(config);
+    expect(read(ctx, 'demo', 'runtime.json')).toBe(runtime);
+    expect(existsSync(wsPath(ctx, 'demo', 'audit', 'changes.md'))).toBe(false);
+  });
+
+  it('a workspace without instance.json can show its plan but cannot be migrated (no backup without an identity)', async () => {
+    const { repo } = buildRepo(makeTemp('migrate-old').path);
+    buildTaskWorkspace(repo, { slug: 'old', config: { title: 'Fixture old' } });
+    const ctx = contextFor(repo);
+    expect((await migrate(ctx, { task: 'old' }, { registry: [CONFIG_V2] })).outcome).toBe('dry-run');
+    const before = snapshotTree(wsPath(ctx, 'old'));
+    const error = await failure(migrate(ctx, { task: 'old', yes: true }, { registry: [CONFIG_V2] }));
+    expect(error.code).toBe('INSTANCE_NOT_INITIALIZED');
+    expect(snapshotTree(wsPath(ctx, 'old'))).toBe(before);
+  });
+
+  it('leaves the other tasks alone', async () => {
+    const { ctx } = repoWith('demo', 'other');
+    const other = snapshotTree(wsPath(ctx, 'other'));
+    await migrate(ctx, { task: 'demo', yes: true }, { registry: [CONFIG_V2] });
+    expect(snapshotTree(wsPath(ctx, 'other'))).toBe(other);
+  });
+});
+// @wp-end WP-107
