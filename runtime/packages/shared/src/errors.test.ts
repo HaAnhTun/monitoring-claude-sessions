@@ -20,3 +20,24 @@ describe('WORKSPACE_BUSY', () => {
     expect(e.details).toEqual({ reason: 'MUTEX_TIMEOUT', name: 'mcs-task-x', waitedMs: 50 });
   });
 });
+
+describe('the launcher leftovers (ADR 0062 item 4)', () => {
+  it('no longer lists the codes of the V3 bootstrap and runtime guard', () => {
+    const codes: readonly string[] = CLI_ERROR_CODES;
+    const removed = [
+      ['BOOTSTRAP', 'FAILED'],
+      ['RUNTIME', 'IN', 'USE'],
+    ].map((parts) => parts.join('_'));
+    for (const code of removed) {
+      expect(codes, code).not.toContain(code);
+      expect(isCliErrorCode(code), code).toBe(false);
+    }
+    expect(codes).toContain('NODE_TOO_OLD');
+  });
+
+  it('gives every remaining code an exit number, and an unknown code the internal-error exit', () => {
+    for (const code of CLI_ERROR_CODES) expect([1, 2], code).toContain(cliExitCode(code));
+    expect(cliExitCode('USAGE')).toBe(2);
+    expect(cliExitCode('NOT_A_CODE' as never)).toBe(1);
+  });
+});

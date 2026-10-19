@@ -150,7 +150,7 @@ describe('runNodeEntry', () => {
     expect(seen.env['HOME']?.startsWith(mcsHome)).toBe(true);
     expect(seen.env['USERPROFILE']?.startsWith(mcsHome)).toBe(true);
     expect(seen.env['MCS_HOOK_DISABLE']).toBe('1');
-    expect(seen.env['MCS_LAUNCHER_NO_BOOTSTRAP']).toBe('1');
+    expect(seen.env['MCS_LAUNCHER_' + 'NO_BOOTSTRAP']).toBeUndefined();
     expect(seen.env['MCS_TESTKIT_LEAK']).toBeUndefined();
     expect(seen.cwd.toLowerCase()).toBe(mcsHome.toLowerCase());
   });

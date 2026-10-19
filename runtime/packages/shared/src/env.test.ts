@@ -1,5 +1,6 @@
 /// <reference types="node" />
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -13,7 +14,6 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_HOME', 'runtime'],
   ['CLAUDE_CONFIG_DIR', 'runtime'],
   ['MCS_FS_WATCH', 'runtime'],
-  ['MCS_LAUNCHER_NO_BOOTSTRAP', 'runtime'],
   ['MCS_LAUNCHER_MODE', 'runtime'],
   ['MCS_DEBUG', 'runtime'],
   ['MCS_TEST', 'test'],
@@ -49,6 +49,61 @@ describe('DOCUMENTED_ENV_VARS', () => {
         DOCUMENTED_ENV_VARS.some((v) => v.name === name),
         name,
       ).toBe(false);
+  });
+
+  it('has no trace of the ignored bootstrap variable in the sources, the scripts and the launcher (ADR 0062 item 4)', () => {
+    const name = ['MCS_LAUNCHER', 'NO_BOOTSTRAP'].join('_');
+    const skillRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+    const roots = ['skills/monitoring-claude-sessions/scripts', 'runtime/scripts'].map((r) => join(skillRoot, r));
+    const packages = join(skillRoot, 'runtime/packages');
+    for (const pkg of readdirSync(packages)) roots.push(join(packages, pkg, 'src'));
+    const hits: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: string[];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry === 'node_modules' || entry === 'dist') continue;
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (
+          /.(ts|mjs|json)$/.test(entry) &&
+          !full.endsWith('env.test.ts') &&
+          readFileSync(full, 'utf8').includes(name)
+        )
+          hits.push(full);
+      }
+    };
+    for (const root of roots) walk(root);
+    expect(hits).toEqual([]);
+  });
+
+  it('has no trace of the ignored bootstrap variable in the sources, the scripts and the launcher (ADR 0062 item 4)', () => {
+    const name = ['MCS_LAUNCHER', 'NO_BOOTSTRAP'].join('_');
+    const skillRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+    const roots = ['skills/monitoring-claude-sessions/scripts', 'runtime/scripts'].map((r) => join(skillRoot, r));
+    const packages = join(skillRoot, 'runtime/packages');
+    for (const pkg of readdirSync(packages)) roots.push(join(packages, pkg, 'src'));
+    const hits: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: string[];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry === 'node_modules' || entry === 'dist') continue;
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (/[.](ts|mjs|json)$/.test(entry) && readFileSync(full, 'utf8').includes(name)) hits.push(full);
+      }
+    };
+    for (const root of roots) walk(root);
+    expect(hits).toEqual([]);
   });
 
   it('does not contain MCS_E2E_PORT (I-27, N-02)', () => {

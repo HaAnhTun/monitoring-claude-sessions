@@ -93,7 +93,7 @@ function startChild(
       String(startAt),
       resultFile,
     ],
-    { env: { ...hermeticEnv(dir), MCS_LAUNCHER_NO_BOOTSTRAP: '1' } },
+    { env: hermeticEnv(dir) },
   );
   return {
     pid: child.pid,

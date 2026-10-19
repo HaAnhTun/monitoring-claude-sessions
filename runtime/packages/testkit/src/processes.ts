@@ -222,7 +222,6 @@ export async function runNodeEntry(entry: string, args: readonly string[], opts:
     CLAUDE_CONFIG_DIR: join(opts.mcsHome, 'claude-home'),
     HOME: join(opts.mcsHome, 'home'),
     USERPROFILE: join(opts.mcsHome, 'home'),
-    MCS_LAUNCHER_NO_BOOTSTRAP: '1',
     ...opts.env,
     MCS_HOOK_DISABLE: '1',
   };

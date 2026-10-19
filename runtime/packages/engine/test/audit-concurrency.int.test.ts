@@ -83,7 +83,7 @@ async function runWriters(
         String(i),
         path.join(scratch, `result-${String(i)}.json`),
       ],
-      { env: { ...hermeticEnv(scratch), MCS_LAUNCHER_NO_BOOTSTRAP: '1' } },
+      { env: hermeticEnv(scratch) },
     ),
   );
   const codes = await Promise.all(children.map((child) => child.exited));

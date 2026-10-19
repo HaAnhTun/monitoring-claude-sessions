@@ -101,7 +101,7 @@ function sandbox(purpose: string): Sandbox {
   const root = makeTemp(purpose).path;
   const { repo } = buildRepo(path.join(root, 'repo'));
   const install = installRuntime(root);
-  const env = { ...hermeticEnv(root), MCS_LAUNCHER_NO_BOOTSTRAP: '1' };
+  const env = hermeticEnv(root);
   return { ...install, root, repo, ws: path.join(repo, '.claude', 'monitor', 'tasks', SLUG), env, port: 0 };
 }
 

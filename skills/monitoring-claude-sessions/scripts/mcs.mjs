@@ -5,8 +5,8 @@
 // Order: 1. the Node floor (22.22.0); 2. the `--version` / `version --short` fast path, which loads no module; 3. the mode
 // (`MCS_LAUNCHER_MODE=bundle|dev`, default bundle when `bundle/mcs-cli.mjs` exists, else dev in a checkout); 4. import the CLI in
 // this process and set the exit code from `main(argv, { launcherPath, skillDir, runtimeDir })`.
-// Never npm, never a build, never a spawn, never a lock, never a workspace read or write. `MCS_LAUNCHER_NO_BOOTSTRAP` is accepted
-// and ignored: there is nothing to bootstrap. `MCS_DEBUG=1` adds the stack to an internal launcher error.
+// Never npm, never a build, never a spawn, never a lock, never a workspace read or write: there is nothing to bootstrap.
+// `MCS_DEBUG=1` adds the stack to an internal launcher error.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
