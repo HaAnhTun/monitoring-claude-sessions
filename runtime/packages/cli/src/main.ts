@@ -254,6 +254,57 @@ const REGISTRY: readonly RegistryEntry[] = [
   // @wp-begin WP-95
   { names: ['migrate-workspace'], load: () => import('./commands/migrate-workspace.ts') },
   // @wp-end WP-95
+
+  // @wp-begin WP-140
+  // the doctor line that says whether the workspace still has the format of the monitor before 4.0 (read-only dry run)
+  {
+    deps: () => ({
+      extraChecks: {
+        'workspace.format': async (ctx, ws) => {
+          const engine = await import('@mcs/engine');
+          return engine.opsMigrate.workspaceFormatCheck(ctx, ws);
+        },
+      },
+    }),
+  },
+  // @wp-end WP-140
+
+  // @wp-begin WP-105
+  // the doctor line that says which configuration keys do nothing (unsupported, unknown, or missing their partner key)
+  {
+    deps: () => ({
+      extraChecks: {
+        'config.keys': async (ctx, ws) => {
+          const id = 'config.keys';
+          if (ws === null) return { id, ok: true, level: 'error', detail: 'no task selected (skipped)' };
+          const engine = await import('@mcs/engine');
+          let resolved: Awaited<ReturnType<typeof engine.resolveConfig>>;
+          try {
+            resolved = await engine.resolveConfig({ workspace: ws, env: ctx.env, cli: {}, skillDir: ctx.skillDir });
+          } catch {
+            return { id, ok: true, level: 'error', detail: 'no valid configuration (see config.valid)' };
+          }
+          // the shipped defaults alone must not warn (the logs panel is on without any log glob): only keys the task sets
+          const explicit = new Set(
+            Object.entries(resolved.provenance)
+              .filter(([, source]) => source === 'config')
+              .map(([key]) => key),
+          );
+          const warnings = engine.configKeyWarnings(resolved.monitor, { explicit });
+          if (warnings.length === 0)
+            return { id, ok: true, level: 'error', detail: 'every configured key has an effect' };
+          return {
+            id,
+            ok: false,
+            level: 'warn',
+            detail: warnings.map((w) => w.message).join('; '),
+            fix: `edit config.json of task ${ws.slug}: remove or correct the keys named above (mcs configure --task ${ws.slug} --unset KEY)`,
+          };
+        },
+      },
+    }),
+  },
+  // @wp-end WP-105
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */

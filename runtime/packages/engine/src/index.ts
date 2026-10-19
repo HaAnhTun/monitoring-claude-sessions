@@ -733,7 +733,12 @@ export {
   removeHookScript,
   stableScriptPath,
 } from './hooks/installer/script-copy.ts';
-export type { Destination, HookScriptInput, HookScriptPlan, HookScriptSource } from './hooks/installer/script-copy.ts';
+export type {
+  HookScriptCopy,
+  HookScriptInput,
+  HookScriptPlan,
+  HookScriptSource,
+} from './hooks/installer/script-copy.ts';
 // @wp-end WP-37
 
 // @wp-begin WP-38
@@ -810,6 +815,12 @@ export { bucketStart } from './analytics/series.ts';
 // @wp-end WP-58
 
 // @wp-begin WP-59
+export { evaluate as evaluateAlertRule } from './alerts/evaluator.ts';
+export type { AlertFacts, AlertResult, Downtime, ScopedResult, SessionRef } from './alerts/evaluator.ts';
+export { effectiveRules } from './alerts/rules.ts';
+export type { EffectiveRule, EffectiveRules } from './alerts/rules.ts';
+export { alertContextOf, createAlertComponents, createAlertService } from './alerts/service.ts';
+export type { AlertService, AlertServiceContext, AlertServiceOptions, ApplyOutcome } from './alerts/service.ts';
 // @wp-end WP-59
 
 // @wp-begin WP-60
@@ -893,3 +904,15 @@ export type { HealthGaugeSources, HealthGaugeValues, SearchGauge } from './runti
 // @wp-begin WP-102
 export { ChangesRepo, type ChangeRow } from './db/repos/changes.ts';
 // @wp-end WP-102
+
+// @wp-begin WP-105
+export { CONFIG_KEY_SUPPORT, configKeyWarnings } from './config/key-support.ts';
+export type {
+  ConfigKeyInput,
+  ConfigKeyOptions,
+  ConfigKeyWarning,
+  ConfigKeyWarningCode,
+  KeyStatus,
+  KeySupport,
+} from './config/key-support.ts';
+// @wp-end WP-105
