@@ -752,6 +752,27 @@ export type {
 // @wp-end WP-37
 
 // @wp-begin WP-38
+export * as opsHooks from './ops/hooks.ts';
+export type {
+  HooksInstallInput,
+  HooksOpDeps,
+  HooksStatusInput,
+  HooksTargetInput,
+  HooksToggleInput,
+  HooksToggleResult,
+  HooksUninstallInput,
+  HooksVerifyInput,
+} from './ops/hooks.ts';
+export * as opsIngest from './ops/ingest.ts';
+export type { ReplayDeps, ReplayInput, ReplayResult, ReplaySegment } from './ops/ingest.ts';
+export { hooksStatus } from './hooks/installer/status.ts';
+export type {
+  HooksScanTarget,
+  HooksStatusInput as HooksStatusEngineInput,
+  StatusSeams,
+} from './hooks/installer/status.ts';
+export { verifyHooks } from './hooks/installer/verify.ts';
+export type { VerifyHooksInput, VerifyInstance, VerifySeams } from './hooks/installer/verify.ts';
 // @wp-end WP-38
 
 // @wp-begin WP-40
@@ -858,6 +879,27 @@ export type { ScheduledRun } from './maintenance/schedule.ts';
 // @wp-end WP-60
 
 // @wp-begin WP-61
+export { openInstanceReader, readerErrorOfCode, readerReasonOf } from './reader/open.ts';
+export type { InstanceReader, ReaderDeps, ReaderOutput } from './reader/open.ts';
+export { createApiReader, loopbackStream } from './reader/api-reader.ts';
+export type { ApiHttpGet, ApiReaderOptions, ApiStreamOpen, StreamAttempt, StreamedReply } from './reader/api-reader.ts';
+export { openDbReader, readerFailureOf } from './reader/db-reader.ts';
+export type { DbReaderOptions } from './reader/db-reader.ts';
+export * as opsData from './ops/data.ts';
+export type {
+  DataDeps,
+  ErrorsFlags,
+  ErrorsInput,
+  SessionsListFlags,
+  SessionsListInput,
+  SessionsShowInput,
+  SessionsShowOutcome,
+  UsageFlags,
+  UsageInput,
+  UsageRequest,
+} from './ops/data.ts';
+export { httpGetWithHeaders } from './ops/probe.ts';
+export type { HttpFullAttempt, HttpFullReply } from './ops/probe.ts';
 // @wp-end WP-61
 
 // @wp-begin WP-62

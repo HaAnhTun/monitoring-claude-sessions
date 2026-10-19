@@ -87,6 +87,11 @@ function styled(text: string, stream: { readonly isTTY?: boolean | undefined }, 
   return `${ESC}[${SGR[style]}m${body}${ESC}[0m`;
 }
 
+/** True when stdin and stdout are both terminals: the only case in which a person can be asked a question (ADR 0070 item 7). */
+export function isInteractive(): boolean {
+  return process.stdin.isTTY && process.stdout.isTTY;
+}
+
 /** The only place in the CLI that writes to stdout: escaped text and a newline. `style` colours trusted text only. */
 export function printLine(text: string, style?: TextStyle): void {
   process.stdout.write(`${styled(text, process.stdout, style)}\n`);

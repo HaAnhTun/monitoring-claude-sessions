@@ -56,7 +56,7 @@ describe('mcs doctor', () => {
     expect(lines).toContain('[ok] node.sqlite: node:sqlite opens a database');
     expect(lines.some((l) => l.startsWith('[warn] claude.home: '))).toBe(true);
     expect(lines).toContain('[ok] database.integrity: no task selected (skipped)');
-    expect(lines).toContain('[warn] hooks: not installed or not checked');
+    expect(lines).toContain('[ok] hooks: not installed (optional: live hook events are opt-in)');
     const json = await sb.mcs(['doctor', '--json']);
     const report = reportOf(json.stdout);
     expect(report.task).toBeNull();

@@ -208,9 +208,35 @@ const REGISTRY: readonly RegistryEntry[] = [
   // @wp-end WP-22
 
   // @wp-begin WP-38
+  { names: ['hooks install'], load: () => import('./commands/hooks/install.ts') },
+  { names: ['hooks uninstall'], load: () => import('./commands/hooks/uninstall.ts') },
+  { names: ['hooks verify'], load: () => import('./commands/hooks/verify.ts') },
+  { names: ['hooks status'], load: () => import('./commands/hooks/status.ts') },
+  {
+    names: ['hooks enable'],
+    load: async () => ({ command: (await import('./commands/hooks/toggle.ts')).enableCommand }),
+  },
+  {
+    names: ['hooks disable'],
+    load: async () => ({ command: (await import('./commands/hooks/toggle.ts')).disableCommand }),
+  },
+  { names: ['ingest replay'], load: () => import('./commands/ingest-replay.ts') },
+  // the `hooks` line of `doctor` (the key `hooks` of `extraChecks` replaces the default line) and the `hooks:` line of `discover`
+  {
+    deps: (op) => ({
+      hooksSummary: async () => (await import('@mcs/engine')).opsHooks.summary(op),
+      extraChecks: {
+        hooks: async (ctx, ws) => (await import('@mcs/engine')).opsHooks.doctorCheck(ctx, ws),
+      },
+    }),
+  },
   // @wp-end WP-38
 
   // @wp-begin WP-61
+  { names: ['sessions list'], load: () => import('./commands/sessions-list.ts') },
+  { names: ['sessions show'], load: () => import('./commands/sessions-show.ts') },
+  { names: ['usage'], load: () => import('./commands/usage.ts') },
+  { names: ['errors'], load: () => import('./commands/errors.ts') },
   // @wp-end WP-61
 
   // @wp-begin WP-62

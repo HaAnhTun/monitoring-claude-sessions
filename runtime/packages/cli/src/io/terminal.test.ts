@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   colorEnabled,
+  isInteractive,
   printErrorLine,
   printJson,
   printLine,
@@ -243,5 +244,28 @@ describe('colorEnabled (S-OUT-4)', () => {
     expect(colorEnabled({ isTTY: false }, {})).toBe(false);
     expect(colorEnabled({}, {})).toBe(false);
     expect(colorEnabled({ isTTY: undefined }, {})).toBe(false);
+  });
+});
+
+describe('isInteractive (ADR 0070 item 7)', () => {
+  function stream(target: NodeJS.ReadStream | NodeJS.WriteStream, value: boolean): void {
+    Object.defineProperty(target, 'isTTY', { value, configurable: true });
+  }
+
+  afterEach(() => {
+    // the vitest worker is not a terminal: put the property back to its own state
+    Reflect.deleteProperty(process.stdin, 'isTTY');
+    Reflect.deleteProperty(process.stdout, 'isTTY');
+  });
+
+  it('is true only when stdin and stdout are both terminals', () => {
+    stream(process.stdin, true);
+    stream(process.stdout, true);
+    expect(isInteractive()).toBe(true);
+    stream(process.stdout, false);
+    expect(isInteractive()).toBe(false);
+    stream(process.stdin, false);
+    stream(process.stdout, true);
+    expect(isInteractive()).toBe(false);
   });
 });

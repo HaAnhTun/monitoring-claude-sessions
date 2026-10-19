@@ -431,7 +431,7 @@ async function discard(staging: Staging): Promise<void> {
 }
 
 /** The control token of `run/control.token` (64 hex digits), or `null`. Used for the one request to the instance's own server. */
-async function controlTokenOf(ws: WorkspaceRef): Promise<string | null> {
+export async function controlTokenOf(ws: WorkspaceRef): Promise<string | null> {
   const file = workspacePath(ws, 'run', 'control.token');
   try {
     assertNotLink(file);

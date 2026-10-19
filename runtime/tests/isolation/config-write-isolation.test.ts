@@ -2,7 +2,7 @@
 // left out) around each command that writes into A: `init a`, `configure --task a` (L and R keys) and `decide --task a`. Both
 // workspaces are made by the real `init`; no instance is started, so the rows do not need the setup file of WP-20.
 // Later work packages add the rows of their commands inside their own marked blocks at the end of the `describe`.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { RUNTIME_MUTABLE_PATHS } from '@mcs/engine';
@@ -117,6 +117,51 @@ describe('config write isolation (T-ISO-06): the commands of task A leave task B
   // @wp-end WP-22
 
   // @wp-begin WP-38
+  it('hooks enable --task a writes instance.json and the route file of A only', async () => {
+    const t = await twoTasks();
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a'])).code).toBe(0);
+    const before = t.snapshotB();
+    const mcsHome = t.env['MCS_HOME'] ?? '';
+    const run = await t.mcs(['hooks', 'enable', '--task', 'a']);
+    expect(run.code, run.stderr).toBe(0);
+    const instanceA = JSON.parse(readFileSync(join(t.dirA, 'instance.json'), 'utf8')) as {
+      instanceId: string;
+      hooks: { enabled: boolean };
+    };
+    expect(instanceA.hooks.enabled).toBe(true);
+    // one route file, the one of A; B has none and its own instance.json still says hooks are off
+    const routes = readdirSync(join(mcsHome, 'routes'));
+    expect(routes).toEqual([`${instanceA.instanceId}.json`]);
+    expect(t.snapshotB()).toBe(before);
+    expect(JSON.parse(readFileSync(join(t.dirB, 'instance.json'), 'utf8'))).toMatchObject({
+      hooks: { enabled: false },
+    });
+    // no settings file was written for either task or in the Claude home
+    expect(existsSync(join(t.repo, '.claude', 'settings.local.json'))).toBe(false);
+    expect(existsSync(join(t.env['CLAUDE_CONFIG_DIR'] ?? '', 'settings.json'))).toBe(false);
+    const off = await t.mcs(['hooks', 'disable', '--task', 'a']);
+    expect(off.code, off.stderr).toBe(0);
+    expect(t.snapshotB()).toBe(before);
+  });
+
+  it('ingest replay --task a --yes resets cursors in the database of A only', async () => {
+    const { allocatePort, startInstance } = await import('@mcs/testkit');
+    const t = await twoTasks();
+    const portA = await allocatePort();
+    expect((await t.mcs(['init', '--name', 'Task A', '--slug', 'a', '--port', String(portA)])).code).toBe(0);
+    // A has run once, so it has a database; its spool holds a segment that nothing read
+    const runA = await startInstance({ repo: t.repo, slug: 'a', env: t.env }, { port: portA });
+    await runA.stop();
+    const segment = 'hooks-20261011T08Z.ndjson';
+    mkdirSync(join(t.dirA, 'data', 'spool'), { recursive: true });
+    writeFileSync(join(t.dirA, 'data', 'spool', segment), '');
+    const before = t.snapshotB();
+    const run = await t.mcs(['ingest', 'replay', '--task', 'a', '--yes', '--json']);
+    expect(run.code, run.stdout + run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({ ok: true, data: { mode: 'stopped', segmentsReset: 1 } });
+    expect(readFileSync(join(t.dirA, 'audit', 'changes.md'), 'utf8')).toContain('| ingest-replay');
+    expect(t.snapshotB()).toBe(before);
+  });
   // @wp-end WP-38
 
   // @wp-begin WP-39
