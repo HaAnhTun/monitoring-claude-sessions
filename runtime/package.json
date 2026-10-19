@@ -50,7 +50,8 @@
     "docker:posix": "node scripts/docker-posix.mjs",
     "test:slow": "vitest run --project slow",
     "bundle": "node scripts/bundle.mjs",
-    "bundle:check": "node scripts/bundle.mjs --check"
+    "bundle:check": "node scripts/bundle.mjs --check",
+    "bench": "node bench/run-all.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
