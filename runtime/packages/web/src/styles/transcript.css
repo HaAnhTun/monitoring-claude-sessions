@@ -1,8 +1,58 @@
-/* Transcript viewer styles. */
+/* Transcript viewer (04-ui.md 4.4.3, ADR 0038) and the safe Markdown subset (04-ui.md section 8). Rows use content-visibility, filtered rows are
+   hidden, the scroller keeps its own scroll anchoring (overflow-anchor: none, handled by useScrollAnchor). Text is isolated for
+   bidirectional rendering so a right-to-left override inside transcript text cannot reorder the surrounding page. */
 
-/* @wp-begin WP-51 */
-/* Transcript viewer (04-ui.md 4.4.3, ADR 0038): rows use content-visibility, filtered rows are hidden, the scroller keeps
-   its own scroll anchoring (overflow-anchor: none, handled by useScrollAnchor). */
+/* Safe Markdown subset (04-ui.md section 8). */
+.md-p {
+  margin: 0 0 var(--sp-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  unicode-bidi: isolate;
+}
+.md-p:last-child {
+  margin-bottom: 0;
+}
+.md-inline {
+  padding: 0 var(--sp-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.md-code {
+  margin: 0 0 var(--sp-3);
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+}
+.md-lang {
+  display: inline-block;
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+.md-pre {
+  margin: 0;
+  padding: var(--sp-3);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh);
+  white-space: pre;
+  unicode-bidi: isolate;
+}
+.md-code__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2);
+}
+.md-note {
+  display: block;
+  padding: 0 var(--sp-3);
+}
+/* Transcript viewer rows and toolbar. */
 .tv {
   display: flex;
   flex-direction: column;
@@ -35,7 +85,7 @@
 .tv-q {
   flex: 1 1 14em;
   min-width: 0;
-  min-height: calc(30px * var(--d) + 6px);
+  min-height: var(--ctl-h);
   padding: var(--sp-2) var(--sp-3);
   background: var(--surface);
   color: var(--text);
@@ -51,7 +101,7 @@
 }
 .tv-field select,
 .tv-jump input {
-  min-height: calc(30px * var(--d) + 6px);
+  min-height: var(--ctl-h);
   padding: var(--sp-2) var(--sp-3);
   background: var(--surface);
   color: var(--text);
@@ -82,7 +132,6 @@
 .tv-notice {
   padding-inline: 0;
 }
-
 .tv-scroller {
   position: relative;
   min-height: 12rem;
@@ -120,7 +169,6 @@
 .tv--oldest .tv-resume {
   bottom: var(--sp-3);
 }
-
 .tr {
   content-visibility: auto;
   contain-intrinsic-size: auto var(--row-cv-size);
@@ -183,7 +231,6 @@
   color: var(--text-muted);
   font-style: italic;
 }
-
 .tu-summary {
   display: flex;
   flex-wrap: wrap;
@@ -228,7 +275,6 @@
 .hide-result .tu-result {
   display: none;
 }
-
 .tv-search {
   display: flex;
   flex-direction: column;
@@ -285,7 +331,6 @@
   background: var(--stale-bg);
   color: var(--stale-fg);
 }
-
 @media (forced-colors: active) {
   .tr.is-target {
     outline: 2px solid Highlight;
@@ -294,6 +339,3 @@
     border-left-color: CanvasText;
   }
 }
-/* @wp-end WP-51 */
-/* @wp-begin WP-65 */
-/* @wp-end WP-65 */

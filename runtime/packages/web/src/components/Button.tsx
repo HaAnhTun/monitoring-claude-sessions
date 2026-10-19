@@ -1,8 +1,9 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 
 import { Icon } from './Icon.tsx';
 import type { IconName } from './icons.ts';
 
+/** The variants map to the three levels of ADR 0071 decision 7: primary, secondary (default) and tertiary (quiet, icon). */
 export type ButtonVariant = 'default' | 'primary' | 'quiet' | 'icon';
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'className'> {
@@ -10,6 +11,7 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   icon?: IconName;
   loading?: boolean;
   type?: 'button' | 'submit' | 'reset';
+  ref?: Ref<HTMLButtonElement>;
   children?: ReactNode;
 }
 

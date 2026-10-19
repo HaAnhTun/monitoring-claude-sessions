@@ -1,0 +1,135 @@
+/* Top bar: connection and ingestion chips, stale line, health details, preferences, shortcuts dialog (04-ui.md 5.6, 6.7, ADR 0033). */
+
+.topbar__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.topbar__task {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.topbar__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.topbar__age {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.topbar__details {
+  flex: 1 1 100%;
+}
+.topbar__details[hidden] {
+  display: none;
+}
+a.chip {
+  color: inherit;
+  text-decoration: none;
+}
+a.chip:hover {
+  text-decoration: underline;
+}
+.chip__detail {
+  max-width: 28ch;
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+@media (max-width: 900px) {
+  .chip__detail {
+    display: none;
+  }
+}
+/* The single connection loader; static under reduced motion (04-ui.md 6.7). */
+.chip[data-status='connecting'] .icon {
+  animation: chip-spin 1.2s linear infinite;
+}
+@keyframes chip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chip[data-status='connecting'] .icon {
+    animation: none;
+  }
+}
+.stale-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+}
+/* Stale data keeps its text colours; a dashed outline in the stale tone marks the block (never part of a transition). */
+[data-stale-scope][data-stale='true'],
+main[data-stale='true'] [data-stale-scope] {
+  outline: 2px dashed var(--stale-fg);
+  outline-offset: -2px;
+}
+.health-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.health-details__list {
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--surface);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.topbar__title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.prefs-controls {
+  flex-wrap: wrap;
+}
+.shortcuts-dialog {
+  max-width: min(32rem, calc(100vw - 2 * var(--sp-5)));
+  padding: var(--sp-5);
+  background: var(--surface);
+  color: var(--text);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+.shortcuts-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.shortcuts-dialog__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0;
+}
+.shortcuts-dialog__row {
+  display: flex;
+  gap: var(--sp-4);
+}
+.shortcuts-dialog__row dt {
+  flex: 0 0 11em;
+}
+.shortcuts-dialog kbd {
+  font-family: var(--mono);
+  padding: 0 var(--sp-2);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius-sm);
+}

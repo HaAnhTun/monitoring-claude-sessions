@@ -50,6 +50,22 @@ const REQUIRED = [
   'file-text',
   'terminal',
   'info',
+  // ADR 0071 decision 9 and WP-110: navigation, menus, panels
+  'menu',
+  'more',
+  'filter',
+  'columns',
+  'languages',
+  'chevron-left',
+  'chevron-up',
+  'external',
+  'panel-left',
+  'bell',
+  'hard-drive',
+  'git-commit',
+  'folder',
+  'circle',
+  'circle-dot',
 ] as const;
 
 describe('icon registry', () => {

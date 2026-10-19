@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Button } from './Button.tsx';
@@ -20,6 +21,27 @@ describe('Button', () => {
   it('applies the variant class', () => {
     render(<Button variant="primary">Go</Button>);
     expect(screen.getByRole('button', { name: 'Go' })).toHaveClass('btn', 'btn-primary');
+  });
+
+  it('maps the variants to the three levels with unchanged class names', () => {
+    render(
+      <>
+        <Button>Secondary</Button>
+        <Button variant="primary">Primary</Button>
+        <Button variant="quiet">Quiet</Button>
+        <Button variant="icon" icon="copy" aria-label="Copy" />
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Secondary' }).className).toBe('btn');
+    expect(screen.getByRole('button', { name: 'Primary' }).className).toBe('btn btn-primary');
+    expect(screen.getByRole('button', { name: 'Quiet' }).className).toBe('btn btn-quiet');
+    expect(screen.getByRole('button', { name: 'Copy' }).className).toBe('btn btn-icon');
+  });
+
+  it('hands its element to a ref', () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(<Button ref={ref}>Go</Button>);
+    expect(ref.current).toBe(screen.getByRole('button', { name: 'Go' }));
   });
 
   it('renders an icon before the label', () => {

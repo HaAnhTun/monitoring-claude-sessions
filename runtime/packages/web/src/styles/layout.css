@@ -1,13 +1,13 @@
-/* Page layout. The two-column shell (sidebar 380 px) arrives with the shell work package; this file holds the frame. */
+/* Page layout: the frame the page shell owns. Blocks and cards are width-agnostic. */
 
 .main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--sp-4);
   min-width: 0;
   min-height: 0;
-  padding: var(--sp-4) var(--sp-5);
+  padding: var(--sp-5) var(--page-pad);
 }
 .main:focus {
   outline: none;
@@ -15,9 +15,10 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--sp-4);
   min-width: 0;
 }
-.tbl-wrap {
-  overflow-x: auto;
+.page--placeholder h1,
+.page--not-found h1 {
+  margin-bottom: var(--sp-2);
 }

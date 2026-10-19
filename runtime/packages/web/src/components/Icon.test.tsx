@@ -13,11 +13,20 @@ describe('Icon', () => {
     expect(svg).toHaveAttribute('focusable', 'false');
   });
 
-  it('is sized in em so it follows the text size', () => {
+  it('is 16 px with a 1.5 stroke (ADR 0071 decision 9)', () => {
     const { container } = render(<Icon name="search" />);
     const svg = container.querySelector('svg');
-    expect(svg).toHaveAttribute('width', '1.1em');
-    expect(svg).toHaveAttribute('height', '1.1em');
+    expect(svg).toHaveAttribute('width', '16');
+    expect(svg).toHaveAttribute('height', '16');
+    expect(svg).toHaveAttribute('stroke-width', '1.5');
+  });
+
+  it('is 18 px in a menu', () => {
+    const { container } = render(<Icon name="settings" size="menu" />);
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '18');
+    expect(svg).toHaveAttribute('height', '18');
+    expect(svg).toHaveAttribute('stroke-width', '1.5');
   });
 
   it('adds an extra class without dropping the base one', () => {

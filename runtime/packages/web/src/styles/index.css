@@ -1,10 +1,28 @@
-/* Cascade layer order, then one import per file (04-ui.md 6.2). Plain CSS, no modules, no utility framework. */
+/* Cascade layer order, then one import per file (ADR 0071 decision 10). Plain CSS, no modules, no utility framework. */
 @layer tokens, base, layout, components, pages;
 
 @import './tokens.css' layer(tokens);
 @import './base.css' layer(base);
 @import './layout.css' layer(layout);
 @import './components.css' layer(components);
+@import './badges.css' layer(components);
+@import './states.css' layer(components);
+@import './topbar.css' layer(components);
+@import './lists.css' layer(components);
 @import './transcript.css' layer(components);
 @import './panels.css' layer(components);
-@import './pages.css' layer(pages);
+@import './shell.css' layer(pages);
+@import './sessions.css' layer(pages);
+@import './session-detail.css' layer(pages);
+@import './session-tabs.css' layer(pages);
+/* Page stylesheets: each work package adds its own import inside its block, in the pages layer. */
+/* @wp-begin WP-53 */
+/* @wp-end WP-53 */
+/* @wp-begin WP-54 */
+/* @wp-end WP-54 */
+/* @wp-begin WP-66 */
+/* @wp-end WP-66 */
+/* @wp-begin WP-67 */
+/* @wp-end WP-67 */
+/* @wp-begin WP-121 */
+/* @wp-end WP-121 */

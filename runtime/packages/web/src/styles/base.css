@@ -1,4 +1,4 @@
-/* Reset and element defaults (ported from the legacy stylesheet). */
+/* Reset and element defaults. Headings follow ADR 0071 decision 4: page title 22 px / 600, section title 16 px / 600. */
 
 *,
 *::before,
@@ -14,7 +14,7 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  font: var(--fs-md) / var(--lh) var(--font);
+  font: var(--fw-regular) var(--fs-md) / var(--lh) var(--font);
   background: var(--bg);
   color: var(--text);
 }
@@ -39,16 +39,45 @@ fieldset {
 }
 h1 {
   font-size: var(--fs-xl);
-  font-weight: 700;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xl);
 }
+h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-lg);
+}
+h3,
+h4 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-md);
+}
+/* Links are underlined only inside prose and on hover; navigation and row links are plain text. */
 a {
   color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+p a,
+li a,
+dd a,
+.prose a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
+}
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
 }
 ul.plain,
 ol.plain {
@@ -60,6 +89,7 @@ ol.plain {
 }
 .small {
   font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
 }
 .muted {
   color: var(--text-muted);
@@ -80,9 +110,10 @@ ol.plain {
 }
 .icon {
   flex: none;
-  vertical-align: -0.18em;
+  vertical-align: -0.2em;
 }
 
+/* The focus ring is never part of a transition (a transition would fade it). */
 :focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;

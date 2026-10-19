@@ -1,0 +1,193 @@
+/* Application shell: skip links, sidebar, notices, toasts (04-ui.md 4.1, 6.3). Loaded in the pages layer. */
+
+.shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.shell__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.shell__body > .main {
+  flex: 1 1 auto;
+}
+.skip-links {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 20;
+}
+.skip-links__link {
+  position: absolute;
+  top: -100vh;
+  left: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+.skip-links__link:focus {
+  top: var(--sp-3);
+}
+.sidebar {
+  display: flex;
+  flex: 0 0 var(--side-w);
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: var(--side-w);
+  max-width: 100%;
+  min-height: 0;
+  padding: var(--sp-4);
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: var(--border-w) solid var(--border);
+}
+.sidebar > .btn {
+  display: none;
+}
+.sidebar__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+}
+.sidebar-nav ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.sidebar-nav__link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--ctl-h);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+.sidebar-nav__link:hover {
+  background: var(--surface-2);
+}
+.sidebar-nav__link[aria-current='page'] {
+  background: var(--surface-2);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.sidebar-nav__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.sidebar-list__filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.sidebar-list__rows:focus {
+  outline: none;
+}
+.sidebar-group + .sidebar-group {
+  margin-top: var(--sp-3);
+}
+.sidebar-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+.sidebar-group h3 {
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--ctl-h);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+.sidebar-row:hover {
+  background: var(--surface-2);
+}
+.sidebar-row[aria-current='page'] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.sidebar-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-agents {
+  margin-left: var(--sp-5);
+}
+.sidebar-agents__title {
+  margin-top: var(--sp-2);
+}
+.sidebar-row--agent {
+  font-size: var(--fs-sm);
+}
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--surface-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.toasts {
+  position: fixed;
+  bottom: var(--sp-6);
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  transform: translateX(-50%);
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+@media (max-width: 899px) {
+  .shell__body {
+    flex-direction: column;
+  }
+  .sidebar {
+    flex: none;
+    width: auto;
+    overflow-y: visible;
+    border-right: 0;
+    border-bottom: var(--border-w) solid var(--border);
+  }
+  .sidebar > .btn {
+    display: inline-flex;
+    align-self: flex-start;
+  }
+  .sidebar[data-open='false'] .sidebar__body {
+    display: none;
+  }
+}

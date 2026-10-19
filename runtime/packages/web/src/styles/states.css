@@ -1,0 +1,106 @@
+/* Empty, error and loading states, load more, clamped text, copy button and disclosure (ADR 0071 decision 10). */
+
+/* Empty, error and loading states (04-ui.md section 7). */
+.state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+}
+.state--page {
+  padding: var(--sp-6);
+}
+.state--inline {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.state--error {
+  border-color: var(--failed-fg);
+}
+.state__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.state__body {
+  color: var(--text-muted);
+}
+.state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.skeleton__row {
+  height: calc(20px * var(--d) + 8px);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+.skeleton--tiles {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.skeleton--tiles .skeleton__row {
+  flex: 1 1 12em;
+  height: calc(56px * var(--d) + 8px);
+}
+.skeleton--text .skeleton__row {
+  height: 1em;
+  width: 80%;
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton__row {
+    animation: none;
+  }
+}
+/* Load more. */
+.load-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.load-more__text {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.clamped__note {
+  margin: var(--sp-2) 0 0;
+}
+.clamped__toggle {
+  margin-top: var(--sp-2);
+}
+.copy-btn {
+  font-size: var(--fs-xs);
+}
+.copy-btn--compact {
+  min-height: 24px;
+  padding: var(--sp-1) var(--sp-3);
+}
+.copy-btn.is-copied {
+  color: var(--ok-fg);
+}
+.copy-btn.is-failed {
+  color: var(--failed-fg);
+}
+.disclosure__toggle {
+  padding-inline: var(--sp-2);
+}
+.disclosure__panel {
+  padding: var(--sp-2) var(--sp-4);
+}
