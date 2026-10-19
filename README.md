@@ -13,7 +13,8 @@ It ships as a Claude Code skill (`monitoring-claude-sessions`), so an agent can 
 
 - Node.js 22.22 or newer (tested on 22, 24 and 26). Nothing else: no compiler, no Python, no `npm install`, no build.
 - Windows, macOS or Linux (glibc), x64 or arm64. Alpine (musl) is best effort. Verified results per platform:
-  [docs/platform-support.md](docs/platform-support.md).
+  [docs/platform-support.md](docs/platform-support.md). There is no hosted CI: Linux is tested locally in Docker, Windows by
+  hand, and macOS is not verified automatically.
 
 ## Install
 

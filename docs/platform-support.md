@@ -1,8 +1,8 @@
 # Platform support
 
-Results of the POSIX verification (V4 work package WP-87, ADR 0065 items 4 and 5, ADR 0005, ADR 0006). The Linux rows were
+Results of the POSIX verification (V4 work package WP-87, ADR 0065 items 4 and 5, ADR 0005, ADR 0006). There is no hosted CI (ADR 0078). The Linux rows were
 run in Docker with `runtime/scripts/docker-posix.mjs --worktree` (throw-away labelled containers, the unprivileged `node`
-user, no host folder mounted). macOS needs a real macOS host: those rows stay UNVERIFIED until the macOS CI job has run.
+user, no host folder mounted). macOS needs a real macOS host: those rows stay UNVERIFIED until someone runs the gates on a Mac (ADR 0078).
 
 ## Matrix that was run
 

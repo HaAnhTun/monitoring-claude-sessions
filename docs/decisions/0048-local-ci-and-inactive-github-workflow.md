@@ -1,6 +1,6 @@
 # 0048 `npm run ci` as the single gate runner; GitHub Actions workflow shipped inactive
 
-Status: Amended by 0065 (proposed Phase 1, 2026-10-11). Owner: tooling design (05 sections 7, 8).
+Status: Amended by 0065 (proposed Phase 1, 2026-10-11); the hosted workflow it describes is gone: superseded by 0078 (2026-10-20), CI is local only. Owner: tooling design (05 sections 7, 8).
 
 ## Context
 The brief requires reproducible quality checks "through documented commands and CI where available" and forbids claiming unrun checks.

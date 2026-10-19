@@ -43,7 +43,7 @@ A native addon cannot be bundled, needs prebuilds for eight platform/libc pairs 
 ## Consequences
 - The Node floor 22.22.0 contains every API used (verified on 22.23.3): `timeout`, `isTransaction`, `backup`, `readOnly`, named parameters.
 - `node:sqlite` is still experimental on Node 22 (stability 1.1) and prints a warning there; on Node 24.22 and 26.12 no warning is printed (verified).
-  A future Node change stays inside `driver.ts`; the CI matrix (22.22, 24, 26) is the early warning.
+  A future Node change stays inside `driver.ts`; the Docker harness matrix (22, 24, 26; ADR 0065 item 4, ADR 0078) is the early warning.
 - The bundled SQLite differs per Node: 3.51.2 (24.14.1), 3.51.3 (22.23.3), 3.53.4 (24.22.0), 3.54.0 (26.12.0). The schema uses only features present in all (STRICT, `json_valid`, WAL).
 - Performance is in the same range (see Evidence); the benchmark budgets B1-B7 of the benchmark work package decide.
 - `RUNTIME_IN_USE` and the install-time addon problems disappear (0062).

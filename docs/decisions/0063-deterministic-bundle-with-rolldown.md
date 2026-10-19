@@ -34,7 +34,7 @@ inside the skill folder, and a check proves that the committed bundle equals a f
 7. **Ownership and cadence**: the work package that creates the pipeline commits the first bundle. After that the bundle is lead-owned
    output, regenerated at milestone ends (`npm run build && npm run bundle && npm run bundle:check` in `runtime/`) in a commit of its own.
    `npm run ci` does not check freshness (the bundle is stale between regenerations by design); `npm run ci -- --bundle` adds
-   `bundle:check` and a smoke run through the bundle, and the GitHub workflow (0065) runs that variant.
+   `bundle:check` and a smoke run through the bundle, and the local release gate (0076) runs that variant (the GitHub workflow of 0065 was dropped, see 0078).
 8. `.gitattributes` marks `skills/*/bundle/**` as `linguist-generated=true`.
 
 ## Consequences

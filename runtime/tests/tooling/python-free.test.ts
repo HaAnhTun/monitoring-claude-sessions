@@ -145,9 +145,9 @@ describe('the Python-free guard (ADR 0066)', () => {
     expect(DOCUMENTED_ENV_VARS.map((v) => v.name).filter((name) => name.toUpperCase().includes('PYTHON'))).toEqual([]);
   });
 
-  it('flags each probe: a .py file, a token in a runtime file and a Python step in the workflow', () => {
+  it('flags each probe: a .py file, a token in a runtime file and a Python setup line in a script', () => {
     expect(/\.pyc?$/.test(j('probe', '.py'))).toBe(true);
     expect(tokenHits('runtime/x.ts', `// see ${j('viewer', '.py')}`)).toHaveLength(1);
-    expect(tokenHits('.github/workflows/ci.yml', `- uses: actions/${j('setup-', 'python')}@v5`)).toHaveLength(1);
+    expect(tokenHits('runtime/scripts/ci.mjs', `- uses: actions/${j('setup-', 'python')}@v5`)).toHaveLength(1);
   });
 });

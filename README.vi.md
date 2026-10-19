@@ -16,7 +16,8 @@ cũng dùng được như một dòng lệnh bình thường.
 - Node.js 22.22 trở lên (đã kiểm thử trên 22, 24 và 26). Không cần gì thêm: không trình biên dịch, không Python, không
   `npm install`, không build.
 - Windows, macOS hoặc Linux (glibc), x64 hoặc arm64. Alpine (musl) được hỗ trợ ở mức cố gắng. Kết quả kiểm chứng theo nền tảng:
-  [docs/platform-support.md](docs/platform-support.md).
+  [docs/platform-support.md](docs/platform-support.md). Dự án không dùng CI trên máy chủ: Linux được kiểm thử cục bộ trong
+  Docker, Windows kiểm thử thủ công, còn macOS chưa được kiểm chứng tự động.
 
 ## Cài đặt
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **GitHub Actions workflow and the `ci-status` channel.** CI is local only: `npm run ci`, `npm run ci:full` and the Docker POSIX
+  harness (`npm run docker:posix`) are the gates (ADR 0078). `ci-status.mjs`, `ci-lean.mjs`, `npm run ci -- --summary-json` and the
+  `MCS_CI_*` environment names went with them. The `ci-status` branch on the remote is no longer written or read.
+
 ## 4.0.0 (2026-10-19)
 
 Node only. A user machine needs nothing but Node 22.22 or newer.
@@ -26,8 +34,8 @@ Node only. A user machine needs nothing but Node 22.22 or newer.
 - **`migrate-workspace`**: one-time conversion of a pre-4.0 workspace (regex translation, `instance.json`), a dry run unless
   `--apply`, with a backup first (ADR 0068).
 - **Transcript auto-detection** of the Claude Code project folder of a repository (honours `CLAUDE_CONFIG_DIR`).
-- **CI**: GitHub Actions on Windows x64, Ubuntu x64 and macOS arm64 (lean), results published to a `ci-status` branch; a Docker
-  POSIX harness (`npm run docker:posix`) for Linux x64/arm64, glibc and musl (ADR 0065).
+- **CI**: a Docker POSIX harness (`npm run docker:posix`) for Linux x64/arm64, glibc and musl (ADR 0065). The GitHub Actions
+  workflow and the `ci-status` branch of that ADR were dropped before release (ADR 0078).
 - MIT licence, English README and `README.vi.md`.
 
 ### Fixed
@@ -48,11 +56,7 @@ Node only. A user machine needs nothing but Node 22.22 or newer.
 
 ### Known issues
 
-- The integration test T-HE-03 b (`packages/engine/test/ingest-service.int.test.ts`, "shows a database that cannot be
-  written in the persisted block only") fails: the second batch of hook envelopes in the test never reaches the writer,
-  so no failed commit is counted. Under investigation; the monitor itself runs normally.
-- macOS is covered only by the lean CI job (build, platform unit tests, bundle smoke); the full POSIX suites ran in
-  Linux containers (see `docs/platform-support.md`).
+- macOS is not verified automatically; the POSIX suites ran in Linux containers (see `docs/platform-support.md`).
 
 ## Before 4.0
 

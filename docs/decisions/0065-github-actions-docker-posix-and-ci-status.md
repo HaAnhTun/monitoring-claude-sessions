@@ -1,6 +1,6 @@
 # 0065 CI: active GitHub Actions workflow, Docker POSIX harness and the `ci-status` branch
 
-Status: Accepted (V4, 2026-10-18). Owner: platform area (A). Amends 0048 (the workflow is no longer an inactive draft, its Python job is removed,
+Status: Accepted (V4, 2026-10-18). Partly superseded by ADR 0078 (2026-10-20): GitHub Actions and the `ci-status` branch are dropped, so items 1, 2, 3 and 6 and the macOS job of item 5 are history; the Docker POSIX harness (item 4) stays. Owner: platform area (A). Amends 0048 (the workflow is no longer an inactive draft, its Python job is removed,
 the full run is end-to-end only, one job may write a results branch). Related: 0062, 0063, 0064.
 
 ## Context

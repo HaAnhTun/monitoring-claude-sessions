@@ -682,11 +682,6 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_WEB_DEV_PORT` | dev | `vite.config.ts` | default 18766 | same |
 | `MCS_WEB_PREVIEW_PORT` | dev | `vite.config.ts` | default 18767 | same |
 | `MCS_BUILD_ID` | dev | `vite.config.ts` | `VITE_BUILD_ID` (default `dev`) | same |
-| `MCS_CI_JOB` | dev (CI) | `scripts/ci-status.mjs summarize` | job name of the CI job record | WP-88 |
-| `MCS_CI_OS` | dev (CI) | same | OS of the CI job record | WP-88 |
-| `MCS_CI_ARCH` | dev (CI) | same | architecture of the CI job record | WP-88 |
-| `MCS_CI_NODE` | dev (CI) | same | Node version of the CI job record | WP-88 |
-| `MCS_CI_JOB_STATUS` | dev (CI) | same | GitHub job status mapped to the record status (unknown values -> `unknown`) | WP-88 |
 | `LOCALAPPDATA`, `XDG_STATE_HOME` | runtime (non-MCS) | `resolveMcsHome` | default `MCS_HOME` location | 02 2.6.1 |
 | `CLAUDE_PID` | runtime (non-MCS) | hook handler | `claude_pid` envelope field | 02 2.3.1, A0019 |
 | `TZ` | test (non-MCS) | Vitest config, golden capture | `UTC` pinned | 05 2.8, 06 5.2.3 |

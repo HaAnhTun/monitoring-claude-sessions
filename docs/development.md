@@ -19,7 +19,7 @@ npm run build          # tsc -b for every package, the Vite build of the web UI,
 |---|---|
 | `npm test` | the unit, web, integration, isolation and resilience projects (integration needs `npm run build` first) |
 | `npm run test:unit` | unit and web tests only, from the TypeScript sources (no build needed) |
-| `npm run test:tooling` | repository rules: plugin layout, launcher, install script, bundle, CI scripts, environment variables |
+| `npm run test:tooling` | repository rules: plugin layout, launcher, install script, bundle, the local CI script, environment variables |
 | `npm run test:slow` | the slow suites |
 | `npm run test:e2e` | Playwright end-to-end tests of the web UI |
 | `npm run lint`, `npm run typecheck`, `npm run format:check` | ESLint, TypeScript, Prettier |
@@ -53,8 +53,9 @@ code it started with: after a change, `status --task <slug>` shows `outdated: tr
 
 ## CI
 
-`.github/workflows/ci.yml` runs the gates on Windows x64 (Node 24) and Ubuntu x64 (Node 22.22, 24, 26), a lean job on macOS arm64 and the
-end-to-end tests; a final job writes a JSON summary to the `ci-status` branch, readable with `git fetch` (ADR 0065).
+CI is local only (ADR 0078): there is no GitHub Actions workflow and no `ci-status` branch. Before a push run `npm run ci` (add
+`-- --bundle` when the bundle changed, `npm run ci:full` for the slow suites and end-to-end tests) and, for the POSIX paths, the Docker
+harness `npm run docker:posix` (ADR 0065 item 4). macOS is verified by hand when a Mac is available; until then it is not verified.
 
 ## Conventions
 
