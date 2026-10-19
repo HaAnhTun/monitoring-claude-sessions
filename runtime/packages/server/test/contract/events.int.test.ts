@@ -317,11 +317,15 @@ describe('GET /api/v3/events', () => {
       [`${EVENTS}?around=1&afterId=1`, 400, 'validation_failed'],
       [`${EVENTS}?limit=201`, 400, 'validation_failed'],
       [`${EVENTS}?type=nope.kind`, 400, 'validation_failed'],
+      [`${EVENTS}?q=a`, 400, 'query_too_short'],
+      [`${EVENTS}?q=a&session=${s.uid}&range=all`, 400, 'query_too_short'],
+      [`${EVENTS}?q=ab&limit=201`, 400, 'validation_failed'],
     ];
     for (const [url, status, code] of cases) {
       const reply = await get(run, url);
       expect([reply.status, codeOf(reply)], url).toEqual([status, code]);
     }
+    expect((await get(run, `${EVENTS}?q=ab`)).status).toBe(200);
   });
 });
 

@@ -751,6 +751,7 @@ All exit 1 except `USAGE` (exit 2). Emitted in `CliEnvelope.error.code`.
 | `TASK_NOT_FOUND` | `start` without `task.json` section 4.7 | - |
 | `WORKSPACE_INVALID` | file problems, `AtomicWriteError` mapping section 1.2 | 17 |
 | `WORKSPACE_EXISTS_CONFIG_DIFFERS` | `init` reuse section 4.12, `config migrate --from-legacy` | - |
+| `WORKSPACE_BUSY` | `withTaskMutex` (a task mutex held by another command past the wait; details `{ reason: 'MUTEX_TIMEOUT', name, waitedMs }`) | - |
 | `INSTANCE_NOT_INITIALIZED` | `upgrade` without `instance.json` section 5.4 | - |
 | `IDENTITY_MISMATCH` | section 3.2 checks | 11 |
 | `INSTANCE_RUNNING` | repair, restore, db rebuild, upgrade without `--restart`, `serve` | - |

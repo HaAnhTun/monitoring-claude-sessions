@@ -251,7 +251,7 @@ describe('buildInstanceContext: the fields of InstanceContext', () => {
     const fallback = await fixture({ env: { MCS_HOME: path.join(os.tmpdir(), 'mcs-home-x') } });
     const viaHome = await build(fallback);
     expect(viaHome.claudeHome).toBe(path.join(os.homedir(), '.claude'));
-    // the exported definition of transcript discovery agrees with the context (its private twin goes in a cleanup WP)
+    // the context uses the one definition of transcript discovery
     expect(viaHome.claudeHome).toBe(claudeHomeOf({}));
     viaHome.db.close();
 
@@ -534,6 +534,17 @@ describe('buildInstanceContext: failures map onto the boot exit names of 01 4.1'
     const other = await fixture();
     rmSync(path.join(other.ws.dir, 'task.json'));
     expect(await codeOf(buildInstanceContext(other.input))).toBe('WORKSPACE_INVALID');
+  });
+
+  it('the hint of a workspace without instance.json or task.json is the init option that exists: --slug', async () => {
+    const fx = await fixture();
+    rmSync(path.join(fx.ws.dir, 'instance.json'));
+    const error = await buildInstanceContext(fx.input).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'WORKSPACE_INVALID', hint: 'mcs init --slug demo' });
+    const other = await fixture();
+    rmSync(path.join(other.ws.dir, 'task.json'));
+    const missingTask = await buildInstanceContext(other.input).catch((e: unknown) => e);
+    expect(missingTask).toMatchObject({ code: 'WORKSPACE_INVALID', hint: 'mcs init --slug demo' });
   });
 
   it('an instance.json of another folder, and a task.json of another id, are IDENTITY_MISMATCH (exit 11)', async () => {

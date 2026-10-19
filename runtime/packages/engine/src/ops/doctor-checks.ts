@@ -472,7 +472,7 @@ export const instanceIdentity: BuiltinCheck = async (e) => {
   try {
     const instance = await readInstanceFile(e.ws);
     return instance === null
-      ? fail(id, 'warn', 'no instance.json (not initialized for the Node runtime)', `mcs init --task ${e.ws.slug}`)
+      ? fail(id, 'warn', 'no instance.json (not initialized for the Node runtime)', `mcs init --slug ${e.ws.slug}`)
       : ok(id, `instance ${instance.instanceId.slice(0, 8)}`);
   } catch (error) {
     return fail(id, 'error', messageOf(error), `mcs instances repair --task ${e.ws.slug}`);

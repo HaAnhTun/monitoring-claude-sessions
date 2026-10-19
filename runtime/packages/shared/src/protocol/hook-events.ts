@@ -100,7 +100,11 @@ export type HookDedupe = { readonly mode: 'natural'; readonly key: string } | { 
 interface PolicyBody {
   readonly kept: readonly KeptField[];
   readonly summarized: readonly SummarizedField[];
-  /** Payload fields that are never stored, not even summarized under another form. */
+  /**
+   * Payload fields whose raw value is never stored. A field that is also listed under `summarized` is stored only as the
+   * derived values of that rule (a length, a hash, a count, a flag or a redacted preview of at most 160 code points);
+   * a field that is not listed there leaves no trace at all.
+   */
   readonly dropped: readonly string[];
   readonly dedupe: HookDedupe;
 }

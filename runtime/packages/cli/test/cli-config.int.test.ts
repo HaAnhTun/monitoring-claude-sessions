@@ -243,6 +243,24 @@ describe('exit codes and streams', () => {
     expect(envelope.error?.code).toBe('TASK_NOT_FOUND');
   });
 
+  it('the hint of TASK_NOT_FOUND is a command that works: mcs init --slug <slug> (WP-101)', async () => {
+    const sb = sandbox();
+    const failed = await mcs(sb, ['inspect', '--task', 'nope', '--json']);
+    expect(failed.code).toBe(1);
+    const envelope = parseEnvelope(failed);
+    expect(envelope.error?.code).toBe('TASK_NOT_FOUND');
+    const hint = envelope.error?.hint ?? '';
+    expect(hint).toBe('mcs init --slug nope');
+    // run the hint as written, plus the --repo and --port that every test call carries
+    const words = hint.split(' ');
+    expect(words.slice(0, 2)).toEqual(['mcs', 'init']);
+    const ran = await mcs(sb, [...words.slice(1), '--port', '18151']);
+    expect(ran.code, ran.stderr).toBe(0);
+    expect(existsSync(join(sb.tasksRoot, 'nope', 'task.json'))).toBe(true);
+    const inspected = await mcs(sb, ['inspect', '--task', 'nope', '--json']);
+    expect(inspected.code, inspected.stderr).toBe(0);
+  });
+
   it('text output neutralises terminal control sequences in untrusted text (ADR 0046)', async () => {
     const sb = sandbox();
     const slug = await initTask(sb, `Hostile ${ESC}]52;c;AAAA${BEL} title`);

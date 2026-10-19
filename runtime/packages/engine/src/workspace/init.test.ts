@@ -8,6 +8,7 @@ import { InstanceFileSchema, McsError } from '@mcs/shared';
 import { FakeClock, makeJunction, snapshotTree, useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
+import { mutexName, tryAcquireMutex } from '../platform/mutex.ts';
 import { readInstanceFile } from './adopt.ts';
 import { cleanupStaging, initWorkspace, type InitOptions } from './init.ts';
 import { resolveWorkspace, tasksRootOf } from './paths.ts';
@@ -393,6 +394,21 @@ describe('initWorkspace: the staging folder and the rename', () => {
     expect(existsSync(wsDir(repo, 'nightly-build'))).toBe(false);
     // The tasks root survives and the next init works.
     expect((await initWorkspace(opts(repo))).created).toBe(true);
+  });
+
+  it('a task mutex held by another command is WORKSPACE_BUSY (not INTERNAL), and nothing is created', async () => {
+    const repo = bareRepo();
+    const first = await initWorkspace(opts(repo));
+    const holder = await tryAcquireMutex(mutexName('task', first.ws.realDir));
+    expect(holder).not.toBeNull();
+    try {
+      const error = await initWorkspace(opts(repo, { mutexTimeoutMs: 50 })).catch((e: unknown) => e);
+      expect(error).toMatchObject({ code: 'WORKSPACE_BUSY', details: { reason: 'MUTEX_TIMEOUT' } });
+      expect(leftovers(repo)).toEqual([]);
+    } finally {
+      await holder?.release();
+    }
+    expect((await initWorkspace(opts(repo))).created).toBe(false);
   });
 
   it('cleanupStaging removes a staging folder of a dead pid older than 10 minutes, and only that', async () => {

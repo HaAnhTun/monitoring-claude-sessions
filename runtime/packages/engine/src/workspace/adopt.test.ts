@@ -139,7 +139,7 @@ describe('readTaskFile', () => {
     const root = tasksRoot();
     mkdirSync(path.join(root, 'empty'));
     const error = await readTaskFile(resolveWorkspace(root, 'empty')).catch((e: unknown) => e);
-    expect(error).toMatchObject({ code: 'TASK_NOT_FOUND', hint: 'mcs init --task empty' });
+    expect(error).toMatchObject({ code: 'TASK_NOT_FOUND', hint: 'mcs init --slug empty' });
   });
 
   it('IDENTITY_MISMATCH with the legacy wording when task.json names another id', async () => {

@@ -278,11 +278,14 @@ describe('GET /api/v3/agents', () => {
       [`${AGENTS}?range=1h&from=2026-10-11T00:00:00Z`, 400, 'range_invalid'],
       [`${AGENTS}?kind=robot`, 400, 'validation_failed'],
       [`${AGENTS}?limit=999`, 400, 'validation_failed'],
+      [`${AGENTS}?q=a`, 400, 'query_too_short'],
+      [`${AGENTS}?q=ab&limit=999`, 400, 'validation_failed'],
       [`${AGENTS}?state=working&state=stale`, 400, 'param_repeated'],
     ];
     for (const [url, status, code] of cases) {
       const reply = await get(run, url);
       expect([reply.status, codeOf(reply)], url).toEqual([status, code]);
     }
+    expect((await get(run, `${AGENTS}?q=ab`)).status).toBe(200);
   });
 });

@@ -28,6 +28,8 @@ import {
 const makeTemp = useTempDirs();
 const LF = String.fromCharCode(10);
 const asText = (value: unknown): string => (typeof value === 'string' ? value : '');
+/** A preview without the ` ... [truncated N chars]` note that `clip` appends: the part the 160 code point cap is about. */
+const previewBody = (value: unknown): string => asText(value).split(' ... [truncated ')[0] ?? '';
 const SID = '11111111-2222-4333-8444-555555555555';
 const INSTANCE = '6a0f3c1e-1b2c-4d3e-8f40-0123456789ab';
 const BASE = { sessionId: SID, cwd: 'C:/FIXTURE/repo', transcriptPath: 'C:/FIXTURE/projects/p/' + SID + '.jsonl' };
@@ -99,6 +101,55 @@ describe('extractIds', () => {
 });
 
 describe('sanitizeEventData', () => {
+  it('stores no dropped field raw, for all 21 policies (WP-101 privacy property)', () => {
+    // The sentinel carries a secret in front and a unique tail far past every cap: a raw copy would show the tail, an
+    // unredacted preview would show the secret, and a preview longer than its cap would show more than 160 code points.
+    const SECRET = 'password=hunter2hunter2';
+    const sentinel = (field: string): string => `${SECRET} ${'word '.repeat(80)} SENTINEL_RAW_${field}`;
+    for (const event of INSTALLED_HOOK_EVENTS) {
+      const policy = HOOK_EVENT_POLICY[event];
+      const payload: Record<string, unknown> = {};
+      for (const field of [...policy.dropped, ...policy.summarized.map((s) => s.from.split('.')[0] ?? '')]) {
+        payload[field] = sentinel(field);
+      }
+      const { data } = sanitizeEventData(event, payload);
+      const allowed = new Set([
+        ...policy.kept.map((k) => k.name),
+        ...policy.summarized.flatMap((s) => s.into),
+        'effort_level',
+      ]);
+      for (const [key, value] of Object.entries(data)) {
+        expect(allowed.has(key), `${event} stores the key ${key}, which the policy does not list`).toBe(true);
+        expect(policy.dropped, `${event} stores a dropped field under its own name: ${key}`).not.toContain(key);
+        if (key.endsWith('_preview')) {
+          expect(
+            Array.from(previewBody(value)).length,
+            `${event} ${key} is longer than 160 code points`,
+          ).toBeLessThanOrEqual(160);
+        }
+      }
+      const stored = JSON.stringify(data);
+      expect(stored, `${event} stored a raw dropped field`).not.toContain('SENTINEL_RAW_');
+      expect(stored, `${event} stored an unredacted secret`).not.toContain('hunter2hunter2');
+    }
+  });
+
+  it('StopFailure keeps a redacted error_preview of error_details (at most 160 code points) and no error_details', () => {
+    const { data, flags } = sanitizeEventData('StopFailure', {
+      error: 'rate_limit',
+      error_details: `password=hunter2hunter2 ${'word '.repeat(80)}`,
+      last_assistant_message: 'SENTINEL_RAW_message',
+    });
+    expect(data['error']).toBe('rate_limit');
+    expect(asText(data['error_preview']).startsWith('password=[redacted] word word')).toBe(true);
+    expect(asText(data['error_preview'])).toContain(' ... [truncated ');
+    expect(Array.from(previewBody(data['error_preview'])).length).toBeLessThanOrEqual(160);
+    expect(flags).toEqual(['redacted']);
+    expect(Object.keys(data)).not.toContain('error_details');
+    expect(JSON.stringify(data)).not.toContain('SENTINEL_RAW_');
+    expect(data['last_message_len']).toBe(20);
+  });
+
   it('keeps the policy fields verbatim and capped, and nothing else', () => {
     const { data } = sanitizeEventData('SessionStart', {
       source: 'x'.repeat(40),

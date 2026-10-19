@@ -98,7 +98,10 @@ describe('planRepair', () => {
     writeFileSync(path.join(copy.dir, 'instance.json'), '{');
     await expect(planRepair(copy, options())).rejects.toMatchObject({ code: 'WORKSPACE_INVALID' });
     rmSync(path.join(copy.dir, 'instance.json'));
-    await expect(planRepair(copy, options())).rejects.toMatchObject({ code: 'INSTANCE_NOT_INITIALIZED' });
+    await expect(planRepair(copy, options())).rejects.toMatchObject({
+      code: 'INSTANCE_NOT_INITIALIZED',
+      hint: `mcs init --slug ${copy.slug}`,
+    });
   });
 });
 

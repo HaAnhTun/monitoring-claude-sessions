@@ -108,7 +108,7 @@ async function readFrom(file: string, maxBytes: number): Promise<{ bytes: Buffer
 /**
  * The Claude home (Claude Code docs, 2026-10-18): `CLAUDE_CONFIG_DIR` when it is set and not empty (a relative value is
  * resolved against the current directory), else `~/.claude` on every OS (`os.homedir()`: `USERPROFILE` on Windows, `HOME`
- * elsewhere). The one exported definition; `runtime/context.ts` keeps a private twin until a cleanup removes it.
+ * elsewhere). The one definition: `runtime/context.ts` imports it.
  */
 export function claudeHomeOf(env: Readonly<Record<string, string | undefined>>): string {
   const configured = env['CLAUDE_CONFIG_DIR'];

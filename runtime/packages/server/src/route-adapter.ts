@@ -4,7 +4,7 @@
 // calls the handler, validates the answer with `route.response` unless `NODE_ENV` is `production` (a mismatch is a 500 and a
 // ring entry, never data on the wire), and maps every throw to the envelope. Route modules never touch `res` for a JSON route.
 import type { InstanceContext, InstanceRuntime, Logger } from '@mcs/engine';
-import type { RouteDefinition } from '@mcs/shared';
+import { classifyQueryIssues, type ErrorCode, type RouteDefinition } from '@mcs/shared';
 import type { Express, Request, RequestHandler, Response } from 'express';
 import type { z } from 'zod';
 
@@ -127,7 +127,7 @@ export interface RegisterRouteOptions {
 // ---- parsing -----------------------------------------------------------------------------------------------------------------
 
 interface ParseFailure {
-  readonly code: 'validation_failed' | 'param_repeated';
+  readonly code: ErrorCode;
   readonly details?: SendErrorOptions['details'];
 }
 
@@ -159,7 +159,9 @@ function parseRequest(route: RouteDefinition, req: Request): ParseOutcome {
     return { ok: true, params, query: undefined };
   }
   const checked = route.query.safeParse(raw);
-  if (!checked.success) return { ok: false, code: 'validation_failed', details: detailsOf(checked.error.issues) };
+  // A `q` below its minimum is `query_too_short` (03 5.2); every other failure stays `validation_failed`, details unchanged.
+  if (!checked.success)
+    return { ok: false, code: classifyQueryIssues(checked.error.issues), details: detailsOf(checked.error.issues) };
   return { ok: true, params, query: checked.data };
 }
 

@@ -3,7 +3,7 @@
 import type { Server } from 'node:http';
 
 import { DbError } from '@mcs/engine';
-import { ErrorEnvelopeSchema, defineRoute, intString } from '@mcs/shared';
+import { ErrorEnvelopeSchema, defineRoute, intString, textOf } from '@mcs/shared';
 import { allocatePort, assertPortClosed, httpRequest } from '@mcs/testkit';
 import express, { type Express, type RequestHandler } from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -95,6 +95,21 @@ const echo = defineRoute({
   successStatus: 200,
   errors: [],
   summary: 'Test route.',
+  contentType: 'application/json',
+});
+
+const SearchQuery = z.strictObject({ q: textOf(2, 200).optional(), n: intString(1, 50).optional() });
+const search = defineRoute({
+  id: 'search',
+  method: 'GET',
+  path: '/api/v3/test/search',
+  params: null,
+  query: SearchQuery,
+  body: null,
+  response: z.strictObject({ ok: z.literal(true) }),
+  successStatus: 200,
+  errors: ['query_too_short'],
+  summary: 'Test route with a text search.',
   contentType: 'application/json',
 });
 
@@ -223,6 +238,38 @@ describe('registerRoute: validation (400)', () => {
     const details = envelopeOf(bad.body).error.details ?? [];
     expect(details.map((d) => d.path).sort()).toEqual(['n', 'tag']);
     expect(bad.body).not.toContain('zzz');
+  });
+
+  it('answers query_too_short for a q below its minimum, with the same details as any other failure', async () => {
+    const { app } = setup();
+    registerRoute(app, search, () => ({ ok: true }));
+    const port = await serve(app);
+    for (const short of ['a', '%20a%20', '%20%20%20', '']) {
+      const reply = await httpRequest(port, `/api/v3/test/search?q=${short}`);
+      expect(reply.status, short).toBe(400);
+      const envelope = envelopeOf(reply.body);
+      expect(envelope.error.code, short).toBe('query_too_short');
+      expect(envelope.error.details, short).toEqual([{ path: 'q', issue: 'too_small' }]);
+    }
+    expect((await httpRequest(port, '/api/v3/test/search?q=ab')).status).toBe(200);
+    expect((await httpRequest(port, '/api/v3/test/search')).status).toBe(200);
+  });
+
+  it('keeps validation_failed for a q that is too long or for another bad parameter', async () => {
+    const { app } = setup();
+    registerRoute(app, search, () => ({ ok: true }));
+    const port = await serve(app);
+    const tooLong = await httpRequest(port, `/api/v3/test/search?q=${'x'.repeat(201)}`);
+    expect(tooLong.status).toBe(400);
+    expect(envelopeOf(tooLong.body).error.code).toBe('validation_failed');
+    expect(envelopeOf(tooLong.body).error.details).toEqual([{ path: 'q', issue: 'too_big' }]);
+    const other = await httpRequest(port, '/api/v3/test/search?n=abc');
+    expect(envelopeOf(other.body).error.code).toBe('validation_failed');
+    expect((envelopeOf(other.body).error.details ?? []).map((d) => d.path)).toEqual(['n']);
+    // a short q next to another failure is still reported as the short q, and both paths stay listed
+    const both = await httpRequest(port, '/api/v3/test/search?q=a&n=abc');
+    expect(envelopeOf(both.body).error.code).toBe('query_too_short');
+    expect((envelopeOf(both.body).error.details ?? []).map((d) => d.path).sort()).toEqual(['n', 'q']);
   });
 
   it('refuses a repeated key with param_repeated', async () => {

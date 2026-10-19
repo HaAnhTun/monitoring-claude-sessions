@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { McsError, SLUG_RULE_TEXT, isValidSlug } from '@mcs/shared';
 
-import { acquireMutex, mutexName } from '../platform/mutex.ts';
+import { MutexTimeoutError, acquireMutex, mutexName } from '../platform/mutex.ts';
 import { canonicalPath } from '../platform/paths.ts';
 import { pyRepr } from '../pyjson/index.ts';
 import { assertNotLink, isLink } from './fsio.ts';
@@ -123,8 +123,17 @@ function holds(lease: Lease | undefined, name: string): boolean {
   return false;
 }
 
+/** `WORKSPACE_BUSY` for a task mutex that stayed held; the details of the timeout (name, waited time) are kept. */
+function busyError(timeout: MutexTimeoutError): McsError {
+  return new McsError('WORKSPACE_BUSY', 'another mcs command is changing this task', {
+    hint: 'wait for the other command to finish, then try again',
+    details: { ...timeout.details, reason: 'MUTEX_TIMEOUT' },
+    cause: timeout,
+  });
+}
+
 export interface TaskMutexOptions {
-  /** Longest wait for another holder (default `TASK_MUTEX_TIMEOUT_MS`); a `MutexTimeoutError` (code `INTERNAL`) after it. */
+  /** Longest wait for another holder (default `TASK_MUTEX_TIMEOUT_MS`); `WORKSPACE_BUSY` after it. */
   readonly timeoutMs?: number;
 }
 
@@ -133,6 +142,8 @@ export interface TaskMutexOptions {
  * workspace takes around its whole read-validate-write-audit sequence (01 4.2, 6.2). The mutex is reentrant inside one
  * async call chain while it is held: a command that holds it can call the audit writer, which takes it again without
  * waiting for itself. Another call chain of the same process, or another process, waits; so does work that outlives `fn`.
+ * A wait that runs out of time is `WORKSPACE_BUSY` (exit 1, details `{ reason: 'MUTEX_TIMEOUT', name, waitedMs }`), not an
+ * internal error: another command is changing the task and the person can simply try again.
  */
 export async function withTaskMutex<T>(
   ws: Pick<WorkspaceRef, 'realDir'>,
@@ -142,7 +153,12 @@ export async function withTaskMutex<T>(
   const name = mutexName('task', ws.realDir);
   const current = heldMutexes.getStore();
   if (holds(current, name)) return fn();
-  const mutex = await acquireMutex(name, { timeoutMs: o.timeoutMs ?? TASK_MUTEX_TIMEOUT_MS });
+  const mutex = await acquireMutex(name, { timeoutMs: o.timeoutMs ?? TASK_MUTEX_TIMEOUT_MS }).catch(
+    (error: unknown) => {
+      if (error instanceof MutexTimeoutError) throw busyError(error);
+      throw error;
+    },
+  );
   const lease: Lease = { name, parent: current, open: true };
   try {
     return await heldMutexes.run(lease, fn);

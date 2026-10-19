@@ -92,7 +92,7 @@ async function loadInstance(ws: WorkspaceRef): Promise<InstanceFile> {
   const instance = await readInstanceFile(ws, { allowSlugMismatch: true });
   if (instance === null) {
     throw new McsError('INSTANCE_NOT_INITIALIZED', `${ws.dir} has no instance.json; there is no identity to repair`, {
-      hint: `mcs init --task ${ws.slug}`,
+      hint: `mcs init --slug ${ws.slug}`,
     });
   }
   return instance;

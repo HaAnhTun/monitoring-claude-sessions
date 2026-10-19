@@ -263,6 +263,10 @@ describe('GET /api/v3/tool-calls', () => {
       [`session=${uidOf(8)}&agent=main`, 404, 'session_not_found'],
       ['agent=main', 400, 'validation_failed'],
       ['status=maybe', 400, 'validation_failed'],
+      ['q=ab', 200, undefined],
+      ['q=a', 400, 'query_too_short'],
+      ['q=a&range=all', 400, 'query_too_short'],
+      ['q=ab&status=maybe', 400, 'validation_failed'],
     ];
     for (const [query, status, code] of cases) {
       const reply = await get(run, `${TOOLS}?${query}`);

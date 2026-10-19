@@ -132,7 +132,7 @@ function shownId(value: PyJsonValue | undefined): string {
 }
 
 /**
- * `task.json` of the workspace, checked as 01 1.3 says: it must exist (`TASK_NOT_FOUND`, hint `mcs init --task <slug>`),
+ * `task.json` of the workspace, checked as 01 1.3 says: it must exist (`TASK_NOT_FOUND`, hint `mcs init --slug <slug>`),
  * hold an object (`WORKSPACE_INVALID`) and name the folder as its `id` (`IDENTITY_MISMATCH`, the legacy wording). Nothing
  * else of it is validated here (legacy parity: only `audit` checks `schema_version`).
  */
@@ -144,7 +144,7 @@ export async function readTaskFile(ws: Pick<WorkspaceRef, 'dir' | 'slug'>): Prom
   } catch (error) {
     if (error instanceof McsError && error.code === 'CONFIG_UNREADABLE') {
       if (isMissingFileError(error.cause)) {
-        throw new McsError('TASK_NOT_FOUND', `no task.json in ${ws.dir}`, { hint: `mcs init --task ${ws.slug}` });
+        throw new McsError('TASK_NOT_FOUND', `no task.json in ${ws.dir}`, { hint: `mcs init --slug ${ws.slug}` });
       }
       throw new McsError('WORKSPACE_INVALID', error.message, { cause: error });
     }

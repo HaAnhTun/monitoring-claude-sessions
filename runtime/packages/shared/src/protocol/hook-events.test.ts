@@ -154,6 +154,51 @@ describe('HOOK_EVENT_POLICY', () => {
     }
   });
 
+  it('a dropped field is never stored raw; one that is also summarized is stored only as the derived values (WP-101)', () => {
+    const rules = [...INSTALLED_HOOK_EVENTS.map((event) => [event, HOOK_EVENT_POLICY[event]] as const)];
+    let alsoSummarized = 0;
+    for (const [event, policy] of rules) {
+      for (const field of policy.dropped) {
+        const rulesOfField = policy.summarized.filter((s) => s.from === field || s.from.startsWith(`${field}.`));
+        if (rulesOfField.length > 0) alsoSummarized += 1;
+        for (const rule of rulesOfField) {
+          for (const key of rule.into) {
+            expect(key, `${event}: ${field} is stored under its own name`).not.toBe(field);
+            expect(policy.dropped, `${event}: derived key ${key} is itself dropped`).not.toContain(key);
+            expect(BODY_FIELDS, `${event}: derived key ${key} is a free-text body name`).not.toContain(key);
+          }
+        }
+      }
+      // No output key is a dropped field and none is a kept field twice.
+      const outputs = [...policy.kept.map((k) => k.name), ...policy.summarized.flatMap((s) => s.into)];
+      for (const key of outputs) expect(policy.dropped, `${event}: ${key}`).not.toContain(key);
+      expect(new Set(outputs).size, `${event} writes a data key twice`).toBe(outputs.length);
+    }
+    expect(alsoSummarized).toBeGreaterThan(10);
+  });
+
+  it('every preview is bounded and redacted: the note says at most 160 code points (80 for a title), redacted', () => {
+    for (const event of INSTALLED_HOOK_EVENTS) {
+      for (const rule of HOOK_EVENT_POLICY[event].summarized) {
+        if (!rule.into.some((key) => key.endsWith('_preview'))) continue;
+        const match = /at most (\d+) code points, redacted/.exec(rule.note ?? '');
+        expect(match, `${event} ${rule.from}: note "${rule.note ?? ''}"`).not.toBeNull();
+        expect(Number(match?.[1]), `${event} ${rule.from}`).toBeLessThanOrEqual(160);
+      }
+    }
+  });
+
+  it('StopFailure keeps error_preview (a redacted 160 code point preview of error_details) and never error_details', () => {
+    const policy = HOOK_EVENT_POLICY.StopFailure;
+    expect(policy.kept.map((k) => k.name)).toEqual(['error']);
+    expect(policy.summarized.find((s) => s.from === 'error_details')).toEqual({
+      from: 'error_details',
+      into: ['error_preview'],
+      note: 'at most 160 code points, redacted',
+    });
+    expect(policy.dropped).toContain('error_details');
+  });
+
   it('every summarized output is a derived value, never a verbatim copy of its source', () => {
     for (const event of INSTALLED_HOOK_EVENTS) {
       for (const summary of HOOK_EVENT_POLICY[event].summarized) {

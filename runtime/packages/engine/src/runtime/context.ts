@@ -5,7 +5,6 @@
 // the boot exit names of 01 4.1 (10 CONFIG_INVALID, 11 IDENTITY_MISMATCH, 14 DB_ERROR, 15 DB_NEWER_THAN_RUNTIME,
 // 16 DB_UPGRADE_REQUIRED, 17 WORKSPACE_INVALID).
 import { readFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import {
@@ -30,6 +29,7 @@ import { entriesBetween, type AuditRef } from '../audit/reader.ts';
 import { resolveConfig, type ResolvedConfig } from '../config/resolve.ts';
 import { isDbError, type DbError } from '../db/errors.ts';
 import { DB_OPEN_EXIT_CODES, openInstanceDb, type InstanceDb, type RepoContext } from '../db/open.ts';
+import { claudeHomeOf } from '../ingest/transcripts/discovery.ts';
 import { createLogger, type Logger, type LogLevel } from '../log/logger.ts';
 import { childStats, execFileText, resolveExecutable } from '../platform/exec.ts';
 import { readInstanceFile, readTaskFile } from '../workspace/adopt.ts';
@@ -315,7 +315,7 @@ async function readIdentity(ws: WorkspaceRef): Promise<InstanceFile> {
   try {
     const instance = await readInstanceFile(ws);
     if (instance === null) {
-      throw new McsError('WORKSPACE_INVALID', `${ws.dir} has no instance.json`, { hint: `mcs init --task ${ws.slug}` });
+      throw new McsError('WORKSPACE_INVALID', `${ws.dir} has no instance.json`, { hint: `mcs init --slug ${ws.slug}` });
     }
     await readTaskFile(ws);
     return instance;
@@ -335,11 +335,6 @@ async function configOf(i: BuildContextInput, ws: WorkspaceRef): Promise<Resolve
 }
 
 // ---- homes --------------------------------------------------------------------------------------------------------------
-
-function claudeHomeOf(env: Readonly<Record<string, string | undefined>>): string {
-  const configured = env['CLAUDE_CONFIG_DIR'];
-  return configured !== undefined && configured !== '' ? path.resolve(configured) : path.join(os.homedir(), '.claude');
-}
 
 function mcsHomeOf(env: Readonly<Record<string, string | undefined>>): string {
   try {

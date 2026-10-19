@@ -157,6 +157,17 @@ describe('CliEnvelope (01 6.2)', () => {
 
   it('the base schema accepts what the builders produce', () => {
     expect(CliEnvelopeSchema.safeParse(successEnvelope('version', { a: 1 })).success).toBe(true);
+    const busy = failureEnvelope(
+      'configure',
+      toCliError(
+        new McsError('WORKSPACE_BUSY', 'another mcs command is changing this task', {
+          hint: 'try again',
+          details: { reason: 'MUTEX_TIMEOUT', name: 'mcs-task-x', waitedMs: 50 },
+        }),
+      ),
+    );
+    expect(busy.exitCode).toBe(1);
+    expect(CliEnvelopeSchema.safeParse(busy).success).toBe(true);
     expect(CliEnvelopeSchema.safeParse(failureEnvelope('x', toCliError(new McsError('INTERNAL', 'm')))).success).toBe(
       true,
     );

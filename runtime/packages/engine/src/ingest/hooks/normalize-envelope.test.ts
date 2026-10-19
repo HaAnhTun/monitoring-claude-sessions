@@ -362,6 +362,19 @@ describe('normalizeEnvelope: the stored row', () => {
     });
   });
 
+  it('a StopFailure row keeps the error preview (160 code points, redacted) and never an error_details field', () => {
+    const long = `password=hunter2hunter2 ${'word '.repeat(80)}`;
+    const out = normalizeEnvelope(fixtureEnvelope('StopFailure', { data: { error_preview: long } }));
+    const summary = out.row?.summary ?? '';
+    expect(summary.startsWith('password=[redacted] word word')).toBe(true);
+    expect(summary).not.toContain('hunter2hunter2');
+    expect(Array.from(summary.split(' ... [truncated ')[0] ?? '').length).toBeLessThanOrEqual(160);
+    expect(out.events.find((e) => e.k === 'turn.end')).toMatchObject({ kind: 'stop_failure', error: 'rate_limit' });
+    // the stored copy has no trace of a raw field of that name
+    expect(Object.keys(out.row?.detail ?? {})).not.toContain('error_details');
+    expect(JSON.stringify(out)).not.toContain('error_details');
+  });
+
   it('puts the prompt length of a prompt row in text_len and no text anywhere', () => {
     const out = normalizeEnvelope(fixtureEnvelope('UserPromptSubmit'));
     expect(out.row?.textLen).toBe(14);

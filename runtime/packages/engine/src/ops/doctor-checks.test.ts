@@ -360,7 +360,7 @@ describe('workspace checks', () => {
     expectFail(copied, 'error', 'mcs instances repair --task copy');
     rmSync(path.join(copy, 'instance.json'));
     const missing = await checks.instanceIdentity(envOf(f, {}, { ws: resolveWorkspace(f.ctx.root, 'copy') }));
-    expectFail(missing, 'warn', 'mcs init --task copy');
+    expectFail(missing, 'warn', 'mcs init --slug copy');
   });
 
   it('database.integrity runs a read-only quick check of a copied database', async () => {

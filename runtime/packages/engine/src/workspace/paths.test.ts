@@ -267,7 +267,12 @@ describe('withTaskMutex', () => {
       (e: unknown) => e,
     );
     expect(timedOut).toBeInstanceOf(McsError);
-    expect(timedOut).toMatchObject({ details: { reason: 'MUTEX_TIMEOUT' } });
+    expect(timedOut).toMatchObject({
+      code: 'WORKSPACE_BUSY',
+      details: { reason: 'MUTEX_TIMEOUT', name: mutexName('task', ws.realDir) },
+    });
+    expect((timedOut as McsError).hint).toMatch(/try again/i);
+    expect((timedOut as McsError).message).toMatch(/another mcs command is changing this task/);
     const second = withTaskMutex(ws, () => {
       events.push('second in');
       return Promise.resolve();
@@ -290,8 +295,29 @@ describe('withTaskMutex', () => {
     const otherHolder = withTaskMutex(ws, () => delay(400), { timeoutMs: 500 });
     const error = await leaked.catch((e: unknown) => e);
     expect(error).toBeInstanceOf(McsError);
-    expect(error).toMatchObject({ details: { reason: 'MUTEX_TIMEOUT' } });
+    expect(error).toMatchObject({ code: 'WORKSPACE_BUSY', details: { reason: 'MUTEX_TIMEOUT' } });
     await otherHolder;
+  });
+
+  it('answers WORKSPACE_BUSY with the waited time, and the mutex is free again once the holder lets go', async () => {
+    const { root } = twoWorkspaces();
+    const ws = resolveWorkspace(root, 'a');
+    const holder = await tryAcquireMutex(mutexName('task', ws.realDir));
+    expect(holder).not.toBeNull();
+    const error = await withTaskMutex(ws, () => Promise.resolve('never'), { timeoutMs: 50 }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'WORKSPACE_BUSY', details: { reason: 'MUTEX_TIMEOUT' } });
+    const waited = (error as McsError).details?.['waitedMs'];
+    expect(typeof waited === 'number' && waited >= 0).toBe(true);
+    await holder?.release();
+    // the failed attempt left nothing behind: the lease is not held, so the mutex can be taken now
+    expect(await withTaskMutex(ws, () => Promise.resolve('ok'), { timeoutMs: 500 })).toBe('ok');
+  });
+
+  it('keeps a failure of the function itself as it is (no WORKSPACE_BUSY wrapper)', async () => {
+    const { root } = twoWorkspaces();
+    const ws = resolveWorkspace(root, 'a');
+    const inner = new McsError('CONFIG_INVALID', 'bad');
+    await expect(withTaskMutex(ws, () => Promise.reject(inner))).rejects.toBe(inner);
   });
 
   it('different workspaces never block each other', async () => {

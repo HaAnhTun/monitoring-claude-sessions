@@ -287,11 +287,16 @@ describe('GET /api/v3/sessions', () => {
       [`${SESSIONS}?sort=nope`, 400, 'validation_failed'],
       [`${SESSIONS}?state=working&state=stale`, 400, 'param_repeated'],
       [`${SESSIONS}?unknownParam=1`, 400, 'validation_failed'],
+      [`${SESSIONS}?q=a`, 400, 'query_too_short'],
+      [`${SESSIONS}?q=a&limit=0`, 400, 'query_too_short'],
+      [`${SESSIONS}?q=%20%20`, 400, 'query_too_short'],
+      [`${SESSIONS}?q=ab&limit=0`, 400, 'validation_failed'],
     ];
     for (const [url, status, code] of cases) {
       const reply = await get(run, url);
       expect([reply.status, codeOf(reply)], url).toEqual([status, code]);
     }
+    expect((await get(run, `${SESSIONS}?q=ab`)).status).toBe(200);
   });
 });
 
