@@ -683,7 +683,9 @@ describe('ingestion health over the real service', () => {
     expect(healthy.receiving.hooks.status).toBe('ok');
     // the file stays readable, writes are refused
     h.ctx.db.driver.pragma('query_only = ON');
-    appendEnvelopes(h.spoolDir, hooksFor(h, t0 + 60_000, PROMPT_ID, 1000).slice(3, 6));
+    // New hooks arrive now, as the handler stamps them: the segment of the first batch is a past hour that the first drain may
+    // have sealed (02 2.7: past the hour and the grace, every byte consumed), and a sealed segment is never read again.
+    appendEnvelopes(h.spoolDir, hooksFor(h, NOW() - 10_000, PROMPT_ID, 1000).slice(3, 6));
     h.service.nudge();
     await waitFor(() => h.service.stats().failures > 0, { what: 'a failed commit' });
     const report = await ingestHealthEvaluatorOf(h.ctx).refresh();
