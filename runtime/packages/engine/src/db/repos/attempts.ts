@@ -115,6 +115,16 @@ const RUN_COLUMNS = `id, source_id AS sourceId, generation, start_offset AS star
   end_reason AS endReason, state, evidence, session_id AS sessionRowId, match_delta_ms AS matchDeltaMs,
   updated_seq AS updatedSeq, updated_at AS updatedAt`;
 
+/**
+ * The statement of `openRun`. The partial index is named because, without it, the planner walks the unique
+ * `(source, generation, start offset)` index backwards to satisfy the ORDER BY and, for a part that has no open run (the
+ * common case at a START line), reads every run of the source: an attempts tick then costs O(rows) per line. Exported for the
+ * plan test.
+ */
+export const OPEN_RUN_SQL = `SELECT ${RUN_COLUMNS} FROM attempt_runs INDEXED BY idx_attempt_runs_open
+  WHERE source_id = :sourceId AND generation = :generation AND part = :part AND end_reason = 'open'
+  ORDER BY start_offset DESC LIMIT 1`;
+
 const SOURCE_COLUMNS = `id, path, path_key AS pathKey, generation, ino, head_len AS headLen, head_hash AS headHash,
   read_offset AS readOffset, config_sha256 AS configSha256, updated_at AS updatedAt`;
 
@@ -191,15 +201,11 @@ export class AttemptsRepo {
     return sessions;
   }
 
-  /** The newest open run of one part in one generation (`idx_attempt_runs_open`). */
+  /** The newest open run of one part in one generation (`idx_attempt_runs_open`, statement `OPEN_RUN_SQL`). */
   openRun(ctx: RepoContext, sourceId: number, generation: number, part: string): AttemptRunRow | undefined {
     this.db.assertScope(ctx);
     return this.db.driver
-      .prepare<AttemptRunRow>(
-        `SELECT ${RUN_COLUMNS} FROM attempt_runs
-         WHERE source_id = :sourceId AND generation = :generation AND part = :part AND end_reason = 'open'
-         ORDER BY start_offset DESC LIMIT 1`,
-      )
+      .prepare<AttemptRunRow>(OPEN_RUN_SQL)
       .get({ sourceId, generation, part: cut(part, CAPS.part) });
   }
 

@@ -1,5 +1,5 @@
 // @wp-begin WP-05
-export * from './pyjson/index.ts';
+export * from './json/index.ts';
 // @wp-end WP-05
 
 // @wp-begin WP-07
@@ -135,7 +135,7 @@ export {
   SKILL_FOLDER_NAME,
   LegacyConfigSchema,
 } from './config/defaults.ts';
-export type { LegacyConfig, PyObject, SkillDefaults } from './config/defaults.ts';
+export type { LegacyConfig, SkillDefaults } from './config/defaults.ts';
 export { L_MERGED, isPlainObject, mergeLayer } from './config/merge.ts';
 export type { PlainObject } from './config/merge.ts';
 export {
@@ -169,7 +169,7 @@ export {
   readJsonFile,
   readTextTail,
   readTextUniversal,
-  writePyJsonFile,
+  writeJsonFile,
   writeWorkspaceFile,
 } from './workspace/fsio.ts';
 export type { WriteOptions } from './workspace/fsio.ts';
@@ -196,7 +196,7 @@ export type { SnapshotOptions, SnapshotsOptions } from './workspace/snapshot.ts'
 export {
   adoptWorkspace,
   ensureWorkspaceDir,
-  instanceFileToPy,
+  instanceFileToDoc,
   newInstanceFile,
   readInstanceFile,
   readTaskFile,
@@ -675,12 +675,61 @@ export type {
 // @wp-end WP-38
 
 // @wp-begin WP-40
+export { DEFAULT_TIME_FORMAT, MAX_MATCH_CODE_POINTS, parseChainLine } from './panels/attempts/parse.ts';
+export type { ChainEnd, ChainLine, ChainPatterns, ChainStart } from './panels/attempts/parse.ts';
+export { OPEN_EVIDENCE, externalState, supersededEvidence } from './panels/attempts/state.ts';
+export {
+  MATCH_MAX_DELTA_MS as ATTEMPT_MATCH_MAX_DELTA_MS,
+  MATCH_MIN_DELTA_MS as ATTEMPT_MATCH_MIN_DELTA_MS,
+  chooseCandidate as chooseAttemptCandidate,
+  matchRuns as matchAttemptRuns,
+} from './panels/attempts/match.ts';
+export type {
+  Assignment as AttemptMatch,
+  MatchOptions as AttemptMatchOptions,
+  MatchRun as AttemptMatchRun,
+} from './panels/attempts/match.ts';
+export {
+  closeEvidenceState,
+  createEvidenceState,
+  planEvidence,
+  publishEvidence,
+  stampEvents,
+} from './panels/attempts/evidence.ts';
+export type {
+  EvidencePlan,
+  EvidenceState,
+  EvidenceWriter,
+  PlanInput,
+  PlannedAttempt,
+  PublishDeps,
+} from './panels/attempts/evidence.ts';
+export {
+  ATTEMPTS_LIMITS,
+  attemptsSettings,
+  closeAttemptsState,
+  configHash as attemptsConfigHash,
+  createAttemptsState,
+  tickAttempts,
+} from './panels/attempts/ingest.ts';
+export type {
+  AttemptsDeps,
+  AttemptsLimits,
+  AttemptsSettings,
+  AttemptsState,
+  AttemptsTickContext,
+} from './panels/attempts/ingest.ts';
+export { createAttemptsStore, readAttemptsPanel } from './panels/attempts/repo.ts';
+export type { AttemptsPanelContext, AttemptsStore } from './panels/attempts/repo.ts';
 // @wp-end WP-40
 
 // @wp-begin WP-41
 // @wp-end WP-41
 
 // @wp-begin WP-57
+export { SearchBusyError, createSearchQueryPart, createSearchService } from './search/service.ts';
+export type { SearchQueries, SearchService, SearchServiceOptions, SearchStats } from './search/service.ts';
+export { buildPrefilter } from './search/scan.ts';
 // @wp-end WP-57
 
 // @wp-begin WP-58
@@ -692,6 +741,27 @@ export { bucketStart } from './analytics/series.ts';
 // @wp-end WP-59
 
 // @wp-begin WP-60
+export {
+  assertExportable,
+  createLineSink,
+  exportInstance,
+  projectPseudonym,
+  redactLine,
+} from './maintenance/export.ts';
+export type { ExportContext, ExportOptions, ExportOutput, LineSink } from './maintenance/export.ts';
+export { applyRetention, runBookkeepingRetention } from './maintenance/retention.ts';
+export type {
+  ApplyRetentionOptions,
+  BookkeepingOptions,
+  BookkeepingResult,
+  RetentionPlan,
+  RetentionPolicy,
+  RetentionResult,
+  RetentionSessionSample,
+  RetentionSettings,
+} from './maintenance/retention.ts';
+export { bindScheduledJob, boundRun } from './maintenance/schedule.ts';
+export type { ScheduledRun } from './maintenance/schedule.ts';
 // @wp-end WP-60
 
 // @wp-begin WP-61

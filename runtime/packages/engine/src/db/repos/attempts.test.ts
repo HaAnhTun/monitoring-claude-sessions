@@ -6,7 +6,13 @@ import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
 import { isDbError } from '../errors.ts';
 import { openInstanceDb, type InstanceDb } from '../open.ts';
 import { withWriteTx } from '../write.ts';
-import { AttemptsRepo, type AttemptCandidate, type AttemptSourceInput, type NewAttemptRun } from './attempts.ts';
+import {
+  AttemptsRepo,
+  OPEN_RUN_SQL,
+  type AttemptCandidate,
+  type AttemptSourceInput,
+  type NewAttemptRun,
+} from './attempts.ts';
 import { SessionsRepo } from './sessions.ts';
 
 const tempDir = useTempDirs();
@@ -570,6 +576,16 @@ describe('AttemptsRepo scope and constraints (DA-T-DB-7)', () => {
     );
     expect(repo.openRun(CTX, sourceId, 1, 'part-1')).toMatchObject({ id: ids[1], startOffset: 50 });
     expect(repo.openRun(CTX, sourceId, 2, 'part-1')).toBeUndefined();
+  });
+
+  it('looks for the open run of a part in the partial index, not in every run of the source (03 3.7)', () => {
+    const { db } = setup();
+    const plan = db.driver
+      .prepare<{ detail: string }>('EXPLAIN QUERY PLAN ' + OPEN_RUN_SQL)
+      .all({ sourceId: 1, generation: 1, part: 'part-1' })
+      .map((row) => row.detail);
+    expect(plan.some((detail) => detail.includes('idx_attempt_runs_open'))).toBe(true);
+    expect(plan.filter((detail) => detail.includes('autoindex') || detail.startsWith('SCAN'))).toEqual([]);
   });
 
   it('refuses a negative limit instead of reading it as no limit', () => {
