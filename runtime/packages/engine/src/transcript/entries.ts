@@ -6,7 +6,7 @@
 // shape produces no entries. Nothing is cached or persisted (ADR 0016).
 import type { TranscriptEntry } from '@mcs/shared';
 
-import { dumpPyJson, pyFloatRepr, pyRepr, type PyJsonValue } from '../pyjson/index.ts';
+import { formatFloat, messageJson, quoteText, type JsonDoc } from '../json/index.ts';
 
 /** One display entry before the index `i` is known (registry 98: `Omit<TranscriptEntry, 'i'>`). */
 export type DisplayEntry = Omit<TranscriptEntry, 'i'>;
@@ -54,8 +54,8 @@ function plainJson(value: unknown): string | undefined {
 const FLOAT_FORM_FROM = 2 ** 64;
 const MAX_JSON_DEPTH = 1000;
 
-/** Plain `JSON.parse` data to the value the Python-style writer prints (`fromPlain` of the pyjson module, plus the rule above). */
-function toPyValue(value: unknown, depth: number): PyJsonValue {
+/** Plain `JSON.parse` data to the document the writer prints (`fromPlain` of the json module, plus the rule above). */
+function toJsonDoc(value: unknown, depth: number): JsonDoc {
   if (depth > MAX_JSON_DEPTH) throw new RangeError('value is nested too deeply');
   if (value === null) return { k: 'null' };
   if (typeof value === 'boolean') return { k: 'bool', v: value };
@@ -66,11 +66,11 @@ function toPyValue(value: unknown, depth: number): PyJsonValue {
       : { k: 'float', v: value };
   }
   const items = listOf(value);
-  if (items !== undefined) return { k: 'arr', v: items.map((item) => toPyValue(item, depth + 1)) };
+  if (items !== undefined) return { k: 'arr', v: items.map((item) => toJsonDoc(item, depth + 1)) };
   if (isPlain(value)) {
-    const fields: [string, PyJsonValue][] = [];
+    const fields: [string, JsonDoc][] = [];
     for (const [key, item] of Object.entries(value)) {
-      if (item !== undefined) fields.push([key, toPyValue(item, depth + 1)]);
+      if (item !== undefined) fields.push([key, toJsonDoc(item, depth + 1)]);
     }
     return { k: 'obj', v: fields };
   }
@@ -78,9 +78,9 @@ function toPyValue(value: unknown, depth: number): PyJsonValue {
 }
 
 /** `json.dumps(value, ensure_ascii=False)`: the legacy `clip` of a value that is not a string. */
-function pyJsonText(value: unknown): string {
+function jsonText(value: unknown): string {
   try {
-    return dumpPyJson(toPyValue(value, 0), { compact: true });
+    return messageJson(toJsonDoc(value, 0));
   } catch {
     // a lone surrogate (Python writes it, a UTF-8 file cannot) or a value nested too deeply: plain JSON is the closest text
     return plainJson(value) ?? '';
@@ -88,15 +88,15 @@ function pyJsonText(value: unknown): string {
 }
 
 /** Python `repr()` of a JSON value. */
-function pyReprOf(value: unknown): string {
+function reprOf(value: unknown): string {
   if (value === null || value === undefined) return 'None';
-  if (typeof value === 'string') return pyRepr(value);
+  if (typeof value === 'string') return quoteText(value);
   if (typeof value === 'boolean') return value ? 'True' : 'False';
-  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : pyFloatRepr(value);
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : formatFloat(value);
   const items = listOf(value);
-  if (items !== undefined) return `[${items.map(pyReprOf).join(', ')}]`;
+  if (items !== undefined) return `[${items.map(reprOf).join(', ')}]`;
   if (isPlain(value)) {
-    const fields = Object.entries(value).map(([key, item]) => `${pyRepr(key)}: ${pyReprOf(item)}`);
+    const fields = Object.entries(value).map(([key, item]) => `${quoteText(key)}: ${reprOf(item)}`);
     return `{${fields.join(', ')}}`;
   }
   return '';
@@ -104,7 +104,7 @@ function pyReprOf(value: unknown): string {
 
 /** Python `str()` of a JSON value, for the summary key of a tool input. */
 function pyStr(value: unknown): string {
-  return typeof value === 'string' ? value : pyReprOf(value);
+  return typeof value === 'string' ? value : reprOf(value);
 }
 
 /** The code points of `text` and the UTF-16 length of the first `n` of them. */
@@ -125,7 +125,7 @@ function measure(text: string, n: number): { total: number; cut: number } {
  * ` ... [truncated K chars]`. A value that is not a string is first written as JSON (`json.dumps`).
  */
 export function clipText(value: unknown, n: number): string {
-  const text = typeof value === 'string' ? value : pyJsonText(value);
+  const text = typeof value === 'string' ? value : jsonText(value);
   // a text of at most `n` UTF-16 units has at most `n` code points: the common case allocates nothing
   if (text.length <= n) return text;
   const { total, cut } = measure(text, n);

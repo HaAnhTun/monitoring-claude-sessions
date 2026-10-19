@@ -1,7 +1,7 @@
 import { McsError } from '@mcs/shared';
 import { describe, expect, it } from 'vitest';
 
-import { fromPlain, toPlain, type PyJsonValue } from '../pyjson/index.ts';
+import { fromPlain, toPlain, type JsonDoc } from '../json/index.ts';
 import {
   FILE_MIGRATIONS,
   applyMigrations,
@@ -17,7 +17,7 @@ function step(file: FileMigration['file'], from: number, to: number, add: string
     from,
     to,
     describe: `add ${add}`,
-    apply(doc: PyJsonValue): PyJsonValue {
+    apply(doc: JsonDoc): JsonDoc {
       const plain = toPlain(doc);
       if (typeof plain !== 'object' || plain === null || Array.isArray(plain)) throw new Error('not an object');
       return fromPlain({ ...plain, schema_version: to, [add]: true });

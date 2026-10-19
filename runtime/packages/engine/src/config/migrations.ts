@@ -6,7 +6,7 @@
 // then refuses the file safely, which is the designed behaviour (research F.3).
 import { McsError } from '@mcs/shared';
 
-import type { PyJsonValue } from '../pyjson/index.ts';
+import type { JsonDoc } from '../json/index.ts';
 
 export type MigratedFile = 'config.json' | 'runtime.json' | 'instance.json';
 
@@ -15,7 +15,7 @@ export interface FileMigration {
   readonly from: number;
   readonly to: number;
   readonly describe: string;
-  apply(doc: PyJsonValue): PyJsonValue;
+  apply(doc: JsonDoc): JsonDoc;
 }
 
 export const FILE_MIGRATIONS: readonly FileMigration[] = [];
@@ -62,7 +62,7 @@ export function planFileMigrations(
 }
 
 /** Runs the planned steps in order in memory; the input document is not modified. No step returns the same document. */
-export function applyMigrations(doc: PyJsonValue, steps: readonly FileMigration[]): PyJsonValue {
+export function applyMigrations(doc: JsonDoc, steps: readonly FileMigration[]): JsonDoc {
   let out = doc;
   for (const step of steps) out = step.apply(out);
   return out;

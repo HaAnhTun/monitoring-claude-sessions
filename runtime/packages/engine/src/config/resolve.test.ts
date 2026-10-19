@@ -6,6 +6,7 @@ import { McsError, R_KEY_CATALOGUE, toConfigInspection } from '@mcs/shared';
 import { useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
+import { parseJson, type JsonObject } from '../json/index.ts';
 import { hostPlatform } from '../platform/host.ts';
 import { defaultSkillDir } from './defaults.ts';
 import { resolveConfig, type ResolveInput, type ResolvedConfig } from './resolve.ts';
@@ -635,5 +636,80 @@ describe('purity, files and the inspection projection', () => {
       );
       expect(e.value, e.key).toEqual(value);
     }
+  });
+});
+
+describe('override: already parsed documents stand in for the files (CR-WP-14-4)', () => {
+  function doc(value: unknown): JsonObject {
+    const parsed = parseJson(JSON.stringify(value));
+    if (parsed.k !== 'obj') throw new Error('expected an object');
+    return parsed;
+  }
+
+  /** The names in the workspace folder with their size and mtime: a resolution must not change any of it. */
+  function snapshot(f: Fixture): string[] {
+    return readdirSync(f.ws).map(
+      (n) => `${n}:${String(statSync(path.join(f.ws, n)).size)}:${String(statSync(path.join(f.ws, n)).mtimeMs)}`,
+    );
+  }
+
+  it('resolves the given config instead of config.json, without reading or writing it', async () => {
+    const f = fixtureWith({ title: 'on disk', window_hours: 4 }, { logLevel: 'warn' });
+    const before = snapshot(f);
+    const r = await resolveConfig(
+      input(f, { override: { config: doc(taskConfig({ title: 'intended', window_hours: 12 })) } }),
+    );
+    expect(r.monitor.title).toBe('intended');
+    expect(r.monitor.window_hours).toBe(12);
+    expect(r.provenance['title']).toBe('config');
+    expect(r.runtime.logLevel).toBe('warn');
+    expect(snapshot(f)).toEqual(before);
+    const plain = await resolveConfig(input(f));
+    expect(plain.monitor.title).toBe('on disk');
+  });
+
+  it('uses the given runtime document, and null means that runtime.json does not exist', async () => {
+    const f = fixtureWith({}, { logLevel: 'warn' });
+    const given = await resolveConfig(
+      input(f, { override: { runtime: doc({ schema_version: 1, logLevel: 'debug' }) } }),
+    );
+    expect(given.runtime.logLevel).toBe('debug');
+    expect(given.provenance['logLevel']).toBe('runtime');
+    expect(given.files.find((x) => x.name === 'runtime.json')).toMatchObject({ present: true, ok: true });
+    const absent = await resolveConfig(input(f, { override: { runtime: null } }));
+    expect(absent.runtime.logLevel).toBe('info');
+    expect(absent.files.find((x) => x.name === 'runtime.json')).toMatchObject({ present: false, ok: true });
+  });
+
+  it('reads the file for a key that is not given', async () => {
+    const f = fixtureWith({ title: 'on disk' }, { logLevel: 'warn' });
+    const r = await resolveConfig(input(f, { override: {} }));
+    expect(r.monitor.title).toBe('on disk');
+    expect(r.runtime.logLevel).toBe('warn');
+  });
+
+  it('validates the given documents exactly like the files, and names the paths of the workspace', async () => {
+    const f = fixtureWith({}, {});
+    const bad = await failure(() => resolveConfig(input(f, { override: { config: doc(taskConfig({ port: 0 })) } })));
+    expect(bad.code).toBe('CONFIG_INVALID');
+    expect(bad.message).toContain(path.join(f.ws, 'config.json'));
+    expect(bad.message).toContain('port: expected integer 1-65535, got 0');
+    const gate = await failure(() => resolveConfig(input(f, { override: { config: doc({ title: 'no version' }) } })));
+    expect(gate.code).toBe('CONFIG_SCHEMA_MISSING');
+    const runtime = await failure(() =>
+      resolveConfig(input(f, { override: { runtime: doc({ schema_version: 1, nope: true }) } })),
+    );
+    expect(runtime.code).toBe('CONFIG_INVALID');
+    expect(runtime.message).toContain(path.join(f.ws, 'runtime.json'));
+  });
+
+  it('is ignored without a workspace', async () => {
+    const r = await resolveConfig({
+      workspace: null,
+      env: {},
+      cli: {},
+      override: { config: doc(taskConfig({ title: 'x' })) },
+    });
+    expect(r.monitor.title).toBe('Claude sessions monitor');
   });
 });

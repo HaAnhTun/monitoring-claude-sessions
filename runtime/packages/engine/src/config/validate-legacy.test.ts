@@ -1,7 +1,7 @@
 import { McsError } from '@mcs/shared';
 import { describe, expect, it } from 'vitest';
 
-import { parsePyJson } from '../pyjson/index.ts';
+import { parseJson, type JsonDoc } from '../json/index.ts';
 import { PYTHON_SYNTAX_HINT } from '../regex/index.ts';
 import {
   LEGACY_KEYS,
@@ -12,7 +12,20 @@ import {
 } from './validate-legacy.ts';
 
 function check(text: string, o: Partial<LegacyValidateOptions> = {}): string[] {
-  return validateLegacy(parsePyJson(text), { strict: true, platform: 'linux', ...o });
+  return validateLegacy(parseJson(text), { strict: true, platform: 'linux', ...o });
+}
+
+/**
+ * Documents with a non-finite float. A text cannot hold `NaN` or `Infinity` (`parseJson` refuses the tokens; a number
+ * such as 1e999 overflows to infinity and is parsed), so these are built by hand: the validator stays defensive.
+ */
+function checkDoc(key: string, value: number): string[] {
+  return validateLegacy({ k: 'obj', v: [[key, { k: 'float', v: value }]] }, { strict: true, platform: 'linux' });
+}
+
+function checkNested(key: string, inner: string, value: number): string[] {
+  const doc: JsonDoc = { k: 'obj', v: [[key, { k: 'obj', v: [[inner, { k: 'float', v: value }]] }]] };
+  return validateLegacy(doc, { strict: true, platform: 'linux' });
 }
 
 function failure(run: () => unknown): McsError {
@@ -49,7 +62,6 @@ const GOLDEN: readonly Golden[] = [
   { input: '{"window_hours": 0}', strict: true, problems: ['window_hours: expected positive number, got 0'] },
   { input: '{"window_hours": -1.5}', strict: true, problems: ['window_hours: expected positive number, got -1.5'] },
   { input: '{"window_hours": "8"}', strict: true, problems: ['window_hours: expected positive number, got "8"'] },
-  { input: '{"window_hours": NaN}', strict: true, problems: ['window_hours: expected positive number, got NaN'] },
   {
     input: '{"active_seconds": false}',
     strict: true,
@@ -313,13 +325,16 @@ describe('legacy behaviours that need a decision', () => {
 describe('Node-only additions (01 2.4; stricter than legacy, all CONFIG_INVALID problems)', () => {
   it('rejects non-finite numbers', () => {
     expect(check('{"window_hours": 1e999}')).toEqual(['window_hours: expected finite number']);
-    expect(check('{"active_seconds": Infinity}')).toEqual(['active_seconds: expected finite number']);
+    expect(checkDoc('active_seconds', Number.POSITIVE_INFINITY)).toEqual(['active_seconds: expected finite number']);
     expect(check('{"poll": {"events_ms": 1e999}}')).toEqual(['poll.events_ms: expected finite number']);
-    expect(check('{"limits": {"max_events": NaN}}')).toEqual(['limits.max_events: expected finite number']);
+    expect(checkNested('limits', 'max_events', Number.NaN)).toEqual(['limits.max_events: expected finite number']);
   });
 
   it('keeps the legacy message when the legacy predicate already fails (NaN is not positive)', () => {
-    expect(check('{"window_hours": NaN}')).toEqual(['window_hours: expected positive number, got NaN']);
+    expect(checkDoc('window_hours', Number.NaN)).toEqual(['window_hours: expected positive number, got NaN']);
+    expect(checkDoc('window_hours', Number.NEGATIVE_INFINITY)).toEqual([
+      'window_hours: expected positive number, got -Infinity',
+    ]);
   });
 
   it('rejects integers beyond 2^53-1 in numeric keys, and accepts the largest safe integer', () => {

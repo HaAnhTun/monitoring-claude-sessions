@@ -1,5 +1,5 @@
 // The one file-I/O module of the engine for atomic replace and short read-and-close reads (06 4.3, 3.9.1, ADR 0058).
-// Bytes in, bytes out: nothing here serializes or re-encodes. Workspace rules (links, PyJson, universal newlines) are
+// Bytes in, bytes out: nothing here serializes or re-encodes. Workspace rules (links, JSON files, universal newlines) are
 // added by 01's workspace/fsio.ts, which wraps these functions.
 import { randomBytes } from 'node:crypto';
 import { open, rename, unlink } from 'node:fs/promises';

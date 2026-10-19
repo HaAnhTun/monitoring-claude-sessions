@@ -1,4 +1,4 @@
-// Workspace file rules (01 1.2): link refusal, atomic writes that retry sharing violations (E5), PyJson files, universal
+// Workspace file rules (01 1.2): link refusal, atomic writes that retry sharing violations (E5), JSON files, universal
 // newlines, compare-and-delete. Includes the unit row T-ISO-07 (hostile key names stay plain keys) at the file layer.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
@@ -9,7 +9,7 @@ import { McsError } from '@mcs/shared';
 import { makeJunction, useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
-import { parsePyJson } from '../pyjson/index.ts';
+import { parseJson } from '../json/index.ts';
 import {
   MAX_TEXT_BYTES,
   appendWorkspaceFile,
@@ -19,7 +19,7 @@ import {
   readJsonFile,
   readTextTail,
   readTextUniversal,
-  writePyJsonFile,
+  writeJsonFile,
   writeWorkspaceFile,
 } from './fsio.ts';
 
@@ -168,12 +168,12 @@ describe('writeWorkspaceFile', () => {
   });
 });
 
-describe('writePyJsonFile', () => {
-  it('writes the Python form: indent 2, ints stay ints, floats keep their Python repr, raw UTF-8, one final LF', async () => {
+describe('writeJsonFile', () => {
+  it('writes the file layout: indent 2, ints stay ints, floats keep their form, raw UTF-8, one final LF', async () => {
     const dir = workDir();
     const file = path.join(dir, 'config.json');
     const source = `{"schema_version": 1, "window_hours": 24.0, "big": 1e16, "wide": 10000000000000000, "name": "Caf${E_ACUTE}"}`;
-    await writePyJsonFile(file, parsePyJson(source));
+    await writeJsonFile(file, parseJson(source));
     expect(readFileSync(file, 'utf8')).toBe(
       `{\n  "schema_version": 1,\n  "window_hours": 24.0,\n  "big": 1e+16,\n  "wide": 10000000000000000,\n  "name": "Caf${E_ACUTE}"\n}\n`,
     );
@@ -182,7 +182,7 @@ describe('writePyJsonFile', () => {
   it('keeps the order of the entries and never reorders integer-like keys', async () => {
     const dir = workDir();
     const file = path.join(dir, 'x.json');
-    await writePyJsonFile(file, parsePyJson('{"b": 1, "2": 2, "a": 3}'));
+    await writeJsonFile(file, parseJson('{"b": 1, "2": 2, "a": 3}'));
     expect(readFileSync(file, 'utf8')).toBe('{\n  "b": 1,\n  "2": 2,\n  "a": 3\n}\n');
   });
 
@@ -190,7 +190,7 @@ describe('writePyJsonFile', () => {
     const dir = workDir();
     const file = path.join(dir, 'config.json');
     const source = '{"__proto__": {"x": 1}, "constructor": {"prototype": {"x": 2}}, "../b": 3, "a/../../b": 4}';
-    await writePyJsonFile(file, parsePyJson(source));
+    await writeJsonFile(file, parseJson(source));
     const read = await readJsonFile(file);
     expect(read.text).toBe(
       '{\n  "__proto__": {\n    "x": 1\n  },\n  "constructor": {\n    "prototype": {\n      "x": 2\n    }\n  },\n  "../b": 3,\n  "a/../../b": 4\n}\n',
@@ -208,7 +208,7 @@ describe('writePyJsonFile', () => {
     mkdirSync(real);
     const link = path.join(dir, 'link');
     makeJunction(link, real);
-    expect(await codeOf(writePyJsonFile(link, parsePyJson('{}')))).toBe('WORKSPACE_SYMLINK');
+    expect(await codeOf(writeJsonFile(link, parseJson('{}')))).toBe('WORKSPACE_SYMLINK');
   });
 });
 
@@ -251,7 +251,7 @@ describe('readTextUniversal', () => {
 });
 
 describe('readJsonFile', () => {
-  it('returns the text and the PyJson value', async () => {
+  it('returns the text and the parsed value', async () => {
     const dir = workDir();
     const file = path.join(dir, 'task.json');
     writeFileSync(file, '{\n  "id": "a",\n  "n": 1.0\n}\n');
@@ -266,7 +266,7 @@ describe('readJsonFile', () => {
     });
   });
 
-  it('a BOM is an error exactly as in Python json.load', async () => {
+  it('a BOM is an error', async () => {
     const dir = workDir();
     const file = path.join(dir, 'task.json');
     writeFileSync(file, `${BOM}{}`);

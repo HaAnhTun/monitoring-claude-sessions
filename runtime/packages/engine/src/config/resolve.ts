@@ -17,7 +17,7 @@ import {
   type RuntimeConfig,
 } from '@mcs/shared';
 
-import { toPlain } from '../pyjson/index.ts';
+import { toPlain } from '../json/index.ts';
 import { isMsysPath } from '../platform/paths.ts';
 import {
   checkSchemaVersion,
@@ -29,7 +29,7 @@ import {
   readOptionalConfigJson,
   schemaVersionOf,
   type LegacyConfig,
-  type PyObject,
+  type JsonObject,
 } from './defaults.ts';
 import { L_MERGED, isPlainObject, mergeLayer, setOwn, type PlainObject } from './merge.ts';
 import { legacyProvenance, runtimeProvenance, type RuntimeLayer } from './provenance.ts';
@@ -51,6 +51,13 @@ export interface ResolveInput {
   readonly cli: { readonly port?: number; readonly logLevel?: LogLevel };
   /** The skill folder (`config/defaults.json`, `runtime/defaults.json`); the folder this code ships in by default. */
   readonly skillDir?: string;
+  /**
+   * Already parsed documents that stand in for the files of the workspace, so that a change can be resolved before it is
+   * written (`configure` checks its intended result this way, with nothing copied or written). `config` replaces
+   * `config.json`; `runtime` replaces `runtime.json`, and `null` means that file does not exist. A key that is absent
+   * is read from disk. `task.json` is always read from the workspace. Ignored without a workspace.
+   */
+  readonly override?: { readonly config?: JsonObject; readonly runtime?: JsonObject | null };
 }
 
 export interface ResolvedConfig {
@@ -74,7 +81,7 @@ function invalid(message: string, cause?: unknown): McsError {
 }
 
 /** The plain object of a parsed document; an integer beyond 2^53-1 cannot be held by a number and is refused. */
-function plainObject(doc: PyObject, file: string): PlainObject {
+function plainObject(doc: JsonObject, file: string): PlainObject {
   let plain: unknown;
   try {
     plain = toPlain(doc);
@@ -120,7 +127,7 @@ interface RuntimeFile {
 }
 
 /** Steps 4: gate, then strict validation of a runtime file; the overrides without `schema_version`. */
-function runtimeOverrides(doc: PyObject, name: 'runtime/defaults.json' | 'runtime.json', file: string): RuntimeFile {
+function runtimeOverrides(doc: JsonObject, name: 'runtime/defaults.json' | 'runtime.json', file: string): RuntimeFile {
   checkSchemaVersion(doc, file, 'runtime.json');
   const plain = plainObject(doc, file);
   const parsed = RuntimeOverridesSchema.safeParse(plain);
@@ -174,15 +181,15 @@ async function sharedDefaults(skillDir: string): Promise<{ plain: PlainObject; s
 
 interface Instance {
   readonly over: PlainObject;
-  readonly task: PyObject;
+  readonly task: JsonObject;
   readonly configStatus: ConfigFileStatus;
 }
 
 /** Step 2: `task.json` (an object) and the gated, strictly validated `config.json`. */
-async function instanceLegacy(dir: string): Promise<Instance> {
+async function instanceLegacy(dir: string, override: JsonObject | undefined): Promise<Instance> {
   const task = await readConfigJson(path.join(dir, 'task.json'));
   const configPath = path.join(dir, 'config.json');
-  const doc = await readConfigJson(configPath);
+  const doc = override ?? (await readConfigJson(configPath));
   checkSchemaVersion(doc, configPath, 'config.json');
   const problems = validateLegacy(doc, { strict: true });
   if (problems.length > 0) throw invalid(`invalid task config ${configPath}: ${problems.join('; ')}`);
@@ -203,7 +210,7 @@ async function instanceLegacy(dir: string): Promise<Instance> {
 function resolveRepo(
   merged: PlainObject,
   over: PlainObject,
-  task: PyObject | null,
+  task: JsonObject | null,
   base: string,
   taskFile: string,
 ): string {
@@ -279,7 +286,7 @@ export async function resolveConfig(i: ResolveInput): Promise<ResolvedConfig> {
   files.push(defaults.status);
 
   // 2. the instance's legacy files
-  const instance = i.workspace === null ? null : await instanceLegacy(i.workspace.dir);
+  const instance = i.workspace === null ? null : await instanceLegacy(i.workspace.dir, i.override?.config);
   const over = instance?.over ?? {};
 
   // 3. merge L, then repo
@@ -299,7 +306,7 @@ export async function resolveConfig(i: ResolveInput): Promise<ResolvedConfig> {
   if (i.workspace !== null) {
     if (instance !== null) files.push(instance.configStatus);
     const file = path.join(i.workspace.dir, 'runtime.json');
-    const doc = await readOptionalConfigJson(file);
+    const doc = i.override?.runtime !== undefined ? i.override.runtime : await readOptionalConfigJson(file);
     runtimeFile = doc === null ? null : runtimeOverrides(doc, 'runtime.json', file);
     files.push(runtimeFile?.status ?? absentStatus('runtime.json', file));
   }

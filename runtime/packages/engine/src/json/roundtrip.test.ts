@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { dumpPyJson, pyJsonFileText } from './dump.ts';
-import { parsePyJson } from './parse.ts';
-import { pyEquals } from './equals.ts';
-import { pyFloatRepr } from './float-repr.ts';
-import type { PyJsonValue } from './value.ts';
+import { dumpJson, jsonFileText } from './write.ts';
+import { parseJson } from './parse.ts';
+import { jsonEquals } from './equals.ts';
+import { formatFloat } from './number.ts';
+import type { JsonDoc } from './value.ts';
 
 /** mulberry32: a tiny seeded generator so that a failure reproduces from the printed seed. */
 function prng(seed: number): () => number {
@@ -52,7 +52,7 @@ function randomFloat(rand: () => number): number {
   return Number.isFinite(x) ? x : 0.5;
 }
 
-function randomValue(rand: () => number, depth: number): PyJsonValue {
+function randomValue(rand: () => number, depth: number): JsonDoc {
   const pick = Math.floor(rand() * (depth >= 4 ? 6 : 8));
   switch (pick) {
     case 0:
@@ -77,7 +77,7 @@ function randomValue(rand: () => number, depth: number): PyJsonValue {
     }
     default: {
       const n = Math.floor(rand() * 4);
-      const entries: [string, PyJsonValue][] = [];
+      const entries: [string, JsonDoc][] = [];
       const seen = new Set<string>();
       for (let i = 0; i < n; i++) {
         const key = rand() < 0.3 ? String(Math.floor(rand() * 12)) : randomString(rand);
@@ -97,9 +97,9 @@ describe('round trip properties (seeded)', () => {
     const rand = prng(SEED);
     for (let i = 0; i < 1500; i++) {
       const v = randomValue(rand, 0);
-      for (const options of [{ indent: 2 }, { compact: true }, { compact: true, asciiOnly: true }] as const) {
-        const text = dumpPyJson(v, options);
-        expect(parsePyJson(text), `seed ${String(SEED)} case ${String(i)} ${JSON.stringify(options)}`).toEqual(v);
+      for (const options of [{ indent: 2 }, { compact: true }, { compact: true, escapeNonAscii: true }] as const) {
+        const text = dumpJson(v, options);
+        expect(parseJson(text), `seed ${String(SEED)} case ${String(i)} ${JSON.stringify(options)}`).toEqual(v);
       }
     }
   });
@@ -108,29 +108,28 @@ describe('round trip properties (seeded)', () => {
     const rand = prng(SEED + 1);
     for (let i = 0; i < 1500; i++) {
       const v = randomValue(rand, 0);
-      const once = dumpPyJson(v, { indent: 2 });
-      expect(dumpPyJson(parsePyJson(once), { indent: 2 })).toBe(once);
-      const file = pyJsonFileText(v);
+      const once = dumpJson(v, { indent: 2 });
+      expect(dumpJson(parseJson(once), { indent: 2 })).toBe(once);
+      const file = jsonFileText(v);
       expect(file.endsWith('}\n') || file.endsWith(']\n') || !file.slice(0, -1).includes('\n')).toBe(true);
       expect(file.includes('\r')).toBe(false);
     }
   });
 
-  it('pyEquals holds for a value and its re-parsed dump, except where NaN is involved', () => {
+  it('jsonEquals holds for a value and its re-parsed dump', () => {
     const rand = prng(SEED + 2);
     for (let i = 0; i < 800; i++) {
       const v = randomValue(rand, 0);
-      const text = dumpPyJson(v, { compact: true });
-      if (text.includes('NaN')) continue;
-      expect(pyEquals(v, parsePyJson(text))).toBe(true);
+      const text = dumpJson(v, { compact: true });
+      expect(jsonEquals(v, parseJson(text))).toBe(true);
     }
   });
 
-  it('pyFloatRepr parses back to the same double', () => {
+  it('formatFloat parses back to the same double', () => {
     const rand = prng(SEED + 3);
     for (let i = 0; i < 5000; i++) {
       const x = randomFloat(rand);
-      expect(Object.is(Number(pyFloatRepr(x)), x)).toBe(true);
+      expect(Object.is(Number(formatFloat(x)), x)).toBe(true);
     }
   });
 });

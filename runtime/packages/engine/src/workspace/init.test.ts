@@ -335,7 +335,7 @@ describe('initWorkspace: reuse (nothing is overwritten)', () => {
       hint: 'use mcs configure --task nightly-build',
     });
     expect(await codeOf(initWorkspace(opts(repo, { port: 8804 })))).toBe('WORKSPACE_EXISTS_CONFIG_DIFFERS');
-    // 12.0 equals 12 in Python (pyEquals)
+    // 12.0 equals 12 in Python (jsonEquals)
     writeFileSync(differing, '{"window_hours": 12.0}');
     expect((await initWorkspace(opts(repo, { seedConfig: differing }))).created).toBe(false);
     // A seed that breaks the schema is refused by the validation of step 1 before the workspace is looked at.

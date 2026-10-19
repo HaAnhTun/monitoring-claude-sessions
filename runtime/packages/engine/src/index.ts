@@ -724,6 +724,13 @@ export type { AttemptsPanelContext, AttemptsStore } from './panels/attempts/repo
 // @wp-end WP-40
 
 // @wp-begin WP-41
+export {
+  ATTEMPTS_DEFAULT_LIMIT,
+  ATTEMPTS_MAX_LIMIT,
+  PanelServiceClosedError,
+  createPanelService,
+} from './panels/service.ts';
+export type { PanelSamplers, PanelServiceContext, PanelServiceOptions } from './panels/service.ts';
 // @wp-end WP-41
 
 // @wp-begin WP-57

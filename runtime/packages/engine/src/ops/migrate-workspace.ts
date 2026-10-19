@@ -10,7 +10,7 @@ import { validateLegacy } from '../config/validate-legacy.ts';
 import { auditSummary, type WorkspaceMigrationReport } from '../migrate/report.ts';
 import { backupWorkspace, restoreConfig, type MigrationBackup } from '../migrate/backup.ts';
 import { planPatterns, sameConfig, type PatternPlan } from '../migrate/patterns.ts';
-import { pyJsonFileText, type PyJsonValue } from '../pyjson/index.ts';
+import { jsonFileText, type JsonDoc } from '../json/index.ts';
 import { ensureWorkspaceDir, newInstanceFile, readInstanceFile, writeInstanceFile } from '../workspace/adopt.ts';
 import { isMissingFileError, readJsonFile, writeWorkspaceFile } from '../workspace/fsio.ts';
 import { withTaskMutex, workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
@@ -34,7 +34,7 @@ export interface MigrateDeps {
   readonly resolve?: (ws: WorkspaceRef) => Promise<void>;
 }
 
-type PyObject = Extract<PyJsonValue, { k: 'obj' }>;
+type JsonObject = Extract<JsonDoc, { k: 'obj' }>;
 
 /** Folders that the adoption adds to a workspace without `instance.json`. */
 const ADOPT_DIRS = ['audit', 'data', 'logs'] as const;
@@ -84,7 +84,7 @@ async function analyse(ws: WorkspaceRef, deps: MigrateDeps): Promise<Analysis> {
   if (live !== null) blockers.push(live);
 
   let configText: string | null = null;
-  let doc: PyObject | null = null;
+  let doc: JsonObject | null = null;
   try {
     const read = await readJsonFile(workspacePath(ws, 'config.json'));
     configText = read.text;
@@ -107,7 +107,7 @@ async function analyse(ws: WorkspaceRef, deps: MigrateDeps): Promise<Analysis> {
     if (!PATTERN_PROBLEM.test(problem)) blockers.push(`CONFIG_INVALID: ${problem}`);
   }
   const changed = !sameConfig(doc, plan.doc);
-  if (changed && configText !== pyJsonFileText(doc)) {
+  if (changed && configText !== jsonFileText(doc)) {
     warnings.push('config.json: is rewritten in the standard layout (indent 2, one key per line)');
   }
   return { ws, hasInstance, configText, plan, blockers, warnings, changed };
@@ -188,7 +188,7 @@ export async function apply(
     if (verdictOf(a) !== 'needs-migration' || a.plan === null) return reportOf(a, 'applied', null);
     const nowMs = ctx.clock.now();
     const backup: MigrationBackup = await backupWorkspace(ws, nowMs);
-    if (a.changed) await writeWorkspaceFile(workspacePath(ws, 'config.json'), pyJsonFileText(a.plan.doc));
+    if (a.changed) await writeWorkspaceFile(workspacePath(ws, 'config.json'), jsonFileText(a.plan.doc));
     if (!a.hasInstance) await adopt(ws, nowMs);
     try {
       await (deps.resolve ?? ((w: WorkspaceRef) => defaultResolve(ctx, w)))(ws);

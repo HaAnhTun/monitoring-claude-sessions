@@ -9,7 +9,7 @@ import { McsError, RUNTIME_VERSION, StateFileSchema, type Clock, type StateFile 
 import type { Logger } from '../log/logger.ts';
 import { globFiles } from '../platform/glob.ts';
 import { pidAlive } from '../platform/process.ts';
-import { pyRepr, toPlain } from '../pyjson/index.ts';
+import { quoteText, toPlain } from '../json/index.ts';
 import { readTaskFile, type EngineName } from '../workspace/adopt.ts';
 import { readJsonFile } from '../workspace/fsio.ts';
 import { initWorkspace } from '../workspace/init.ts';
@@ -127,7 +127,7 @@ export async function init(ctx: OpContext, input: InitInput, deps: InitDeps = {}
     clock: ctx.clock,
     ...(deps.beforeRename === undefined ? {} : { beforeRename: deps.beforeRename }),
   });
-  const where = `task ${pyRepr(result.ws.slug)} at ${result.ws.dir}`;
+  const where = `task ${quoteText(result.ws.slug)} at ${result.ws.dir}`;
   const message = result.created
     ? [`created ${where}`]
     : [`reused (nothing overwritten) ${where}`, ...(result.adopted ? ['added Node runtime files: instance.json'] : [])];

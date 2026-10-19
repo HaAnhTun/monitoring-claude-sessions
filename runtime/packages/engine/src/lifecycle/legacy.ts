@@ -7,6 +7,7 @@
 //  3. `legacyDone` is the v1 `done` flag.
 import type { LegacyState } from '@mcs/shared';
 
+import { quoteText } from '../json/index.ts';
 import type { LifecycleCfg, LifecycleView, SessionFacts, ToolCallRow } from './facts.ts';
 import { renderEvidence, type AgentSummary } from './rules.ts';
 
@@ -47,32 +48,6 @@ export function pyFloorDiv(a: number, b: number): number {
 /** `'%d' % x` for a number: the integer part, truncated toward zero. */
 function pyD(x: number): string {
   return String(Math.trunc(x) + 0);
-}
-
-const BS = String.fromCharCode(92);
-const NON_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
-
-function hex(value: number, width: number): string {
-  return value.toString(16).padStart(width, '0');
-}
-
-/** Python 3 `repr()` of a string. */
-export function pyReprStr(value: string): string {
-  const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
-  let out = quote;
-  for (const ch of value) {
-    const cp = ch.codePointAt(0) ?? 0;
-    if (ch === quote || ch === BS) out += BS + ch;
-    else if (cp === 9) out += BS + 't';
-    else if (cp === 10) out += BS + 'n';
-    else if (cp === 13) out += BS + 'r';
-    else if (ch !== ' ' && NON_PRINTABLE.test(ch)) {
-      if (cp <= 0xff) out += BS + 'x' + hex(cp, 2);
-      else if (cp <= 0xffff) out += BS + 'u' + hex(cp, 4);
-      else out += BS + 'U' + hex(cp, 8);
-    } else out += ch;
-  }
-  return out + quote;
 }
 
 // ---- classify_state ------------------------------------------------------------------------------------------------
@@ -158,7 +133,7 @@ export function classifyLegacy(input: LegacyClassifyInput, now: number): LegacyC
   const stop = input.lastStop === null || input.lastStop === '' ? 'missing' : input.lastStop;
   return {
     state: 'UNKNOWN',
-    evidence: `quiet ${quietMinutes}m and the last stop reason is ${pyReprStr(stop)}`,
+    evidence: `quiet ${quietMinutes}m and the last stop reason is ${quoteText(stop)}`,
     source: 'transcript',
   };
 }

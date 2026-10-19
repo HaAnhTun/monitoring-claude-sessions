@@ -1,6 +1,6 @@
 // Workspace file rules on top of the platform file primitives (01 1.2, ADR 0058). One writer, one reader: `platform/fsx.ts`
 // does the atomic replace and the short read-and-close; this module adds what only a workspace needs (no link is ever
-// followed or written through, `McsError` codes, Python-compatible JSON files, universal newlines). It defines no second
+// followed or written through, `McsError` codes, JSON files in the one layout of `json/write.ts`, universal newlines). It defines no second
 // retry policy; the only addition is the append used by the audit trail, which uses the same schedule.
 import { lstatSync } from 'node:fs';
 import { appendFile, open } from 'node:fs/promises';
@@ -10,7 +10,7 @@ import { setTimeout as sleepMs } from 'node:timers/promises';
 import { McsError } from '@mcs/shared';
 
 import { AtomicWriteError, SmallFileError, atomicWriteFile, readSmallFile, unlinkWithRetry } from '../platform/fsx.ts';
-import { PyJsonSyntaxError, parsePyJson, pyJsonFileText, type PyJsonValue } from '../pyjson/index.ts';
+import { JsonSyntaxError, parseJson, jsonFileText, type JsonDoc } from '../json/index.ts';
 
 /** Largest text file `readTextUniversal` reads unless the caller says otherwise (01 1.2). */
 export const MAX_TEXT_BYTES = 16 * 1024 * 1024;
@@ -97,10 +97,10 @@ export async function writeWorkspaceFile(file: string, data: string | Uint8Array
 
 /**
  * The only writer of `task.json`, `config.json`, `runtime.json`, `instance.json`, `state.json` and backup manifests
- * (ADR 0003): Python's `json.dump(indent=2, ensure_ascii=False)` plus one LF, through `writeWorkspaceFile`.
+ * (ADR 0003, ADR 0067): the indent-2 layout of `json/write.ts` plus one LF, through `writeWorkspaceFile`.
  */
-export function writePyJsonFile(file: string, value: PyJsonValue, o: WriteOptions = {}): Promise<void> {
-  return writeWorkspaceFile(file, pyJsonFileText(value), o);
+export function writeJsonFile(file: string, value: JsonDoc, o: WriteOptions = {}): Promise<void> {
+  return writeWorkspaceFile(file, jsonFileText(value), o);
 }
 
 /**
@@ -206,10 +206,10 @@ export async function readTextTail(file: string, maxBytes: number): Promise<{ te
 }
 
 /**
- * Reads a JSON file with Python's rules (`json.load` on a UTF-8 file: a BOM or invalid UTF-8 is an error). Every failure is
+ * Reads a JSON file as strict UTF-8 text (a BOM or an invalid sequence is an error). Every failure is
  * `CONFIG_UNREADABLE`. The text is returned next to the value so callers can compare bytes.
  */
-export async function readJsonFile(file: string): Promise<{ text: string; value: PyJsonValue }> {
+export async function readJsonFile(file: string): Promise<{ text: string; value: JsonDoc }> {
   let bytes: Buffer;
   try {
     bytes = await readSmallFile(file, MAX_TEXT_BYTES);
@@ -223,9 +223,9 @@ export async function readJsonFile(file: string): Promise<{ text: string; value:
     throw new McsError('CONFIG_UNREADABLE', `${file} is not valid JSON: the file is not valid UTF-8`, { cause: error });
   }
   try {
-    return { text, value: parsePyJson(text) };
+    return { text, value: parseJson(text) };
   } catch (error) {
-    if (error instanceof PyJsonSyntaxError) {
+    if (error instanceof JsonSyntaxError) {
       throw new McsError('CONFIG_UNREADABLE', `${file} is not valid JSON: ${error.message}`, { cause: error });
     }
     throw error;

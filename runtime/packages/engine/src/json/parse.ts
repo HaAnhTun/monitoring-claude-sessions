@@ -1,10 +1,10 @@
-// Python `json.loads` compatible parser (design 01 section 1.9, ADR 0003).
+// The JSON parser (design 01 section 1.9, ADR 0003, ADR 0067).
 //
 // Differences from JSON.parse, all deliberate: the int/float distinction comes from the lexeme, integers are BigInt,
-// object entries keep their order (a duplicate key keeps its first position and takes the last value, like a Python
-// dict), `NaN`, `Infinity` and `-Infinity` are accepted tokens, and errors carry Python's reason texts and
-// code point positions.
-import type { PyJsonValue } from './value.ts';
+// object entries keep their order (a duplicate key keeps its first position and takes the last value), `NaN`,
+// `Infinity` and `-Infinity` are refused like any other bad token, and errors carry a reason text and code point
+// positions.
+import type { JsonDoc } from './value.ts';
 
 const BS = String.fromCharCode(92);
 const BOM = String.fromCharCode(0xfeff);
@@ -23,7 +23,7 @@ const REASON_TRAILING_OBJECT = 'Illegal trailing comma before end of object';
 const REASON_TRAILING_ARRAY = 'Illegal trailing comma before end of array';
 const REASON_DEPTH = 'Maximum nesting depth exceeded';
 
-/** Nesting limit; Python's recursive scanner fails at a similar depth (RecursionError). */
+/** Nesting limit of the recursive scanner. */
 const MAX_DEPTH = 1000;
 
 function codePointLength(text: string): number {
@@ -39,14 +39,14 @@ function codePointLength(text: string): number {
   return n;
 }
 
-/** Python's `JSONDecodeError`: `message` is `<reason>: line L column C (char P)`, positions count code points. */
-export class PyJsonSyntaxError extends Error {
+/** A syntax error: `message` is `<reason>: line L column C (char P)`, positions count code points. */
+export class JsonSyntaxError extends Error {
   readonly reason: string;
-  /** Zero-based code point offset (Python `pos`). */
+  /** Zero-based code point offset (`pos`). */
   readonly pos: number;
-  /** One-based line (Python `lineno`). */
+  /** One-based line (`lineno`). */
   readonly line: number;
-  /** One-based column in code points (Python `colno`). */
+  /** One-based column in code points (`colno`). */
   readonly col: number;
 
   constructor(reason: string, text: string, unitIndex: number) {
@@ -56,7 +56,7 @@ export class PyJsonSyntaxError extends Error {
     const line = prefix.split('\n').length;
     const col = lastNewline < 0 ? pos + 1 : codePointLength(prefix.slice(lastNewline + 1)) + 1;
     super(`${reason}: line ${String(line)} column ${String(col)} (char ${String(pos)})`);
-    this.name = 'PyJsonSyntaxError';
+    this.name = 'JsonSyntaxError';
     this.reason = reason;
     this.pos = pos;
     this.line = line;
@@ -94,8 +94,8 @@ class Scanner {
     this.text = text;
   }
 
-  fail(reason: string, at: number): PyJsonSyntaxError {
-    return new PyJsonSyntaxError(reason, this.text, at);
+  fail(reason: string, at: number): JsonSyntaxError {
+    return new JsonSyntaxError(reason, this.text, at);
   }
 
   private skipWs(): void {
@@ -106,7 +106,7 @@ class Scanner {
     }
   }
 
-  parseDocument(): PyJsonValue {
+  parseDocument(): JsonDoc {
     if (this.text.startsWith(BOM)) throw this.fail(REASON_BOM, 0);
     this.skipWs();
     const value = this.scanValue(0);
@@ -115,7 +115,7 @@ class Scanner {
     return value;
   }
 
-  private scanValue(depth: number): PyJsonValue {
+  private scanValue(depth: number): JsonDoc {
     const text = this.text;
     const start = this.i;
     const c = text[start];
@@ -137,22 +137,10 @@ class Scanner {
       this.i += 5;
       return { k: 'bool', v: false };
     }
-    if (c === 'N' && text.startsWith('NaN', start)) {
-      this.i += 3;
-      return { k: 'float', v: Number.NaN };
-    }
-    if (c === 'I' && text.startsWith('Infinity', start)) {
-      this.i += 8;
-      return { k: 'float', v: Number.POSITIVE_INFINITY };
-    }
-    if (c === '-' && text.startsWith('-Infinity', start)) {
-      this.i += 9;
-      return { k: 'float', v: Number.NEGATIVE_INFINITY };
-    }
     return this.scanNumber(start);
   }
 
-  private scanNumber(start: number): PyJsonValue {
+  private scanNumber(start: number): JsonDoc {
     const text = this.text;
     let i = start;
     if (text[i] === '-') i++;
@@ -210,7 +198,7 @@ class Scanner {
       const esc = text[this.i];
       if (esc === 'u') {
         const unit = this.readHex4(this.i + 1);
-        // CPython's scanner also refuses the escape when the text ends right after its four digits (end >= len).
+        // An escape whose four digits end the text is refused too (the unterminated string is the real problem).
         if (unit < 0 || this.i + 5 >= length) throw this.fail(REASON_UNICODE, this.i);
         if (unit >= 0xd800 && unit <= 0xdbff) {
           const low = text[this.i + 5] === BS && text[this.i + 6] === 'u' ? this.readHex4(this.i + 7) : -1;
@@ -243,12 +231,12 @@ class Scanner {
     return value;
   }
 
-  private scanObject(depth: number): PyJsonValue {
+  private scanObject(depth: number): JsonDoc {
     if (depth > MAX_DEPTH) throw this.fail(REASON_DEPTH, this.i);
     const text = this.text;
     this.i++;
     this.skipWs();
-    const entries: [string, PyJsonValue][] = [];
+    const entries: [string, JsonDoc][] = [];
     if (text[this.i] === '}') {
       this.i++;
       return { k: 'obj', v: entries };
@@ -288,12 +276,12 @@ class Scanner {
     }
   }
 
-  private scanArray(depth: number): PyJsonValue {
+  private scanArray(depth: number): JsonDoc {
     if (depth > MAX_DEPTH) throw this.fail(REASON_DEPTH, this.i);
     const text = this.text;
     this.i++;
     this.skipWs();
-    const values: PyJsonValue[] = [];
+    const values: JsonDoc[] = [];
     if (text[this.i] === ']') {
       this.i++;
       return { k: 'arr', v: values };
@@ -315,7 +303,7 @@ class Scanner {
   }
 }
 
-/** Parse JSON text exactly like Python's `json.loads` (plus the nesting limit and the lone-surrogate refusal of 01 1.9). */
-export function parsePyJson(text: string): PyJsonValue {
+/** Parse JSON text; see the module comment. Throws {@link JsonSyntaxError}. */
+export function parseJson(text: string): JsonDoc {
   return new Scanner(text).parseDocument();
 }

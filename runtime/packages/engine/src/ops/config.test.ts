@@ -22,8 +22,8 @@ import { defaultSkillDir } from '../config/defaults.ts';
 import { pathsCaseInsensitive } from '../platform/host.ts';
 import { acquireMutex, mutexName } from '../platform/mutex.ts';
 import type { Logger } from '../log/logger.ts';
-import { pyJsonFileText, fromPlain } from '../pyjson/index.ts';
-import type { writePyJsonFile } from '../workspace/fsio.ts';
+import { jsonFileText, fromPlain } from '../json/index.ts';
+import type { writeJsonFile } from '../workspace/fsio.ts';
 import { resolveWorkspace } from '../workspace/paths.ts';
 import { check, configure, inspect } from './config.ts';
 import { discover, init, version, type OpContext } from './workspace.ts';
@@ -31,15 +31,15 @@ import { discover, init, version, type OpContext } from './workspace.ts';
 /** Makes the atomic write of one named workspace file fail (the sharing violation of a read-only or locked file). */
 const writeFailure = vi.hoisted(() => ({ file: null as string | null }));
 vi.mock('../workspace/fsio.ts', async (importOriginal) => {
-  const actual = await importOriginal<{ writePyJsonFile: typeof writePyJsonFile }>();
+  const actual = await importOriginal<{ writeJsonFile: typeof writeJsonFile }>();
   return {
     ...actual,
-    writePyJsonFile: (...args: Parameters<typeof actual.writePyJsonFile>) => {
+    writeJsonFile: (...args: Parameters<typeof actual.writeJsonFile>) => {
       const name = path.basename(args[0]);
       if (writeFailure.file === name) {
         return Promise.reject(new McsError('WORKSPACE_INVALID', `cannot replace ${name}: E_ATOMIC_WRITE_BUSY`));
       }
-      return actual.writePyJsonFile(...args);
+      return actual.writeJsonFile(...args);
     },
   };
 });
@@ -95,7 +95,7 @@ function appendConcurrentEntry(ctx: OpContext, slug: string): void {
 }
 
 function fileText(value: unknown): string {
-  return pyJsonFileText(fromPlain(value));
+  return jsonFileText(fromPlain(value));
 }
 
 async function failure(promise: Promise<unknown>): Promise<McsError> {
@@ -1108,6 +1108,60 @@ describe('discover', () => {
     const before = snapshotTree(repo);
     await discover(contextFor(repo));
     expect(snapshotTree(repo)).toBe(before);
+  });
+});
+
+describe('configure: no staging folder in the temp directory (CR-WP-14-4)', () => {
+  /** Runs `run` with the temp directory of the process pointing at an empty folder, and returns what was left in it. */
+  async function leftInTemp(run: () => Promise<unknown>): Promise<string[]> {
+    const temp = makeTemp('tmpdir').path;
+    vi.stubEnv('TMPDIR', temp);
+    vi.stubEnv('TMP', temp);
+    vi.stubEnv('TEMP', temp);
+    try {
+      await run();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    return readdirSync(temp).filter((name) => name !== 'FIXTURE.md');
+  }
+
+  it('a dry run, a no-op and a real change create nothing in the temp directory', async () => {
+    const { ctx } = repoWith('alpha');
+    expect(await leftInTemp(() => configure(ctx, { task: 'alpha', set: ['title=Dry'], dryRun: true }))).toEqual([]);
+    expect(await leftInTemp(() => configure(ctx, { task: 'alpha', set: ['title=Fixture alpha'] }))).toEqual([]);
+    expect(
+      await leftInTemp(() => configure(ctx, { task: 'alpha', set: ['title=Changed', 'server.port=9999'] })),
+    ).toEqual([]);
+    expect(JSON.parse(read(ctx, 'alpha', 'config.json'))).toMatchObject({ title: 'Changed' });
+  });
+
+  it('a rejected change leaves nothing in the temp directory and the files untouched', async () => {
+    const { ctx } = repoWith('alpha');
+    const before = read(ctx, 'alpha', 'config.json');
+    const left = await leftInTemp(async () => {
+      const error = await failure(configure(ctx, { task: 'alpha', set: ['session_rules=[{"match":"("}]'] }));
+      expect(error.code).toBe('CONFIG_INVALID');
+      expect(error.message.startsWith('rejected, nothing written: ')).toBe(true);
+    });
+    expect(left).toEqual([]);
+    expect(read(ctx, 'alpha', 'config.json')).toBe(before);
+  });
+
+  it('a stop between the validation and the write leaves nothing behind', async () => {
+    const { ctx } = repoWith('alpha');
+    const before = read(ctx, 'alpha', 'config.json');
+    writeFailure.file = 'config.json';
+    try {
+      const left = await leftInTemp(async () => {
+        const error = await failure(configure(ctx, { task: 'alpha', set: ['title=Changed'] }));
+        expect(error.message).toBe('cannot replace config.json: E_ATOMIC_WRITE_BUSY');
+      });
+      expect(left).toEqual([]);
+    } finally {
+      writeFailure.file = null;
+    }
+    expect(read(ctx, 'alpha', 'config.json')).toBe(before);
   });
 });
 

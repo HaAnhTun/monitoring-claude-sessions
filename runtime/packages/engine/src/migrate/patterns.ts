@@ -1,11 +1,11 @@
 // The pattern step of `mcs migrate-workspace` (ADR 0068, ADR 0067): which configuration patterns of a pre-4.0 workspace
 // are translated from Python syntax, which are kept as written and which block the migration. Nothing here reads or writes
 // a file, and no result ever holds a pattern text except the translated text that the caller stores.
-import { dumpPyJson, type PyJsonValue } from '../pyjson/index.ts';
+import { messageJson, type JsonDoc } from '../json/index.ts';
 import { tryCompileRegex, type RegexContext } from '../regex/index.ts';
 import { translateToDialect } from './regex/index.ts';
 
-type PyObject = Extract<PyJsonValue, { k: 'obj' }>;
+type JsonObject = Extract<JsonDoc, { k: 'obj' }>;
 
 /** One configuration pattern and what the migration does with it. `code` and `position` only for `blocked`. */
 export interface PatternStep {
@@ -21,7 +21,7 @@ export interface PatternStep {
 export interface PatternPlan {
   readonly steps: readonly PatternStep[];
   /** The configuration with every `translate` step applied (the same object when nothing is translated). */
-  readonly doc: PyObject;
+  readonly doc: JsonObject;
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
 }
@@ -31,19 +31,19 @@ interface Located {
   readonly context: RegexContext;
   readonly source: string;
   /** Builds the configuration with this pattern replaced by `text`. */
-  readonly replace: (doc: PyObject, text: string) => PyObject;
+  readonly replace: (doc: JsonObject, text: string) => JsonObject;
 }
 
-function entryOf(doc: PyObject, key: string): PyJsonValue | undefined {
+function entryOf(doc: JsonObject, key: string): JsonDoc | undefined {
   return doc.v.find(([k]) => k === key)?.[1];
 }
 
-function withEntry(doc: PyObject, key: string, value: PyJsonValue): PyObject {
-  return { k: 'obj', v: doc.v.map(([k, v]): [string, PyJsonValue] => (k === key ? [k, value] : [k, v])) };
+function withEntry(doc: JsonObject, key: string, value: JsonDoc): JsonObject {
+  return { k: 'obj', v: doc.v.map(([k, v]): [string, JsonDoc] => (k === key ? [k, value] : [k, v])) };
 }
 
 /** Every string pattern of `session_rules[].match`, `attempts.start` and `attempts.end`, in file order. */
-function locatePatterns(doc: PyObject): Located[] {
+function locatePatterns(doc: JsonObject): Located[] {
   const found: Located[] = [];
   const rules = entryOf(doc, 'session_rules');
   if (rules?.k === 'arr') {
@@ -100,7 +100,7 @@ function keptWarning(where: string): string {
  * pattern that does not compile as JavaScript is. A pattern that compiles is kept (a warning names it), also when the
  * translator refuses it. A pattern that neither translates exactly nor compiles is `blocked` (`REGEX_UNSUPPORTED`).
  */
-export function planPatterns(doc: PyObject, hasInstance: boolean): PatternPlan {
+export function planPatterns(doc: JsonObject, hasInstance: boolean): PatternPlan {
   const steps: PatternStep[] = [];
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -137,7 +137,7 @@ export function planPatterns(doc: PyObject, hasInstance: boolean): PatternPlan {
   return { steps, doc: next, blockers, warnings };
 }
 
-/** True when the two configurations are the same JSON text (entry order included). */
-export function sameConfig(a: PyJsonValue, b: PyJsonValue): boolean {
-  return dumpPyJson(a, { indent: 2 }) === dumpPyJson(b, { indent: 2 });
+/** True when the two configurations are the same JSON text (entry order, int and float included). */
+export function sameConfig(a: JsonDoc, b: JsonDoc): boolean {
+  return messageJson(a) === messageJson(b);
 }

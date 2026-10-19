@@ -19,7 +19,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   ...Array.from({ length: 10 }, (_, i) => [`com${i}`, `lpt${i}`]).flat(),
 ]);
 
-/** Tail of the legacy message `invalid task slug <pyRepr(slug)> (<this text>)`. */
+/** Tail of the legacy message `invalid task slug <quoteText(slug)> (<this text>)`. */
 export const SLUG_RULE_TEXT = 'use lowercase letters, digits and hyphens, at most 48 characters';
 
 /** True when `slug` matches `SLUG_RE` and is not a reserved device name. */

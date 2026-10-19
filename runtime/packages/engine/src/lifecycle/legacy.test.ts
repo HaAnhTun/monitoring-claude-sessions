@@ -22,10 +22,10 @@ import {
   legacyDone,
   legacyOfSession,
   pyFloorDiv,
-  pyReprStr,
   toLegacy,
   type LegacyClassifyInput,
 } from './legacy.ts';
+import { quoteText } from '../json/index.ts';
 import { deriveSession } from './derive-session.ts';
 
 const BS = String.fromCharCode(92);
@@ -67,20 +67,20 @@ describe('Python helpers', () => {
     expect(Object.is(pyFloorDiv(0, 60), 0)).toBe(true);
   });
 
-  it('pyReprStr picks quotes and escapes like repr()', () => {
-    expect(pyReprStr('missing')).toBe("'missing'");
-    expect(pyReprStr('END_TURN')).toBe("'END_TURN'");
-    expect(pyReprStr("it's")).toBe('"it' + "'" + 's"');
-    expect(pyReprStr(`a"b'c`)).toBe("'a" + '"' + 'b' + BS + "'" + "c'");
-    expect(pyReprStr('a' + BS + 'b')).toBe("'a" + BS + BS + "b'");
-    expect(pyReprStr('a' + String.fromCharCode(10) + 'b')).toBe("'a" + BS + "nb'");
-    expect(pyReprStr('a' + String.fromCharCode(9) + String.fromCharCode(13))).toBe("'a" + BS + 't' + BS + "r'");
-    expect(pyReprStr(String.fromCharCode(1) + String.fromCharCode(127))).toBe("'" + BS + 'x01' + BS + "x7f'");
-    expect(pyReprStr(String.fromCodePoint(0xe9))).toBe("'" + String.fromCodePoint(0xe9) + "'");
-    expect(pyReprStr(String.fromCodePoint(0xa0))).toBe("'" + BS + "xa0'");
-    expect(pyReprStr(String.fromCodePoint(0x200b))).toBe("'" + BS + "u200b'");
-    expect(pyReprStr(String.fromCodePoint(0x1f600))).toBe("'" + String.fromCodePoint(0x1f600) + "'");
-    expect(pyReprStr('')).toBe("''");
+  it('quoteText picks quotes and escapes like repr()', () => {
+    expect(quoteText('missing')).toBe("'missing'");
+    expect(quoteText('END_TURN')).toBe("'END_TURN'");
+    expect(quoteText("it's")).toBe('"it' + "'" + 's"');
+    expect(quoteText(`a"b'c`)).toBe("'a" + '"' + 'b' + BS + "'" + "c'");
+    expect(quoteText('a' + BS + 'b')).toBe("'a" + BS + BS + "b'");
+    expect(quoteText('a' + String.fromCharCode(10) + 'b')).toBe("'a" + BS + "nb'");
+    expect(quoteText('a' + String.fromCharCode(9) + String.fromCharCode(13))).toBe("'a" + BS + 't' + BS + "r'");
+    expect(quoteText(String.fromCharCode(1) + String.fromCharCode(127))).toBe("'" + BS + 'x01' + BS + "x7f'");
+    expect(quoteText(String.fromCodePoint(0xe9))).toBe("'" + String.fromCodePoint(0xe9) + "'");
+    expect(quoteText(String.fromCodePoint(0xa0))).toBe("'" + BS + "xa0'");
+    expect(quoteText(String.fromCodePoint(0x200b))).toBe("'" + BS + "u200b'");
+    expect(quoteText(String.fromCodePoint(0x1f600))).toBe("'" + String.fromCodePoint(0x1f600) + "'");
+    expect(quoteText('')).toBe("''");
   });
 });
 

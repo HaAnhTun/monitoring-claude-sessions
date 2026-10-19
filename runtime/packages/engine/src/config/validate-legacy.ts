@@ -1,9 +1,9 @@
 // Validation of the legacy (L) keys (01 section 2.4): the predicate table of `config.py` `SCHEMA` with the legacy messages
 // (not Zod, so the strings stay byte for byte), plus the documented Node-only additions. The predicates run on the parsed
-// `PyJsonValue` so that, as in Python, `true` is not a number and `1.0` is not an integer.
+// `JsonDoc` so that `true` is not a number and `1.0` is not an integer.
 import { McsError } from '@mcs/shared';
 
-import { dumpPyJson, pyRepr, type PyJsonValue } from '../pyjson/index.ts';
+import { messageJson, quoteText, type JsonDoc } from '../json/index.ts';
 import { hostPlatform, type HostPlatform } from '../platform/host.ts';
 import { isMsysPath } from '../platform/paths.ts';
 import { validateTimeFormat } from '../platform/time-format.ts';
@@ -17,18 +17,18 @@ import {
 
 export interface LegacyKeySpec {
   /** The legacy predicate. */
-  readonly check: (v: PyJsonValue) => boolean;
+  readonly check: (v: JsonDoc) => boolean;
   /** The text after `expected` in the message. */
   readonly expected: string;
 }
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
-function isNum(v: PyJsonValue): boolean {
+function isNum(v: JsonDoc): boolean {
   return v.k === 'int' || v.k === 'float';
 }
 
-function isPositive(v: PyJsonValue): boolean {
+function isPositive(v: JsonDoc): boolean {
   if (v.k === 'int') return v.v > 0n;
   return v.k === 'float' && v.v > 0;
 }
@@ -55,35 +55,35 @@ function isNonBlank(s: string): boolean {
   return false;
 }
 
-function isStr(v: PyJsonValue | undefined): v is Extract<PyJsonValue, { k: 'str' }> {
+function isStr(v: JsonDoc | undefined): v is Extract<JsonDoc, { k: 'str' }> {
   return v?.k === 'str';
 }
 
-function entry(v: PyJsonValue, key: string): PyJsonValue | undefined {
+function entry(v: JsonDoc, key: string): JsonDoc | undefined {
   return v.k === 'obj' ? v.v.find(([k]) => k === key)?.[1] : undefined;
 }
 
-function strList(v: PyJsonValue): boolean {
+function strList(v: JsonDoc): boolean {
   return v.k === 'arr' && v.v.every((x) => x.k === 'str');
 }
 
-function optStr(v: PyJsonValue): boolean {
+function optStr(v: JsonDoc): boolean {
   return v.k === 'null' || v.k === 'str';
 }
 
-function rules(v: PyJsonValue): boolean {
+function rules(v: JsonDoc): boolean {
   return v.k === 'arr' && v.v.every((r) => r.k === 'obj' && isStr(entry(r, 'match')));
 }
 
-function dictOf(v: PyJsonValue, member: (x: PyJsonValue) => boolean): boolean {
+function dictOf(v: JsonDoc, member: (x: JsonDoc) => boolean): boolean {
   return v.k === 'obj' && v.v.every(([, x]) => member(x));
 }
 
-function oneOf(v: PyJsonValue | undefined, allowed: readonly string[]): boolean {
+function oneOf(v: JsonDoc | undefined, allowed: readonly string[]): boolean {
   return v === undefined || (v.k === 'str' && allowed.includes(v.v));
 }
 
-function ui(v: PyJsonValue): boolean {
+function ui(v: JsonDoc): boolean {
   return (
     v.k === 'obj' &&
     oneOf(entry(v, 'theme'), ['auto', 'light', 'dark']) &&
@@ -92,7 +92,7 @@ function ui(v: PyJsonValue): boolean {
   );
 }
 
-function attempts(v: PyJsonValue): boolean {
+function attempts(v: JsonDoc): boolean {
   return v.k === 'null' || (v.k === 'obj' && isStr(entry(v, 'start')) && isStr(entry(v, 'end')));
 }
 
@@ -132,12 +132,12 @@ export interface LegacyValidateOptions {
 }
 
 /** `json.dumps(v)[:60]` of the legacy messages: ASCII JSON text, cut at 60 characters. */
-function shortJson(v: PyJsonValue): string {
-  return dumpPyJson(v, { compact: true, asciiOnly: true }).slice(0, 60);
+function shortJson(v: JsonDoc): string {
+  return messageJson(v, { escapeNonAscii: true }).slice(0, 60);
 }
 
 /** Node-only: finite numbers and integers within 2^53-1 (`path` is the dotted key). */
-function numberProblems(path: string, v: PyJsonValue): string[] {
+function numberProblems(path: string, v: JsonDoc): string[] {
   if (v.k === 'float' && !Number.isFinite(v.v)) return [`${path}: expected finite number`];
   if (v.k === 'int' && (v.v > MAX_SAFE || v.v < -MAX_SAFE)) {
     return [`${path}: expected integer within 2^53-1, got ${shortJson(v)}`];
@@ -147,11 +147,11 @@ function numberProblems(path: string, v: PyJsonValue): string[] {
 
 const MSYS_MESSAGE = 'use C:/... instead of /c/...';
 
-function pathProblems(path: string, v: PyJsonValue | undefined, platform: HostPlatform): string[] {
+function pathProblems(path: string, v: JsonDoc | undefined, platform: HostPlatform): string[] {
   return isStr(v) && isMsysPath(v.v, platform) ? [`${path}: ${MSYS_MESSAGE}`] : [];
 }
 
-function attemptsProblems(a: PyJsonValue): string[] {
+function attemptsProblems(a: JsonDoc): string[] {
   const out: string[] = [];
   const timeFormat = entry(a, 'time_format');
   if (timeFormat !== undefined) {
@@ -167,7 +167,7 @@ function attemptsProblems(a: PyJsonValue): string[] {
 }
 
 /** The additions of 01 2.4 for one key whose legacy predicate passed. */
-function nodeProblems(key: string, v: PyJsonValue, platform: HostPlatform): string[] {
+function nodeProblems(key: string, v: JsonDoc, platform: HostPlatform): string[] {
   switch (key) {
     case 'window_hours':
     case 'active_seconds':
@@ -212,7 +212,7 @@ function syntaxProblem(source: string, context: RegexContext): string | null {
   return result.ok ? null : refusalText(result.error);
 }
 
-function regexProblems(doc: Extract<PyJsonValue, { k: 'obj' }>): string[] {
+function regexProblems(doc: Extract<JsonDoc, { k: 'obj' }>): string[] {
   const out: string[] = [];
   const ruleList = entry(doc, 'session_rules');
   if (ruleList !== undefined && rules(ruleList) && ruleList.k === 'arr') {
@@ -220,7 +220,7 @@ function regexProblems(doc: Extract<PyJsonValue, { k: 'obj' }>): string[] {
       const match = entry(rule, 'match');
       if (!isStr(match)) continue;
       const message = syntaxProblem(match.v, 'session_rule');
-      if (message !== null) out.push(`session_rules: invalid regex ${pyRepr(match.v)} (${message})`);
+      if (message !== null) out.push(`session_rules: invalid regex ${quoteText(match.v)} (${message})`);
     }
   }
   const a = entry(doc, 'attempts');
@@ -239,7 +239,7 @@ function regexProblems(doc: Extract<PyJsonValue, { k: 'obj' }>): string[] {
  * Problems with a (partial or full) configuration, empty when valid: key order of the file, then regex problems (legacy
  * order). Messages are the legacy strings; the Node-only additions of 01 2.4 follow the key they belong to.
  */
-export function validateLegacy(doc: PyJsonValue, options: LegacyValidateOptions): string[] {
+export function validateLegacy(doc: JsonDoc, options: LegacyValidateOptions): string[] {
   if (doc.k !== 'obj') return ['config must be a JSON object'];
   const platform = options.platform ?? hostPlatform;
   const problems: string[] = [];
@@ -247,7 +247,7 @@ export function validateLegacy(doc: PyJsonValue, options: LegacyValidateOptions)
     if (key.startsWith('_')) continue;
     const spec = Object.hasOwn(LegacyConfigFileSchema, key) ? LegacyConfigFileSchema[key] : undefined;
     if (spec === undefined) {
-      if (options.strict) problems.push(`unknown key ${pyRepr(key)}`);
+      if (options.strict) problems.push(`unknown key ${quoteText(key)}`);
       continue;
     }
     if (!spec.check(value)) {

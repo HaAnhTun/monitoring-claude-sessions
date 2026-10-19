@@ -6,7 +6,7 @@ import { useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
 import { layoutOfModule } from '../platform/layout.ts';
-import { toPlain } from '../pyjson/index.ts';
+import { toPlain } from '../json/index.ts';
 import {
   checkSchemaVersion,
   defaultRuntimeDir,

@@ -16,7 +16,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// ---- pyJsonDumps -------------------------------------------------------------------------------------------------
+// ---- compactJsonText -------------------------------------------------------------------------------------------------
 
 function pyString(text: string): string {
   let out = '"';
@@ -122,24 +122,24 @@ function pyDump(value: unknown, stack: object[]): string {
 }
 
 /**
- * Python `json.dumps(value, ensure_ascii=False)` with the default separators `", "` and `": "` and insertion key order
- * (02 2.5.1). `undefined` is `null` in a list and absent in an object. Functions and symbols throw `TypeError`, as in
- * Python. Integer-like object keys come out first in JavaScript's own order, which Python does not do.
+ * The compact JSON text of a value in the spaced form that spool summaries persist: the separators `", "` and `": "`,
+ * non-ASCII kept, insertion key order (02 2.5.1). `undefined` is `null` in a list and absent in an object. Functions and
+ * symbols throw `TypeError`. Integer-like object keys come out first in JavaScript's own order.
  */
-export function pyJsonDumps(value: unknown): string {
+export function compactJsonText(value: unknown): string {
   return pyDump(value, []);
 }
 
 // ---- clip --------------------------------------------------------------------------------------------------------
 
 /**
- * Legacy-compatible clip (02 2.5.1, golden `clip.json`): a non-string is dumped by `pyJsonDumps` first, the length is
+ * Legacy-compatible clip (02 2.5.1, golden `clip.json`): a non-string is dumped by `compactJsonText` first, the length is
  * counted in code points, and a longer text keeps its first `n` code points plus ` ... [truncated K chars]`.
  * `n` follows Python slicing, so a negative `n` drops code points from the end.
  */
 export function clip(value: unknown, n: number): string {
   if (!Number.isInteger(n)) throw new RangeError('clip: n must be an integer');
-  const text = typeof value === 'string' ? value : pyJsonDumps(value);
+  const text = typeof value === 'string' ? value : compactJsonText(value);
   const codePoints = Array.from(text);
   if (codePoints.length <= n) return text;
   return codePoints.slice(0, n).join('') + ' ... [truncated ' + String(codePoints.length - n) + ' chars]';

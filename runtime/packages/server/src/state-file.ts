@@ -6,10 +6,10 @@ import {
   fromPlain,
   isMissingFileError,
   pidAlive,
-  pyJsonFileText,
+  jsonFileText,
   readSmallFile,
   writeWorkspaceFile,
-  type PyJsonValue,
+  type JsonDoc,
 } from '@mcs/engine';
 import { StateFileSchema, isoMsZ, type StateFile } from '@mcs/shared';
 
@@ -34,14 +34,14 @@ export interface StateFileInput {
 }
 
 export interface BuiltStateFile {
-  /** Python-compatible JSON (indent 2, one LF): the bytes the watchdog compares against the file. */
+  /** The workspace JSON layout (indent 2, one LF): the bytes the watchdog compares against the file. */
   readonly bytes: Uint8Array;
   readonly state: StateFile;
 }
 
 /**
  * The content of 01 1.7: `{pid, url, port, started, version, task, config}` in the legacy order and types (`started` is a
- * float, like Python's `time.time()`, even when it is a whole number of seconds), then the Node keys. Refuses a value the
+ * float even when it is a whole number of seconds, as the pre-4.0 files wrote it), then the Node keys. Refuses a value the
  * shared schema cannot hold (nothing is written then).
  */
 export function buildStateFile(input: StateFileInput): BuiltStateFile {
@@ -63,14 +63,14 @@ export function buildStateFile(input: StateFileInput): BuiltStateFile {
     control: input.control,
   };
   const state = StateFileSchema.parse(plain);
-  const document: PyJsonValue = {
+  const document: JsonDoc = {
     k: 'obj',
-    v: Object.entries(plain).map(([key, value]): [string, PyJsonValue] => [
+    v: Object.entries(plain).map(([key, value]): [string, JsonDoc] => [
       key,
       key === 'started' && typeof value === 'number' ? { k: 'float', v: value } : fromPlain(value),
     ]),
   };
-  return { bytes: new TextEncoder().encode(pyJsonFileText(document)), state };
+  return { bytes: new TextEncoder().encode(jsonFileText(document)), state };
 }
 
 /** Replaces `file` atomically with exactly the built bytes (a link as the file or its folder is refused). */

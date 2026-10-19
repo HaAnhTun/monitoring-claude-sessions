@@ -1,21 +1,21 @@
 // The pattern rules of `migrate-workspace` (ADR 0068): translate, keep or block, and never repeat a pattern text.
 import { describe, expect, it } from 'vitest';
 
-import { fromPlain, type PyJsonValue } from '../pyjson/index.ts';
+import { fromPlain, type JsonDoc } from '../json/index.ts';
 import { compileRegex } from '../regex/index.ts';
 import { planPatterns, sameConfig } from './patterns.ts';
 import { auditSummary, reportLines } from './report.ts';
 
-type PyObject = Extract<PyJsonValue, { k: 'obj' }>;
+type JsonObject = Extract<JsonDoc, { k: 'obj' }>;
 
-function config(plain: Record<string, unknown>): PyObject {
+function config(plain: Record<string, unknown>): JsonObject {
   const value = fromPlain({ schema_version: 1, ...plain });
   if (value.k !== 'obj') throw new Error('not an object');
   return value;
 }
 
-function stringAt(doc: PyObject, ...path: (string | number)[]): string {
-  let current: PyJsonValue | undefined = doc;
+function stringAt(doc: JsonObject, ...path: (string | number)[]): string {
+  let current: JsonDoc | undefined = doc;
   for (const key of path) {
     if (current === undefined) break;
     if (typeof key === 'number') current = current.k === 'arr' ? current.v[key] : undefined;

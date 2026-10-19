@@ -15,9 +15,9 @@ import {
 } from '@mcs/shared';
 
 import { appendChange, type ChangeEntry } from '../audit/writer.ts';
-import type { PyObject } from '../config/defaults.ts';
-import { fromPlain, pyRepr, pyShort, toPlain, type PyJsonValue } from '../pyjson/index.ts';
-import { assertNotLink, isMissingFileError, readJsonFile, writePyJsonFile } from './fsio.ts';
+import type { JsonObject } from '../config/defaults.ts';
+import { fromPlain, quoteText, shortJson, toPlain, type JsonDoc } from '../json/index.ts';
+import { assertNotLink, isMissingFileError, readJsonFile, writeJsonFile } from './fsio.ts';
 import { withTaskMutex, workspacePath, type WorkspaceRef } from './paths.ts';
 
 export type EngineName = InstanceFile['engine'];
@@ -48,7 +48,7 @@ export function newInstanceFile(slug: string, o: NewInstanceOptions): InstanceFi
 }
 
 /** The value written to disk: keys in the order of `InstanceFileSchema` whatever order the object came in. */
-export function instanceFileToPy(file: InstanceFile): PyJsonValue {
+export function instanceFileToDoc(file: InstanceFile): JsonDoc {
   const parsed = InstanceFileSchema.safeParse(file);
   if (!parsed.success) {
     throw new McsError('WORKSPACE_INVALID', `instance.json would be invalid: ${describeIssues(parsed.error.issues)}`);
@@ -74,9 +74,9 @@ function describeIssues(issues: readonly { path: readonly PropertyKey[]; message
     .join('; ');
 }
 
-/** Replaces `instance.json` atomically (PyJson, indent 2). */
+/** Replaces `instance.json` atomically (indent 2). */
 export function writeInstanceFile(ws: Pick<WorkspaceRef, 'dir'>, file: InstanceFile): Promise<void> {
-  return writePyJsonFile(workspacePath(ws, 'instance.json'), instanceFileToPy(file));
+  return writeJsonFile(workspacePath(ws, 'instance.json'), instanceFileToDoc(file));
 }
 
 export interface ReadInstanceOptions {
@@ -93,7 +93,7 @@ export async function readInstanceFile(
   o: ReadInstanceOptions = {},
 ): Promise<InstanceFile | null> {
   const file = workspacePath(ws, 'instance.json');
-  let value: PyJsonValue;
+  let value: JsonDoc;
   try {
     value = (await readJsonFile(file)).value;
   } catch (error) {
@@ -126,9 +126,9 @@ export async function readInstanceFile(
   return parsed.data;
 }
 
-function shownId(value: PyJsonValue | undefined): string {
+function shownId(value: JsonDoc | undefined): string {
   if (value === undefined || value.k === 'null') return 'None';
-  return value.k === 'str' ? pyRepr(value.v) : pyShort(value);
+  return value.k === 'str' ? quoteText(value.v) : shortJson(value);
 }
 
 /**
@@ -136,9 +136,9 @@ function shownId(value: PyJsonValue | undefined): string {
  * hold an object (`WORKSPACE_INVALID`) and name the folder as its `id` (`IDENTITY_MISMATCH`, the legacy wording). Nothing
  * else of it is validated here (legacy parity: only `audit` checks `schema_version`).
  */
-export async function readTaskFile(ws: Pick<WorkspaceRef, 'dir' | 'slug'>): Promise<PyObject> {
+export async function readTaskFile(ws: Pick<WorkspaceRef, 'dir' | 'slug'>): Promise<JsonObject> {
   const file = workspacePath(ws, 'task.json');
-  let value: PyJsonValue;
+  let value: JsonDoc;
   try {
     value = (await readJsonFile(file)).value;
   } catch (error) {
@@ -153,7 +153,7 @@ export async function readTaskFile(ws: Pick<WorkspaceRef, 'dir' | 'slug'>): Prom
   if (value.k !== 'obj') throw new McsError('WORKSPACE_INVALID', `${file} must contain a JSON object`);
   const id = value.v.find(([key]) => key === 'id')?.[1];
   if (id?.k !== 'str' || id.v !== ws.slug) {
-    throw new McsError('IDENTITY_MISMATCH', `task.json id ${shownId(id)} does not match folder ${pyRepr(ws.slug)}`);
+    throw new McsError('IDENTITY_MISMATCH', `task.json id ${shownId(id)} does not match folder ${quoteText(ws.slug)}`);
   }
   return value;
 }

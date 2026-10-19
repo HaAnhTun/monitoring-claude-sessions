@@ -14,10 +14,10 @@ import {
   getEntry,
   readConfigJson,
   readOptionalConfigJson,
-  type PyObject,
+  type JsonObject,
 } from '../config/defaults.ts';
 import { resolveConfig } from '../config/resolve.ts';
-import { pyEquals, pyFloatRepr, pyRepr, type PyJsonValue } from '../pyjson/index.ts';
+import { jsonEquals, formatFloat, quoteText, type JsonDoc } from '../json/index.ts';
 import { readInstanceFile } from '../workspace/adopt.ts';
 import { isMissingFileError } from '../workspace/fsio.ts';
 import { listWorkspaceSlugs } from '../workspace/list.ts';
@@ -79,26 +79,26 @@ export interface AuditCheckInput {
 }
 
 /** Python `repr` of a parsed JSON value, as the legacy messages show a `task.json` field. */
-function pyReprOf(value: PyJsonValue | undefined): string {
+function reprOf(value: JsonDoc | undefined): string {
   if (value === undefined) return 'None';
   switch (value.k) {
     case 'null':
       return 'None';
     case 'str':
-      return pyRepr(value.v);
+      return quoteText(value.v);
     case 'bool':
       return value.v ? 'True' : 'False';
     case 'int':
       return value.v.toString();
     case 'float':
-      return pyFloatRepr(value.v);
+      return formatFloat(value.v);
     case 'arr':
-      return `[${value.v.map(pyReprOf).join(', ')}]`;
+      return `[${value.v.map(reprOf).join(', ')}]`;
     case 'obj': {
       // Python keeps the position of the first occurrence of a repeated key and the value of the last one.
-      const entries = new Map<string, PyJsonValue>();
+      const entries = new Map<string, JsonDoc>();
       for (const [key, item] of value.v) entries.set(key, item);
-      return `{${[...entries].map(([key, item]) => `${pyRepr(key)}: ${pyReprOf(item)}`).join(', ')}}`;
+      return `{${[...entries].map(([key, item]) => `${quoteText(key)}: ${reprOf(item)}`).join(', ')}}`;
     }
   }
 }
@@ -137,11 +137,11 @@ async function legacyProblems(ctx: OpContext, slug: string, ws: WorkspaceRef, pr
   const task = await readConfigJson(workspacePath(ws, 'task.json'));
   const id = getEntry(task, 'id');
   if (id?.k !== 'str' || id.v !== slug) {
-    problems.push(`task.json id ${pyReprOf(id)} does not match folder ${pyRepr(slug)}`);
+    problems.push(`task.json id ${reprOf(id)} does not match folder ${quoteText(slug)}`);
   }
   const version = getEntry(task, 'schema_version');
-  if (version === undefined || !pyEquals(version, { k: 'int', v: BigInt(TASK_SCHEMA) })) {
-    problems.push(`task.json schema_version ${pyReprOf(version)} unsupported`);
+  if (version === undefined || !jsonEquals(version, { k: 'int', v: BigInt(TASK_SCHEMA) })) {
+    problems.push(`task.json schema_version ${reprOf(version)} unsupported`);
   }
   try {
     await resolveConfig({ workspace: ws, env: ctx.env, cli: {}, skillDir: ctx.skillDir });
@@ -163,7 +163,7 @@ async function legacyProblems(ctx: OpContext, slug: string, ws: WorkspaceRef, pr
 async function runtimeFileProblem(ws: WorkspaceRef): Promise<string | null> {
   const file = workspacePath(ws, 'runtime.json');
   try {
-    const doc: PyObject | null = await readOptionalConfigJson(file);
+    const doc: JsonObject | null = await readOptionalConfigJson(file);
     if (doc === null) return null;
     checkSchemaVersion(doc, file, 'runtime.json');
     const problems = runtimeProblems(doc);

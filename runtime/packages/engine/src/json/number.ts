@@ -1,7 +1,12 @@
-// Python `float.__repr__` (design 01 section 1.9, verified bit for bit against CPython in E6).
+// The text of a float (design 01 section 1.9). The form is the one the 3.x files already use, so a rewrite never churns a
+// number: shortest round-trip digits, exponent form when the exponent is below -4 or at least 16, and `.0` for an
+// integral value.
 
-/** Python's `repr(float)`: shortest round-trip digits, exponent form when `exp < -4 || exp >= 16`, `.0` for integral values. */
-export function pyFloatRepr(x: number): string {
+/**
+ * The text of a float. `NaN` and the infinities print as `nan`, `inf` and `-inf` (for messages only: they have no JSON
+ * form and `dumpJson` refuses them before this runs).
+ */
+export function formatFloat(x: number): string {
   if (Number.isNaN(x)) return 'nan';
   if (x === Number.POSITIVE_INFINITY) return 'inf';
   if (x === Number.NEGATIVE_INFINITY) return '-inf';

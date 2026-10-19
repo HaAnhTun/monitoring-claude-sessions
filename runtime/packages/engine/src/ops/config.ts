@@ -1,10 +1,9 @@
 // Engine operations behind `inspect`, `configure` and `check` (01 6.4, registry 2.1). `inspect` returns the legacy report and
 // `ConfigInspection` as a pure projection of the same resolved configuration; `configure` applies the legacy semantics to
-// PyJson copies of `config.json` and `runtime.json` and writes only what changed; `check` is the legacy one-line summary.
+// parsed copies of `config.json` and `runtime.json` and writes only what changed; `check` is the legacy one-line summary.
 // The CLI renders these results and the server serves the projection; no rule lives anywhere else (INV-12).
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -27,24 +26,24 @@ import {
   readConfigJson,
   readOptionalConfigJson,
   type LegacyConfig,
-  type PyObject,
+  type JsonObject,
 } from '../config/defaults.ts';
 import { resolveConfig, type ResolvedConfig } from '../config/resolve.ts';
 import { validateLegacy } from '../config/validate-legacy.ts';
 import {
-  PyJsonSyntaxError,
+  JsonSyntaxError,
   fromPlain,
-  parsePyJson,
-  pyEquals,
-  pyFloatRepr,
-  pyJsonFileText,
-  pyRepr,
-  pyShort,
+  parseJson,
+  jsonEquals,
+  formatFloat,
+  jsonFileText,
+  quoteText,
+  shortJson,
   toPlain,
-  type PyJsonValue,
-} from '../pyjson/index.ts';
+  type JsonDoc,
+} from '../json/index.ts';
 import { readInstanceFile, readTaskFile } from '../workspace/adopt.ts';
-import { readJsonFile, writePyJsonFile } from '../workspace/fsio.ts';
+import { readJsonFile, writeJsonFile } from '../workspace/fsio.ts';
 import { listWorkspaceSlugs } from '../workspace/list.ts';
 import { resolveWorkspace, withTaskMutex, workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
 import { snapshotWorkspace } from '../workspace/snapshot.ts';
@@ -70,7 +69,7 @@ function isRecord(value: unknown): value is PlainRecord {
 }
 
 /** A plain copy of a parsed document; an integer beyond 2^53-1 cannot be shown and is refused. */
-function plainOf(value: PyJsonValue, what: string): unknown {
+function plainOf(value: JsonDoc, what: string): unknown {
   try {
     return toPlain(value);
   } catch (error) {
@@ -81,7 +80,7 @@ function plainOf(value: PyJsonValue, what: string): unknown {
   }
 }
 
-function plainRecordOf(value: PyJsonValue, what: string): PlainRecord {
+function plainRecordOf(value: JsonDoc, what: string): PlainRecord {
   const plain = plainOf(value, what);
   return isRecord(plain) ? plain : {};
 }
@@ -251,7 +250,7 @@ export interface ConfigureReport {
 interface Edit {
   readonly key: string;
   readonly parts: readonly string[];
-  readonly value: PyJsonValue;
+  readonly value: JsonDoc;
 }
 
 function usage(message: string): McsError {
@@ -263,14 +262,14 @@ function parseSets(items: readonly string[]): Edit[] {
   const edits = new Map<string, Edit>();
   for (const item of items) {
     const at = item.indexOf('=');
-    if (at === -1) throw usage(`--set expects KEY=JSON_VALUE, got ${pyRepr(item)}`);
+    if (at === -1) throw usage(`--set expects KEY=JSON_VALUE, got ${quoteText(item)}`);
     const key = pyStrip(item.slice(0, at));
     const raw = item.slice(at + 1);
-    let value: PyJsonValue;
+    let value: JsonDoc;
     try {
-      value = parsePyJson(raw);
+      value = parseJson(raw);
     } catch (error) {
-      if (!(error instanceof PyJsonSyntaxError)) throw error;
+      if (!(error instanceof JsonSyntaxError)) throw error;
       value = { k: 'str', v: raw };
     }
     edits.set(key, { key, parts: key.split('.'), value });
@@ -285,11 +284,11 @@ function isForbiddenKey(parts: readonly string[]): boolean {
   );
 }
 
-function getAt(doc: PyObject, parts: readonly string[]): PyJsonValue | undefined {
-  let cur: PyJsonValue = doc;
+function getAt(doc: JsonObject, parts: readonly string[]): JsonDoc | undefined {
+  let cur: JsonDoc = doc;
   for (const part of parts) {
     if (cur.k !== 'obj') return undefined;
-    const entry: [string, PyJsonValue] | undefined = cur.v.find(([k]) => k === part);
+    const entry: [string, JsonDoc] | undefined = cur.v.find(([k]) => k === part);
     if (entry === undefined) return undefined;
     cur = entry[1];
   }
@@ -297,12 +296,12 @@ function getAt(doc: PyObject, parts: readonly string[]): PyJsonValue | undefined
 }
 
 /** Python `_set_path`: missing intermediate objects are created, one that exists and is not an object is an error. */
-function setAt(doc: PyObject, parts: readonly string[], value: PyJsonValue, dotted: string): void {
-  let cur: PyObject = doc;
+function setAt(doc: JsonObject, parts: readonly string[], value: JsonDoc, dotted: string): void {
+  let cur: JsonObject = doc;
   for (const part of parts.slice(0, -1)) {
     const entry = cur.v.find(([k]) => k === part);
     if (entry === undefined) {
-      const created: PyObject = { k: 'obj', v: [] };
+      const created: JsonObject = { k: 'obj', v: [] };
       cur.v.push([part, created]);
       cur = created;
     } else if (entry[1].k === 'obj') {
@@ -318,8 +317,8 @@ function setAt(doc: PyObject, parts: readonly string[], value: PyJsonValue, dott
 }
 
 /** Python `_del_path` without the null quirk: the removed value, `undefined` when nothing was there to remove. */
-function deleteAt(doc: PyObject, parts: readonly string[]): PyJsonValue | undefined {
-  let cur: PyObject = doc;
+function deleteAt(doc: JsonObject, parts: readonly string[]): JsonDoc | undefined {
+  let cur: JsonObject = doc;
   for (const part of parts.slice(0, -1)) {
     const entry = cur.v.find(([k]) => k === part);
     if (entry?.[1].k !== 'obj') return undefined;
@@ -354,7 +353,7 @@ function formatZodPath(segments: readonly PropertyKey[]): string {
 }
 
 /** Problems of a `runtime.json` document with the messages of `resolveConfig` (`runtime.json: <path>: <message>`). */
-export function runtimeProblems(doc: PyObject): string[] {
+export function runtimeProblems(doc: JsonObject): string[] {
   let plain: unknown;
   try {
     plain = toPlain(doc);
@@ -375,37 +374,37 @@ function rejected(code: McsError['code'], detail: string, cause?: unknown): McsE
 }
 
 /**
- * The resolution of the intended files, run on a throw-away copy of the workspace so that nothing of the real one is
- * touched: patterns, derived defaults and the final type check, exactly as the next `start` or `inspect` will see them.
+ * The resolution of the intended files, run on the parsed documents instead of the files so that nothing is written or
+ * copied: patterns, derived defaults and the final type check, exactly as the next `start` or `inspect` will see them.
  */
 async function resolveIntended(
   ctx: OpContext,
   ws: WorkspaceRef,
-  config: PyObject,
-  runtime: PyObject | null,
+  config: JsonObject,
+  runtime: JsonObject | null,
 ): Promise<void> {
-  const staging = await mkdtemp(path.join(tmpdir(), 'mcs-configure-'));
   try {
-    await writeFile(path.join(staging, 'task.json'), await readFile(workspacePath(ws, 'task.json')));
-    await writeFile(path.join(staging, CONFIG_FILE), pyJsonFileText(config));
-    if (runtime !== null) await writeFile(path.join(staging, RUNTIME_FILE), pyJsonFileText(runtime));
-    await resolveConfig({ workspace: { dir: staging }, env: ctx.env, cli: {}, skillDir: ctx.skillDir });
+    await resolveConfig({
+      workspace: ws,
+      env: ctx.env,
+      cli: {},
+      skillDir: ctx.skillDir,
+      override: { config, runtime },
+    });
   } catch (error) {
     if (!(error instanceof McsError)) throw error;
-    throw rejected(error.code, error.message.split(staging).join(ws.dir), error);
-  } finally {
-    await rm(staging, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    throw rejected(error.code, error.message, error);
   }
 }
 
-function topLevelKeys(doc: PyObject | null): string[] {
+function topLevelKeys(doc: JsonObject | null): string[] {
   return doc === null ? [] : doc.v.map(([k]) => k).filter((k) => !k.startsWith('_'));
 }
 
-async function writeVerified(file: string, doc: PyObject, wrote: () => void): Promise<void> {
-  await writePyJsonFile(file, doc);
+async function writeVerified(file: string, doc: JsonObject, wrote: () => void): Promise<void> {
+  await writeJsonFile(file, doc);
   wrote();
-  const intended = Buffer.from(pyJsonFileText(doc), 'utf8');
+  const intended = Buffer.from(jsonFileText(doc), 'utf8');
   const actual = await readFile(file);
   if (!actual.equals(intended)) {
     throw new McsError('INTERNAL', `${path.basename(file)} does not hold the intended bytes after the write`);
@@ -418,7 +417,7 @@ async function runtimeIsRunning(ws: WorkspaceRef): Promise<boolean> {
 
 /**
  * `ops.config.configure` (01 6.4): the legacy semantics (`was`, change only when the value differs, `_set_path`, `unset`)
- * on PyJson copies, routing of runtime keys to `runtime.json` (created on demand), whole-result validation before any
+ * on parsed copies, routing of runtime keys to `runtime.json` (created on demand), whole-result validation before any
  * write, atomic write and read-back, the audit entry, and an isolation snapshot of every other workspace around it all.
  * A call that changes nothing writes nothing and audits nothing.
  */
@@ -446,19 +445,19 @@ export async function configure(
       if (!(error instanceof McsError)) throw error;
     }
 
-    const config: PyObject = structuredClone(currentConfig);
-    const runtime: PyObject =
+    const config: JsonObject = structuredClone(currentConfig);
+    const runtime: JsonObject =
       currentRuntime === null ? fromObject({ schema_version: 1 }) : structuredClone(currentRuntime);
     const changes: string[] = [];
     const changedFiles = new Set<'config' | 'runtime'>();
     const changedRouting = { value: false };
     const badKeys: string[] = [];
 
-    const was = (parts: readonly string[], doc: PyObject, runtimeKey: boolean): string => {
+    const was = (parts: readonly string[], doc: JsonObject, runtimeKey: boolean): string => {
       const current = getAt(doc, parts);
-      if (current !== undefined && current.k !== 'null') return pyShort(current);
+      if (current !== undefined && current.k !== 'null') return shortJson(current);
       const fallback = runtimeKey ? plainAt(before?.runtime, parts) : getAtPlainFromDoc(defaults, parts);
-      return `(default ${pyShort(fromPlain(fallback ?? null))})`;
+      return `(default ${shortJson(fromPlain(fallback ?? null))})`;
     };
     const record = (parts: readonly string[], runtimeKey: boolean, text: string): void => {
       changes.push(text);
@@ -477,9 +476,9 @@ export async function configure(
       const doc = runtimeKey ? runtime : config;
       const previous = was(edit.parts, doc, runtimeKey);
       const current = getAt(doc, edit.parts) ?? ({ k: 'null' } as const);
-      if (!pyEquals(current, edit.value)) {
+      if (!jsonEquals(current, edit.value)) {
         setAt(doc, edit.parts, edit.value, edit.key);
-        record(edit.parts, runtimeKey, `${edit.key}: ${previous} -> ${pyShort(edit.value)}`);
+        record(edit.parts, runtimeKey, `${edit.key}: ${previous} -> ${shortJson(edit.value)}`);
       }
     }
     for (const key of unsets) {
@@ -497,7 +496,8 @@ export async function configure(
         record(parts, runtimeKey, `${key}: ${previous} -> (removed, default applies)`);
       }
     }
-    if (badKeys.length > 0) throw rejected('CONFIG_INVALID', badKeys.map((k) => `unknown key ${pyRepr(k)}`).join('; '));
+    if (badKeys.length > 0)
+      throw rejected('CONFIG_INVALID', badKeys.map((k) => `unknown key ${quoteText(k)}`).join('; '));
 
     // The whole intended result is validated before anything is written (also when nothing changed, as the legacy command does).
     const runtimeAfter = changedFiles.has('runtime') || currentRuntime !== null ? runtime : null;
@@ -710,14 +710,14 @@ function partiallyApplied(error: unknown, progress: ApplyProgress): unknown {
   });
 }
 
-function fromObject(value: Record<string, unknown>): PyObject {
+function fromObject(value: Record<string, unknown>): JsonObject {
   const converted = fromPlain(value);
   if (converted.k !== 'obj') throw new McsError('INTERNAL', 'expected an object');
   return converted;
 }
 
 /** The plain value at `parts` of a parsed document (the shared defaults), or `undefined`. */
-function getAtPlainFromDoc(doc: PyObject, parts: readonly string[]): unknown {
+function getAtPlainFromDoc(doc: JsonObject, parts: readonly string[]): unknown {
   const found = getAt(doc, parts);
   return found === undefined ? undefined : toPlain(found);
 }
@@ -761,7 +761,7 @@ async function windowHoursText(ctx: OpContext, ws: WorkspaceRef | null, resolved
       : (await loadSkillDefaults(ctx.skillDir)).doc;
   const raw = doc === null ? undefined : getEntry(doc, 'window_hours');
   if (raw?.k === 'int') return raw.v.toString();
-  return raw?.k === 'float' ? pyFloatRepr(raw.v) : fallback;
+  return raw?.k === 'float' ? formatFloat(raw.v) : fallback;
 }
 
 /**

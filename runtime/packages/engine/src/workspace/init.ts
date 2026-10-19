@@ -10,19 +10,19 @@ import { McsError, isoSecondsZ, systemClock, type Clock, type InstanceFile } fro
 import { z } from 'zod';
 
 import { CHANGES_HEADER, changeEntryText } from '../audit/writer.ts';
-import { checkSchemaVersion, getEntry, type PyObject } from '../config/defaults.ts';
+import { checkSchemaVersion, getEntry, type JsonObject } from '../config/defaults.ts';
 import { LEGACY_KEYS, compileConfigPatterns, validateLegacy } from '../config/validate-legacy.ts';
 import { pidAlive } from '../platform/process.ts';
-import { fromPlain, pyEquals, pyRepr, toPlain, type PyJsonValue } from '../pyjson/index.ts';
+import { fromPlain, jsonEquals, quoteText, toPlain, type JsonDoc } from '../json/index.ts';
 import {
   adoptWorkspace,
   ensureWorkspaceDir,
-  instanceFileToPy,
+  instanceFileToDoc,
   newInstanceFile,
   readInstanceFile,
   readTaskFile,
 } from './adopt.ts';
-import { isMissingFileError, readJsonFile, writePyJsonFile, writeWorkspaceFile } from './fsio.ts';
+import { isMissingFileError, readJsonFile, writeJsonFile, writeWorkspaceFile } from './fsio.ts';
 import {
   checkSlug,
   resolveWorkspace,
@@ -127,18 +127,18 @@ interface Request {
   readonly name: string;
   readonly description: string;
   /** The candidate `config.json`. */
-  readonly candidate: PyObject;
+  readonly candidate: JsonObject;
   /** Keys and values an existing `config.json` must already hold (the seed keys and the port), or none. */
-  readonly requested: readonly (readonly [string, PyJsonValue])[];
+  readonly requested: readonly (readonly [string, JsonDoc])[];
 }
 
-function setEntry(entries: [string, PyJsonValue][], key: string, value: PyJsonValue): void {
+function setEntry(entries: [string, JsonDoc][], key: string, value: JsonDoc): void {
   const at = entries.findIndex(([k]) => k === key);
   if (at === -1) entries.push([key, value]);
   else entries[at] = [key, value];
 }
 
-async function readSeed(file: string): Promise<PyObject> {
+async function readSeed(file: string): Promise<JsonObject> {
   const { value } = await readJsonFile(file);
   if (value.k !== 'obj') {
     throw new McsError('CONFIG_INVALID', `invalid seed config ${file}: config must be a JSON object`);
@@ -148,7 +148,7 @@ async function readSeed(file: string): Promise<PyObject> {
   if (unknown.length > 0) {
     throw new McsError(
       'CONFIG_INVALID',
-      `invalid seed config ${file}: unknown key${unknown.length === 1 ? '' : 's'} ${unknown.map(pyRepr).join(', ')}`,
+      `invalid seed config ${file}: unknown key${unknown.length === 1 ? '' : 's'} ${unknown.map(quoteText).join(', ')}`,
       { hint: 'init takes the keys of config.json only; set runtime keys with `mcs configure` afterwards.' },
     );
   }
@@ -171,11 +171,11 @@ async function prepareRequest(o: InitOptions, root: string): Promise<Request> {
   assertWellFormed('description', o.description ?? '');
   const slug = checkSlug(o.slug !== undefined && o.slug !== '' ? o.slug : slugify(o.name));
   const name = o.name === '' ? slug : o.name;
-  const entries: [string, PyJsonValue][] = [
+  const entries: [string, JsonDoc][] = [
     ['schema_version', { k: 'int', v: 1n }],
     ['title', { k: 'str', v: name }],
   ];
-  const requested: [string, PyJsonValue][] = [];
+  const requested: [string, JsonDoc][] = [];
   if (o.seedConfig !== undefined) {
     for (const [key, value] of (await readSeed(o.seedConfig)).v) {
       if (key === 'schema_version') continue;
@@ -184,11 +184,11 @@ async function prepareRequest(o: InitOptions, root: string): Promise<Request> {
     }
   }
   if (o.port !== undefined) {
-    const port: PyJsonValue = Number.isInteger(o.port) ? { k: 'int', v: BigInt(o.port) } : { k: 'float', v: o.port };
+    const port: JsonDoc = Number.isInteger(o.port) ? { k: 'int', v: BigInt(o.port) } : { k: 'float', v: o.port };
     setEntry(entries, 'port', port);
     requested.push(['port', port]);
   }
-  const candidate: PyObject = { k: 'obj', v: entries };
+  const candidate: JsonObject = { k: 'obj', v: entries };
   const problems = validateLegacy(candidate, { strict: true });
   if (problems.length > 0) {
     const where = path.join(root, slug, 'config.json');
@@ -217,7 +217,7 @@ function repoField(finalDir: string, repo: string): string {
   return (path.isAbsolute(relative) ? path.resolve(repo) : relative).split(path.sep).join('/');
 }
 
-function taskFile(request: Request, finalDir: string, repo: string, nowMs: number): PyJsonValue {
+function taskFile(request: Request, finalDir: string, repo: string, nowMs: number): JsonDoc {
   return fromPlain({
     schema_version: 1,
     id: request.slug,
@@ -247,10 +247,10 @@ async function buildStaging(
   });
   await mkdir(staging);
   const there = { dir: staging };
-  await writePyJsonFile(workspacePath(there, 'task.json'), taskFile(request, ws.dir, o.repo, nowMs));
-  await writePyJsonFile(workspacePath(there, 'config.json'), request.candidate);
+  await writeJsonFile(workspacePath(there, 'task.json'), taskFile(request, ws.dir, o.repo, nowMs));
+  await writeJsonFile(workspacePath(there, 'config.json'), request.candidate);
   await writeWorkspaceFile(workspacePath(there, 'README.md'), readmeText(request.name, request.description, ws.slug));
-  await writePyJsonFile(workspacePath(there, 'instance.json'), instanceFileToPy(instance));
+  await writeJsonFile(workspacePath(there, 'instance.json'), instanceFileToDoc(instance));
   await ensureWorkspaceDir(there, 'audit');
   await writeWorkspaceFile(
     workspacePath(there, 'audit', 'changes.md'),
@@ -344,7 +344,7 @@ async function differingKeys(ws: WorkspaceRef, requested: Request['requested']):
   return requested
     .filter(([key, wanted]) => {
       const have = getEntry(value, key);
-      return have === undefined || !pyEquals(have, wanted);
+      return have === undefined || !jsonEquals(have, wanted);
     })
     .map(([key]) => key);
 }

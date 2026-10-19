@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { fromPlain, toPlain } from './convert.ts';
-import { parsePyJson } from './parse.ts';
+import { parseJson } from './parse.ts';
 
 describe('toPlain', () => {
   it('converts every kind', () => {
-    const value = parsePyJson('{"a":[1,2.5,"x",null,true],"b":{"c":3}}');
+    const value = parseJson('{"a":[1,2.5,"x",null,true],"b":{"c":3}}');
     expect(toPlain(value)).toEqual({ a: [1, 2.5, 'x', null, true], b: { c: 3 } });
   });
 
   it('throws for an int beyond 2**53-1 and accepts the boundary', () => {
-    expect(toPlain(parsePyJson('9007199254740991'))).toBe(9007199254740991);
-    expect(toPlain(parsePyJson('-9007199254740991'))).toBe(-9007199254740991);
-    expect(() => toPlain(parsePyJson('9007199254740992'))).toThrow(RangeError);
-    expect(() => toPlain(parsePyJson('[-9007199254740992]'))).toThrow(RangeError);
+    expect(toPlain(parseJson('9007199254740991'))).toBe(9007199254740991);
+    expect(toPlain(parseJson('-9007199254740991'))).toBe(-9007199254740991);
+    expect(() => toPlain(parseJson('9007199254740992'))).toThrow(RangeError);
+    expect(() => toPlain(parseJson('[-9007199254740992]'))).toThrow(RangeError);
   });
 
   it('keeps __proto__ as an own property', () => {
-    const plain = toPlain(parsePyJson('{"__proto__":{"x":1}}'));
+    const plain = toPlain(parseJson('{"__proto__":{"x":1}}'));
     expect(Object.getPrototypeOf(plain)).toBe(Object.prototype);
     expect(Object.keys(plain as object)).toEqual(['__proto__']);
   });
@@ -65,7 +65,7 @@ describe('fromPlain', () => {
   });
 
   it('round-trips toPlain for safe data', () => {
-    const value = parsePyJson('{"a":[1,2,{"b":"c"}],"d":null}');
+    const value = parseJson('{"a":[1,2,{"b":"c"}],"d":null}');
     expect(fromPlain(toPlain(value))).toEqual(value);
   });
 });

@@ -8,7 +8,7 @@ import {
   canonicalJsonHash,
   clip,
   normalizePath,
-  pyJsonDumps,
+  compactJsonText,
   redact,
   redactDetailed,
   routeKey,
@@ -104,7 +104,7 @@ describe('clip', () => {
   });
 });
 
-describe('pyJsonDumps (json.dumps with ensure_ascii=False)', () => {
+describe('compactJsonText (json.dumps with ensure_ascii=False)', () => {
   it.each([
     [null, 'null'],
     [true, 'true'],
@@ -134,63 +134,63 @@ describe('pyJsonDumps (json.dumps with ensure_ascii=False)', () => {
     [123456789.125, '123456789.125'],
     [9007199254740993n, '9007199254740993'],
   ])('number-like %s -> %s', (value, expected) => {
-    expect(pyJsonDumps(value)).toBe(expected);
+    expect(compactJsonText(value)).toBe(expected);
   });
 
   it('escapes only the characters json.dumps escapes when ensure_ascii is false', () => {
-    expect(pyJsonDumps('a"b')).toBe('"a' + BS + '"b"');
-    expect(pyJsonDumps('a' + BS + 'b')).toBe('"a' + BS + BS + 'b"');
-    expect(pyJsonDumps('line1' + String.fromCharCode(10) + 'line2')).toBe('"line1' + BS + 'nline2"');
-    expect(pyJsonDumps(String.fromCharCode(13, 9, 8, 12))).toBe('"' + BS + 'r' + BS + 't' + BS + 'b' + BS + 'f"');
-    expect(pyJsonDumps(String.fromCharCode(0, 1, 31))).toBe('"' + BS + 'u0000' + BS + 'u0001' + BS + 'u001f"');
+    expect(compactJsonText('a"b')).toBe('"a' + BS + '"b"');
+    expect(compactJsonText('a' + BS + 'b')).toBe('"a' + BS + BS + 'b"');
+    expect(compactJsonText('line1' + String.fromCharCode(10) + 'line2')).toBe('"line1' + BS + 'nline2"');
+    expect(compactJsonText(String.fromCharCode(13, 9, 8, 12))).toBe('"' + BS + 'r' + BS + 't' + BS + 'b' + BS + 'f"');
+    expect(compactJsonText(String.fromCharCode(0, 1, 31))).toBe('"' + BS + 'u0000' + BS + 'u0001' + BS + 'u001f"');
     // not escaped: slash, DEL, NEL, line and paragraph separators, non-ASCII, astral, lone surrogate
-    expect(pyJsonDumps('a/b')).toBe('"a/b"');
-    expect(pyJsonDumps(String.fromCharCode(0x7f))).toBe('"' + String.fromCharCode(0x7f) + '"');
-    expect(pyJsonDumps(String.fromCharCode(0x85, 0x2028, 0x2029))).toBe(
+    expect(compactJsonText('a/b')).toBe('"a/b"');
+    expect(compactJsonText(String.fromCharCode(0x7f))).toBe('"' + String.fromCharCode(0x7f) + '"');
+    expect(compactJsonText(String.fromCharCode(0x85, 0x2028, 0x2029))).toBe(
       '"' + String.fromCharCode(0x85, 0x2028, 0x2029) + '"',
     );
-    expect(pyJsonDumps(E_ACUTE + EMOJI)).toBe('"' + E_ACUTE + EMOJI + '"');
-    expect(pyJsonDumps(HIGH)).toBe('"' + HIGH + '"');
+    expect(compactJsonText(E_ACUTE + EMOJI)).toBe('"' + E_ACUTE + EMOJI + '"');
+    expect(compactJsonText(HIGH)).toBe('"' + HIGH + '"');
   });
 
   it('uses the default separators and keeps insertion order', () => {
-    expect(pyJsonDumps({})).toBe('{}');
-    expect(pyJsonDumps([])).toBe('[]');
-    expect(pyJsonDumps({ b: 1, a: [1, { c: null }], d: {} })).toBe('{"b": 1, "a": [1, {"c": null}], "d": {}}');
-    expect(pyJsonDumps([1, 'a', null, true, [], {}])).toBe('[1, "a", null, true, [], {}]');
+    expect(compactJsonText({})).toBe('{}');
+    expect(compactJsonText([])).toBe('[]');
+    expect(compactJsonText({ b: 1, a: [1, { c: null }], d: {} })).toBe('{"b": 1, "a": [1, {"c": null}], "d": {}}');
+    expect(compactJsonText([1, 'a', null, true, [], {}])).toBe('[1, "a", null, true, [], {}]');
   });
 
   it('treats undefined like json.dumps treats None in a list and omits it in an object', () => {
-    expect(pyJsonDumps([undefined, 1])).toBe('[null, 1]');
-    expect(pyJsonDumps({ a: undefined, b: 1 })).toBe('{"b": 1}');
-    expect(pyJsonDumps(undefined)).toBe('null');
+    expect(compactJsonText([undefined, 1])).toBe('[null, 1]');
+    expect(compactJsonText({ a: undefined, b: 1 })).toBe('{"b": 1}');
+    expect(compactJsonText(undefined)).toBe('null');
   });
 
   it('rejects what json.dumps rejects', () => {
-    expect(() => pyJsonDumps(() => 1)).toThrow(TypeError);
-    expect(() => pyJsonDumps(Symbol('x'))).toThrow(TypeError);
+    expect(() => compactJsonText(() => 1)).toThrow(TypeError);
+    expect(() => compactJsonText(Symbol('x'))).toThrow(TypeError);
     const cyclic: Record<string, unknown> = {};
     cyclic['self'] = cyclic;
-    expect(() => pyJsonDumps(cyclic)).toThrow(TypeError);
+    expect(() => compactJsonText(cyclic)).toThrow(TypeError);
   });
 
   it('does not treat a repeated (non-cyclic) object as a cycle', () => {
     const shared = { x: 1 };
-    expect(pyJsonDumps([shared, shared])).toBe('[{"x": 1}, {"x": 1}]');
+    expect(compactJsonText([shared, shared])).toBe('[{"x": 1}, {"x": 1}]');
   });
 
   it('documents the golden cases JavaScript cannot represent (float-one, float-in-list, integer-big, numeric key order)', () => {
-    expect(pyJsonDumps(JSON.parse('1.0'))).toBe('1'); // Python: 1.0
-    expect(pyJsonDumps(JSON.parse('[1.5, 2.0]'))).toBe('[1.5, 2]'); // Python: [1.5, 2.0]
-    expect(pyJsonDumps(JSON.parse('12345678901234567890'))).toBe('1.2345678901234567e+19'); // Python int: all digits
-    expect(pyJsonDumps(JSON.parse('{"10": 1, "2": 2}'))).toBe('{"2": 2, "10": 1}'); // Python: insertion order
+    expect(compactJsonText(JSON.parse('1.0'))).toBe('1'); // Python: 1.0
+    expect(compactJsonText(JSON.parse('[1.5, 2.0]'))).toBe('[1.5, 2]'); // Python: [1.5, 2.0]
+    expect(compactJsonText(JSON.parse('12345678901234567890'))).toBe('1.2345678901234567e+19'); // Python int: all digits
+    expect(compactJsonText(JSON.parse('{"10": 1, "2": 2}'))).toBe('{"2": 2, "10": 1}'); // Python: insertion order
   });
 
   it('is exact for the integer and float cases of the golden that JavaScript can express', () => {
-    expect(pyJsonDumps(JSON.parse('1e22'))).toBe('1e+22');
-    expect(pyJsonDumps(JSON.parse('-0.0'))).toBe('-0.0');
-    expect(pyJsonDumps(JSON.parse('0.1'))).toBe('0.1');
-    expect(pyJsonDumps(JSON.parse('{"b": 1, "a": 2}'))).toBe('{"b": 1, "a": 2}');
+    expect(compactJsonText(JSON.parse('1e22'))).toBe('1e+22');
+    expect(compactJsonText(JSON.parse('-0.0'))).toBe('-0.0');
+    expect(compactJsonText(JSON.parse('0.1'))).toBe('0.1');
+    expect(compactJsonText(JSON.parse('{"b": 1, "a": 2}'))).toBe('{"b": 1, "a": 2}');
   });
 });
 

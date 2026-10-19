@@ -7,7 +7,7 @@ import { McsError, SLUG_RULE_TEXT, isValidSlug } from '@mcs/shared';
 
 import { MutexTimeoutError, acquireMutex, mutexName } from '../platform/mutex.ts';
 import { canonicalPath } from '../platform/paths.ts';
-import { pyRepr } from '../pyjson/index.ts';
+import { quoteText } from '../json/index.ts';
 import { assertNotLink, isLink } from './fsio.ts';
 
 /** The legacy `slugify` is `@mcs/shared`'s; it is re-exported here because registry 2.1 names this module as its home. */
@@ -45,7 +45,7 @@ export function tasksRootOf(repo: string): string {
  */
 export function checkSlug(slug: unknown): string {
   if (typeof slug !== 'string' || !isValidSlug(slug)) {
-    const shown = typeof slug === 'string' ? pyRepr(slug) : String(slug);
+    const shown = typeof slug === 'string' ? quoteText(slug) : String(slug);
     throw new McsError('SLUG_INVALID', `invalid task slug ${shown} (${SLUG_RULE_TEXT})`);
   }
   return slug;

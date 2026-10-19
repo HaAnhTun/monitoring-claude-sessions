@@ -12,7 +12,7 @@ export {
   canonicalJsonHash,
   clip,
   normalizePath,
-  pyJsonDumps,
+  compactJsonText,
   redact,
   redactDetailed,
   routeKey,
