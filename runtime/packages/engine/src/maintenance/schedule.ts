@@ -9,12 +9,16 @@
 //   wal            15 min / 64 MiB `PRAGMA wal_checkpoint(PASSIVE)`
 //   optimize       every 6 h       `PRAGMA optimize` (the close of a writer connection does it too)
 //   alert sweep    WP-59           empty block below
-//   retention      WP-60           empty block below
+//   retention      60 s after start, then every 6 h: the bookkeeping retention (03 3.8), then `incremental_vacuum`
+//
+// A job whose work belongs to a service that is created after the context (the alert sweep) is declared here with
+// `boundRun(ctx, name)` and gets its function from the owner through `bindScheduledJob`; until then it does nothing.
 import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import type { Clock } from '@mcs/shared';
 
+import type { ResolvedConfig } from '../config/resolve.ts';
 import type { InstanceDb, RepoContext } from '../db/open.ts';
 import { MetaRepo } from '../db/repos/meta.ts';
 import { withWriteTx } from '../db/write.ts';
@@ -22,6 +26,7 @@ import { ingestHealthEvaluatorOf } from '../health/ingest-health.ts';
 import type { Logger } from '../log/logger.ts';
 import type { InstanceContext } from '../runtime/context.ts';
 import type { ErrorRing } from '../runtime/error-ring.ts';
+import { runBookkeepingRetention } from './retention.ts';
 
 /** What a log line or the error ring may say about a failure: its code or its name, never its message (a path may be in it). */
 function failureCode(error: unknown): string {
@@ -38,6 +43,8 @@ const WAL_CHECK_MS = 60_000;
 const WAL_EVERY_MS = 15 * 60_000;
 const WAL_LARGE_BYTES = 64 * 1024 * 1024;
 const OPTIMIZE_MS = 6 * 60 * 60_000;
+const RETENTION_FIRST_MS = 60_000;
+const RETENTION_MS = 6 * 60 * 60_000;
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /** The part of `InstanceContext` the schedule reads (the context satisfies it, tests pass a plain object). */
@@ -45,6 +52,8 @@ export interface SchedulerContext {
   readonly db: InstanceDb;
   readonly scope: RepoContext;
   readonly clock: Clock;
+  /** The resolved configuration: the jobs read their `runtime.*` section (`retention` here, `alerts` for the sweep). */
+  readonly config: Pick<ResolvedConfig, 'runtime'>;
   readonly instanceDir: string;
   readonly logger: Pick<Logger, 'debug' | 'info' | 'warn' | 'error'>;
   readonly errors: Pick<ErrorRing, 'push'>;
@@ -77,13 +86,16 @@ export interface DbSchedulerHandle extends DbScheduler {
   runJob(name: string): Promise<void>;
 }
 
+/** The work of a job: `force` is true for `runJob`, which does the work whatever the job's own condition says. */
+export type ScheduledRun = (now: number, force: boolean) => void | Promise<void>;
+
 interface ScheduledJob {
   readonly name: string;
   readonly intervalMs: number;
   /** Delay of the first run after `start` (default: one interval). */
   readonly firstAfterMs?: number;
   /** `force` is true for `runJob`: the job does its work even when its own condition says "not yet". */
-  run(now: number, force: boolean): void | Promise<void>;
+  readonly run: ScheduledRun;
 }
 
 // ---- the flush of the throttled announcements --------------------------------------------------------------------------------
@@ -96,6 +108,29 @@ const activityFlushes = new WeakMap<object, () => void | Promise<void>>();
  */
 export function bindActivityFlush(ctx: object, flush: () => void | Promise<void>): void {
   activityFlushes.set(ctx, flush);
+}
+
+const scheduledRuns = new WeakMap<object, Map<string, ScheduledRun>>();
+
+/**
+ * The owner of a service that is created after the context binds the work of a job of the schedule that is declared with
+ * `boundRun(ctx, name)` (for example the alert sweep): the job calls the latest function bound under `name`, and does
+ * nothing while there is none. Like `bindActivityFlush`, a second binding of the same name replaces the first.
+ */
+export function bindScheduledJob(ctx: object, name: string, run: ScheduledRun): void {
+  let runs = scheduledRuns.get(ctx);
+  if (runs === undefined) {
+    runs = new Map<string, ScheduledRun>();
+    scheduledRuns.set(ctx, runs);
+  }
+  runs.set(name, run);
+}
+
+/** The `run` of a job whose work arrives through `bindScheduledJob`. */
+export function boundRun(ctx: object, name: string): ScheduledRun {
+  return async (now, force) => {
+    await scheduledRuns.get(ctx)?.get(name)?.(now, force);
+  };
 }
 
 // ---- the scheduler -----------------------------------------------------------------------------------------------------------
@@ -116,6 +151,8 @@ export function createDbSchedulerWith(ctx: SchedulerContext, seams: SchedulerSea
   const checkpoint = seams.checkpoint ?? ((): void => void db.driver.pragma('wal_checkpoint(PASSIVE)'));
   const optimize = seams.optimize ?? ((): void => void db.driver.pragma('optimize'));
   let lastCheckpointAt = clock.now();
+  /** Aborted by `stop`: a long job (the retention) ends at its next batch instead of holding the shutdown. */
+  let stopping = new AbortController();
 
   const jobs: ScheduledJob[] = [
     {
@@ -162,6 +199,29 @@ export function createDbSchedulerWith(ctx: SchedulerContext, seams: SchedulerSea
     // @wp-begin WP-59
     // @wp-end WP-59
     // @wp-begin WP-60
+    {
+      name: 'retention',
+      intervalMs: RETENTION_MS,
+      firstAfterMs: RETENTION_FIRST_MS,
+      run: async (now) => {
+        const { signal } = stopping;
+        try {
+          const removed = await runBookkeepingRetention(db, scope, ctx.config.runtime.retention, now, { signal });
+          const count =
+            removed.changes +
+            removed.ingestErrors +
+            removed.resolvedAlerts +
+            removed.alertStates +
+            removed.instanceReconciliations +
+            removed.hookProbes +
+            removed.retiredFileRows;
+          if (count > 0) ctx.logger.info('retention_done', { count, durationMs: clock.now() - now });
+        } catch (error) {
+          // a stop in the middle of a run is not a failure: what was removed is committed, the next run goes on
+          if (!signal.aborted) throw error;
+        }
+      },
+    },
     // @wp-end WP-60
   ];
 
@@ -226,6 +286,7 @@ export function createDbSchedulerWith(ctx: SchedulerContext, seams: SchedulerSea
     start() {
       if (armed) return;
       armed = true;
+      stopping = new AbortController();
       const now = clock.now();
       lastCheckpointAt = now;
       for (const job of jobs) dueAt.set(job.name, now + (job.firstAfterMs ?? job.intervalMs));
@@ -233,6 +294,7 @@ export function createDbSchedulerWith(ctx: SchedulerContext, seams: SchedulerSea
     },
     async stop() {
       armed = false;
+      stopping.abort();
       if (timer !== null) {
         clearTimeout(timer);
         timer = null;

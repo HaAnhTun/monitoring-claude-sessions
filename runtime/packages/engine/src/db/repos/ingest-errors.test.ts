@@ -155,6 +155,21 @@ describe('IngestErrorsRepo counts and retention', () => {
     expect(withWriteTx(db, CTX, (tx) => repo.trimToNewest(CTX, tx, 3))).toBe(0);
   });
 
+  it('trims in batches: at most `limit` of the oldest rows beyond the maximum per call', () => {
+    const db = database();
+    const repo = new IngestErrorsRepo(db);
+    withWriteTx(db, CTX, (tx) => {
+      for (let i = 0; i < 8; i += 1) repo.insert(CTX, tx, error({ at: T0 + i }));
+    });
+    expect(withWriteTx(db, CTX, (tx) => repo.trimToNewest(CTX, tx, 3, 2))).toBe(2);
+    expect(repo.recent(CTX, 10, null).map((r) => r.at - T0)).toEqual([7, 6, 5, 4, 3, 2]);
+    expect(withWriteTx(db, CTX, (tx) => repo.trimToNewest(CTX, tx, 3, 2))).toBe(2);
+    expect(withWriteTx(db, CTX, (tx) => repo.trimToNewest(CTX, tx, 3, 2))).toBe(1);
+    expect(withWriteTx(db, CTX, (tx) => repo.trimToNewest(CTX, tx, 3, 2))).toBe(0);
+    expect(repo.recent(CTX, 10, null).map((r) => r.at - T0)).toEqual([7, 6, 5]);
+    expect(() => withWriteTx(db, CTX, (tx) => repo.trimToNewest(CTX, tx, 3, -1))).toThrow(RangeError);
+  });
+
   it('counts the occurrences at or after the boundary, inclusive', () => {
     const db = database();
     const repo = new IngestErrorsRepo(db);

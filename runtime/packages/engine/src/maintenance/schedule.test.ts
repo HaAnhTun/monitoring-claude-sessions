@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { RuntimeFileSchema } from '@mcs/shared';
 import { FakeClock, useTempDirs } from '@mcs/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -61,6 +62,7 @@ function rig(): Rig {
     db,
     scope: SCOPE,
     clock,
+    config: { runtime: RuntimeFileSchema.parse({ schema_version: 1 }) },
     instanceDir: root,
     logger: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined },
     errors: {

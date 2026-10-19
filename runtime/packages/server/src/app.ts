@@ -298,9 +298,15 @@ ROUTE_MODULES.push(streamRoutes);
 // @wp-end WP-36
 
 // @wp-begin WP-41
+import { panelRoutes } from './routes/panels.ts';
+
+ROUTE_MODULES.push(panelRoutes);
 // @wp-end WP-41
 
 // @wp-begin WP-57
+import { searchRoutes } from './routes/search.ts';
+
+ROUTE_MODULES.push(searchRoutes);
 // @wp-end WP-57
 
 // @wp-begin WP-58
@@ -311,6 +317,9 @@ ROUTE_MODULES.push(analyticsRoutes, sessionUsageRoutes);
 // @wp-end WP-58
 
 // @wp-begin WP-60
+import { exportRoutes } from './routes/export.ts';
+
+ROUTE_MODULES.push(exportRoutes);
 // @wp-end WP-60
 
 /** Every response: nosniff, no referrer, same-origin policies, no framing (03 5.1, ADR 0045); `/api/*` is never cached. */

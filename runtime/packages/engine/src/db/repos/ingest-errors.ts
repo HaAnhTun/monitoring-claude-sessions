@@ -101,14 +101,19 @@ export class IngestErrorsRepo {
       .all({ sinceAt });
   }
 
-  /** Automatic retention (03 3.8): deletes everything but the newest `maxRows` rows. Returns the count. */
-  trimToNewest(ctx: RepoContext, _tx: WriteTx, maxRows: number): number {
+  /**
+   * Automatic retention (03 3.8): deletes everything but the newest `maxRows` rows, or, with `limit`, at most that many of
+   * the oldest ones beyond them (the retention job deletes in batches). Returns the count.
+   */
+  trimToNewest(ctx: RepoContext, _tx: WriteTx, maxRows: number, limit?: number): number {
     this.db.assertScope(ctx);
+    const batch = limit === undefined ? -1 : rowLimit(limit);
     return this.db.driver
       .prepare(
         `DELETE FROM ingest_errors WHERE id IN (
-           SELECT id FROM ingest_errors ORDER BY at DESC, id DESC LIMIT -1 OFFSET :maxRows)`,
+           SELECT id FROM (SELECT id FROM ingest_errors ORDER BY at DESC, id DESC LIMIT -1 OFFSET :maxRows)
+            ORDER BY id LIMIT :batch)`,
       )
-      .run({ maxRows: rowLimit(maxRows) }).changes;
+      .run({ maxRows: rowLimit(maxRows), batch }).changes;
   }
 }

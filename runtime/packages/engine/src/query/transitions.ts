@@ -482,7 +482,7 @@ export function idsParam(ids: readonly (number | string)[]): string {
 
 // ---- sessionTransitions ----------------------------------------------------------------------------------------------------
 
-interface TransitionDbRow {
+export interface TransitionDbRow {
   id: number;
   at: number;
   agentUid: string | null;
@@ -492,6 +492,21 @@ interface TransitionDbRow {
   basis: 'observed' | 'inferred';
   confidence: 'high' | 'medium' | 'low';
   evidence: string;
+}
+
+/** The API item of a stored transition: `sessionTransitions` and the export (03 11.1) read the same columns. */
+export function toTransitionItem(row: TransitionDbRow, nowMs: number): TransitionItem {
+  return {
+    id: row.id,
+    at: iso(row.at),
+    agentId: row.agentUid,
+    from: row.fromState,
+    to: row.toState,
+    rule: row.rule,
+    basis: row.basis,
+    confidence: row.confidence,
+    evidence: apiEvidence(row.evidence, nowMs),
+  };
 }
 
 export interface TransitionQueries {
@@ -537,17 +552,7 @@ export function createTransitionQueries(db: InstanceDb, deps: QueryDeps): Transi
         const nextCursor =
           rows.length > q.limit && last !== undefined ? writeCursor(spec, last.at, last.id, null) : null;
         const nowMs = deps.now();
-        const items = page.map((row): TransitionItem => ({
-          id: row.id,
-          at: iso(row.at),
-          agentId: row.agentUid,
-          from: row.fromState,
-          to: row.toState,
-          rule: row.rule,
-          basis: row.basis,
-          confidence: row.confidence,
-          evidence: apiEvidence(row.evidence, nowMs),
-        }));
+        const items = page.map((row) => toTransitionItem(row, nowMs));
         return pageOf(items, { nextCursor, asOfSeq, limit: q.limit });
       }),
   };

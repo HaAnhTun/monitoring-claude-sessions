@@ -375,6 +375,21 @@ function emptyPage(asOfSeq: number, limit: number): EventPage {
   };
 }
 
+/**
+ * The events with these row ids, ascending by id, in the API shape (the export reads them by keyset pages of ids, 03 11.1).
+ * An id that no longer exists is skipped. Not a member of the query layer: it takes no scope and is called with a database
+ * that the caller already checked.
+ */
+export function eventsByIds(db: InstanceDb, ids: readonly number[]): ActivityEvent[] {
+  if (ids.length === 0) return [];
+  const rows = db.driver
+    .prepare<EventDbRow>(
+      `SELECT ${EVENT_COLUMNS} FROM ${EVENT_FROM} WHERE e.id IN (SELECT value FROM json_each(:ids)) ORDER BY e.id`,
+    )
+    .all({ ids: idsParam(ids) });
+  return eventItems(db, rows);
+}
+
 // ---- the part --------------------------------------------------------------------------------------------------------------
 
 export function createEventQueries(db: InstanceDb, deps: QueryDeps): EventQueries {
