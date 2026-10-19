@@ -146,7 +146,7 @@ function row(table: Table, over: Readonly<Record<string, Cell | undefined>> = {}
 
 /** Rows every probe can point at; ids are the first rows of their tables. */
 const SEED: readonly string[] = [
-  ins('projects', BASE.projects, { project_key: 'd--mvp', dir_name: 'D--mvp' }),
+  ins('projects', BASE.projects, { project_key: 'd--work', dir_name: 'D--work' }),
   ins('sessions', BASE.sessions, { session_uid: S1, project_id: 1 }),
   ins('sessions', BASE.sessions, { session_uid: S2 }),
   ins('agents', BASE.agents, { session_id: 1, agent_uid: 'main', parent_agent_id: null, kind: 'main', depth: 0 }),
@@ -185,8 +185,8 @@ const PROBES: Readonly<Record<string, readonly Probe[]>> = {
   ],
   projects: [
     { label: 'a new project', sql: row('projects'), expect: 'accepted' },
-    { label: 'project_key in upper case', sql: row('projects', { project_key: 'D--mvp' }), expect: 'check' },
-    { label: 'duplicate project_key', sql: row('projects', { project_key: 'd--mvp' }), expect: 'unique' },
+    { label: 'project_key in upper case', sql: row('projects', { project_key: 'D--work' }), expect: 'check' },
+    { label: 'duplicate project_key', sql: row('projects', { project_key: 'd--work' }), expect: 'unique' },
     { label: 'empty dir_name', sql: row('projects', { dir_name: '' }), expect: 'check' },
     { label: 'root_path of 1025 characters', sql: row('projects', { root_path: long(1025) }), expect: 'check' },
     {

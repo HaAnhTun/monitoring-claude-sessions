@@ -772,7 +772,7 @@ describe('routeKey', () => {
   });
 
   it('treats drive letter case variants as one key on win32', () => {
-    expect(routeKey('D:/mvp/x', true)).toBe(routeKey('d:' + BS + 'MVP' + BS + 'X' + BS, true));
+    expect(routeKey('D:/work/x', true)).toBe(routeKey('d:' + BS + 'WORK' + BS + 'X' + BS, true));
   });
 });
 

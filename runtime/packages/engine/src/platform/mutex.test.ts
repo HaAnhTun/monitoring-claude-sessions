@@ -31,8 +31,8 @@ function uniqueName(): string {
 describe('mutexName / computeMutexName', () => {
   it('hashes a lower-cased key on win32: the table of the launcher parity test', () => {
     const table: [kind: 'task' | 'bootstrap' | 'settings', key: string, expected: string][] = [
-      ['task', 'D:\\mvp\\tasks\\nightly', 'mcs-task-33c4f1f9c220198b'],
-      ['task', 'd:\\mvp\\tasks\\nightly', 'mcs-task-33c4f1f9c220198b'],
+      ['task', 'D:\\work\\tasks\\nightly', 'mcs-task-0d768e8f13d6368c'],
+      ['task', 'd:\\work\\tasks\\nightly', 'mcs-task-0d768e8f13d6368c'],
       ['bootstrap', 'D:\\skills\\monitoring\\runtime', 'mcs-bootstrap-7c1f9db02ad19cb9'],
       ['settings', 'C:\\Users\\Example\\.claude\\settings.json', 'mcs-settings-ea618506215108ce'],
       ['task', '/Home/User/Tasks/Nightly', 'mcs-task-28cb65c9ad75eb7d'],
@@ -44,8 +44,8 @@ describe('mutexName / computeMutexName', () => {
   });
 
   it('keeps the case of the key on every other platform', () => {
-    expect(computeMutexName('task', 'D:\\mvp\\tasks\\nightly', 'linux')).toBe('mcs-task-5b47255c1eee2a7a');
-    expect(computeMutexName('task', 'd:\\mvp\\tasks\\nightly', 'linux')).toBe('mcs-task-33c4f1f9c220198b');
+    expect(computeMutexName('task', 'D:\\work\\tasks\\nightly', 'linux')).toBe('mcs-task-4aceb57b7eb20555');
+    expect(computeMutexName('task', 'd:\\work\\tasks\\nightly', 'linux')).toBe('mcs-task-0d768e8f13d6368c');
     expect(computeMutexName('bootstrap', 'D:\\skills\\monitoring\\runtime', 'darwin')).toBe(
       'mcs-bootstrap-93e554cafcc8479d',
     );

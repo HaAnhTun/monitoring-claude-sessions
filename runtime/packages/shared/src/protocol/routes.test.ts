@@ -171,8 +171,8 @@ describe('matchRoutes: cwd fallback', () => {
   });
 
   it('sanitizes every character outside A-Za-z0-9 to a dash (TS:1)', () => {
-    expect(sanitizeProjectName('D:/mvp')).toBe('D--mvp');
-    expect(sanitizeProjectName(['D:', 'mvp', '.claude', 'skills'].join(BS))).toBe('D--mvp--claude-skills');
+    expect(sanitizeProjectName('D:/work')).toBe('D--work');
+    expect(sanitizeProjectName(['D:', 'work', '.claude', 'skills'].join(BS))).toBe('D--work--claude-skills');
     expect(sanitizeProjectName('/home/me/my proj (x)')).toBe('-home-me-my-proj--x-');
     expect(sanitizeProjectName('abcXYZ019')).toBe('abcXYZ019');
     expect(sanitizeProjectName('')).toBe('');

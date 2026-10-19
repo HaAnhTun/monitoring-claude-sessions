@@ -111,7 +111,7 @@ describe('projectsRoot and sanitizeProjectName', () => {
   });
 
   it('turns every character outside [A-Za-z0-9] into a dash', () => {
-    expect(sanitizeProjectName('D:/mvp/my repo.v2')).toBe('D--mvp-my-repo-v2');
+    expect(sanitizeProjectName('D:/work/my repo.v2')).toBe('D--work-my-repo-v2');
   });
 });
 
@@ -560,7 +560,7 @@ const LONG_300 = '/srv/' + 'b'.repeat(295);
 
 describe('projectFolderName and the folder of a working directory on every OS', () => {
   const table: readonly (readonly [string, string])[] = [
-    [['D:', 'mvp', 'x'].join(BS), 'D--mvp-x'],
+    [['D:', 'work', 'x'].join(BS), 'D--work-x'],
     [['C:', 'Users', 'Test User', 'src', 'app'].join(BS), 'C--Users-Test-User-src-app'],
     [BS + BS + ['srv', 'share', 'p'].join(BS), '--srv-share-p'],
     ['/home/me/my proj (x)', '-home-me-my-proj--x-'],

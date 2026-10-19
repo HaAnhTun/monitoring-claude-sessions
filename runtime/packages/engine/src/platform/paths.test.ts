@@ -55,7 +55,7 @@ describe('upperDriveLetter (string level)', () => {
 describe('isMsysPath', () => {
   it('flags /<letter>/... on win32 and nothing else', () => {
     expect(isMsysPath('/c/Users/x', 'win32')).toBe(true);
-    expect(isMsysPath('/D/mvp', 'win32')).toBe(true);
+    expect(isMsysPath('/D/work', 'win32')).toBe(true);
     expect(isMsysPath('/c', 'win32')).toBe(true);
     expect(isMsysPath('C:/Users/x', 'win32')).toBe(false);
     expect(isMsysPath('//server/share', 'win32')).toBe(false);
