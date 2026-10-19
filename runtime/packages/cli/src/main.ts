@@ -305,6 +305,15 @@ const REGISTRY: readonly RegistryEntry[] = [
     }),
   },
   // @wp-end WP-105
+
+  // @wp-begin WP-107
+  { names: ['cleanup'], load: () => import('./commands/cleanup.ts') },
+  { names: ['config migrate'], load: () => import('./commands/config-migrate.ts') },
+  // @wp-end WP-107
+
+  // @wp-begin WP-141
+  { names: ['diagnostics'], load: () => import('./commands/diagnostics.ts') },
+  // @wp-end WP-141
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
