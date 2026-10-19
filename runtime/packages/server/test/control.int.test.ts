@@ -320,7 +320,7 @@ describe('the test hook that silences the channel (T-LC-06, 01 2.10)', () => {
   });
 
   it('is off without MCS_TEST=1: the variable alone changes nothing', async () => {
-    const f = await fixture({ MCS_TEST_IGNORE_CONTROL: '1' });
+    const f = await fixture({ MCS_TEST: '', MCS_TEST_IGNORE_CONTROL: '1' });
     await start(f);
     expect(await control(f, { v: 1, op: 'identify' })).toMatchObject({ ok: true, phase: 'ready' });
   });

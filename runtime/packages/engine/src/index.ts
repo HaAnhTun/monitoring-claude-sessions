@@ -465,6 +465,16 @@ export type {
 // @wp-end WP-28
 
 // @wp-begin WP-29
+export { CompletionTargetError, explainCompletion, validateCompletionTarget } from './lifecycle/completion.ts';
+export type {
+  AttemptRowRef,
+  CompletionCandidate,
+  CompletionDerivation,
+  CompletionLookup,
+  CompletionTarget,
+  CompletionTargetCode,
+} from './lifecycle/completion.ts';
+export type { CompletionQueries } from './query/completion.ts';
 // @wp-end WP-29
 
 // @wp-begin WP-30
@@ -916,3 +926,14 @@ export type {
   KeySupport,
 } from './config/key-support.ts';
 // @wp-end WP-105
+
+// @wp-begin WP-141
+export * as opsDiagnostics from './ops/diagnostics.ts';
+export type {
+  DiagnosticsDeps,
+  DiagnosticsInput,
+  DiagnosticsResult,
+  DiagnosticsSeams,
+  Scrubber,
+} from './ops/diagnostics.ts';
+// @wp-end WP-141

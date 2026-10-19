@@ -666,7 +666,7 @@ describe('init crash hook (01 2.10): the CLI passes MCS_TEST_INIT_CRASH=before-r
 
   it('is ignored without test mode', async () => {
     const sb = sandbox();
-    const run = await mcs(sb, ['init', '--name', 'No crash'], { MCS_TEST_INIT_CRASH: 'before-rename' });
+    const run = await mcs(sb, ['init', '--name', 'No crash'], { MCS_TEST: '', MCS_TEST_INIT_CRASH: 'before-rename' });
     expect(run.code, run.stderr).toBe(0);
   });
 });

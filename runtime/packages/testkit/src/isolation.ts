@@ -9,8 +9,13 @@ import { waitFor } from './wait.ts';
 
 /**
  * Minimal environment of a test process: PATH and the Windows system variables, `HOME`/`USERPROFILE` in `<root>/home`,
- * `MCS_HOME=<root>/mcs-home`, `CLAUDE_CONFIG_DIR=<root>/claude-home`, `MCS_HOOK_DISABLE=1`, `TZ=UTC`. Nothing named
- * `MCS_*` or `CLAUDE_*` of the parent is inherited. Pure: it creates nothing.
+ * `MCS_HOME=<root>/mcs-home`, `CLAUDE_CONFIG_DIR=<root>/claude-home`, `MCS_HOOK_DISABLE=1`, `MCS_TEST=1`, `TZ=UTC`. Nothing
+ * named `MCS_*` or `CLAUDE_*` of the parent is inherited. Pure: it creates nothing.
+ *
+ * `MCS_TEST=1` is test mode: the hooks installer then refuses every settings file and `MCS_HOME` that is not below the
+ * temporary folder (`REAL_SETTINGS_IN_TEST`), so no child process of a test can write real settings. It also makes the
+ * `MCS_TEST_*` hooks of the runtime act, but only when a test sets one. A test that proves such a hook inert without test
+ * mode passes `MCS_TEST: ''` after the spread of this environment.
  */
 export function hermeticEnv(root: string): Record<string, string> {
   return {
@@ -20,6 +25,7 @@ export function hermeticEnv(root: string): Record<string, string> {
     MCS_HOME: join(root, 'mcs-home'),
     CLAUDE_CONFIG_DIR: join(root, 'claude-home'),
     MCS_HOOK_DISABLE: '1',
+    MCS_TEST: '1',
   };
 }
 

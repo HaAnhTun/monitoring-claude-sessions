@@ -449,3 +449,222 @@ export type DbRebuildResult = z.infer<typeof DbRebuildResultSchema>;
 
 // @wp-begin WP-64
 // @wp-end WP-64
+
+// @wp-begin WP-107
+/** The scopes of `mcs cleanup` (01 6.4), in the order the help lists them. */
+export const CLEANUP_SCOPES = ['stale-state', 'init-leftovers', 'logs', 'backups', 'spool', 'data'] as const;
+
+export type CleanupScope = (typeof CLEANUP_SCOPES)[number];
+
+export const CleanupScopeSchema = z.enum(CLEANUP_SCOPES);
+
+/** One thing a cleanup run deletes (or would delete): a path relative to the workspace (or the tasks root) with `/`. */
+export const CleanupTargetSchema = z.strictObject({
+  path: z.string(),
+  bytes: z.number().int().min(0),
+});
+
+export type CleanupTarget = z.infer<typeof CleanupTargetSchema>;
+
+/** A candidate that the run left alone, with the reason (a link, a live monitor, an unfinished backup, ...). */
+export const CleanupSkippedSchema = z.strictObject({
+  path: z.string(),
+  reason: z.string(),
+});
+
+export type CleanupSkipped = z.infer<typeof CleanupSkippedSchema>;
+
+/** What `--scope data` deletes (or would delete): the plan of the retention run (03 3.8) without any session text. */
+export const CleanupDataSchema = z.strictObject({
+  /** Sessions the run deletes. */
+  sessions: z.number().int().min(0),
+  /** Last activity before this instant (ISO, UTC) is deleted; `null` = the policy keeps sessions. */
+  sessionsBefore: z.string().nullable(),
+  /** Timeline rows before this instant of sessions that stay are deleted; `null` = the policy keeps them. */
+  eventsBefore: z.string().nullable(),
+  /** Rows that go with the sessions, per table. */
+  rows: z.record(z.string(), z.number().int().min(0)),
+  /** Message keys that another session's transcript still holds: their usage moves there. */
+  reownedMessages: z.number().int().min(0),
+  /** Database bytes given back; `null` for a dry run. */
+  freedBytes: z.number().int().min(0).nullable(),
+});
+
+export type CleanupData = z.infer<typeof CleanupDataSchema>;
+
+export const CleanupResultSchema = z.strictObject({
+  /** `null` for `init-leftovers`, which works on the tasks root. */
+  task: z.string().nullable(),
+  scope: CleanupScopeSchema,
+  /** `false`: a dry run, nothing was deleted. */
+  applied: z.boolean(),
+  /** What the plan lists (a dry run) or what was deleted (an applied run). */
+  targets: z.array(CleanupTargetSchema),
+  skipped: z.array(CleanupSkippedSchema),
+  /** Number of targets, and the sum of their sizes. For `data`: the sessions deleted, and 0. */
+  count: z.number().int().min(0),
+  bytes: z.number().int().min(0),
+  /** Applied runs: the targets that were listed again after the deletion and are still there (empty = confirmed). */
+  remaining: z.array(z.string()),
+  /** The `cleanup` backup made first (`data` only, applied runs only). */
+  backup: z.string().nullable(),
+  data: CleanupDataSchema.nullable(),
+  /** Ids of the older backups the automatic pruning removed after the `cleanup` backup. */
+  pruned: z.array(z.string()),
+  /** Why nothing is listed when that is not obvious (no database, no retention policy, no state to look at). */
+  note: z.string().nullable(),
+});
+
+export type CleanupResult = z.infer<typeof CleanupResultSchema>;
+
+export const CONFIG_MIGRATE_FILES = ['config.json', 'runtime.json', 'instance.json'] as const;
+
+export type ConfigMigrateFile = (typeof CONFIG_MIGRATE_FILES)[number];
+
+/** One file migration step (`FileMigration` of the engine without its function). */
+export const ConfigMigrateStepSchema = z.strictObject({
+  file: z.enum(CONFIG_MIGRATE_FILES),
+  from: z.number().int().min(1),
+  to: z.number().int().min(2),
+  describe: z.string(),
+});
+
+export type ConfigMigrateStep = z.infer<typeof ConfigMigrateStepSchema>;
+
+export const ConfigMigrateResultSchema = z.strictObject({
+  task: z.string(),
+  /** `current`: nothing pending, nothing written; `dry-run`: the plan only; `migrated`: applied. */
+  outcome: z.enum(['current', 'dry-run', 'migrated']),
+  /** Every file of the workspace that exists, with its `schema_version` before the run. */
+  files: z.array(z.strictObject({ file: z.enum(CONFIG_MIGRATE_FILES), version: z.number().int() })),
+  steps: z.array(ConfigMigrateStepSchema),
+  /** The `config-migrate` backup made before the first write (applied runs only). */
+  backup: z.string().nullable(),
+  /** The server runs and reads `runtime.json` at start only (applied runs). */
+  restartNeeded: z.boolean(),
+  pruned: z.array(z.string()),
+});
+
+export type ConfigMigrateResult = z.infer<typeof ConfigMigrateResultSchema>;
+// @wp-end WP-107
+
+// @wp-begin WP-141
+// The diagnostics bundle of `mcs diagnostics` (01 6.4, `schemas/diagnostics.v1.schema.json`). It is a report about the runtime
+// for a person who asks for help: it holds no prompt, no transcript text, no regex or other configuration text, no environment
+// value and no token. Absolute paths are written as `<repo>` and `<home>` relative forms.
+import { AlertItemSchema } from '../api/entities.ts';
+import { HealthReportSchema } from '../api/health.ts';
+
+/** The `schema` field of a bundle. */
+export const DIAGNOSTICS_SCHEMA = 'mcs.diagnostics/1';
+
+/** At most this many records of `runtime.log` go into a bundle. */
+export const DIAGNOSTICS_LOG_RECORDS = 200;
+
+/** A value `safeValues` may hold: a number, a boolean, or the member of a closed list of words (an enumeration). */
+export const SafeValueSchema = z.union([z.number(), z.boolean(), z.string()]);
+
+/** One record of `runtime.log`, reduced to the allow-listed fields of the logger (05 S-LOG-1). */
+export const LogRecordSchema = z
+  .object({
+    ts: z.string(),
+    level: z.enum(['debug', 'info', 'warn', 'error']),
+    event: z.string(),
+  })
+  .catchall(z.union([z.string(), z.number(), z.boolean()]));
+
+export type LogRecord = z.infer<typeof LogRecordSchema>;
+
+const NonNegativeInt = z.number().int().min(0);
+
+/** What `status` knows of the instance, without the task text and the legacy reader block. */
+export const DiagnosticsStatusSchema = z.strictObject({
+  running: z.boolean(),
+  /** A probe state of 01 4.8. */
+  probe: z.string(),
+  pid: z.number().int().nullable(),
+  url: z.string().nullable(),
+  uptimeS: z.number().min(0).nullable(),
+  codeStamp: z.string().nullable(),
+  runtimeVersion: z.string().nullable(),
+  outdated: z.boolean().nullable(),
+  outdatedReason: z.enum(['code_stamp_changed', 'runtime_version_changed']).nullable(),
+  dbSchemaVersion: NonNegativeInt.nullable(),
+  ingestion: z.strictObject({ status: z.string(), reasons: z.array(z.string()) }).nullable(),
+  sessions: z
+    .strictObject({
+      RUNNING: NonNegativeInt,
+      IDLE: NonNegativeInt,
+      COMPLETED: NonNegativeInt,
+      FAILED: NonNegativeInt,
+      UNKNOWN: NonNegativeInt,
+    })
+    .nullable(),
+  partialSessions: NonNegativeInt.nullable(),
+  hint: z.string().nullable(),
+  recentErrors: z.array(z.strictObject({ at: z.string(), where: z.string(), message: z.string() })),
+});
+
+export type DiagnosticsStatus = z.infer<typeof DiagnosticsStatusSchema>;
+
+/** An alert as the bundle keeps it: the kind and the numbers, never the title or the detail (they can name a session). */
+export const DiagnosticsAlertSchema = z.strictObject({
+  rule: AlertItemSchema.shape.rule,
+  severity: AlertItemSchema.shape.severity,
+  status: AlertItemSchema.shape.status,
+  since: AlertItemSchema.shape.since,
+  fireCount: AlertItemSchema.shape.fireCount,
+});
+
+/** `GET /api/v3/health` as served, with the alerts reduced to `DiagnosticsAlertSchema`. */
+export const DiagnosticsHealthSchema = HealthReportSchema.omit({ alerts: true }).extend({
+  alerts: z.array(DiagnosticsAlertSchema).max(20),
+});
+
+export type DiagnosticsHealth = z.infer<typeof DiagnosticsHealthSchema>;
+
+export const DiagnosticsBundleSchema = z.strictObject({
+  schema: z.literal(DIAGNOSTICS_SCHEMA),
+  generatedAt: z.string(),
+  runtime: z.strictObject({
+    version: z.string(),
+    /** The build stamp of the runtime folder; `null` without one. */
+    codeStamp: z.string().nullable(),
+    node: z.string(),
+    platform: z.string(),
+    arch: z.string(),
+    /** The running runtime is built from the code in the runtime folder; `null` when no runtime runs (or no task). */
+    buildCurrent: z.boolean().nullable(),
+  }),
+  /** `null` without a task, or when the workspace has no readable `instance.json`. */
+  instance: z
+    .strictObject({
+      instanceId: z.string(),
+      slug: z.string(),
+      dbSchemaVersion: NonNegativeInt,
+      hooksEnabled: z.boolean(),
+    })
+    .nullable(),
+  /** `null` without a task, or when the configuration cannot be resolved (`doctor` says why). */
+  config: z
+    .strictObject({
+      files: z.array(ConfigFileStatusSchema),
+      provenance: z.record(z.string(), ConfigSourceSchema),
+      /** Numbers, booleans and members of closed word lists only. */
+      safeValues: z.record(z.string(), SafeValueSchema),
+      /** Every other key, with a marker for what is there: `<path>`, `<pattern length=N>`, `<text length=N>`, `<list length=N>`, `<unset>`. */
+      redacted: z.record(z.string(), z.string()),
+    })
+    .nullable(),
+  doctor: z.array(DoctorCheckSchema),
+  status: DiagnosticsStatusSchema.nullable(),
+  health: DiagnosticsHealthSchema.nullable(),
+  hooks: HooksVerifyResultSchema.nullable(),
+  logTail: z.array(LogRecordSchema).max(DIAGNOSTICS_LOG_RECORDS),
+  disk: z.strictObject({ freeBytes: NonNegativeInt.nullable() }),
+  /** What could not be collected, one short line each (a stopped instance has no health). */
+  notes: z.array(z.string()),
+});
+
+export type DiagnosticsBundle = z.infer<typeof DiagnosticsBundleSchema>;
+// @wp-end WP-141

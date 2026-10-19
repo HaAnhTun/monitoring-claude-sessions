@@ -41,6 +41,7 @@ describe('hermeticEnv', () => {
     expect(env['HOME']).toBe(join(root, 'home'));
     expect(env['USERPROFILE']).toBe(join(root, 'home'));
     expect(env['MCS_HOOK_DISABLE']).toBe('1');
+    expect(env['MCS_TEST']).toBe('1');
     expect(env['TZ']).toBe('UTC');
     expect(env['PATH']).toBeTypeOf('string');
   });
@@ -55,17 +56,51 @@ describe('hermeticEnv', () => {
       Object.keys(env)
         .filter((k) => /^(MCS_|CLAUDE_)/.test(k))
         .sort(),
-    ).toEqual(['CLAUDE_CONFIG_DIR', 'MCS_HOME', 'MCS_HOOK_DISABLE']);
+    ).toEqual(['CLAUDE_CONFIG_DIR', 'MCS_HOME', 'MCS_HOOK_DISABLE', 'MCS_TEST']);
     expect(env['CLAUDE_CONFIG_DIR']).not.toContain('real');
   });
 
   it('holds a minimal set of keys', () => {
     const keys = Object.keys(hermeticEnv(join(tempDir('hermetic3').path, 'root'))).sort();
-    const base = ['CLAUDE_CONFIG_DIR', 'HOME', 'MCS_HOME', 'MCS_HOOK_DISABLE', 'PATH', 'TZ', 'USERPROFILE'];
+    const base = ['CLAUDE_CONFIG_DIR', 'HOME', 'MCS_HOME', 'MCS_HOOK_DISABLE', 'MCS_TEST', 'PATH', 'TZ', 'USERPROFILE'];
     const win = ['SystemRoot', 'TEMP', 'TMP'];
     for (const key of base) expect(keys).toContain(key);
     if (process.platform === 'win32') for (const key of win) expect(keys).toContain(key);
     expect(keys.length).toBeLessThanOrEqual(base.length + win.length);
+  });
+});
+
+describe('hermeticEnv test mode', () => {
+  it('turns test mode on for the child: MCS_TEST is exactly 1', () => {
+    expect(hermeticEnv(join(tempDir('hermetic4').path, 'root'))['MCS_TEST']).toBe('1');
+  });
+
+  it('keeps every other key it had before the key was added', () => {
+    const env = hermeticEnv(join(tempDir('hermetic5').path, 'root'));
+    const { MCS_TEST: testMode, ...others } = env;
+    expect(testMode).toBe('1');
+    expect(Object.keys(others).sort()).toEqual(
+      expect.arrayContaining([
+        'CLAUDE_CONFIG_DIR',
+        'HOME',
+        'MCS_HOME',
+        'MCS_HOOK_DISABLE',
+        'PATH',
+        'TZ',
+        'USERPROFILE',
+      ]),
+    );
+    expect(
+      Object.keys(others)
+        .filter((k) => /^(MCS_|CLAUDE_)/.test(k))
+        .sort(),
+    ).toEqual(['CLAUDE_CONFIG_DIR', 'MCS_HOME', 'MCS_HOOK_DISABLE']);
+  });
+
+  it('a test that proves a test hook inert passes MCS_TEST empty after the spread, and the key stays empty', () => {
+    const env = { ...hermeticEnv(join(tempDir('hermetic6').path, 'root')), MCS_TEST: '' };
+    expect(env.MCS_TEST).toBe('');
+    expect(Object.keys(env).filter((k) => k === 'MCS_TEST')).toHaveLength(1);
   });
 });
 

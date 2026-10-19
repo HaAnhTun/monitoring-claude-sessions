@@ -305,7 +305,7 @@ describe('a shutdown that arrives while the server is still starting (01 4.3)', 
   }, 60_000);
 
   it('does not hang without the test hook: the variable alone is ignored', async () => {
-    const f = await fixture({ env: { MCS_TEST_BOOT_HANG: '1' } });
+    const f = await fixture({ env: { MCS_TEST: '', MCS_TEST_BOOT_HANG: '1' } });
     const { server } = await start(f);
     expect(server.ctx.process.phase()).toBe('ready');
   });
