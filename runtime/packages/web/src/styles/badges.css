@@ -1,19 +1,180 @@
-/* Badges (ADR 0071 decision 7): the colour comes from the `.tone-*` classes of tokens.css; every badge also carries an icon or a word. */
+/* Badges (ADR 0071 decision 7, ADR 0074): a state is a dot plus a word, no pill. Only Failed, Stale and an inferred state get a tinted
+   background; an inferred state also gets a dashed ring. Tags are muted words. The colours come from the tone classes below, which
+   read the state tokens of tokens.css; a chip (`.chip.tone-*`) keeps the tinted fill. Colour never carries the meaning alone. */
 
+/* ---- tone classes (lib/lifecycle-display.ts maps states to these; the .st-* and .tag-* names stay as aliases) ---- */
+.tone-running,
+.st-running,
+.tag-running {
+  --tone-fg: var(--running-fg);
+  --tone-bg: var(--running-bg);
+  --tone-dot: var(--state-working-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-waiting,
+.st-waiting {
+  --tone-fg: var(--waiting-fg);
+  --tone-bg: var(--waiting-bg);
+  --tone-dot: var(--state-waiting-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-idle,
+.st-idle,
+.tag-idle {
+  --tone-fg: var(--idle-fg);
+  --tone-bg: var(--idle-bg);
+  --tone-dot: var(--state-ended-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-completed,
+.st-completed {
+  --tone-fg: var(--completed-fg);
+  --tone-bg: var(--completed-bg);
+  --tone-dot: var(--state-completed-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-failed,
+.st-failed,
+.tag-failed {
+  --tone-fg: var(--failed-fg);
+  --tone-bg: var(--failed-bg);
+  --tone-dot: var(--state-failed-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-unknown,
+.st-unknown {
+  --tone-fg: var(--unknown-fg);
+  --tone-bg: var(--unknown-bg);
+  --tone-dot: var(--state-unknown-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-stale,
+.st-stale {
+  --tone-fg: var(--stale-fg);
+  --tone-bg: var(--stale-bg);
+  --tone-dot: var(--state-stale-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-partial,
+.tag-partial,
+.tag-unavailable {
+  --tone-fg: var(--partial-fg);
+  --tone-bg: var(--partial-bg);
+  --tone-dot: var(--state-stale-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-ok {
+  --tone-fg: var(--ok-fg);
+  --tone-bg: var(--ok-bg);
+  --tone-dot: var(--state-completed-dot);
+  color: var(--tone-fg);
+  background: var(--tone-bg);
+}
+.tone-neutral {
+  --tone-fg: var(--text-muted);
+  --tone-bg: var(--surface-2);
+  --tone-dot: var(--state-ended-dot);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+/* ---- the shared badge box ---- */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-3);
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  line-height: 1.7;
-  border: var(--border-w) solid currentcolor;
+  gap: var(--sp-3);
+  max-width: 100%;
   white-space: nowrap;
-  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.badge__word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* State badge: a dot and a 13 px word. The transparent border keeps an inferred (dashed) badge the same size as a solid one. */
+.badge--state {
+  padding: 0 var(--sp-3);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tone-fg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-sm);
+}
+.badge--state.tone-failed,
+.badge--state.tone-stale {
+  background: var(--tone-bg);
+}
+.badge--state.badge--inferred {
+  background: var(--tone-bg);
+  border-color: var(--tone-dot);
+  border-style: dashed;
 }
 .badge--sm {
   padding: 0 var(--sp-2);
-  line-height: 1.5;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+
+.state-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone-dot);
+}
+.state-dot--ring {
+  background: transparent;
+  border: 2px solid var(--tone-dot);
+}
+.state-dot--pulse {
+  animation: state-dot-pulse 2.4s ease-in-out infinite;
+}
+@keyframes state-dot-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Tag: a muted 12 px word with an optional icon; no border, no fill. The tones that need attention keep their colour. */
+.badge--tag {
+  gap: var(--sp-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-xs);
+}
+.badge--tag.tone-failed,
+.badge--tag.tone-stale,
+.badge--tag.tone-partial,
+.badge--tag.tone-unknown,
+.badge--tag.tone-waiting {
+  color: var(--tone-fg);
+}
+
+/* Evidence line: one muted 12 px line under (list) or next to (header) the badge; the full text is in the title.
+   The width is bounded in ch, not in per cent: in an auto-layout table cell a no-wrap line sets the column's minimum width, so
+   a long server text (an MCP tool name runs to 100 characters) would stretch the State column and squeeze the others. */
+.evidence-line {
+  display: block;
+  max-width: 32ch;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

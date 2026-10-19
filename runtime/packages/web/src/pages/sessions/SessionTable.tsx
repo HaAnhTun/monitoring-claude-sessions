@@ -1,6 +1,7 @@
 import type { SessionSummary } from '@mcs/shared';
 
 import { DataTable, type Column } from '../../components/DataTable.tsx';
+import { EvidenceLine } from '../../components/EvidenceLine.tsx';
 import { Icon } from '../../components/Icon.tsx';
 import { RelativeTime } from '../../components/RelativeTime.tsx';
 import { StateBadge } from '../../components/StateBadge.tsx';
@@ -68,12 +69,22 @@ function FreshnessCell({ session }: { session: SessionSummary }) {
   );
 }
 
+/** The badge with its honest state (dashed ring and question mark when inferred) and, under it, the one evidence line. */
+function StateCell({ session }: { session: SessionSummary }) {
+  return (
+    <>
+      <StateBadge state={session.state.state} assessment={session.state} lastActivityAt={session.lastActivityAt} />
+      <EvidenceLine assessment={session.state} lastActivityAt={session.lastActivityAt} />
+    </>
+  );
+}
+
 const COLUMNS: Column<SessionSummary>[] = [
   {
     id: 'state',
     header: 'State',
     sortKey: 'state',
-    cell: (s) => <StateBadge state={s.state.state} {...tipOf(s)} />,
+    cell: (s) => <StateCell session={s} />,
   },
   { id: 'label', header: 'Session', sortKey: 'label', link: true, cell: (s) => <SessionRow session={s} /> },
   { id: 'project', header: 'Project / task', cell: (s) => <ProjectCell session={s} /> },
@@ -108,12 +119,6 @@ const COLUMNS: Column<SessionSummary>[] = [
   { id: 'errors', header: 'Errors', cell: (s) => <ErrorsCell session={s} /> },
   { id: 'freshness', header: 'Freshness', cell: (s) => <FreshnessCell session={s} /> },
 ];
-
-/** The first evidence line of the state is its tooltip; without one the badge shows its own label. */
-function tipOf(session: SessionSummary): { evidenceTip?: string } {
-  const text = session.state.evidence[0]?.text;
-  return text === undefined || text === '' ? {} : { evidenceTip: text };
-}
 
 function rowKey(session: SessionSummary): string {
   return session.id;

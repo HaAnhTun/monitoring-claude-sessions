@@ -83,6 +83,39 @@ async function addInferredRunning({ page, fixture }: ViewContext): Promise<void>
     .waitFor({ state: 'visible', timeout: 20_000 });
 }
 
+/**
+ * Fixture mode: gives every open-tool session a realistic long evidence text (an MCP tool name, 88 characters; the engine allows
+ * 120), the case that once stretched the State column of the table. Waits until the long text is drawn.
+ */
+async function addLongEvidence({ page, fixture }: ViewContext): Promise<void> {
+  if (fixture === null) return;
+  const listSessions = fixture.fake.handlers.listSessions;
+  if (listSessions === undefined) throw new Error('the fixture API has no session list');
+  const text = 'tool mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot open (2 open) for 5m';
+  fixture.fake.handlers.listSessions = async (query, request) => {
+    const body = (await listSessions(query, request)) as Page<SessionSummary>;
+    const items = body.items.map((item) =>
+      item.state.state === 'waiting_tool'
+        ? { ...item, state: { ...item.state, evidence: [{ kind: 'transcript:tool_open', at: iso(-5 * 60), text }] } }
+        : item,
+    );
+    return { ...body, items };
+  };
+  const selector = 'main .evidence-line[data-evidence="server"][title*="take_screenshot"]';
+  await page.locator(selector).first().waitFor({ state: 'visible', timeout: 20_000 });
+  // The regression check: the line is cut (its content is wider than its box) and its cell is no wider than a short badge column.
+  const measured: unknown = await page.evaluate(
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      const td = el && el.closest('td');
+      return { clipped: !!el && el.scrollWidth > el.clientWidth, cell: td ? td.getBoundingClientRect().width : 0 };
+    })()`,
+  );
+  const { clipped, cell } = measured as { clipped: boolean; cell: number };
+  if (!clipped) throw new Error('the long evidence line is not clamped to one line');
+  if (cell > 320) throw new Error(`the long evidence line stretched the State column to ${Math.round(cell)} px`);
+}
+
 /** The page heading: every page has one, so it is the generic sign that the page is drawn. */
 const HEADING = 'main h1';
 
@@ -145,6 +178,14 @@ export const VIEWS: readonly ViewSpec[] = [
       await addInferredRunning(context);
       await context.page.locator('main [data-state="running"][data-basis="inferred"]').last().scrollIntoViewIfNeeded();
     },
+  },
+  {
+    // A realistic long server evidence text: the State column must stay narrow and the line must end in an ellipsis.
+    id: 'sessions-long-evidence',
+    path: '/sessions',
+    mode: 'fixture',
+    wait: 'main [data-state="working"]',
+    setup: addLongEvidence,
   },
   // @wp-end WP-113
   // @wp-begin WP-114

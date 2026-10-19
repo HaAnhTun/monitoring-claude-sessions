@@ -103,7 +103,7 @@ describe('SidebarSessionList (04-ui.md 4.4, 6.5, 6.6)', () => {
     expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
       'Active',
       'Needs input',
-      'Idle',
+      'Turn ended',
       'Done',
       'Stale or unknown',
     ]);

@@ -13,6 +13,7 @@ import {
   type ViewAgent,
   type ViewSession,
 } from './sessions-view.ts';
+import { msg } from '../test/msg.ts';
 
 function sess(id: string, state: string, extra: Partial<ViewSession> = {}): ViewSession {
   return { id, label: id, state: { state, evidence: [] }, ...extra };
@@ -49,7 +50,13 @@ describe('sessions view', () => {
       ['done', 2],
       ['stale', 2],
     ]);
-    expect(view.map((g) => g.title)).toEqual(['Active', 'Needs input', 'Idle', 'Done', 'Stale or unknown']);
+    expect(view.map((g) => msg(g.titleKey))).toEqual([
+      'Active',
+      'Needs input',
+      'Turn ended',
+      'Done',
+      'Stale or unknown',
+    ]);
     const f = buildSessionView(list, 'planner', agentsOf);
     expect(f).toHaveLength(1);
     expect(f[0]?.entries[0]?.s.id).toBe('s-ag');

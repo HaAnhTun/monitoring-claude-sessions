@@ -65,7 +65,7 @@ export interface SessionViewGroup<S, A> extends SidebarGroup {
 }
 
 /**
- * Filters and groups sessions into the sidebar groups (Active, Needs input, Idle, Done, Stale or unknown), without empty
+ * Filters and groups sessions into the sidebar groups (Active, Needs input, Turn ended, Done, Stale or unknown), without empty
  * groups. Filter tokens are ANDed; a session whose own fields do not match but some agent does is kept with only those
  * agents.
  */
@@ -94,8 +94,7 @@ export function buildSessionView<S extends ViewSession, A extends ViewAgent = Vi
     if (hit.length > 0) entries.push({ s, agents: hit, viaAgents: true });
   }
   return SIDEBAR_GROUPS.map((g) => ({
-    id: g.id,
-    title: g.title,
+    ...g,
     entries: entries.filter((e) => sidebarGroupOf(e.s.state.state) === g.id),
   })).filter((g) => g.entries.length > 0);
 }

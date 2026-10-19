@@ -1,56 +1,59 @@
-import type { LifecycleState } from '@mcs/shared';
+import type { StateAssessment } from '@mcs/shared';
 
-import type { IconName } from './icons.ts';
-import { TagBadge, type Tone } from './TagBadge.tsx';
+import { useFormat, useT } from '../i18n/context.ts';
+import { lifecycleDisplay } from '../lib/lifecycle-display.ts';
+import { hasQuestionMark, isInferred, stateEvidence } from '../lib/state-evidence.ts';
+import { useNow } from './RelativeTime.tsx';
 
 export interface StateBadgeProps {
   /** A LifecycleState of the API; any other string is shown as unknown. */
   state: string;
-  evidenceTip?: string;
+  /**
+   * How the engine decided. With `basis = inferred` the badge gets a dashed ring and a tinted fill, and an active turn
+   * (`working`, `running`) gets a question mark (ADR 0074 decision 2). Without it the badge is drawn as observed.
+   */
+  assessment?: Pick<StateAssessment, 'basis' | 'confidence' | 'staleKind' | 'evidence' | 'since'> | undefined;
+  /** The last activity of the session (ISO time); the tooltip of an inferred active state says how long it has been quiet. */
+  lastActivityAt?: string | null | undefined;
+  /** Replaces the tooltip (the description of the state). */
+  evidenceTip?: string | undefined;
   size?: 'sm' | 'md';
 }
 
-interface StateDisplay {
-  tone: Tone;
-  icon: IconName;
-  label: string;
-}
+/** A lifecycle state as a dot and a word. The table is `lifecycleDisplay`; the word is always there (never colour-only). */
+export function StateBadge({ state, assessment, lastActivityAt, evidenceTip, size = 'md' }: StateBadgeProps) {
+  const t = useT();
+  const format = useFormat();
+  const display = lifecycleDisplay(state);
+  const inferred = isInferred(assessment);
+  const questionMark = hasQuestionMark(display.state, assessment?.basis);
+  const clock = useNow(questionMark && lastActivityAt !== null && lastActivityAt !== undefined);
 
-// Tone mapping of 04-ui.md section 6.1. WP-45 owns the shared table in lib/lifecycle-display.ts; until it lands this
-// private copy is the only one (change request CR-WP-44-2 asks to switch to it).
-const DISPLAY: Record<LifecycleState, StateDisplay> = {
-  working: { tone: 'running', icon: 'running', label: 'Working' },
-  running: { tone: 'running', icon: 'running', label: 'Running' },
-  waiting_tool: { tone: 'running', icon: 'waiting-tool', label: 'Waiting for tool' },
-  waiting_agent: { tone: 'running', icon: 'bot', label: 'Waiting for subagent' },
-  waiting_input: { tone: 'waiting', icon: 'waiting-input', label: 'Waiting for input' },
-  turn_ended: { tone: 'idle', icon: 'idle', label: 'Turn ended' },
-  completed: { tone: 'completed', icon: 'completed', label: 'Completed' },
-  failed: { tone: 'failed', icon: 'failed', label: 'Failed' },
-  stale: { tone: 'stale', icon: 'clock', label: 'Stale' },
-  unknown: { tone: 'unknown', icon: 'unknown', label: 'Unknown' },
-};
+  const label = t(display.labelKey);
+  const description = t(display.descriptionKey);
+  let tip = description;
+  if (assessment !== undefined && inferred) {
+    const evidence = stateEvidence({ ...assessment, state: display.state }, lastActivityAt, clock);
+    const parts = { description, basis: t(evidence.basisKey), confidence: t(evidence.confidenceKey) };
+    const { quietSeconds } = evidence.args;
+    tip =
+      evidence.questionMark && quietSeconds !== null
+        ? t('badge.inferredTipQuiet', { ...parts, age: format.age(quietSeconds) })
+        : t('badge.inferredTip', parts);
+  }
 
-function isLifecycleState(state: string): state is LifecycleState {
-  return Object.hasOwn(DISPLAY, state);
-}
-
-function displayFor(state: string): { key: LifecycleState; display: StateDisplay } {
-  const key: LifecycleState = isLifecycleState(state) ? state : 'unknown';
-  return { key, display: DISPLAY[key] };
-}
-
-export function StateBadge({ state, evidenceTip, size = 'md' }: StateBadgeProps) {
-  const { key, display } = displayFor(state);
+  const classes = ['badge', 'badge--state', display.toneClass];
+  if (inferred) classes.push('badge--inferred');
+  if (size === 'sm') classes.push('badge--sm');
   return (
-    <TagBadge
-      tone={display.tone}
-      icon={display.icon}
-      tip={evidenceTip ?? display.label}
-      state={key}
-      extraClass={size === 'sm' ? 'badge--sm' : undefined}
+    <span
+      className={classes.join(' ')}
+      title={evidenceTip ?? tip}
+      data-state={display.state}
+      data-basis={inferred ? 'inferred' : undefined}
     >
-      {display.label}
-    </TagBadge>
+      <span className={`state-dot state-dot--${display.dot}`} aria-hidden="true" />
+      <span className="badge__word">{questionMark ? t('badge.inferredLabel', { label }) : label}</span>
+    </span>
   );
 }
