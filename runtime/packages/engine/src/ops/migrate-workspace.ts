@@ -1,30 +1,68 @@
 // `mcs migrate-workspace` (ADR 0068, ADR 0067): the one-time conversion of a pre-4.0 task workspace. `plan` is the dry run:
 // it reads only, takes no lock and writes nothing. `apply` takes the task mutex around read, validate, backup, write, adopt,
 // re-resolve and audit; it writes nothing for a blocked or current workspace, never signals a process and never touches
-// `logs/`, the database, `runtime.json` or another task. Single task only (the `--all` sweep is WP-95b).
-import { McsError } from '@mcs/shared';
+// `logs/`, the database, `runtime.json` or another task. `--all` (WP-140) visits every workspace of the tasks root one after
+// the other, each exactly like a single task under its own mutex: a workspace that is blocked, or that fails with an
+// expected error, is reported and left as it was, and the others are still converted. Folders that are links are never
+// followed; they are listed as skipped.
+import { lstat, readdir } from 'node:fs/promises';
+import path from 'node:path';
+
+import { McsError, SLUG_RE, type DoctorCheck } from '@mcs/shared';
 
 import { appendChange } from '../audit/writer.ts';
 import { resolveConfig } from '../config/resolve.ts';
 import { validateLegacy } from '../config/validate-legacy.ts';
-import { auditSummary, type WorkspaceMigrationReport } from '../migrate/report.ts';
+import { auditSummary, reportLines, type WorkspaceMigrationReport } from '../migrate/report.ts';
 import { backupWorkspace, restoreConfig, type MigrationBackup } from '../migrate/backup.ts';
 import { planPatterns, sameConfig, type PatternPlan } from '../migrate/patterns.ts';
 import { jsonFileText, type JsonDoc } from '../json/index.ts';
 import { ensureWorkspaceDir, newInstanceFile, readInstanceFile, writeInstanceFile } from '../workspace/adopt.ts';
 import { isMissingFileError, readJsonFile, writeWorkspaceFile } from '../workspace/fsio.ts';
+import { listWorkspaceSlugs } from '../workspace/list.ts';
 import { withTaskMutex, workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
 import { isLiveState, probeInstance, type ProbeState } from './probe.ts';
 import { openWorkspace, type OpContext } from './workspace.ts';
 
-export { reportLines } from '../migrate/report.ts';
+export { reportLines };
 export type { WorkspaceMigrationReport } from '../migrate/report.ts';
 export type { PatternStep } from '../migrate/patterns.ts';
 
-export interface MigrateInput {
+/** One workspace: `plan` and `apply` return its report. */
+export interface TaskInput {
   readonly task?: string;
-  /** Not built yet (WP-95b): refused with `USAGE`. */
-  readonly all?: boolean;
+  readonly all?: false;
+}
+
+/** Every workspace of the tasks root: `plan` and `apply` return a `MigrationSweep`. Not together with a task. */
+export interface SweepInput {
+  readonly all: true;
+  readonly task?: undefined;
+}
+
+export type MigrateInput = TaskInput | SweepInput;
+
+/** A folder of the tasks root that looks like a workspace and was not visited. */
+export interface SkippedFolder {
+  readonly slug: string;
+  readonly reason: string;
+}
+
+export interface MigrationCounts {
+  readonly total: number;
+  /** Nothing to do. */
+  readonly current: number;
+  /** Would be converted (dry run) or was converted (applied). */
+  readonly needsMigration: number;
+  readonly blocked: number;
+}
+
+/** The result of `--all`: one report per workspace in slug order, the folders that were skipped and the tally. */
+export interface MigrationSweep {
+  readonly mode: WorkspaceMigrationReport['mode'];
+  readonly workspaces: readonly WorkspaceMigrationReport[];
+  readonly skipped: readonly SkippedFolder[];
+  readonly counts: MigrationCounts;
 }
 
 /** Test seams; the defaults are the real probe and the real configuration resolver. */
@@ -149,21 +187,19 @@ function reportOf(
   };
 }
 
-async function openTask(ctx: OpContext, input: MigrateInput): Promise<WorkspaceRef> {
+/** The one task of a single-task call, or `null` for `--all`; `USAGE` for neither or both. */
+function taskOf(input: MigrateInput): string | null {
+  const task = input.task;
   if (input.all === true) {
-    throw new McsError('USAGE', 'migrate-workspace --all is not available yet; migrate one task with --task SLUG');
+    if (task !== undefined) throw new McsError('USAGE', 'migrate-workspace takes --task SLUG or --all, not both');
+    return null;
   }
-  if (input.task === undefined || input.task === '') throw new McsError('USAGE', 'migrate-workspace needs --task SLUG');
-  return openWorkspace(ctx, input.task);
+  if (task === undefined || task === '') throw new McsError('USAGE', 'migrate-workspace needs --task SLUG or --all');
+  return task;
 }
 
-/** `opsMigrate.plan`: the dry run of one workspace. */
-export async function plan(
-  ctx: OpContext,
-  input: MigrateInput,
-  deps: MigrateDeps = {},
-): Promise<WorkspaceMigrationReport> {
-  const ws = await openTask(ctx, input);
+/** The dry run of one opened workspace. */
+async function planWorkspace(ws: WorkspaceRef, deps: MigrateDeps): Promise<WorkspaceMigrationReport> {
   return reportOf(await analyse(ws, deps), 'dry-run', null);
 }
 
@@ -176,18 +212,24 @@ async function adopt(ws: WorkspaceRef, nowMs: number): Promise<void> {
   await writeInstanceFile(ws, newInstanceFile(ws.slug, { nowMs }));
 }
 
-/** `opsMigrate.apply`: converts one workspace under its task mutex. */
-export async function apply(
+/** What `applyWorkspace` has done so far, for the report of a sweep when it stops with an error. */
+interface Progress {
+  backup: string | null;
+}
+
+/** Converts one opened workspace under its task mutex. */
+async function applyWorkspace(
   ctx: OpContext,
-  input: MigrateInput,
-  deps: MigrateDeps = {},
+  ws: WorkspaceRef,
+  deps: MigrateDeps,
+  progress: Progress = { backup: null },
 ): Promise<WorkspaceMigrationReport> {
-  const ws = await openTask(ctx, input);
   return withTaskMutex(ws, async () => {
     const a = await analyse(ws, deps);
     if (verdictOf(a) !== 'needs-migration' || a.plan === null) return reportOf(a, 'applied', null);
     const nowMs = ctx.clock.now();
     const backup: MigrationBackup = await backupWorkspace(ws, nowMs);
+    progress.backup = backup.folder;
     if (a.changed) await writeWorkspaceFile(workspacePath(ws, 'config.json'), jsonFileText(a.plan.doc));
     if (!a.hasInstance) await adopt(ws, nowMs);
     try {
@@ -214,4 +256,187 @@ export async function apply(
     );
     return reportOf(a, 'applied', backup.folder);
   });
+}
+
+// ---- the sweep (--all)
+
+/** Folders of the tasks root that have a slug for a name and are links: a workspace is a real folder, a link is never followed. */
+async function linkedFolders(root: string): Promise<SkippedFolder[]> {
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch (error) {
+    if (isMissingFileError(error)) return [];
+    throw new McsError('WORKSPACE_INVALID', `cannot list the tasks root ${root}`, { cause: error });
+  }
+  const skipped: SkippedFolder[] = [];
+  for (const name of names.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (!SLUG_RE.test(name)) continue;
+    let isLink = false;
+    try {
+      isLink = (await lstat(path.join(root, name))).isSymbolicLink();
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+    if (isLink) {
+      skipped.push({ slug: name, reason: 'a link, not a folder; links are never followed or written through' });
+    }
+  }
+  return skipped;
+}
+
+/** The report of a workspace that stopped with an expected error: blocked, with the code and the reason. */
+function failedReport(
+  slug: string,
+  mode: WorkspaceMigrationReport['mode'],
+  error: McsError,
+  backup: string | null,
+): WorkspaceMigrationReport {
+  return {
+    slug,
+    verdict: 'blocked',
+    mode,
+    actions: [],
+    patterns: [],
+    blockers: [`${error.code}: ${error.message}`],
+    warnings:
+      backup === null
+        ? []
+        : [
+            `the conversion of '${slug}' stopped after the backup was written; config.json is replaced atomically, so it is the old or the new text; run the command again once the cause is fixed`,
+          ],
+    backup,
+  };
+}
+
+/** One workspace of the sweep: exactly the single-task path, with an expected error turned into a blocked report. */
+async function visit(
+  ctx: OpContext,
+  slug: string,
+  mode: WorkspaceMigrationReport['mode'],
+  deps: MigrateDeps,
+): Promise<WorkspaceMigrationReport> {
+  const progress: Progress = { backup: null };
+  try {
+    const ws = await openWorkspace(ctx, slug);
+    return mode === 'dry-run' ? await planWorkspace(ws, deps) : await applyWorkspace(ctx, ws, deps, progress);
+  } catch (error) {
+    if (!(error instanceof McsError)) throw error;
+    return failedReport(slug, mode, error, progress.backup);
+  }
+}
+
+function countsOf(reports: readonly WorkspaceMigrationReport[]): MigrationCounts {
+  const of = (verdict: WorkspaceMigrationReport['verdict']): number =>
+    reports.filter((r) => r.verdict === verdict).length;
+  return {
+    total: reports.length,
+    current: of('current'),
+    needsMigration: of('needs-migration'),
+    blocked: of('blocked'),
+  };
+}
+
+async function sweepOf(
+  ctx: OpContext,
+  mode: WorkspaceMigrationReport['mode'],
+  deps: MigrateDeps,
+): Promise<MigrationSweep> {
+  const slugs = await listWorkspaceSlugs(ctx.root);
+  const skipped = await linkedFolders(ctx.root);
+  const workspaces: WorkspaceMigrationReport[] = [];
+  for (const slug of slugs) workspaces.push(await visit(ctx, slug, mode, deps));
+  return { mode, workspaces, skipped, counts: countsOf(workspaces) };
+}
+
+function plural(n: number, one: string): string {
+  return `${String(n)} ${n === 1 ? one : `${one}s`}`;
+}
+
+/** The default output of a sweep: the lines of each workspace, the skipped folders, one tally line and one closing hint. */
+export function sweepLines(sweep: MigrationSweep): string[] {
+  const lines: string[] = [];
+  for (const report of sweep.workspaces) lines.push(...reportLines(report, { hint: false }));
+  for (const folder of sweep.skipped) lines.push(`skipped '${folder.slug}': ${folder.reason}`);
+  const { total, current, needsMigration, blocked } = sweep.counts;
+  if (total === 0) {
+    lines.push('no task workspaces found in the tasks root');
+    return lines;
+  }
+  const dry = sweep.mode === 'dry-run';
+  const tally = [
+    `${String(needsMigration)} ${dry ? 'needing migration' : 'migrated'}`,
+    `${String(current)} ${dry ? 'current' : 'already current'}`,
+    `${String(blocked)} blocked`,
+  ];
+  lines.push(`${plural(total, 'task workspace')}: ${tally.join(', ')}${dry ? ' (dry run, nothing written)' : ''}`);
+  if (dry && needsMigration > 0) {
+    lines.push('run `mcs migrate-workspace --all --apply --yes` to convert them (a backup is written first)');
+  }
+  return lines;
+}
+
+/** `opsMigrate.plan`: the dry run of one workspace, or of every workspace with `all: true`. */
+export function plan(ctx: OpContext, input: SweepInput, deps?: MigrateDeps): Promise<MigrationSweep>;
+export function plan(ctx: OpContext, input: TaskInput, deps?: MigrateDeps): Promise<WorkspaceMigrationReport>;
+export async function plan(
+  ctx: OpContext,
+  input: MigrateInput,
+  deps: MigrateDeps = {},
+): Promise<MigrationSweep | WorkspaceMigrationReport> {
+  const task = taskOf(input);
+  if (task === null) return sweepOf(ctx, 'dry-run', deps);
+  return planWorkspace(await openWorkspace(ctx, task), deps);
+}
+
+/** `opsMigrate.apply`: converts one workspace under its task mutex, or every workspace one after the other with `all: true`. */
+export function apply(ctx: OpContext, input: SweepInput, deps?: MigrateDeps): Promise<MigrationSweep>;
+export function apply(ctx: OpContext, input: TaskInput, deps?: MigrateDeps): Promise<WorkspaceMigrationReport>;
+export async function apply(
+  ctx: OpContext,
+  input: MigrateInput,
+  deps: MigrateDeps = {},
+): Promise<MigrationSweep | WorkspaceMigrationReport> {
+  const task = taskOf(input);
+  if (task === null) return sweepOf(ctx, 'applied', deps);
+  return applyWorkspace(ctx, await openWorkspace(ctx, task), deps);
+}
+
+// ---- the doctor check
+
+/** The format of a workspace is a question about its files: a running monitor is not an answer to it, so the probe says stopped. */
+const NOT_RUNNING: MigrateDeps = { probe: () => Promise.resolve({ state: 'stopped' }) };
+
+function formatDetail(report: WorkspaceMigrationReport): string {
+  const translated = report.patterns.filter((p) => p.action === 'translate').length;
+  const parts = [
+    ...(translated > 0 ? [`${plural(translated, 'pattern')} in the old syntax`] : []),
+    ...(report.actions.some((a) => a.startsWith('add instance.json')) ? ['no instance.json'] : []),
+  ];
+  return `written before 4.0 and not converted yet${parts.length === 0 ? '' : ` (${parts.join(', ')})`}`;
+}
+
+/**
+ * The doctor check `workspace.format` (`DoctorDeps.extraChecks`): `warn` when the dry run lists work for the workspace, or
+ * cannot convert it, with the command that shows it; `ok` when it is current. Reads only, takes no lock and writes nothing.
+ */
+export async function workspaceFormatCheck(_ctx: OpContext, ws: WorkspaceRef | null): Promise<DoctorCheck> {
+  const id = 'workspace.format';
+  if (ws === null) return { id, ok: true, level: 'warn', detail: 'no task selected (skipped)' };
+  const report = await planWorkspace(ws, NOT_RUNNING);
+  const fix = `mcs migrate-workspace --task ${ws.slug}`;
+  switch (report.verdict) {
+    case 'current':
+      return { id, ok: true, level: 'warn', detail: 'the workspace is in the 4.0 format' };
+    case 'needs-migration':
+      return { id, ok: false, level: 'warn', detail: formatDetail(report), fix };
+    case 'blocked':
+      return {
+        id,
+        ok: false,
+        level: 'warn',
+        detail: `cannot be converted automatically: ${report.blockers[0] ?? 'unknown reason'}`,
+        fix,
+      };
+  }
 }

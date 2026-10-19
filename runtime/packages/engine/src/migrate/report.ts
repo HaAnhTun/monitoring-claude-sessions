@@ -36,13 +36,16 @@ export function auditSummary(steps: readonly PatternStep[], adopted: boolean): s
   return parts.join('; ');
 }
 
-/** The default output of one report. */
-export function reportLines(r: WorkspaceMigrationReport): string[] {
+/**
+ * The default output of one report. `hint: false` leaves out the closing line that names the single-task command: a sweep
+ * (`--all`) prints one such line for all workspaces.
+ */
+export function reportLines(r: WorkspaceMigrationReport, options: { readonly hint?: boolean } = {}): string[] {
   const lines = [`task '${r.slug}': ${r.verdict} (${r.mode === 'dry-run' ? 'dry run, nothing written' : 'applied'})`];
   for (const action of r.actions) lines.push(`  ${r.mode === 'dry-run' ? 'would ' : ''}${action}`);
   for (const blocker of r.blockers) lines.push(`  blocked: ${blocker}`);
   if (r.backup !== null) lines.push(`  backup: ${r.backup}`);
-  if (r.mode === 'dry-run' && r.verdict === 'needs-migration') {
+  if (options.hint !== false && r.mode === 'dry-run' && r.verdict === 'needs-migration') {
     lines.push(`run \`mcs migrate-workspace --task ${r.slug} --apply\` to convert it (a backup is written first)`);
   }
   return lines;
