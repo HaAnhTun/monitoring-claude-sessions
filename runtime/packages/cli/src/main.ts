@@ -131,6 +131,12 @@ export interface CommandDefinition {
   readonly options: OptionTable;
   /** Positional arguments after the options: at most `max` (default: none). */
   readonly positionals?: { readonly max: number };
+  /**
+   * Who handles Ctrl+C while the command runs: the kernel (default), which ends the call with exit code 130, or the command
+   * itself, which then forwards the signal (`serve` hands it to the server for a graceful shutdown). A command that owns
+   * the signal never touches the kernel's listeners; the kernel does not register one for it.
+   */
+  readonly interruptible?: 'kernel' | 'command';
   run(ctx: CommandContext): Promise<CommandResult>;
 }
 
@@ -208,6 +214,12 @@ const REGISTRY: readonly RegistryEntry[] = [
   // @wp-end WP-61
 
   // @wp-begin WP-62
+  { names: ['backup', 'backup create'], load: () => import('./commands/backup.ts') },
+  { names: ['backup list'], load: () => import('./commands/backup-list.ts') },
+  { names: ['backup restore'], load: () => import('./commands/backup-restore.ts') },
+  { names: ['upgrade'], load: () => import('./commands/upgrade.ts') },
+  { names: ['db migrate'], load: () => import('./commands/db-migrate.ts') },
+  { names: ['db rebuild'], load: () => import('./commands/db-rebuild.ts') },
   // @wp-end WP-62
 
   // @wp-begin WP-63
@@ -513,6 +525,8 @@ interface RunState {
   command: string;
   json: boolean;
   log: Logger | null;
+  /** Takes the kernel's Ctrl+C listener off (for a command that owns the signal). */
+  releaseInterrupt: () => void;
 }
 
 function reportFailure(run: RunState, error: unknown): number {
@@ -568,6 +582,7 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
   }
   const def = await loadCommand(found.entry);
   run.command = def.name;
+  if (def.interruptible === 'command') run.releaseInterrupt();
   const { args, helpRequested } = parseCommandArgs(def, argv.slice(found.consumed));
   run.json = args.flag('json');
   if (helpRequested) {
@@ -593,9 +608,16 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
  * except Ctrl+C). The launcher calls this in-process (01 5.1 step 7).
  */
 export async function main(argv: readonly string[], paths: MainPaths): Promise<number> {
-  const run: RunState = { command: leadingWords(argv)[0] ?? '', json: wantsJson(argv), log: null };
   const onInterrupt = (): void => {
     process.exit(130);
+  };
+  const run: RunState = {
+    command: leadingWords(argv)[0] ?? '',
+    json: wantsJson(argv),
+    log: null,
+    releaseInterrupt: () => {
+      process.off('SIGINT', onInterrupt);
+    },
   };
   process.once('SIGINT', onInterrupt);
   try {

@@ -4,14 +4,15 @@
 // violation whenever another instance is running (CHALLENGE C-2); this one leaves the runtime-mutable paths out.
 //
 // The hash is the one `snapshotTree` of `@mcs/testkit` computes (relative path, size and bytes of every file, folders and
-// links by their own entry, links never followed, names in code unit order), so tests compare the two.
+// links by their own entry, links never followed, names in code point order), so tests compare the two.
 import { createHash, type Hash } from 'node:crypto';
 import { lstat, open, readdir, readlink } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 
-import { McsError } from '@mcs/shared';
+import { McsError, compareCodePoints } from '@mcs/shared';
 
+import { isBusyError } from '../platform/fsx.ts';
 import { listWorkspaceSlugs } from './list.ts';
 
 /**
@@ -38,7 +39,6 @@ export interface SnapshotOptions {
   readonly exclude?: readonly string[];
 }
 
-const BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES']);
 const OPEN_RETRIES = 10;
 const OPEN_RETRY_DELAY_MS = 20;
 const CHUNK = 64 * 1024;
@@ -53,10 +53,6 @@ function invalid(message: string, cause?: unknown): McsError {
   return new McsError('WORKSPACE_INVALID', message, cause === undefined ? {} : { cause });
 }
 
-function byCodeUnits(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 async function hashFile(hash: Hash, full: string, relative: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   for (let attempt = 0; handle === undefined; attempt += 1) {
@@ -65,7 +61,7 @@ async function hashFile(hash: Hash, full: string, relative: string): Promise<voi
     } catch (error) {
       const code = errorCode(error);
       if (code === 'ENOENT') return;
-      if (code === undefined || !BUSY_CODES.has(code) || attempt >= OPEN_RETRIES) {
+      if (!isBusyError(error) || attempt >= OPEN_RETRIES) {
         throw invalid(`cannot read ${relative} for the isolation snapshot: ${code ?? 'error'}`, error);
       }
       await sleepMs(OPEN_RETRY_DELAY_MS);
@@ -94,7 +90,7 @@ async function walk(hash: Hash, current: string, prefix: string, patterns: reado
     if (errorCode(error) === 'ENOENT') return;
     throw invalid(`cannot list ${current} for the isolation snapshot: ${errorCode(error) ?? 'error'}`, error);
   }
-  names.sort(byCodeUnits);
+  names.sort(compareCodePoints);
   for (const name of names) {
     const relative = prefix === '' ? name : `${prefix}/${name}`;
     if (isRuntimeMutable(relative, patterns)) continue;
@@ -147,5 +143,5 @@ export async function snapshotWorkspaces(root: string, o: SnapshotsOptions = {})
 /** The slugs whose snapshot differs between `before` and `after`, or that exist in only one of them, sorted. */
 export function changedWorkspaces(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>): string[] {
   const slugs = new Set([...before.keys(), ...after.keys()]);
-  return [...slugs].filter((slug) => before.get(slug) !== after.get(slug)).sort(byCodeUnits);
+  return [...slugs].filter((slug) => before.get(slug) !== after.get(slug)).sort(compareCodePoints);
 }

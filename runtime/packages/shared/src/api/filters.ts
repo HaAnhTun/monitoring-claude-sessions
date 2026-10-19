@@ -215,6 +215,11 @@ function eventModes(q: { around?: number | undefined; afterId?: number | undefin
   return !(q.around !== undefined && q.afterId !== undefined);
 }
 const EVENT_MODES = { message: 'around and afterId cannot be combined', path: ['around'] };
+/** `around` opens a walk; a `cursor` continues one. The pair is refused instead of the cursor being ignored (CR-WP-30-6). */
+function eventAroundStart(q: { around?: number | undefined; cursor?: string | undefined }): boolean {
+  return !(q.around !== undefined && q.cursor !== undefined);
+}
+const EVENT_AROUND_START = { message: 'around cannot be combined with cursor', path: ['around'] };
 function eventLimit(q: { afterId?: number | undefined; limit: number }): boolean {
   return q.limit <= 200 || q.afterId !== undefined;
 }
@@ -224,6 +229,7 @@ export const EventListQuerySchema = z
   .strictObject({ session: opt(f.session), project: opt(f.project), ...eventFilterShape })
   .refine(agentNeedsOneSession, AGENT_NEEDS_SESSION)
   .refine(eventModes, EVENT_MODES)
+  .refine(eventAroundStart, EVENT_AROUND_START)
   .refine(eventLimit, EVENT_LIMIT);
 export type EventListQuery = z.output<typeof EventListQuerySchema>;
 
@@ -231,6 +237,7 @@ export type EventListQuery = z.output<typeof EventListQuerySchema>;
 export const SessionTimelineQuerySchema = z
   .strictObject(eventFilterShape)
   .refine(eventModes, EVENT_MODES)
+  .refine(eventAroundStart, EVENT_AROUND_START)
   .refine(eventLimit, EVENT_LIMIT);
 export type SessionTimelineQuery = z.output<typeof SessionTimelineQuerySchema>;
 

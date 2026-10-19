@@ -5,8 +5,15 @@ import type { LifecycleState } from '@mcs/shared';
 
 import type { InstanceDb, RepoContext } from '../open.ts';
 import type { WriteTx } from '../write.ts';
-import { rowLimit, parseEvidence, type Basis, type Confidence, type ViewEvidence } from './transitions.ts';
-import type { StaleKind, StoredView } from './sessions.ts';
+import {
+  parseEvidence,
+  rowLimit,
+  type Basis,
+  type Confidence,
+  type StaleKind,
+  type StoredView,
+  type ViewEvidence,
+} from './shared.ts';
 
 /** The columns of a lifecycle view that a workflow run stores. */
 export type WorkflowView = Pick<

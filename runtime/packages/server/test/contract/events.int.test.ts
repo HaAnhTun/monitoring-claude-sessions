@@ -275,6 +275,28 @@ describe('GET /api/v3/events', () => {
     expect(tail.items.map((item) => item.id)).toEqual([made[13], made[14]]);
   });
 
+  it('follows newerCursor with dir=asc to the next page, without a gap or a repeat, and refuses it without dir=asc', async () => {
+    const run = await startInstance();
+    const s = addSession(run.ctx, 1);
+    const made = Array.from({ length: 15 }, (_, i) => addEvent(run.ctx, s, { ts: NOW - (20 - i) * MINUTE }));
+    const around = parseEvents(await get(run, `${EVENTS}?range=all&around=${String(made[4] ?? 0)}&limit=5`));
+    // the page runs newest first: made[6] .. made[2]; the newer side holds made[7] and up
+    expect(around.items.map((item) => item.id)).toEqual([made[6], made[5], made[4], made[3], made[2]]);
+    let cursor = around.newerCursor;
+    const followed: number[] = [];
+    for (let guard = 0; cursor !== null && guard < 10; guard += 1) {
+      const page = parseEvents(await get(run, `${EVENTS}?range=all&limit=3&dir=asc&cursor=${cursor}`));
+      followed.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor;
+    }
+    // oldest first from the event after the page, to the head of the log
+    expect(followed).toEqual(made.slice(7));
+    expect(new Set([...followed, ...around.items.map((item) => item.id)]).size).toBe(followed.length + 5);
+    // the cursor is bound to the direction it was made for: without dir=asc it is not accepted
+    const wrongDirection = await get(run, `${EVENTS}?range=all&limit=3&cursor=${around.newerCursor ?? ''}`);
+    expect([wrongDirection.status, codeOf(wrongDirection)]).toEqual([400, 'cursor_invalid']);
+  });
+
   it('keeps `q` and `tool` inside a session or a window of at most 7 days and reports the capped scan (DA-T-API-9)', async () => {
     const run = await startInstance();
     const s = addSession(run.ctx, 1);
@@ -315,6 +337,7 @@ describe('GET /api/v3/events', () => {
       [`${EVENTS}?range=all&agent=main`, 400, 'validation_failed'],
       [`${EVENTS}?range=1h&from=2026-10-11T00:00:00Z`, 400, 'range_invalid'],
       [`${EVENTS}?around=1&afterId=1`, 400, 'validation_failed'],
+      [`${EVENTS}?range=all&around=1&cursor=${cursor}`, 400, 'validation_failed'],
       [`${EVENTS}?limit=201`, 400, 'validation_failed'],
       [`${EVENTS}?type=nope.kind`, 400, 'validation_failed'],
       [`${EVENTS}?q=a`, 400, 'query_too_short'],

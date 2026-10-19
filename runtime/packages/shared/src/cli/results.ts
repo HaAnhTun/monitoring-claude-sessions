@@ -83,8 +83,11 @@ function valueAt(root: unknown, path: string): unknown {
   return cur;
 }
 
-/** Code-point order, so the result does not depend on the locale or on UTF-16 surrogate ordering. */
-function compareCodePoints(a: string, b: string): number {
+/**
+ * Code-point order (Python `sorted` on `str`), so the result does not depend on the locale or on UTF-16 surrogate ordering.
+ * The one string comparator for sorted keys, names and slugs; an astral character sorts after every BMP character.
+ */
+export function compareCodePoints(a: string, b: string): number {
   const x = Array.from(a);
   const y = Array.from(b);
   for (let i = 0; i < Math.min(x.length, y.length); i += 1) {
@@ -157,12 +160,291 @@ export type DoctorReport = z.infer<typeof DoctorReportSchema>;
 // @wp-end WP-22
 
 // @wp-begin WP-37
+// Result types of the hooks commands (02 3.1, ADR 0014, ADR 0070). The engine installer (`engine/src/hooks/installer/`)
+// returns `HooksApplyResult`; `hooks verify` and `hooks status` return the other two.
+
+/** Where a hooks command writes: the project-local or the user settings file, or an explicit file (`--settings-file`). */
+export const HOOKS_SCOPES = ['project-local', 'user', 'file'] as const;
+
+export type HooksScope = (typeof HOOKS_SCOPES)[number];
+
+export const HooksScopeSchema = z.enum(HOOKS_SCOPES);
+
+export const HOOKS_WARNING_CODES = ['HOOKS_SETTINGS_NOT_IGNORED', 'HOOKS_USER_SCOPE', 'HOOKS_LIVE_RELOAD'] as const;
+
+export type HooksWarningCode = (typeof HOOKS_WARNING_CODES)[number];
+
+export const HooksWarningSchema = z.strictObject({
+  code: z.enum(HOOKS_WARNING_CODES),
+  message: z.string(),
+});
+
+export type HooksWarning = z.infer<typeof HooksWarningSchema>;
+
+/**
+ * The `details.reason` of a `HOOKS_FAILED` error. The first eleven are the reasons of design 02 3.1; the rest are the
+ * failures that design did not name (a read or write that fails at the operating system, the bundle and the home folder).
+ */
+export const HOOKS_FAILURE_REASONS = [
+  'SETTINGS_INVALID_JSON',
+  'SETTINGS_NOT_OBJECT',
+  'SETTINGS_HOOKS_NOT_OBJECT',
+  'SETTINGS_EVENT_NOT_ARRAY',
+  'SCOPE_NOT_ALLOWED',
+  'LOCKED',
+  'REAL_SETTINGS_IN_TEST',
+  'WRITE_VALIDATION_FAILED',
+  'SETTINGS_CHANGED_CONCURRENTLY',
+  'RENAME_FAILED',
+  'POST_CHECK_FAILED',
+  'SETTINGS_UNREADABLE',
+  'SETTINGS_NOT_WRITABLE',
+  'WRITE_FAILED',
+  'BACKUP_FAILED',
+  'HOOK_BUNDLE_MISSING',
+  'SCRIPT_COPY_FAILED',
+  'MANIFEST_FAILED',
+] as const;
+
+export type HooksFailureReason = (typeof HOOKS_FAILURE_REASONS)[number];
+
+/** What a command does to the settings file: `plan` is a dry run that would change it, `noop` means nothing to change. */
+export const HOOKS_ACTIONS = ['plan', 'applied', 'noop', 'refused'] as const;
+
+export type HooksAction = (typeof HOOKS_ACTIONS)[number];
+
+/** What happens to the stable copy of the hook script (ADR 0070): install gives the first three, uninstall the last three. */
+export const HOOK_SCRIPT_ACTIONS = ['created', 'refreshed', 'current', 'removed', 'kept', 'absent'] as const;
+
+export type HookScriptAction = (typeof HOOK_SCRIPT_ACTIONS)[number];
+
+export const HooksScriptResultSchema = z.strictObject({
+  action: z.enum(HOOK_SCRIPT_ACTIONS),
+  /** `<MCS_HOME>/hooks/mcs-hook.mjs`, forward slashes. */
+  path: z.string(),
+  /** sha256 of the copy after the command; `null` when there is no copy. */
+  sha256: z.string().nullable(),
+});
+
+export type HooksScriptResult = z.infer<typeof HooksScriptResultSchema>;
+
+/** `hooks install` and `hooks uninstall` (02 3.1 plus the `script` field of ADR 0070). */
+export const HooksApplyResultSchema = z.strictObject({
+  scope: HooksScopeSchema,
+  settingsPath: z.string(),
+  action: z.enum(HOOKS_ACTIONS),
+  /** Event names (02 3.4 step 8). */
+  added: z.array(z.string()),
+  replaced: z.array(z.string()),
+  removed: z.array(z.string()),
+  kept: z.array(z.string()),
+  warnings: z.array(HooksWarningSchema),
+  backupPath: z.string().nullable(),
+  /** Unified diff of the `hooks` key only; empty when nothing changes. */
+  diff: z.string(),
+  script: HooksScriptResultSchema,
+});
+
+export type HooksApplyResult = z.infer<typeof HooksApplyResultSchema>;
+
+export const HOOKS_VERIFY_CHECKS = ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7'] as const;
+
+/** `hooks verify` (02 3.7): `ok: null` means the check was skipped (V7 while the server is stopped). */
+export const HooksVerifyResultSchema = z.strictObject({
+  checks: z.array(
+    z.strictObject({
+      check: z.enum(HOOKS_VERIFY_CHECKS),
+      ok: z.boolean().nullable(),
+      detail: z.string(),
+    }),
+  ),
+});
+
+export type HooksVerifyResult = z.infer<typeof HooksVerifyResultSchema>;
+
+/** `current`: same bytes as the bundled script; `stale`: another version; `missing`: recorded but gone; `unknown`: not decidable. */
+export const HOOK_SCRIPT_STATES = ['current', 'stale', 'missing', 'not_installed', 'unknown'] as const;
+
+export type HookScriptState = (typeof HOOK_SCRIPT_STATES)[number];
+
+/** `hooks status` (02 3.1, ADR 0070). */
+export const HooksStatusResultSchema = z.strictObject({
+  installs: z.array(
+    z.strictObject({
+      settingsPath: z.string(),
+      scope: HooksScopeSchema,
+      events: z.number().int(),
+      handlerVersion: z.string(),
+      at: z.number(),
+    }),
+  ),
+  /** The stable copy under `$MCS_HOME/hooks`. */
+  script: z.strictObject({
+    state: z.enum(HOOK_SCRIPT_STATES),
+    path: z.string(),
+    sha256: z.string().nullable(),
+    handlerVersion: z.string().nullable(),
+  }),
+  handlerLog: z.array(z.strictObject({ code: z.string(), count: z.number().int(), lastAt: z.number() })),
+  /** Newest envelope time per instance id; `null` when none was seen. */
+  lastEnvelopeAt: z.record(z.string(), z.number().nullable()),
+});
+
+export type HooksStatusResult = z.infer<typeof HooksStatusResultSchema>;
 // @wp-end WP-37
 
 // @wp-begin WP-61
 // @wp-end WP-61
 
 // @wp-begin WP-62
+import { BACKUP_DB_COPIES, BACKUP_REASONS } from '../files/backup-manifest.ts';
+import { IsoSecondsZ, Semver } from '../ids.ts';
+
+/** One backup folder with a valid manifest, as `mcs backup list` shows it (01 5.5). */
+export const BackupRowSchema = z.strictObject({
+  id: z.string(),
+  reason: z.enum(BACKUP_REASONS),
+  createdAt: IsoSecondsZ,
+  runtimeVersion: Semver,
+  dbSchemaVersion: z.number().int().min(0),
+  dbCopy: z.enum(BACKUP_DB_COPIES),
+  /** The number of files the manifest lists. */
+  files: z.number().int().min(0),
+  /** The sum of the listed sizes. */
+  bytes: z.number().int().min(0),
+  /** `--verify`: every listed file was read again and matches its size and sha256; `null` without `--verify`. */
+  verified: z.boolean().nullable(),
+  /** What `--verify` found wrong (a missing or changed file); empty otherwise. */
+  problems: z.array(z.string()),
+});
+
+export type BackupRow = z.infer<typeof BackupRowSchema>;
+
+export const BackupListResultSchema = z.strictObject({
+  task: z.string(),
+  verify: z.boolean(),
+  /** Newest first. */
+  backups: z.array(BackupRowSchema),
+});
+
+export type BackupListResult = z.infer<typeof BackupListResultSchema>;
+
+export const BackupCreateResultSchema = z.strictObject({
+  task: z.string(),
+  id: z.string(),
+  reason: z.enum(BACKUP_REASONS),
+  /** `data/backups/<id>/`, relative to the workspace. */
+  folder: z.string(),
+  dbCopy: z.enum(BACKUP_DB_COPIES),
+  dbSchemaVersion: z.number().int().min(0),
+  files: z.number().int().min(0),
+  bytes: z.number().int().min(0),
+  /** Who copied the database: the CLI (stopped instance), the running server (control op `backup`) or nobody (no database). */
+  dbCopiedBy: z.enum(['cli', 'server']).nullable(),
+  /** Ids of the older backups the automatic pruning (`backup.keep`) removed. */
+  pruned: z.array(z.string()),
+});
+
+export type BackupCreateResult = z.infer<typeof BackupCreateResultSchema>;
+
+export const BackupRestoreResultSchema = z.strictObject({
+  task: z.string(),
+  id: z.string(),
+  /** `false`: a dry run (no `--yes`), nothing was changed. */
+  applied: z.boolean(),
+  dbCopy: z.enum(BACKUP_DB_COPIES),
+  /** The schema version of the database in the backup. */
+  dbSchemaVersion: z.number().int().min(0),
+  /** The runtime that made the backup. */
+  runtimeVersion: Semver,
+  /** Workspace files the restore replaces (or would replace), relative with `/`. */
+  restores: z.array(z.string()),
+  /** The `pre-restore` backup that was made first; `null` for a dry run. */
+  preRestoreBackup: z.string().nullable(),
+  /** The restored database is older than this runtime: `mcs upgrade` is the next step. */
+  upgradeNeeded: z.boolean(),
+  pruned: z.array(z.string()),
+});
+
+export type BackupRestoreResult = z.infer<typeof BackupRestoreResultSchema>;
+
+/** One pending database migration. */
+export const DbMigrationStepSchema = z.strictObject({ version: z.number().int().min(1), name: z.string() });
+
+export type DbMigrationStep = z.infer<typeof DbMigrationStepSchema>;
+
+export const DbPlanSchema = z.strictObject({
+  from: z.number().int().min(0),
+  to: z.number().int().min(0),
+  steps: z.array(DbMigrationStepSchema),
+});
+
+export type DbPlan = z.infer<typeof DbPlanSchema>;
+
+export const UpgradePlanSchema = z.strictObject({
+  runtimeFrom: Semver,
+  runtimeTo: Semver,
+  /** `null`: the workspace has no database yet (the first start creates it at the current schema). */
+  db: DbPlanSchema.nullable(),
+  /** File migrations of `config migrate` that are pending (none exist yet). */
+  files: z.array(z.string()),
+  /** Anything to do: a newer runtime version to record or a database migration. */
+  needed: z.boolean(),
+  /** The backup that applying the plan makes first: `data/backups/<id>/`, relative to the workspace. */
+  backup: z.string().nullable(),
+});
+
+export type UpgradePlan = z.infer<typeof UpgradePlanSchema>;
+
+export const UpgradeResultSchema = z.strictObject({
+  task: z.string(),
+  /** `current`: nothing to do; `dry-run`: the plan only; `upgraded`: applied. */
+  outcome: z.enum(['current', 'dry-run', 'upgraded']),
+  plan: UpgradePlanSchema,
+  /** The id of the `upgrade` backup (applied runs only). */
+  backup: z.string().nullable(),
+  /** `ok` after migrations (the copy was read again with `PRAGMA quick_check`); `null` when no migration ran. */
+  integrity: z.literal('ok').nullable(),
+  /** `--restart`: what happened to the server. `null` without `--restart`. */
+  restart: z
+    .strictObject({
+      stopped: z.boolean(),
+      started: z.boolean(),
+      url: z.string().nullable(),
+      pid: z.number().int().nullable(),
+    })
+    .nullable(),
+  pruned: z.array(z.string()),
+  /** 1 when `--restart` did not bring the server up. */
+  exitCode: z.union([z.literal(0), z.literal(1)]),
+});
+
+export type UpgradeResult = z.infer<typeof UpgradeResultSchema>;
+
+export const DbMigrateResultSchema = z.strictObject({
+  task: z.string(),
+  /** `no-database`: nothing to migrate, the first start creates the database. */
+  outcome: z.enum(['no-database', 'current', 'dry-run', 'migrated']),
+  db: DbPlanSchema.nullable(),
+  backup: z.string().nullable(),
+  integrity: z.literal('ok').nullable(),
+  pruned: z.array(z.string()),
+});
+
+export type DbMigrateResult = z.infer<typeof DbMigrateResultSchema>;
+
+export const DbRebuildResultSchema = z.strictObject({
+  task: z.string(),
+  /** `false`: a dry run, nothing was moved. */
+  applied: z.boolean(),
+  /** The database files that are (or would be) moved into the backup. Empty: there is no database. */
+  files: z.array(z.strictObject({ path: z.string(), bytes: z.number().int().min(0) })),
+  /** The `db-rebuild` backup the files were moved into (applied runs only). */
+  backup: z.string().nullable(),
+  pruned: z.array(z.string()),
+});
+
+export type DbRebuildResult = z.infer<typeof DbRebuildResultSchema>;
 // @wp-end WP-62
 
 // @wp-begin WP-64

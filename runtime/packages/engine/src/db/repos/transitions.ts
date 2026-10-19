@@ -2,66 +2,22 @@
 // that decides a state change lives in the lifecycle module of 02; `SessionsRepo.writeView` and `AgentsRepo.writeView`
 // call `insert` when the stored state differs from the new one.
 import type { LifecycleState } from '@mcs/shared';
-import { z } from 'zod';
 
-import type { SqlValue } from '../driver.ts';
-import { DbError } from '../errors.ts';
 import type { InstanceDb, RepoContext } from '../open.ts';
 import type { WriteTx } from '../write.ts';
+import { parseEvidence, requireRef, rowLimit, type Basis, type Confidence, type ViewEvidence } from './shared.ts';
 
-export type Basis = 'observed' | 'inferred';
-export type Confidence = 'high' | 'medium' | 'low';
-
-/** The engine form of an evidence item (02 7.1 `LifecycleEvidence`): a source, a fact and a time, never content. */
-export const ViewEvidenceSchema = z.object({
-  source: z.string(),
-  fact: z.string(),
-  at: z.number().nullable(),
-  count: z.number().optional(),
-  value: z.string().optional(),
-});
-export type ViewEvidence = z.infer<typeof ViewEvidenceSchema>;
-
-const EvidenceListSchema = z.array(ViewEvidenceSchema);
-
-/**
- * The value bound to a `LIMIT` (or a trim size) of any repository statement: a non-negative integer. SQLite reads a
- * negative limit as "no limit" (03 3.7 rule 3: no unbounded query), so anything else is a `RangeError`.
- */
-export function rowLimit(limit: number): number {
-  if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError('a row limit is a non-negative integer');
-  return limit;
-}
-
-/**
- * Checks a soft reference (03 3.4: an id column without REFERENCES, validated by the repository): throws the
- * `db_constraint` / `foreignkey` error of the other repositories when `sql` (a `SELECT 1 ... WHERE id = ?`) finds no row.
- * A caller that holds the id of an existing row is never blocked.
- */
-export function requireRef(db: InstanceDb, what: string, sql: string, params: readonly SqlValue[]): void {
-  if (db.driver.prepare(sql).get(params) === undefined) {
-    throw new DbError('db_constraint', `the ${what} does not exist`, { constraint: 'foreignkey' });
-  }
-}
-
-/** `requireRef` for a transcript file; a `null` or absent id is no reference. */
-export function requireTranscriptFile(db: InstanceDb, fileId: number | null | undefined): void {
-  if (fileId === null || fileId === undefined) return;
-  requireRef(db, 'transcript file', 'SELECT 1 FROM transcript_files WHERE id = ?', [fileId]);
-}
-
-/**
- * Reads an evidence column. A damaged column (invalid JSON or an unexpected shape) reads as an empty list: it must never
- * block a lookup, and the next evaluation of the view rewrites the column.
- */
-export function parseEvidence(text: string): ViewEvidence[] {
-  try {
-    const parsed = EvidenceListSchema.safeParse(JSON.parse(text));
-    return parsed.success ? parsed.data : [];
-  } catch {
-    return [];
-  }
-}
+// The shared helpers used to live here; the other repositories and the query layer still import them from this file.
+export {
+  parseEvidence,
+  requireRef,
+  requireTranscriptFile,
+  rowLimit,
+  ViewEvidenceSchema,
+  type Basis,
+  type Confidence,
+  type ViewEvidence,
+} from './shared.ts';
 
 export interface NewTransition {
   sessionId: number;

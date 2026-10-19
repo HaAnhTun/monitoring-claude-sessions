@@ -9,6 +9,8 @@ import { setTimeout as sleepMs } from 'node:timers/promises';
 
 import { isoMsZ, type Clock } from '@mcs/shared';
 
+import { retryBusy } from '../platform/fsx.ts';
+
 export const LOG_ROTATE_BYTES = 10 * 1024 * 1024; // 10 MiB
 export const LOG_KEEP = 5; // runtime.log.1 .. runtime.log.5
 export const LOG_ROTATE_RETRY_BUDGET_MS = 3000; // ADR 0058 budget, counted over one whole rotation
@@ -126,7 +128,6 @@ const realDeps: LoggerDeps = {
 const SAFE_STRING = /^[\w.:/@-]{0,128}$/;
 const ALLOWED: ReadonlySet<string> = new Set(LOG_FIELD_NAMES);
 const LEVEL_RANK: Readonly<Record<LogLevel, number>> = { debug: 0, info: 1, warn: 2, error: 3 };
-const BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
 type LogValue = string | number | boolean;
 
@@ -141,11 +142,6 @@ function errnoCode(error: unknown): string | undefined {
     return error.code;
   }
   return undefined;
-}
-
-/** 50, 100, 200, 250, 250 ... ms (ADR 0058). */
-function backoffMs(attempt: number): number {
-  return Math.min(50 * 2 ** Math.min(attempt, 10), 250);
 }
 
 // ---- the logger -------------------------------------------------------------------------------------------------------
@@ -211,19 +207,17 @@ export function createLoggerWith(o: LoggerOptions, deps: LoggerDeps): Logger {
     }
   }
 
-  /** One unlink or rename with the retry schedule; ENOENT means "nothing in this slot". */
+  /** One unlink or rename with the retry rule of ADR 0058 (`retryBusy`); ENOENT means "nothing in this slot". */
   async function step(operation: () => Promise<void>, started: number): Promise<void> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await operation();
-        return;
-      } catch (error) {
-        const code = errnoCode(error);
-        if (code === 'ENOENT') return;
-        if (code === undefined || !BUSY_CODES.has(code)) throw error;
-        if (deps.monotonicMs() - started >= LOG_ROTATE_RETRY_BUDGET_MS) throw error;
-        await deps.sleep(backoffMs(attempt));
-      }
+    try {
+      await retryBusy(operation, {
+        startedAt: started,
+        budgetMs: LOG_ROTATE_RETRY_BUDGET_MS,
+        now: () => deps.monotonicMs(),
+        sleep: (ms) => deps.sleep(ms),
+      });
+    } catch (error) {
+      if (errnoCode(error) !== 'ENOENT') throw error;
     }
   }
 

@@ -268,6 +268,11 @@ describe('field validation of the list routes (03 5.4)', () => {
     expect(ok(EventListQuerySchema, { afterId: '9', limit: '500' })).toEqual({ afterId: 9, limit: 500 });
     expect(bad(EventListQuerySchema, { afterId: '9', limit: '501' })).toBe(true);
     expect(bad(EventListQuerySchema, { around: '9', afterId: '9' })).toBe(true);
+    // `around` is the first page of a walk: a cursor continues one, so the two are refused instead of one being ignored
+    expect(bad(EventListQuerySchema, { around: '9', cursor: 'abc' })).toBe(true);
+    expect(bad(SessionTimelineQuerySchema, { around: '9', cursor: 'abc' })).toBe(true);
+    expect(ok(SessionTimelineQuerySchema, { around: '9', dir: 'asc' }).around).toBe(9);
+    expect(ok(EventListQuerySchema, { cursor: 'abc' }).cursor).toBe('abc');
     expect(ok(EventListQuerySchema, { around: '9' }).around).toBe(9);
     expect(bad(EventListQuerySchema, { type: 'tool.call,bogus' })).toBe(true);
     expect(ok(EventListQuerySchema, { type: 'tool.call', category: 'error', severity: 'warning,error' })).toMatchObject(
@@ -569,7 +574,9 @@ describe('matchesEventFilter (shared with the UI live buffers)', () => {
 
   it('ignores paging parameters', () => {
     const e = first(events);
-    expect(matchesEventFilter(f({ limit: '1', around: '99', dir: 'asc', cursor: 'abc' }), e)).toBe(true);
+    // `around` and `cursor` are refused together by the schema (CR-WP-30-6), so each is checked on its own
+    expect(matchesEventFilter(f({ limit: '1', around: '99', dir: 'asc' }), e)).toBe(true);
+    expect(matchesEventFilter(f({ limit: '1', dir: 'asc', cursor: 'abc' }), e)).toBe(true);
     expect(matchesEventFilter(f({ afterId: '99' }), e)).toBe(true);
   });
 });

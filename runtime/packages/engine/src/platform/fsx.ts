@@ -65,7 +65,8 @@ export interface FsxDeps {
 }
 
 const DEFAULT_BUDGET_MS = 3000;
-const REPLACE_RETRY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES']);
+/** The Windows sharing violations (antivirus, an editor, a legacy reader) that a replace or an unlink retries. */
+const BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES']);
 const READ_RETRIES = 10;
 const READ_RETRY_DELAY_MS = 20;
 const TAIL_QUIET_CODES: ReadonlySet<string> = new Set(['ENOENT', 'EACCES', 'EISDIR', 'EPERM']);
@@ -87,14 +88,42 @@ function describeCause(cause: unknown): string {
   return cause instanceof Error ? cause.name : 'unknown error';
 }
 
-function isReplaceBusy(error: unknown): boolean {
+/** True for a Windows sharing violation (`EPERM`, `EBUSY`, `EACCES`): the errors that every retry loop of the engine waits out. */
+export function isBusyError(error: unknown): boolean {
   const code = errorCode(error);
-  return code !== undefined && REPLACE_RETRY_CODES.has(code);
+  return code !== undefined && BUSY_CODES.has(code);
 }
 
-/** 50, 100, 200, 250, 250 ... ms. */
+/** 50, 100, 200, 250, 250 ... ms (ADR 0058). */
 function backoffMs(attempt: number): number {
   return Math.min(50 * 2 ** Math.min(attempt, 10), 250);
+}
+
+export interface RetryBusyOptions {
+  /** When the budget started, on the clock of `now`. Callers of one multi-step job pass the same value to share a budget. */
+  startedAt: number;
+  /** How long a sharing violation keeps being retried, counted from `startedAt`. */
+  budgetMs: number;
+  /** A monotonic clock in ms. */
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+
+/**
+ * Runs `op` and retries it while it fails with a sharing violation (`EPERM`, `EBUSY`, `EACCES`), sleeping 50, 100,
+ * 200, 250, 250 ... ms, until `budgetMs` have passed since `startedAt`. The error of the last attempt is rethrown when the
+ * budget is spent, and any other error is rethrown at once. The one retry rule of `atomicWriteFile`, `unlinkWithRetry` and
+ * the log rotation (ADR 0058); a caller maps the thrown error to its own error type.
+ */
+export async function retryBusy<T>(op: () => Promise<T>, o: RetryBusyOptions): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await op();
+    } catch (error) {
+      if (!isBusyError(error) || o.now() - o.startedAt >= o.budgetMs) throw error;
+      await o.sleep(backoffMs(attempt));
+    }
+  }
 }
 
 const LINE_TERMINATORS: ReadonlySet<string> = new Set([
@@ -148,6 +177,11 @@ export interface Fsx {
 
 /** Builds the file functions over `deps`. The exports of this module are the instance over the real file system. */
 export function createFsx(deps: FsxDeps): Fsx {
+  /** The retry budget of one call, started now. */
+  function retryOptions(budgetMs: number): RetryBusyOptions {
+    return { startedAt: deps.now(), budgetMs, now: () => deps.now(), sleep: (ms) => deps.sleep(ms) };
+  }
+
   async function closeQuietly(handle: FsxFile): Promise<void> {
     try {
       await handle.close();
@@ -196,37 +230,21 @@ export function createFsx(deps: FsxDeps): Fsx {
       throw new AtomicWriteError('E_ATOMIC_WRITE_IO', file, cause);
     }
 
-    const started = deps.now();
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await deps.rename(tmp, file);
-        return;
-      } catch (cause) {
-        if (!isReplaceBusy(cause)) {
-          await unlinkQuietly(tmp);
-          throw new AtomicWriteError('E_ATOMIC_WRITE_IO', file, cause);
-        }
-        if (deps.now() - started >= budgetMs) {
-          await unlinkQuietly(tmp);
-          throw new AtomicWriteError('E_ATOMIC_WRITE_BUSY', file, cause);
-        }
-        await deps.sleep(backoffMs(attempt));
-      }
+    try {
+      await retryBusy(() => deps.rename(tmp, file), retryOptions(budgetMs));
+    } catch (cause) {
+      await unlinkQuietly(tmp);
+      throw new AtomicWriteError(isBusyError(cause) ? 'E_ATOMIC_WRITE_BUSY' : 'E_ATOMIC_WRITE_IO', file, cause);
     }
   }
 
   async function unlinkWithRetry(file: string, budgetMs: number = DEFAULT_BUDGET_MS): Promise<'deleted' | 'absent'> {
-    const started = deps.now();
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await deps.unlink(file);
-        return 'deleted';
-      } catch (cause) {
-        if (errorCode(cause) === 'ENOENT') return 'absent';
-        if (!isReplaceBusy(cause)) throw new AtomicWriteError('E_ATOMIC_WRITE_IO', file, cause);
-        if (deps.now() - started >= budgetMs) throw new AtomicWriteError('E_ATOMIC_WRITE_BUSY', file, cause);
-        await deps.sleep(backoffMs(attempt));
-      }
+    try {
+      await retryBusy(() => deps.unlink(file), retryOptions(budgetMs));
+      return 'deleted';
+    } catch (cause) {
+      if (errorCode(cause) === 'ENOENT') return 'absent';
+      throw new AtomicWriteError(isBusyError(cause) ? 'E_ATOMIC_WRITE_BUSY' : 'E_ATOMIC_WRITE_IO', file, cause);
     }
   }
 
@@ -262,7 +280,7 @@ export function createFsx(deps: FsxDeps): Fsx {
       try {
         return await readOnce(file, maxBytes);
       } catch (error) {
-        if (error instanceof SmallFileError || !isReplaceBusy(error)) throw error;
+        if (error instanceof SmallFileError || !isBusyError(error)) throw error;
         if (attempt >= READ_RETRIES) throw new SmallFileError('E_FILE_BUSY', file, error);
         await deps.sleep(READ_RETRY_DELAY_MS);
       }

@@ -814,7 +814,7 @@ describe('resolveExecutable on this machine', () => {
 
 describe('spawnDetached and spawnForeground', () => {
   const baseEnv = (): Record<string, string> => {
-    const env: Record<string, string> = { MCS_PROBE: 'probe-value' };
+    const env: Record<string, string> = { SAMPLE_VALUE: 'probe-value' };
     for (const key of ['PATH', 'SystemRoot', 'TEMP', 'TMP']) {
       const value = process.env[key];
       if (value !== undefined) env[key] = value;
@@ -831,7 +831,7 @@ describe('spawnDetached and spawnForeground', () => {
     try {
       const child = spawnDetached(
         NODE,
-        ['-e', 'console.log("hello " + process.env.MCS_PROBE + " " + process.cwd()); console.error("oops")'],
+        ['-e', 'console.log("hello " + process.env.SAMPLE_VALUE + " " + process.cwd()); console.error("oops")'],
         { cwd: dir, env: baseEnv(), stdoutFd: outFd, stderrFd: errFd },
       );
       expect(typeof child.pid).toBe('number');

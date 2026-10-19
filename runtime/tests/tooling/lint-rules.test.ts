@@ -72,6 +72,14 @@ const PLATFORM_LINES = [
   "process.stdout.write('x');",
 ];
 
+/** Declarations shared by the `withWriteTx` probes; they take lines 1 to 4. */
+const WRITE_TX_DECLARATIONS = [
+  'declare function withWriteTx<T>(fn: () => T): T;',
+  'declare function later(): Promise<number>;',
+  'declare function stream(): AsyncIterable<number>;',
+  'declare const ctx: { withWriteTx<T>(fn: () => T): T };',
+];
+
 const PROBES: readonly Probe[] = [
   // ---- all TypeScript (probed in engine/src/probe, a folder without a path-specific rule beyond the engine layering)
   {
@@ -173,6 +181,87 @@ const PROBES: readonly Probe[] = [
     file: 'packages/engine/src/probe/shell.ts',
     lines: ['export const options = { shell: true };', 'export const safe = { shell: false };'],
     expect: [[1, SYNTAX]],
+  },
+  // ---- a write transaction never spans an await (DA-I12)
+  {
+    file: 'packages/engine/src/probe/write-tx-async.ts',
+    lines: [
+      ...WRITE_TX_DECLARATIONS,
+      'export const a = withWriteTx(async () => 1);',
+      'export const b = withWriteTx(async function () {',
+      '  return 1;',
+      '});',
+      'export const c = ctx.withWriteTx(async () => 1);',
+    ],
+    expect: [
+      [5, SYNTAX],
+      [6, SYNTAX],
+      [9, SYNTAX],
+    ],
+  },
+  {
+    file: 'packages/engine/src/probe/write-tx-await.ts',
+    lines: [
+      ...WRITE_TX_DECLARATIONS,
+      'export const a = withWriteTx(async () => {',
+      '  await later();',
+      '  return 1;',
+      '});',
+      'export const b = withWriteTx(() => {',
+      '  const inner = async (): Promise<number> => {',
+      '    await later();',
+      '    return 1;',
+      '  };',
+      '  return inner;',
+      '});',
+      'export const c = withWriteTx(async () => {',
+      '  for await (const n of stream()) void n;',
+      '  return 1;',
+      '});',
+    ],
+    expect: [
+      [5, SYNTAX],
+      [6, SYNTAX],
+      [11, SYNTAX],
+      [16, SYNTAX],
+      [17, SYNTAX],
+    ],
+  },
+  {
+    file: 'packages/engine/src/probe/write-tx-sync.ts',
+    lines: [
+      ...WRITE_TX_DECLARATIONS,
+      'export const a = withWriteTx(() => 1);',
+      'export const b = withWriteTx(function () {',
+      '  return later;',
+      '});',
+      'async function helper(): Promise<number> {',
+      '  await later();',
+      '  return 1;',
+      '}',
+      'export async function c(): Promise<number> {',
+      '  const n = withWriteTx(() => 1);',
+      '  await later();',
+      '  await helper();',
+      '  return n;',
+      '}',
+    ],
+    expect: [],
+  },
+  {
+    file: 'packages/server/src/probe/write-tx-async.ts',
+    lines: [...WRITE_TX_DECLARATIONS, 'export const a = withWriteTx(async () => 1);'],
+    expect: [[5, SYNTAX]],
+  },
+  {
+    file: 'packages/cli/src/probe/write-tx-async.ts',
+    lines: [...WRITE_TX_DECLARATIONS, 'export const a = withWriteTx(async () => 1);'],
+    expect: [[5, SYNTAX]],
+  },
+  {
+    file: 'packages/engine/src/probe/write-tx-async.test.ts',
+    lines: [...WRITE_TX_DECLARATIONS, 'export const a = withWriteTx(async () => 1);'],
+    expect: [],
   },
   // ---- process streams and platform branching (E24)
   {

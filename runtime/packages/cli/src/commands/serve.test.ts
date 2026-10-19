@@ -1,4 +1,4 @@
-// `serve` (01 6.3, 4.10): foreground server; the command takes SIGINT over from the kernel while the server runs.
+// `serve` (01 6.3, 4.10): foreground server; the command owns SIGINT while the server runs (`interruptible: 'command'`).
 import type { OpContext, ServeInput, ServeResult } from '@mcs/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -72,19 +72,21 @@ describe('serve command', () => {
     expect(out.exitCode).toBe(0);
   });
 
-  it('takes SIGINT over from the kernel while the server runs and gives it back afterwards, even after a failure', async () => {
+  it("owns Ctrl+C itself (interruptible: 'command') and does not touch the listeners of the process", async () => {
+    expect(command.interruptible).toBe('command');
     const kernel = (): void => undefined;
     process.on('SIGINT', kernel);
     added.push(kernel);
-    const during: number[] = [];
+    const before = process.listeners('SIGINT');
+    const during: (readonly unknown[])[] = [];
     const cmd = makeCommand({
       serveForeground: () => {
-        during.push(process.listeners('SIGINT').filter((listener) => listener === kernel).length);
+        during.push(process.listeners('SIGINT'));
         return Promise.reject(new Error('the server failed'));
       },
     });
     await expect(cmd.run(contextOf({}))).rejects.toThrow('the server failed');
-    expect(during).toEqual([0]);
-    expect(process.listeners('SIGINT').filter((listener) => listener === kernel)).toHaveLength(1);
+    expect(during).toEqual([before]);
+    expect(process.listeners('SIGINT')).toEqual(before);
   });
 });

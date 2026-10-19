@@ -70,7 +70,7 @@ export function mountedRoutes(app: Express): readonly RouteDefinition[] {
 /** The part of the instance context that the HTTP layer uses (03 12.1: routes call `ctx.queries`, nothing else reads the DB). */
 export type AppContext = Pick<
   InstanceContext,
-  'instanceId' | 'slug' | 'clock' | 'scope' | 'queries' | 'errors' | 'logger' | 'process' | 'config' | 'instance'
+  'instanceId' | 'slug' | 'clock' | 'scope' | 'db' | 'queries' | 'errors' | 'logger' | 'process' | 'config' | 'instance'
 >;
 
 /** `task.json` as the legacy health body shows it (`task_brief()`): the id, the name and the description (default empty). */

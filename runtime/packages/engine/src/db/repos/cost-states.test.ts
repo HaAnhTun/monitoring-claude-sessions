@@ -7,6 +7,7 @@ import { openInstanceDb, type InstanceDb } from '../open.ts';
 import { withWriteTx } from '../write.ts';
 import { CostStatesRepo, type NewCostState } from './cost-states.ts';
 import { SessionsRepo } from './sessions.ts';
+import { expectEveryMethodScoped } from '../../../test/support/repo-scope.ts';
 
 const tempDir = useTempDirs();
 const INSTANCE_ID = '11111111-1111-4111-8111-111111111111';
@@ -59,27 +60,6 @@ function state(sessionId: number, over: Partial<NewCostState> = {}): NewCostStat
     observedAt: T0 + 10,
     ...over,
   };
-}
-
-/**
- * DA-T-DB-7, DA-I3 (03 4.5): every public method of the repository, called with a foreign context and valid arguments,
- * fails with `scope_mismatch` before any statement. The table is checked against the prototype, so a new method
- * cannot be forgotten.
- */
-function expectEveryMethodScoped(
-  repo: object,
-  calls: Readonly<Record<string, () => unknown>>,
-  internal: readonly string[] = [],
-): void {
-  const proto = Reflect.getPrototypeOf(repo);
-  if (proto === null) throw new Error('a repository has a prototype');
-  const methods = Object.getOwnPropertyNames(proto)
-    .filter((name) => name !== 'constructor' && !internal.includes(name))
-    .sort();
-  expect(Object.keys(calls).sort()).toEqual(methods);
-  for (const [name, call] of Object.entries(calls)) {
-    expect(call, name).toThrow(expect.objectContaining({ code: 'scope_mismatch' }));
-  }
 }
 
 describe('CostStatesRepo (02 6.6, last write wins by byte offset)', () => {
@@ -146,6 +126,61 @@ describe('CostStatesRepo (02 6.6, last write wins by byte offset)', () => {
     expect(repo.byFile(CTX, 1)).toBeUndefined();
   });
 
+  it('markNotTrailing clears the flag of the file below the offset and keeps the amount, the offset and the time', () => {
+    const db = database();
+    const repo = new CostStatesRepo(db);
+    const sessionId = addSession(db);
+    withWriteTx(db, CTX, (tx) => {
+      repo.upsert(CTX, tx, state(sessionId, { fileId: 1, byteOffset: 1000 }));
+      repo.upsert(CTX, tx, state(sessionId, { fileId: 2, byteOffset: 1000 }));
+    });
+    // a row at or below the offset of the record does not follow it
+    expect(withWriteTx(db, CTX, (tx) => repo.markNotTrailing(CTX, tx, 1, 1000))).toBe(false);
+    expect(withWriteTx(db, CTX, (tx) => repo.markNotTrailing(CTX, tx, 1, 400))).toBe(false);
+    expect(repo.byFile(CTX, 1)?.isTrailing).toBe(true);
+    // a row after it does, and only for its own file
+    expect(withWriteTx(db, CTX, (tx) => repo.markNotTrailing(CTX, tx, 1, 1001))).toBe(true);
+    expect(repo.byFile(CTX, 1)).toEqual({ ...state(sessionId), isTrailing: false });
+    expect(repo.byFile(CTX, 2)?.isTrailing).toBe(true);
+    // idempotent: nothing left to clear
+    expect(withWriteTx(db, CTX, (tx) => repo.markNotTrailing(CTX, tx, 1, 5000))).toBe(false);
+    // a file without a state is a no-op
+    expect(withWriteTx(db, CTX, (tx) => repo.markNotTrailing(CTX, tx, 3, 5000))).toBe(false);
+  });
+
+  it('sessionTrailing is true while the main transcript file of the session holds a trailing state', () => {
+    const db = database();
+    const repo = new CostStatesRepo(db);
+    const sessionId = addSession(db);
+    expect(repo.sessionTrailing(CTX, sessionId)).toBe(false);
+    withWriteTx(db, CTX, (tx) => repo.upsert(CTX, tx, state(sessionId, { fileId: 1 })));
+    expect(repo.sessionTrailing(CTX, sessionId)).toBe(true);
+    withWriteTx(db, CTX, (tx) => repo.markNotTrailing(CTX, tx, 1, 2000));
+    expect(repo.sessionTrailing(CTX, sessionId)).toBe(false);
+    // a state that is not trailing, and a session that does not exist
+    expect(repo.sessionTrailing(CTX, sessionId + 100)).toBe(false);
+  });
+
+  it('sessionTrailing ignores the state of a subagent file', () => {
+    const db = database();
+    const repo = new CostStatesRepo(db);
+    const sessionId = addSession(db);
+    db.driver
+      .prepare(
+        `INSERT INTO transcript_files (path, path_key, kind, session_uid, agent_uid, discovered_at, updated_at)
+         VALUES ('C:/t/agent.jsonl', 'c:/t/agent.jsonl', 'subagent', ?, 'a0123456789abcdef', ?, ?)`,
+      )
+      .run([UID_A, T0, T0]);
+    const agentFile = db.driver
+      .prepare<{ id: number }>("SELECT id FROM transcript_files WHERE kind = 'subagent'")
+      .get()?.id;
+    withWriteTx(db, CTX, (tx) => repo.upsert(CTX, tx, state(sessionId, { fileId: agentFile ?? -1 })));
+    expect(repo.byFile(CTX, agentFile ?? -1)?.isTrailing).toBe(true);
+    expect(repo.sessionTrailing(CTX, sessionId)).toBe(false);
+    withWriteTx(db, CTX, (tx) => repo.upsert(CTX, tx, state(sessionId, { fileId: 1 })));
+    expect(repo.sessionTrailing(CTX, sessionId)).toBe(true);
+  });
+
   it('refuses a foreign context on every public method (DA-T-DB-7)', () => {
     const db = database();
     const repo = new CostStatesRepo(db);
@@ -157,8 +192,11 @@ describe('CostStatesRepo (02 6.6, last write wins by byte offset)', () => {
       listBySession: () => repo.listBySession(FOREIGN, sessionId),
       latestTrailing: () => repo.latestTrailing(FOREIGN, sessionId),
       deleteByFile: () => withWriteTx(db, CTX, (tx) => repo.deleteByFile(FOREIGN, tx, 1)),
+      markNotTrailing: () => withWriteTx(db, CTX, (tx) => repo.markNotTrailing(FOREIGN, tx, 1, 9000)),
+      sessionTrailing: () => repo.sessionTrailing(FOREIGN, sessionId),
     });
     expect(repo.byFile(CTX, 1)?.byteOffset).toBe(1000);
+    expect(repo.byFile(CTX, 1)?.isTrailing).toBe(true);
   });
 });
 

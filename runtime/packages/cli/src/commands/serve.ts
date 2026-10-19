@@ -15,28 +15,15 @@ const SERVE_OPTIONS: OptionTable = {
   },
 };
 
-/**
- * The kernel ends the CLI with exit code 130 on SIGINT (01 6.2). While the server runs in the foreground that would end the
- * CLI first, and on Windows the server dies with it (a child of this process is killed when the parent exits), so the
- * shutdown that Ctrl+C asks for would never finish. For the length of the server's life the operation owns the signal;
- * the kernel's listeners are put back afterwards, also after a failure.
- */
-async function withSigintOwnedByServe<T>(work: () => Promise<T>): Promise<T> {
-  const kernel = process.listeners('SIGINT');
-  for (const listener of kernel) process.off('SIGINT', listener);
-  try {
-    return await work();
-  } finally {
-    for (const listener of kernel) process.on('SIGINT', listener);
-  }
-}
-
 export function makeCommand(ops: Pick<typeof opsLifecycle, 'serveForeground'> = opsLifecycle): CommandDefinition {
   return {
     name: 'serve',
     summary: 'run the monitor of a task in the foreground (Ctrl+C stops it gracefully)',
     synopsis: '[--task SLUG] [--port N] [--log-level LEVEL] [--open] [--state-file FILE]',
     options: SERVE_OPTIONS,
+    // Ctrl+C is forwarded to the server as a graceful shutdown: on Windows a server that is a child of this process dies with it,
+    // so the kernel's exit 130 would cut the shutdown short (01 6.2, CR-WP-19-4).
+    interruptible: 'command',
     async run(ctx) {
       const stateFile = ctx.args.string('state-file');
       const { task, port, logLevel, open } = startInputOf(ctx.args);
@@ -47,7 +34,7 @@ export function makeCommand(ops: Pick<typeof opsLifecycle, 'serveForeground'> = 
         ...(open === true ? { open: true } : {}),
         ...(stateFile === undefined ? {} : { stateFile }),
       };
-      const result = await withSigintOwnedByServe(() => ops.serveForeground(ctx.op, input));
+      const result = await ops.serveForeground(ctx.op, input);
       return { data: result, text: result.message, warnings: result.warnings, exitCode: result.exitCode };
     },
   };

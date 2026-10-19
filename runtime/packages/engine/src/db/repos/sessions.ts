@@ -3,45 +3,33 @@
 // and the rules that derive a view, live in the ingestion and lifecycle modules of 02.
 import type { LifecycleState } from '@mcs/shared';
 
-import type { SqlValue } from '../driver.ts';
 import type { InstanceDb, RepoContext } from '../open.ts';
 import type { WriteTx } from '../write.ts';
 import {
+  patchRow,
   requireTranscriptFile,
   rowLimit,
-  TransitionsRepo,
-  parseEvidence,
-  type Basis,
-  type Confidence,
-  type ViewEvidence,
-} from './transitions.ts';
+  viewFromRow,
+  viewKeyChanged,
+  type PatchEntries,
+  type StoredView,
+  type ViewDbRow,
+  type ViewKeyRow,
+} from './shared.ts';
+import { TransitionsRepo } from './transitions.ts';
 
-export type { Basis, Confidence, ViewEvidence } from './transitions.ts';
-
-export type Presence = 'open' | 'ended' | 'unknown';
-export type WaitReason = 'user' | 'permission' | 'elicitation' | 'agent_input' | 'idle_prompt';
-export type StaleKind = 'silent' | 'abandoned' | 'process_gone' | 'parent_ended';
-export type TurnOutcome = 'ok' | 'error' | 'interrupted';
-
-/**
- * The stored form of a lifecycle view (02 7.1 `LifecycleView`: the same field names, so a `LifecycleView` is accepted
- * as is). The unevaluated defaults of a fresh row read as `evaluatedAt` 0.
- */
-export interface StoredView {
-  state: LifecycleState;
-  presence: Presence;
-  waitReason: WaitReason | null;
-  staleKind: StaleKind | null;
-  endReason: string | null;
-  turnOutcome: TurnOutcome | null;
-  basis: Basis;
-  confidence: Confidence;
-  ruleId: string;
-  evidence: readonly ViewEvidence[];
-  since: number | null;
-  evaluatedAt: number;
-  nextCheckAt: number | null;
-}
+export type { Basis, Confidence, ViewEvidence } from './shared.ts';
+export type {
+  PatchEntries,
+  PatchValue,
+  Presence,
+  StaleKind,
+  StoredView,
+  TurnOutcome,
+  ViewDbRow,
+  ViewKeyRow,
+  WaitReason,
+} from './shared.ts';
 
 /** What `writeView` did. `seq` is the reserved change (`null` when nothing visible changed). */
 export interface WriteViewResult {
@@ -103,8 +91,6 @@ export interface NewSession {
   startedAt: number;
 }
 
-export type PatchValue = string | number | boolean | null;
-
 /**
  * Columns `update` may write. A key that is absent is not touched; `null` sets NULL where the column allows it.
  * Counters and rollups are written by the code that owns them (the writer, `UsageRepo`).
@@ -147,8 +133,6 @@ export interface SessionPatch {
   reportedCostAt?: number | null;
 }
 
-export type PatchEntries = readonly (readonly [column: string, value: PatchValue | undefined])[];
-
 function patchEntries(p: SessionPatch): PatchEntries {
   return [
     ['transcript_file_id', p.transcriptFileId],
@@ -189,79 +173,11 @@ function patchEntries(p: SessionPatch): PatchEntries {
   ];
 }
 
-function sqlValue(value: PatchValue): SqlValue {
-  return typeof value === 'boolean' ? (value ? 1 : 0) : value;
-}
-
-/**
- * Shared by `SessionsRepo.update` and `AgentsRepo.update`: one `UPDATE` over the named columns. The column names come
- * from the literal lists of the two repositories, never from input. `updated_seq` is stamped only when `seq` is given
- * (the caller reserved a change), `updated_at` always.
- */
-export function patchRow(
-  db: InstanceDb,
-  table: 'sessions' | 'agents',
-  id: number,
-  entries: PatchEntries,
-  seq: number | null,
-  now: number,
-): boolean {
-  const params: Record<string, SqlValue> = { id, updatedAt: now };
-  const sets: string[] = [];
-  for (const [column, value] of entries) {
-    if (value === undefined) continue;
-    sets.push(`${column} = :${column}`);
-    params[column] = sqlValue(value);
-  }
-  if (sets.length === 0) return false;
-  sets.push('updated_at = :updatedAt');
-  if (seq !== null) {
-    sets.push('updated_seq = :updatedSeq');
-    params['updatedSeq'] = seq;
-  }
-  return db.driver.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = :id`).run(params).changes > 0;
-}
-
-export interface ViewKeyRow {
-  state: LifecycleState;
-  presence: Presence;
-  waitReason: WaitReason | null;
-  staleKind: StaleKind | null;
-  endReason: string | null;
-  turnOutcome: TurnOutcome | null;
-  basis: Basis;
-  confidence: Confidence;
-  ruleId: string;
-}
-
-/** The nine fields of `viewChanged` (02 7.8): time passing and evidence wording alone never count as a change. */
-export function viewKeyChanged(old: ViewKeyRow, next: ViewKeyRow): boolean {
-  return (
-    old.state !== next.state ||
-    old.presence !== next.presence ||
-    old.waitReason !== next.waitReason ||
-    old.staleKind !== next.staleKind ||
-    old.endReason !== next.endReason ||
-    old.turnOutcome !== next.turnOutcome ||
-    old.basis !== next.basis ||
-    old.confidence !== next.confidence ||
-    old.ruleId !== next.ruleId
-  );
-}
-
 const VIEW_KEY_COLUMNS = `state, presence, wait_reason AS waitReason, stale_kind AS staleKind, end_reason AS endReason,
   turn_outcome AS turnOutcome, state_basis AS basis, state_confidence AS confidence, state_rule AS ruleId`;
 
 const VIEW_COLUMNS = `${VIEW_KEY_COLUMNS}, state_evidence AS evidence, state_since AS since,
   coalesce(evaluated_at, 0) AS evaluatedAt, next_check_at AS nextCheckAt`;
-
-export interface ViewDbRow extends Omit<StoredView, 'evidence'> {
-  evidence: string;
-}
-
-export function viewFromRow(row: ViewDbRow): StoredView {
-  return { ...row, evidence: parseEvidence(row.evidence) };
-}
 
 const WRITE_VIEW_SQL = `UPDATE sessions SET state = :state, presence = :presence, wait_reason = :waitReason,
     stale_kind = :staleKind, end_reason = :endReason, turn_outcome = :turnOutcome, state_basis = :basis,

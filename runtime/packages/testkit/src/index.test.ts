@@ -1,9 +1,12 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createServer } from 'node:net';
 
 import { describe, expect, it } from 'vitest';
 
-import { allocatePort, makeTempDir, VITEST_PORTS } from './index.ts';
+import * as ports from './ports.ts';
+import * as temp from './temp.ts';
+import { allocatePort, assertPortClosed, makeTempDir, VITEST_PORTS } from './index.ts';
 
 describe('testkit scaffold', () => {
   it('creates and removes a temp dir', () => {
@@ -38,6 +41,32 @@ describe('testkit scaffold', () => {
           resolve();
         });
       });
+    }
+  });
+
+  it('exports the real port and temp helpers, not stubs of its own', () => {
+    expect(allocatePort).toBe(ports.allocatePort);
+    expect(makeTempDir).toBe(temp.makeTempDir);
+    expect(VITEST_PORTS).toBe(ports.VITEST_PORTS);
+  });
+
+  it('marks every temp folder as a fixture', () => {
+    const dir = makeTempDir('scaffold');
+    try {
+      expect(readFileSync(join(dir.path, 'FIXTURE.md'), 'utf8')).toBe(temp.FIXTURE_MARKER_TEXT);
+    } finally {
+      dir.remove();
+    }
+  });
+
+  it('keeps a port reserved until it is released, so two callers never share one', async () => {
+    const first = await allocatePort();
+    const second = await allocatePort();
+    try {
+      expect(second).not.toBe(first);
+    } finally {
+      await assertPortClosed(first);
+      await assertPortClosed(second);
     }
   });
 });

@@ -132,6 +132,8 @@ async function start(over: Partial<AppDeps> = {}): Promise<Harness> {
     slug: 'demo',
     clock: new FakeClock(NOW),
     scope: { instanceId: ID },
+    // these routes never reach the database; a call on it fails loudly
+    db: {} as never,
     queries: asQueries({
       instanceInfo: () => {
         // the stub of the test decides what the query layer answers

@@ -4,13 +4,13 @@
 // and live as long as the app: an instance that nobody watches holds no listener and no timer.
 import type { ServerResponse } from 'node:http';
 
-import { bindHealthGauges, onCommitted, type InstanceDb } from '@mcs/engine';
+import { ChangesRepo, bindHealthGauges, onCommitted } from '@mcs/engine';
 import { routes } from '@mcs/shared';
 import type { Response } from 'express';
 
 import { ApiError } from '../errors.ts';
 import { registerRoute, type AppContext, type RouteModule } from '../route-adapter.ts';
-import { createHydrator, hydrationQueriesOf, type ChangeRow } from './hydrate.ts';
+import { createHydrator, hydrationQueriesOf } from './hydrate.ts';
 import {
   createStreamHub,
   type ChangeLog,
@@ -20,24 +20,13 @@ import {
   type StreamSink,
 } from './hub.ts';
 
-/** The route needs the database of the instance context for the change log and the commit notifications. */
-type StreamContext = AppContext & { readonly db: InstanceDb };
-
-function hasDatabase(ctx: AppContext): ctx is StreamContext {
-  return 'db' in ctx && typeof ctx.db === 'object' && ctx.db !== null;
-}
-
-/** The change log of the database: `ChangesRepo` of the engine, which the engine barrel does not export yet (CR-WP-36-1). */
-function changeLogOf(db: InstanceDb): ChangeLog {
-  const oldest = db.driver.prepare<{ seq: number | null }>('SELECT min(seq) AS seq FROM changes');
-  const since = db.driver.prepare<ChangeRow>(
-    `SELECT seq, at, kind, op, session_uid AS sessionUid, entity_id AS entityId, payload
-       FROM changes WHERE seq > :afterSeq ORDER BY seq LIMIT :limit`,
-  );
+/** The change log of the instance: `ChangesRepo` of the engine, bound to the scope of the context. */
+function changeLogOf(ctx: AppContext): ChangeLog {
+  const repo = new ChangesRepo(ctx.db);
   return {
-    head: () => db.headSeq(),
-    oldest: () => oldest.get()?.seq ?? undefined,
-    since: (afterSeq, limit) => since.all({ afterSeq, limit }),
+    head: () => repo.headSeq(ctx.scope),
+    oldest: () => repo.oldestSeq(ctx.scope),
+    since: (afterSeq, limit) => repo.since(ctx.scope, afterSeq, limit),
   };
 }
 
@@ -90,10 +79,9 @@ export function createStreamRoutes(options: StreamRouteOptions = {}): RouteModul
     bindHealthGauges(ctx, { sseClients: () => hub?.size ?? 0 });
     const hubOf = (): StreamHub => {
       if (hub !== undefined) return hub;
-      if (!hasDatabase(ctx)) throw new ApiError('internal_error');
       const { db } = ctx;
       const created = createStreamHub({
-        log: changeLogOf(db),
+        log: changeLogOf(ctx),
         hydrate: createHydrator({
           instanceId: ctx.instanceId,
           queries: hydrationQueriesOf(ctx),

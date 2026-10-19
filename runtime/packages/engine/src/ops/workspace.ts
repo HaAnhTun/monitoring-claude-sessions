@@ -199,16 +199,8 @@ const CANDIDATE_LIMIT = 5;
 const PROMPT_CHARS = 110;
 const LF = String.fromCharCode(10);
 
-/** Code-point order (Python `sorted` on `str`), independent of the locale; the one ordering helper of the ops modules. */
-export function compareCodePoints(a: string, b: string): number {
-  const x = Array.from(a);
-  const y = Array.from(b);
-  for (let i = 0; i < Math.min(x.length, y.length); i += 1) {
-    const d = (x[i]?.codePointAt(0) ?? 0) - (y[i]?.codePointAt(0) ?? 0);
-    if (d !== 0) return d;
-  }
-  return x.length - y.length;
-}
+// The one comparator lives in @mcs/shared; the ops modules keep importing it from here.
+export { compareCodePoints } from '@mcs/shared';
 
 /** `file` relative to the repo with `/` separators, as `discover` prints it. */
 function relativeToRepo(repo: string, file: string): string {

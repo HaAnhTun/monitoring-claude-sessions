@@ -29,17 +29,10 @@ const mcs = (rest: string): string => `MCS_${rest}`;
 
 /**
  * Names that a committed file mentions on purpose without documenting them, each with the reason. The test fails when a
- * listed name becomes documented or disappears from its file, so the list cannot rot (change request CR-WP-23-1 asks
- * the owners to document or rename the ones that are real reads).
+ * listed name becomes documented or disappears from its file, so the list cannot rot. It is empty: a sample variable in a
+ * test uses a name without the product prefix.
  */
-const KNOWN_UNDOCUMENTED: readonly { file: string; name: string; reason: string }[] = [
-  {
-    file: 'runtime/packages/engine/src/platform/exec.test.ts',
-    name: mcs('PROBE'),
-    reason:
-      'a sample variable read inside the script of a child process to prove that the environment is passed on (CR-WP-23-1)',
-  },
-];
+const KNOWN_UNDOCUMENTED: readonly { file: string; name: string; reason: string }[] = [];
 
 function* walk(dir: string): Generator<string> {
   let entries: Dirent[];
@@ -380,6 +373,7 @@ describe('environment variables of the repository (01 section 2.10)', () => {
   });
 
   it('keeps the list of known undocumented mentions honest', () => {
+    expect(KNOWN_UNDOCUMENTED).toEqual([]);
     expect(report.staleExceptions).toEqual([]);
     for (const exception of KNOWN_UNDOCUMENTED) expect(exception.reason.length).toBeGreaterThan(20);
   });

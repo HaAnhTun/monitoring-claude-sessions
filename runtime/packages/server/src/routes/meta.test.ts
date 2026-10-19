@@ -272,6 +272,8 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
     slug: 'demo',
     clock,
     scope: { instanceId: ID },
+    // these routes never reach the database; a call on it fails loudly
+    db: {} as never,
     queries: asQueries({
       instanceInfo: () => {
         stubs.calls.push('instanceInfo');

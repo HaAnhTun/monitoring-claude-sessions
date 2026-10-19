@@ -4,17 +4,20 @@ import type { AGENT_KINDS, LifecycleState } from '@mcs/shared';
 
 import type { InstanceDb, RepoContext } from '../open.ts';
 import type { WriteTx } from '../write.ts';
+import type { WriteViewResult } from './sessions.ts';
 import {
   patchRow,
+  requireRef,
+  requireTranscriptFile,
+  rowLimit,
   viewFromRow,
   viewKeyChanged,
   type PatchEntries,
   type StoredView,
   type ViewDbRow,
   type ViewKeyRow,
-  type WriteViewResult,
-} from './sessions.ts';
-import { requireRef, requireTranscriptFile, rowLimit, TransitionsRepo } from './transitions.ts';
+} from './shared.ts';
+import { TransitionsRepo } from './transitions.ts';
 
 export type AgentKind = (typeof AGENT_KINDS)[number];
 

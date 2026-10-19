@@ -12,6 +12,7 @@ import {
   createFsx,
   pySplitlines,
   readSmallFile,
+  retryBusy,
   tailLines,
   unlinkWithRetry,
   type FsxDeps,
@@ -359,6 +360,110 @@ describe('unlinkWithRetry', () => {
       .unlinkWithRetry('/data/x')
       .catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'E_ATOMIC_WRITE_IO' });
+  });
+});
+
+describe('retryBusy (ADR 0058, one retry rule for every caller)', () => {
+  /** A clock that only the injected sleep moves, so a test counts the schedule exactly. */
+  function manualTime(): { now: () => number; sleep: (ms: number) => Promise<void>; sleeps: number[] } {
+    let time = 1000;
+    const sleeps: number[] = [];
+    return {
+      now: () => time,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        time += ms;
+        return Promise.resolve();
+      },
+      sleeps,
+    };
+  }
+
+  it('returns the value of the first attempt without sleeping', async () => {
+    const time = manualTime();
+    const value = await retryBusy(() => Promise.resolve('done'), { startedAt: time.now(), budgetMs: 3000, ...time });
+    expect(value).toBe('done');
+    expect(time.sleeps).toEqual([]);
+  });
+
+  it.each(['EPERM', 'EBUSY', 'EACCES'])('retries %s on the schedule 50, 100, 200, 250, 250 ms', async (code) => {
+    const time = manualTime();
+    let calls = 0;
+    const result = await retryBusy(
+      () => {
+        calls += 1;
+        return calls <= 5 ? Promise.reject(errno(code)) : Promise.resolve(calls);
+      },
+      { startedAt: time.now(), budgetMs: 3000, ...time },
+    );
+    expect(result).toBe(6);
+    expect(time.sleeps).toEqual([50, 100, 200, 250, 250]);
+  });
+
+  it('rethrows the last busy error once the budget is spent, after at least the budget of sleeping', async () => {
+    const time = manualTime();
+    let calls = 0;
+    const error = await retryBusy(
+      () => {
+        calls += 1;
+        return Promise.reject(errno('EBUSY'));
+      },
+      { startedAt: time.now(), budgetMs: 1000, ...time },
+    ).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'EBUSY' });
+    const slept = time.sleeps.reduce((sum, ms) => sum + ms, 0);
+    expect(slept).toBeGreaterThanOrEqual(1000);
+    expect(slept - (time.sleeps.at(-1) ?? 0)).toBeLessThan(1000);
+    expect(calls).toBe(time.sleeps.length + 1);
+  });
+
+  it('shares one budget between calls that pass the same start, so a chain of steps is bounded as a whole', async () => {
+    const time = manualTime();
+    const startedAt = time.now();
+    const busy = (): Promise<never> => Promise.reject(errno('EPERM'));
+    let first = 0;
+    await retryBusy(() => (first++ < 4 ? busy() : Promise.resolve()), { startedAt, budgetMs: 1000, ...time });
+    const spent = time.sleeps.reduce((sum, ms) => sum + ms, 0);
+    expect(spent).toBe(600);
+    const error = await retryBusy(busy, { startedAt, budgetMs: 1000, ...time }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'EPERM' });
+    // the second step could only use what the first left of the 1000 ms
+    expect(time.sleeps.reduce((sum, ms) => sum + ms, 0) - spent).toBeLessThan(1000 - spent + 250);
+  });
+
+  it('counts the time spent inside the failing calls', async () => {
+    const time = manualTime();
+    let advance = 0;
+    const clock = {
+      now: () => time.now() + advance,
+      sleep: time.sleep,
+    };
+    const error = await retryBusy(
+      () => {
+        advance += 600;
+        return Promise.reject(errno('EBUSY'));
+      },
+      { startedAt: clock.now(), budgetMs: 1000, ...clock },
+    ).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'EBUSY' });
+    expect(time.sleeps).toEqual([50]);
+  });
+
+  it('rethrows any other error at once, without sleeping', async () => {
+    const time = manualTime();
+    const error = await retryBusy(() => Promise.reject(errno('ENOENT')), {
+      startedAt: time.now(),
+      budgetMs: 3000,
+      ...time,
+    }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'ENOENT' });
+    expect(time.sleeps).toEqual([]);
+    const plain = await retryBusy(() => Promise.reject(new Error('plain')), {
+      startedAt: time.now(),
+      budgetMs: 3000,
+      ...time,
+    }).catch((caught: unknown) => caught);
+    expect(plain).toMatchObject({ message: 'plain' });
   });
 });
 

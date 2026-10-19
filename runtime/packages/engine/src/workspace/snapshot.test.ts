@@ -1,4 +1,5 @@
 // Isolation snapshots (01 3.5, 1.1): sha256 over everything below a workspace except the runtime-mutable paths.
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -183,5 +184,33 @@ describe('snapshotWorkspaces and changedWorkspaces', () => {
     writeFileSync(path.join(b, 'data', 'monitor.db'), 'rows');
     writeFileSync(path.join(b, 'state.json'), '{"pid": 2}');
     expect(changedWorkspaces(before, await snapshotWorkspaces(root, { except: 'a' }))).toEqual([]);
+  });
+});
+
+describe('names are ordered by code point (CR-WP-14-5)', () => {
+  // U+FF5E is one UTF-16 unit (0xFF5E) and U+1F600 is the pair 0xD83D 0xDE00, so the unit order puts the astral name first.
+  const BMP_HIGH = String.fromCodePoint(0xff5e);
+  const ASTRAL = String.fromCodePoint(0x1f600);
+  const NUL = String.fromCharCode(0);
+
+  it('hashes the entries of a folder in code point order, the same as the testkit snapshot', async () => {
+    const dir = path.join(makeTemp('snapshot').path, 'astral');
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, ASTRAL), 'x');
+    writeFileSync(path.join(dir, BMP_HIGH), 'x');
+    const expected = createHash('sha256');
+    for (const name of [BMP_HIGH, ASTRAL]) expected.update(`f${NUL}${name}${NUL}1${NUL}`).update('x');
+    expect(await snapshotWorkspace(dir)).toBe(expected.digest('hex'));
+    expect(snapshotTree(dir)).toBe(await snapshotWorkspace(dir));
+  });
+
+  it('lists the changed workspaces in code point order', () => {
+    const before = new Map<string, string>();
+    const after = new Map([
+      [ASTRAL, 'h1'],
+      [BMP_HIGH, 'h2'],
+      ['a', 'h3'],
+    ]);
+    expect(changedWorkspaces(before, after)).toEqual(['a', BMP_HIGH, ASTRAL]);
   });
 });

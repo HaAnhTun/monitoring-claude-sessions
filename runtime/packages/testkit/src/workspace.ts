@@ -3,7 +3,14 @@ import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 
-import { InstanceFileSchema, RUNTIME_VERSION, isValidSlug, isoSecondsZ, type InstanceFile } from '@mcs/shared';
+import {
+  InstanceFileSchema,
+  RUNTIME_VERSION,
+  compareCodePoints,
+  isValidSlug,
+  isoSecondsZ,
+  type InstanceFile,
+} from '@mcs/shared';
 
 import { FIXTURE_EPOCH_MS } from './clock.ts';
 import { writeFixtureMarker } from './temp.ts';
@@ -97,7 +104,7 @@ export function snapshotTree(dir: string, opts: { exclude?: readonly string[] } 
   const patterns = opts.exclude ?? [];
   const hash = createHash('sha256');
   const walk = (current: string, prefix: string): void => {
-    const names = readdirSync(current).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const names = readdirSync(current).sort(compareCodePoints);
     for (const name of names) {
       const rel = prefix === '' ? name : `${prefix}/${name}`;
       if (excluded(rel, patterns)) continue;

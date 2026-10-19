@@ -669,6 +669,71 @@ export type {
 // @wp-end WP-35
 
 // @wp-begin WP-37
+export {
+  HOOK_MARKER,
+  buildEntry,
+  desiredEntries,
+  hooksFailed,
+  isOurs,
+  ourHandlers,
+  planHooks,
+  sameHandler,
+  unifiedDiff,
+} from './hooks/installer/plan.ts';
+export type { EntryContext, HookCommandEntry, HooksOp, HooksPlan } from './hooks/installer/plan.ts';
+export {
+  BACKUPS_KEPT,
+  assertNotRealInTest,
+  assertScopeAllowed,
+  backupFolder,
+  displayPath,
+  isTestMode,
+  realSettingsIo,
+  settingsPathFor,
+  writeBackup,
+} from './hooks/installer/settings-io.ts';
+export type {
+  BackupInput,
+  GuardInput,
+  GuardTarget,
+  SettingsIo,
+  SettingsPathInput,
+  SettingsSnapshot,
+} from './hooks/installer/settings-io.ts';
+export { LOCK_TIMEOUT_MS, MAX_ATTEMPTS, applyHooks, hooksWarnings } from './hooks/installer/apply.ts';
+export type {
+  ApplyHooksInput,
+  HooksChangeInput,
+  HooksOutcome,
+  HooksSeams,
+  UninstallHooksInput,
+} from './hooks/installer/apply.ts';
+export { uninstallHooks } from './hooks/installer/uninstall.ts';
+export {
+  EMPTY_MANIFEST,
+  MANIFEST_VERSION,
+  findInstall,
+  hasInstall,
+  hooksFolder,
+  installsOf,
+  manifestKey,
+  manifestPath,
+  readManifest,
+  writeManifest,
+} from './hooks/installer/manifest.ts';
+export type { HookInstallRecord, HooksManifest, ManifestRead } from './hooks/installer/manifest.ts';
+export {
+  HOOK_SCRIPT_NAME,
+  foreignImports,
+  hookScriptState,
+  inspectHookScript,
+  installHookScript,
+  planHookScript,
+  readHookSource,
+  removeHookScript,
+  stableScriptPath,
+} from './hooks/installer/script-copy.ts';
+export type { Destination, HookScriptInput, HookScriptPlan, HookScriptSource } from './hooks/installer/script-copy.ts';
 // @wp-end WP-37
 
 // @wp-begin WP-38
@@ -775,6 +840,18 @@ export type { ScheduledRun } from './maintenance/schedule.ts';
 // @wp-end WP-61
 
 // @wp-begin WP-62
+export * as opsBackup from './ops/backup.ts';
+export type {
+  BackupCreateInput,
+  BackupListInput,
+  BackupOpDeps,
+  BackupReason,
+  BackupRestoreInput,
+  ListedBackup,
+  MadeBackup,
+} from './ops/backup.ts';
+export * as opsInstanceUpgrade from './ops/instance-upgrade.ts';
+export type { DbMigrateInput, DbRebuildInput, UpgradeDeps, UpgradeInput, UpgradeStep } from './ops/instance-upgrade.ts';
 // @wp-end WP-62
 
 // @wp-begin WP-63
@@ -812,3 +889,7 @@ export type { MigrateDeps, MigrateInput, PatternStep, WorkspaceMigrationReport }
 export { bindHealthGauges, healthGaugesOf } from './runtime/context.ts';
 export type { HealthGaugeSources, HealthGaugeValues, SearchGauge } from './runtime/context.ts';
 // @wp-end WP-100
+
+// @wp-begin WP-102
+export { ChangesRepo, type ChangeRow } from './db/repos/changes.ts';
+// @wp-end WP-102

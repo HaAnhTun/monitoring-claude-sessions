@@ -7,6 +7,7 @@ import { isDbError } from '../errors.ts';
 import { openInstanceDb, type InstanceDb } from '../open.ts';
 import { withWriteTx } from '../write.ts';
 import { SpoolCursorsRepo, type NewSpoolCursor } from './spool-cursors.ts';
+import { expectEveryMethodScoped } from '../../../test/support/repo-scope.ts';
 
 const tempDir = useTempDirs();
 const INSTANCE_ID = '11111111-1111-4111-8111-111111111111';
@@ -50,27 +51,6 @@ function cursor(segment: string, over: Partial<NewSpoolCursor> = {}): NewSpoolCu
     drainedAt: null,
     ...over,
   };
-}
-
-/**
- * DA-T-DB-7, DA-I3 (03 4.5): every public method of the repository, called with a foreign context and valid arguments,
- * fails with `scope_mismatch` before any statement. The table is checked against the prototype, so a new method
- * cannot be forgotten.
- */
-function expectEveryMethodScoped(
-  repo: object,
-  calls: Readonly<Record<string, () => unknown>>,
-  internal: readonly string[] = [],
-): void {
-  const proto = Reflect.getPrototypeOf(repo);
-  if (proto === null) throw new Error('a repository has a prototype');
-  const methods = Object.getOwnPropertyNames(proto)
-    .filter((name) => name !== 'constructor' && !internal.includes(name))
-    .sort();
-  expect(Object.keys(calls).sort()).toEqual(methods);
-  for (const [name, call] of Object.entries(calls)) {
-    expect(call, name).toThrow(expect.objectContaining({ code: 'scope_mismatch' }));
-  }
 }
 
 describe('SpoolCursorsRepo (02 2.7)', () => {

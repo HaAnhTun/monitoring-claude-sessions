@@ -9,6 +9,7 @@ import { withWriteTx } from '../write.ts';
 import { AgentsRepo, type NewAgent } from './agents.ts';
 import { SessionsRepo, type StoredView } from './sessions.ts';
 import { WorkflowRunsRepo } from './workflow-runs.ts';
+import { expectEveryMethodScoped } from '../../../test/support/repo-scope.ts';
 
 const tempDir = useTempDirs();
 const INSTANCE_ID = '11111111-1111-4111-8111-111111111111';
@@ -68,27 +69,6 @@ const RUNNING: StoredView = {
   evaluatedAt: T0 + 13,
   nextCheckAt: T0 + 5000,
 };
-
-/**
- * DA-T-DB-7, DA-I3 (03 4.5): every public method of the repository, called with a foreign context and valid arguments,
- * fails with `scope_mismatch` before any statement. The table is checked against the prototype, so a new method
- * cannot be forgotten.
- */
-function expectEveryMethodScoped(
-  repo: object,
-  calls: Readonly<Record<string, () => unknown>>,
-  internal: readonly string[] = [],
-): void {
-  const proto = Reflect.getPrototypeOf(repo);
-  if (proto === null) throw new Error('a repository has a prototype');
-  const methods = Object.getOwnPropertyNames(proto)
-    .filter((name) => name !== 'constructor' && !internal.includes(name))
-    .sort();
-  expect(Object.keys(calls).sort()).toEqual(methods);
-  for (const [name, call] of Object.entries(calls)) {
-    expect(call, name).toThrow(expect.objectContaining({ code: 'scope_mismatch' }));
-  }
-}
 
 describe('AgentsRepo.upsert (03 3.5 agents)', () => {
   it('inserts a subagent under the main agent and reports the creation', () => {

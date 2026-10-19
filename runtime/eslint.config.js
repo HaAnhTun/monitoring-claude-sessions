@@ -114,6 +114,21 @@ const OS_PLATFORM_SYNTAX = {
   message: 'Branch on the platform only in engine/src/platform/** (import hostPlatform from platform/host.ts).',
 };
 
+/**
+ * A write transaction never spans an await (DA-I12, 03 section 3.7): the callback of `withWriteTx` is synchronous, so an
+ * async callback or an `await` (or `for await`) inside it is rejected. An `await` after the call, or in a helper outside the
+ * callback, is fine.
+ */
+const WRITE_TX_CALL =
+  ':matches(CallExpression[callee.name="withWriteTx"], CallExpression[callee.property.name="withWriteTx"])';
+const WRITE_TX_CALLBACK = ':matches(ArrowFunctionExpression, FunctionExpression)';
+const WRITE_TX_MESSAGE = 'A write transaction never spans an await: the withWriteTx callback is synchronous (DA-I12).';
+const WRITE_TX_SYNTAX = [
+  { selector: `${WRITE_TX_CALL} > ${WRITE_TX_CALLBACK}[async=true]`, message: WRITE_TX_MESSAGE },
+  { selector: `${WRITE_TX_CALL} > ${WRITE_TX_CALLBACK} AwaitExpression`, message: WRITE_TX_MESSAGE },
+  { selector: `${WRITE_TX_CALL} > ${WRITE_TX_CALLBACK} ForOfStatement[await=true]`, message: WRITE_TX_MESSAGE },
+];
+
 const WEB_SYNTAX = [
   {
     selector: 'JSXAttribute[name.name=/^(href|src|srcDoc|formAction|action)$/] > JSXExpressionContainer',
@@ -252,7 +267,13 @@ export default defineConfig(
         ],
       }),
       'no-restricted-properties': ['error', ...NO_STDIO, PLATFORM_ENTRY],
-      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX, OS_PLATFORM_SYNTAX],
+      'no-restricted-syntax': [
+        'error',
+        ...UNSAFE_HTML_SYNTAX,
+        ...NO_SHELL_SYNTAX,
+        ...WRITE_TX_SYNTAX,
+        OS_PLATFORM_SYNTAX,
+      ],
     },
   },
   {
@@ -260,7 +281,7 @@ export default defineConfig(
     files: ['packages/engine/src/platform/**/*.ts', 'packages/engine/src/security/paths.ts'],
     rules: {
       'no-restricted-properties': ['error', ...NO_STDIO],
-      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX],
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX, ...WRITE_TX_SYNTAX],
     },
   },
   {
@@ -315,6 +336,7 @@ export default defineConfig(
         ],
       }),
       'no-restricted-properties': ['error', ...NO_STDIO],
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX, ...WRITE_TX_SYNTAX],
     },
   },
   // ---- cli: commands over engine; output through io/terminal.ts only
@@ -337,6 +359,7 @@ export default defineConfig(
         ],
       }),
       'no-restricted-properties': ['error', ...NO_STDIO],
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX, ...WRITE_TX_SYNTAX],
     },
   },
   {

@@ -159,6 +159,7 @@ async function serve(
     slug: 'demo',
     clock,
     scope: { instanceId: ID },
+    db,
     queries: createQueries(db, {
       config,
       now: () => clock.now(),

@@ -5,14 +5,12 @@
 // A frame never fails: an entity that is gone, a query that throws or a payload that cannot be read gives `data: null` (the
 // client invalidates that entity) or, for the kinds that carry lists, an empty list with `truncated: true` (the client refetches).
 // The seq sequence therefore stays gap free (03 9.2). Only the `health/upsert` frame has no such answer; its failure reaches the hub.
-import type { Logger } from '@mcs/engine';
+import type { ChangeRow, Logger } from '@mcs/engine';
 import { AlertListQuerySchema, WorkItemSchema, isoMsZ } from '@mcs/shared';
 import type {
   ActivityEvent,
   AgentNode,
   AlertItem,
-  ChangeKind,
-  ChangeOp,
   HealthReport,
   SessionSummary,
   StreamChange,
@@ -24,18 +22,7 @@ import { z } from 'zod';
 
 import type { AppContext } from '../route-adapter.ts';
 
-/** One row of `changes` as the stream reads it (`ChangesRepo.since` of the engine has the same columns). */
-export interface ChangeRow {
-  readonly seq: number;
-  /** Epoch ms. */
-  readonly at: number;
-  readonly kind: ChangeKind;
-  readonly op: ChangeOp;
-  readonly sessionUid: string | null;
-  readonly entityId: number | null;
-  /** JSON text, at most 2048 bytes (03 9.1). */
-  readonly payload: string;
-}
+export type { ChangeRow };
 
 /** The query functions a frame needs, with the scope already bound. */
 export interface HydrationQueries {

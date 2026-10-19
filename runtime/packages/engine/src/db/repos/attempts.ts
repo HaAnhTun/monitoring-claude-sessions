@@ -16,9 +16,10 @@
 // `attempt_sources` rows are bookkeeping, not an observable entity, and record no change.
 import type { ATTEMPT_STATES } from '@mcs/shared';
 
+import { clipCodePoints } from '../../platform/fsx.ts';
 import type { InstanceDb, RepoContext } from '../open.ts';
 import type { WriteTx } from '../write.ts';
-import { requireRef, rowLimit } from './transitions.ts';
+import { cutOrNull, requireRef, rowLimit } from './shared.ts';
 
 // The registry (98 2.6) lists `AttemptCandidate` with the attempts repository; `SessionsRepo.attemptCandidates` defines it.
 export type { AttemptCandidate } from './sessions.ts';
@@ -94,15 +95,6 @@ export interface AttemptRowRef {
 
 /** Column caps of 03 3.5 in code points. */
 const CAPS = { part: 512, nRaw: 64, model: 128, effort: 64, exitRaw: 64, statusRaw: 512, evidence: 1024 } as const;
-
-/** The first `n` code points (a plain cut, never inside a surrogate pair): the column CHECKs always hold. */
-function cut(text: string, n: number): string {
-  return Array.from(text).slice(0, n).join('');
-}
-
-function cutOrNull(text: string | null, n: number): string | null {
-  return text === null ? null : cut(text, n);
-}
 
 /** Legacy `or None`: an empty model or effort is stored as NULL. */
 function emptyToNull(text: string | null, n: number): string | null {
@@ -206,7 +198,7 @@ export class AttemptsRepo {
     this.db.assertScope(ctx);
     return this.db.driver
       .prepare<AttemptRunRow>(OPEN_RUN_SQL)
-      .get({ sourceId, generation, part: cut(part, CAPS.part) });
+      .get({ sourceId, generation, part: clipCodePoints(part, CAPS.part) });
   }
 
   /**
@@ -237,12 +229,12 @@ export class AttemptsRepo {
         sourceId: r.sourceId,
         generation: r.generation,
         startOffset: r.startOffset,
-        part: cut(r.part, CAPS.part),
+        part: clipCodePoints(r.part, CAPS.part),
         nRaw: cutOrNull(r.nRaw, CAPS.nRaw),
         model: emptyToNull(r.model, CAPS.model),
         effort: emptyToNull(r.effort, CAPS.effort),
         startedAt: r.startedAt,
-        evidence: cut(r.evidence, CAPS.evidence),
+        evidence: clipCodePoints(r.evidence, CAPS.evidence),
         seq,
         now: tx.now,
       });
@@ -270,7 +262,7 @@ export class AttemptsRepo {
           endedAt: e.endedAt,
           exitRaw: cutOrNull(e.exitRaw, CAPS.exitRaw),
           statusRaw: cutOrNull(e.statusRaw, CAPS.statusRaw),
-          evidence: cut(e.evidence, CAPS.evidence),
+          evidence: clipCodePoints(e.evidence, CAPS.evidence),
           seq,
           now: tx.now,
         }).changes > 0;
@@ -290,7 +282,7 @@ export class AttemptsRepo {
                   updated_at = :now
            WHERE id = :id AND end_reason = 'open'`,
         )
-        .run({ id, evidence: cut(evidence, CAPS.evidence), seq, now: tx.now }).changes > 0;
+        .run({ id, evidence: clipCodePoints(evidence, CAPS.evidence), seq, now: tx.now }).changes > 0;
     if (changed) tx.changes.noteId(seq, id);
     return changed;
   }
@@ -387,7 +379,7 @@ export class AttemptsRepo {
          FROM attempt_runs r LEFT JOIN sessions s ON s.id = r.session_id
          WHERE r.part = :part ORDER BY r.started_at, r.id`,
       )
-      .all({ part: cut(part, CAPS.part) });
+      .all({ part: clipCodePoints(part, CAPS.part) });
   }
 
   private isOpen(id: number): boolean {

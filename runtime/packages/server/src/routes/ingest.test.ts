@@ -131,7 +131,7 @@ async function start(o: Options = {}): Promise<Harness> {
   const app: Express = express();
   bindRouteServices(app, { errors: ctx.errors, logger: ctx.logger, validateResponses: true });
   ingestRoutes(app, {
-    ctx: { ...ctx, slug: 'demo', process, config, instance: INSTANCE },
+    ctx: { ...ctx, db: {} as never, slug: 'demo', process, config, instance: INSTANCE },
     nudge:
       o.nudge ??
       ((): void => {

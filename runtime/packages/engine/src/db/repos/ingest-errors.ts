@@ -2,7 +2,7 @@
 // query or a token). SQL only; retention keeps the newest rows (`trimToNewest`).
 import type { InstanceDb, RepoContext } from '../open.ts';
 import type { WriteTx } from '../write.ts';
-import { rowLimit } from './transitions.ts';
+import { cutOrNull, rowLimit } from './shared.ts';
 
 export type IngestErrorSource = 'spool' | 'transcript' | 'external' | 'writer' | 'handler' | 'alerts' | 'db';
 
@@ -37,12 +37,6 @@ const COLUMNS = `id, at, source, code, file_id AS fileId, segment, byte_offset A
 const DETAIL_CAP = 200;
 const SEGMENT_CAP = 128;
 
-/** The first `n` code points: a plain cut, never inside a surrogate pair, so the CHECK on the column always holds. */
-function cut(text: string | null | undefined, n: number): string | null {
-  if (text === null || text === undefined) return null;
-  return Array.from(text).slice(0, n).join('');
-}
-
 export class IngestErrorsRepo {
   private readonly db: InstanceDb;
 
@@ -63,10 +57,10 @@ export class IngestErrorsRepo {
         source: e.source,
         code: e.code,
         fileId: e.fileId ?? null,
-        segment: cut(e.segment, SEGMENT_CAP),
+        segment: cutOrNull(e.segment, SEGMENT_CAP),
         byteOffset: e.byteOffset ?? null,
         sessionUid: e.sessionUid ?? null,
-        detail: cut(e.detail, DETAIL_CAP),
+        detail: cutOrNull(e.detail, DETAIL_CAP),
       }).lastInsertRowid;
   }
 
