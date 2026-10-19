@@ -250,3 +250,20 @@ export function createEntryIndexService(db: InstanceDb, options: EntryIndexOptio
     },
   };
 }
+
+/** One service per database for the default sizes. */
+const sharedServices = new WeakMap<InstanceDb, EntryIndexService>();
+
+/**
+ * The entry index service of this database with the production sizes. The window and the content search both extend the index of
+ * a file, and two services would run two passes over one file at once (the later write could move the index back, which looks
+ * like a replaced file), so both take the one service of the database. Tests that need other sizes call `createEntryIndexService`.
+ */
+export function entryIndexServiceOf(db: InstanceDb): EntryIndexService {
+  let service = sharedServices.get(db);
+  if (service === undefined) {
+    service = createEntryIndexService(db);
+    sharedServices.set(db, service);
+  }
+  return service;
+}

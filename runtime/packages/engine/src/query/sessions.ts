@@ -332,10 +332,25 @@ function summariesOf(db: InstanceDb, deps: QueryDeps, rows: readonly SessionDbRo
 
 // ---- the filter ------------------------------------------------------------------------------------------------------------
 
+/** The filter keys of the session list that `filterSql` reads: the content search (03 7.4) selects its sessions with the same ones. */
+export type SessionFilter = Pick<
+  SessionListQuery,
+  | 'q'
+  | 'state'
+  | 'presence'
+  | 'project'
+  | 'workItem'
+  | 'model'
+  | 'hasErrors'
+  | 'tokensMin'
+  | 'tokensMax'
+  | 'includeUnmatched'
+>;
+
 /** The parts of the `WHERE` clause that make the result set (everything but the keyset), over `sessions s`. */
-function filterSql(
+export function filterSql(
   deps: QueryDeps,
-  q: SessionListQuery,
+  q: SessionFilter,
   window: { fromMs: number | null; toMs: number; source: string },
   bind: Binder,
 ): string[] {

@@ -31,6 +31,7 @@ import {
   INDEX_CHUNK_BYTES,
   TranscriptError,
   createEntryIndexService,
+  entryIndexServiceOf,
   type EntryIndexResult,
   type EntryIndexService,
 } from './index-service.ts';
@@ -48,7 +49,8 @@ export interface TranscriptWindowQueries {
   locate(ctx: RepoContext, q: TranscriptLocateRequest, signal: AbortSignal): Promise<TranscriptLocateResponse>;
 }
 
-export interface TranscriptWindowServiceOptions {
+/** What decides the folder that a transcript file must stay inside (shared by the window and the content search). */
+export interface TranscriptRootOptions {
   /** `monitor.transcripts_dir`: used as the containment root when it is an absolute path. */
   readonly transcriptsDir: string | null;
   /**
@@ -60,6 +62,15 @@ export interface TranscriptWindowServiceOptions {
   readonly discoverTtlMs?: number;
   /** The clock of that cache (default `Date.now`). */
   readonly now?: () => number;
+}
+
+/** The containment root of one file of a session (`null` = none can be named, so the file counts as out of reach). */
+export type TranscriptRootResolver = (
+  file: TranscriptFileRow,
+  siblings: readonly TranscriptFileRow[],
+) => Promise<string | null>;
+
+export interface TranscriptWindowServiceOptions extends TranscriptRootOptions {
   /** `limits.text_chars` of the configuration: the clip of a window without `textChars`. */
   readonly defaultTextChars: number;
   readonly index?: EntryIndexService;
@@ -93,26 +104,12 @@ function derivedRoot(file: TranscriptFileRow, siblings: readonly TranscriptFileR
   return at > 0 ? parts.slice(0, at).join(path.sep) || path.sep : null;
 }
 
-interface Located {
-  readonly file: TranscriptFileRow;
-}
-
-interface Scan {
-  /** True when the byte budget stopped the scan before the end of the range. */
-  readonly exhausted: boolean;
-}
-
-export function createTranscriptWindowService(
-  db: InstanceDb,
-  options: TranscriptWindowServiceOptions,
-): TranscriptWindowService {
-  const sessions = new SessionsRepo(db);
-  const files = new TranscriptFilesRepo(db);
-  const checkpoints = new CheckpointsRepo(db);
-  const chunkBytes = options.chunkBytes ?? INDEX_CHUNK_BYTES;
-  const index = options.index ?? createEntryIndexService(db, { chunkBytes });
-  const readBudget = options.readBudgetBytes ?? READ_BUDGET_BYTES;
-  const indexBudgetMs = options.indexBudgetMs ?? INDEX_BUDGET_MS;
+/**
+ * The folder a transcript file must stay inside (03 7.3 step 1): the configured `transcripts_dir` when it is an absolute path;
+ * with `auto` the discovered project folder of the repository (resolved lazily, kept for `discoverTtlMs`); else (nothing
+ * discovered) the folder that holds the session's main transcript. One resolver keeps one cache.
+ */
+export function createTranscriptRootResolver(options: TranscriptRootOptions): TranscriptRootResolver {
   const configuredRoot =
     options.transcriptsDir !== null && path.isAbsolute(options.transcriptsDir) ? options.transcriptsDir : null;
   const discoverRoot = configuredRoot === null ? options.discoverRoot : undefined;
@@ -130,6 +127,50 @@ export function createTranscriptWindowService(
     return discovered.root;
   }
 
+  return async (file, siblings) => configuredRoot ?? (await discoveredRoot()) ?? derivedRoot(file, siblings);
+}
+
+/** The root options of the instance: the configured folder, and with `auto` the discovery of the repository's project folder. */
+export function transcriptRootOptionsOf(deps: QueryDeps): TranscriptRootOptions {
+  const monitor = deps.config.monitor;
+  const auto = monitor.transcripts_dir === null || monitor.transcripts_dir === '' || monitor.transcripts_dir === 'auto';
+  return {
+    transcriptsDir: monitor.transcripts_dir,
+    // the server's own environment names the Claude home, as `buildInstanceContext` does
+    ...(auto
+      ? {
+          discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(process.env), 'projects')),
+          now: deps.now,
+        }
+      : {}),
+  };
+}
+
+interface Located {
+  readonly file: TranscriptFileRow;
+}
+
+interface Scan {
+  /** True when the byte budget stopped the scan before the end of the range. */
+  readonly exhausted: boolean;
+}
+
+export function createTranscriptWindowService(
+  db: InstanceDb,
+  options: TranscriptWindowServiceOptions,
+): TranscriptWindowService {
+  const sessions = new SessionsRepo(db);
+  const files = new TranscriptFilesRepo(db);
+  const checkpoints = new CheckpointsRepo(db);
+  const chunkBytes = options.chunkBytes ?? INDEX_CHUNK_BYTES;
+  // one index service per database unless a test asks for its own sizes: a window and a search never run two passes over a file
+  const index =
+    options.index ??
+    (options.chunkBytes === undefined ? entryIndexServiceOf(db) : createEntryIndexService(db, { chunkBytes }));
+  const readBudget = options.readBudgetBytes ?? READ_BUDGET_BYTES;
+  const indexBudgetMs = options.indexBudgetMs ?? INDEX_BUDGET_MS;
+  const rootOf = createTranscriptRootResolver(options);
+
   /** Session and agent to the one file (7.3 step 1); every refusal is a `TranscriptError`. */
   async function resolve(ctx: RepoContext, sessionId: string, agent: string): Promise<Located> {
     const session = sessions.byUid(ctx, sessionId);
@@ -141,7 +182,7 @@ export function createTranscriptWindowService(
         : siblings.find((candidate) => candidate.agentUid === agent && candidate.kind !== 'session');
     if (file === undefined) throw new TranscriptError('agent_not_found');
     if (file.state === 'missing') throw new TranscriptError('transcript_gone');
-    const root = configuredRoot ?? (await discoveredRoot()) ?? derivedRoot(file, siblings);
+    const root = await rootOf(file, siblings);
     if (root === null || !isContained(root, file.path)) throw new TranscriptError('transcript_gone');
     return { file };
   }
@@ -333,17 +374,8 @@ export function createTranscriptWindowService(
 
 /** The query part that `createQueries` registers (03 12.1): `window` and `locate` over this instance's database. */
 export function createTranscriptQueryPart(db: InstanceDb, deps: QueryDeps): TranscriptWindowQueries {
-  const monitor = deps.config.monitor;
-  const auto = monitor.transcripts_dir === null || monitor.transcripts_dir === '' || monitor.transcripts_dir === 'auto';
   const service = createTranscriptWindowService(db, {
-    transcriptsDir: monitor.transcripts_dir,
-    // the server's own environment names the Claude home, as `buildInstanceContext` does
-    ...(auto
-      ? {
-          discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(process.env), 'projects')),
-          now: deps.now,
-        }
-      : {}),
+    ...transcriptRootOptionsOf(deps),
     defaultTextChars: deps.config.monitor.limits['text_chars'] ?? 6000,
   });
   return {

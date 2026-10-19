@@ -230,7 +230,8 @@ export const R_KEY_CATALOGUE: readonly RKeyCatalogueEntry[] = [
   entry('health.importLagWarnMs', HealthSectionKeys.importLagWarnMs, 60_000, '02', '02 8.2'),
   entry('health.backlogWarnMs', HealthSectionKeys.backlogWarnMs, 20_000, '02', '02 8.2'),
   // analytics (03 6.2)
-  entry('analytics.usageTrend', AnalyticsSectionKeys.usageTrend, true, '03', '03 6.2'),
+  // the sample differs from the default (true since WP-57): the override test proves something
+  entry('analytics.usageTrend', AnalyticsSectionKeys.usageTrend, false, '03', '03 6.2'),
   // board (02 7.11)
   entry('board.items', BoardSectionKeys.items, [boardSample], '02', '02 7.11'),
   // panelOptions (06 3.5)

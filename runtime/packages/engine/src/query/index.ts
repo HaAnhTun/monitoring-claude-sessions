@@ -211,9 +211,9 @@ function instanceInfoOf(
       logsMs: num(poll, 'logs_ms', 3000),
       attemptsMs: num(poll, 'attempts_ms', 6000),
     },
-    // `instance` search (`GET /search/transcripts`) is not offered by the UI of v3.0 (registry section 3)
+    // the instance-wide content search (`GET /search/transcripts`) exists since WP-57: the Search page of the UI needs this value
     features: {
-      transcriptSearch: 'session',
+      transcriptSearch: 'instance',
       costEstimates: config.pricing.models.length > 0,
       usageTrend: config.analytics.usageTrend,
       hooks: identity.hooksEnabled,
@@ -432,6 +432,15 @@ registerQueryPart(createTranscriptQueryPart, ['window', 'locate']);
 // @wp-end WP-33
 
 // @wp-begin WP-57
+// Transcript content search (03 7.4): per session and per instance, bounded, with a coverage report; the counters go to the health report.
+import { createSearchQueryPart, type SearchQueries } from '../search/service.ts';
+
+export interface EngineQueries {
+  searchSession: SearchQueries['searchSession'];
+  searchInstance: SearchQueries['searchInstance'];
+  searchStats: SearchQueries['searchStats'];
+}
+registerQueryPart(createSearchQueryPart, ['searchSession', 'searchInstance', 'searchStats']);
 // @wp-end WP-57
 
 // @wp-begin WP-58

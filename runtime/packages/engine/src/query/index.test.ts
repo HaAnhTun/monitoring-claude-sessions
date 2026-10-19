@@ -227,6 +227,26 @@ describe('buildInstanceContext registers the real query layer', () => {
     expect(info.instanceId).toBe(ID);
     expect(ctx.queries.health(ctx.scope).instanceId).toBe(ID);
   });
+
+  it('carries the transcript search (WP-57): both searches and the counters of the health report', async () => {
+    const ctx = await build(await fixture());
+    expect(typeof ctx.queries.searchSession).toBe('function');
+    expect(typeof ctx.queries.searchInstance).toBe('function');
+    expect(ctx.queries.searchStats()).toEqual({
+      total: 0,
+      byStoppedBy: { complete: 0, match_limit: 0, time_budget: 0, cancelled: 0 },
+    });
+    // a foreign context is refused before anything is read, as everywhere in the layer
+    const foreign = new AbortController().signal;
+    await expect(
+      ctx.queries.searchInstance(FOREIGN, { q: 'xx', limit: 1, budgetMs: 100 }, foreign),
+    ).rejects.toMatchObject({
+      code: 'scope_mismatch',
+    });
+    await expect(
+      ctx.queries.searchSession(FOREIGN, { session: PROBE, limit: 1, budgetMs: 100 }, foreign),
+    ).rejects.toMatchObject({ code: 'scope_mismatch' });
+  });
 });
 
 describe('instanceInfo (03 6.2)', () => {
@@ -302,12 +322,15 @@ describe('instanceInfo (03 6.2)', () => {
 
   it('derives the features from the configuration and from instance.json', async () => {
     const plain = await build(await fixture());
+    // the instance-wide content search exists (WP-57) and the trend chart is on unless a task turns it off
     expect(plain.queries.instanceInfo(plain.scope).features).toEqual({
-      transcriptSearch: 'session',
+      transcriptSearch: 'instance',
       costEstimates: false,
-      usageTrend: false,
+      usageTrend: true,
       hooks: false,
     });
+    const chartOff = await build(await fixture({ runtime: { schema_version: 1, analytics: { usageTrend: false } } }));
+    expect(chartOff.queries.instanceInfo(chartOff.scope).features.usageTrend).toBe(false);
     const rich = await build(
       await fixture({
         hooks: true,
@@ -331,7 +354,7 @@ describe('instanceInfo (03 6.2)', () => {
       }),
     );
     expect(rich.queries.instanceInfo(rich.scope).features).toEqual({
-      transcriptSearch: 'session',
+      transcriptSearch: 'instance',
       costEstimates: true,
       usageTrend: true,
       hooks: true,

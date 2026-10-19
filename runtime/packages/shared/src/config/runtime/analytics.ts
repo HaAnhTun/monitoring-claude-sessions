@@ -2,7 +2,9 @@
 import { boolKey, sectionSchema } from './section.ts';
 
 export const AnalyticsSectionKeys = {
-  usageTrend: boolKey(false),
+  // The trend chart of the Analytics page; it gates only the chart, never the analytics routes. On by default since the series
+  // route exists (WP-58); a task that does not want the chart sets it to false.
+  usageTrend: boolKey(true),
 };
 
 export const AnalyticsSectionSchema = sectionSchema(AnalyticsSectionKeys);
