@@ -1,11 +1,13 @@
 import type { TranscriptEntry } from '@mcs/shared';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type * as ClampedModule from '../components/ClampedText.tsx';
 
 import { pairEvents, type Unit } from '../lib/timeline-model.ts';
 import { FIXTURE_NOW_MS, iso } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
 import { prettyInput, ToolUnitRow } from './ToolUnitRow.tsx';
 
 const clampRenders = vi.hoisted(() => ({ count: 0 }));
@@ -59,7 +61,7 @@ function propsOf(unit: Unit, props: Partial<Props> = {}): Props {
   };
 }
 function renderRow(unit: Unit, props: Partial<Props> = {}) {
-  return render(
+  return renderWithIntl(
     <ol>
       <ToolUnitRow {...propsOf(unit, props)} />
     </ol>,
@@ -80,18 +82,28 @@ describe('ToolUnitRow', () => {
 
   it('shows ok with the duration for a completed call', () => {
     renderRow(unitsOf(tool(), result()));
-    expect(screen.getByText('ok 3s')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        msg('transcript.tool.statusTime', { status: msg('transcript.tool.status.completed'), time: '3s' }),
+      ),
+    ).toBeInTheDocument();
   });
 
   it('shows failed with the duration when the result is an error', () => {
     renderRow(unitsOf(tool(), result({ err: true, text: 'nope' })), { open: true });
-    expect(screen.getByText('failed 3s')).toBeInTheDocument();
-    expect(screen.getByText('Result: error')).toBeInTheDocument();
+    expect(
+      screen.getByText(msg('transcript.tool.statusTime', { status: msg('transcript.tool.status.failed'), time: '3s' })),
+    ).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.tool.resultError'))).toBeInTheDocument();
   });
 
   it('shows running with the elapsed time for a call without a result', () => {
     renderRow(unitsOf(tool()), { nowMs: FIXTURE_NOW_MS - 10_000 + 12_000 });
-    expect(screen.getByText('running 12s')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        msg('transcript.tool.statusTime', { status: msg('transcript.tool.status.active'), time: '12s' }),
+      ),
+    ).toBeInTheDocument();
   });
 
   it('follows the open prop and reports user toggles by row key', () => {
@@ -146,10 +158,49 @@ describe('ToolUnitRow', () => {
 
   it('labels the result block and has copy buttons for input and tool id', () => {
     renderRow(unitsOf(tool(), result()), { open: true });
-    expect(screen.getByText('Result')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy tool input' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy tool id' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy event index' })).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.tool.result'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('transcript.tool.copyInput') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('transcript.tool.copyId') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('transcript.row.copyIndex') })).toBeInTheDocument();
+  });
+
+  it('is a tool row with the classes the old selectors use', () => {
+    const { container } = renderRow(unitsOf(tool(), result()), { open: true });
+    expect(container.querySelector('li')).toHaveClass('tr', 'tr--tool');
+    expect(container.querySelector('.tu-summary')).not.toBeNull();
+    expect(container.querySelector('.tu-name')).toHaveTextContent('Bash');
+    expect(container.querySelector('.tu-output')).toHaveTextContent('file-a');
+  });
+
+  it('adds the error class to a failed call, so red is kept for errors', () => {
+    const { container } = renderRow(unitsOf(tool(), result({ err: true, text: 'nope' })));
+    expect(container.querySelector('li')).toHaveClass('tr--tool', 'tr--error');
+    const ok = renderRow(unitsOf(tool(), result()));
+    expect(ok.container.querySelector('li')).not.toHaveClass('tr--error');
+  });
+
+  it('shows an expand chevron in the summary that follows the open state', () => {
+    const { container, rerender } = renderRow(unitsOf(tool(), result()));
+    const summary = container.querySelector('summary');
+    expect(summary).toHaveAttribute('aria-expanded', 'false');
+    expect(summary?.querySelector('.tu-chevron')?.getAttribute('class')).toContain('lucide-chevron-right');
+    rerender(
+      <ol>
+        <ToolUnitRow {...propsOf(unitsOf(tool(), result()), { open: true })} />
+      </ol>,
+    );
+    expect(container.querySelector('summary')).toHaveAttribute('aria-expanded', 'true');
+    expect(container.querySelector('summary .tu-chevron')?.getAttribute('class')).toContain('lucide-chevron-down');
+  });
+
+  it('gives the one-line summary a tooltip with the whole text', () => {
+    const { container } = renderRow(unitsOf(tool({ summary: 'a long command line' }), result()));
+    expect(container.querySelector('.tu-line')).toHaveAttribute('title', 'a long command line');
+  });
+
+  it('names the tool "unnamed" in the language when the call has no name', () => {
+    const { container } = renderRow(unitsOf(tool({ name: undefined }), result()));
+    expect(container.querySelector('.tu-name')).toHaveTextContent(msg('transcript.tool.unnamed'));
   });
 
   it('adds hide-result when the Results kind is off', () => {

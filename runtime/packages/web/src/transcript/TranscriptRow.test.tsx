@@ -1,5 +1,5 @@
 import type { TranscriptEntry } from '@mcs/shared';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,8 @@ import type * as MarkdownModule from '../components/Markdown.tsx';
 
 import { pairEvents, type Unit } from '../lib/timeline-model.ts';
 import { iso } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
 import { TranscriptRow } from './TranscriptRow.tsx';
 
 const markdownRenders = vi.hoisted(() => ({ count: 0 }));
@@ -28,7 +30,7 @@ function unitOf(entry: Omit<TranscriptEntry, 'i' | 't'> & { i?: number }): Unit 
 }
 
 function renderRow(unit: Unit, props: Partial<Parameters<typeof TranscriptRow>[0]> = {}) {
-  return render(
+  return renderWithIntl(
     <ol>
       <TranscriptRow
         unit={unit}
@@ -48,8 +50,8 @@ describe('TranscriptRow', () => {
     const row = container.querySelector('li');
     expect(row).toHaveAttribute('data-row-key', 'e5');
     expect(row).toHaveClass('tr', 'tr--say');
-    expect(screen.getByText('Claude')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy event index' })).toHaveTextContent('#5');
+    expect(screen.getByText(msg('transcript.kind.say'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('transcript.row.copyIndex') })).toHaveTextContent('#5');
     expect(container.querySelector('time')).toHaveTextContent('12:00:00');
     expect(container.querySelector('time')).toHaveAttribute('datetime', iso(0));
   });
@@ -88,7 +90,49 @@ describe('TranscriptRow', () => {
 
   it('marks an error result with a badge that has text', () => {
     renderRow(unitOf({ k: 'result', id: 'x', text: 'boom', err: true }));
-    expect(screen.getByText('error')).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.row.errorTag'))).toBeInTheDocument();
+  });
+
+  it('gives each role its own class, so the border follows the role and not a session state', () => {
+    const kinds = [
+      unitOf({ k: 'prompt', text: 'p' }),
+      unitOf({ k: 'say', text: 's' }),
+      unitOf({ k: 'think', text: 't' }),
+      unitOf({ k: 'result', id: 'x', text: 'r' }),
+    ];
+    const classes = kinds.map((unit) => {
+      const { container, unmount } = renderRow(unit);
+      const className = container.querySelector('li')?.className ?? '';
+      unmount();
+      return className;
+    });
+    expect(classes[0]).toContain('tr--prompt');
+    expect(classes[1]).toContain('tr--say');
+    expect(classes[2]).toContain('tr--think');
+    expect(classes[3]).toContain('tr--result');
+    for (const className of classes) expect(className).not.toContain('tr--error');
+  });
+
+  it('adds the error class to an error result, so red is kept for errors', () => {
+    const { container } = renderRow(unitOf({ k: 'result', id: 'x', text: 'boom', err: true }));
+    expect(container.querySelector('li')).toHaveClass('tr--result', 'tr--error');
+  });
+
+  it('speaks Vietnamese in the label and the buttons', () => {
+    renderWithIntl(
+      <ol>
+        <TranscriptRow
+          unit={unitOf({ k: 'prompt', text: 'xin chao' })}
+          hidden={false}
+          expanded={false}
+          isTarget={false}
+          onToggleExpanded={() => undefined}
+        />
+      </ol>,
+      { locale: 'vi' },
+    );
+    expect(screen.getByText(msg('transcript.kind.prompt', undefined, 'vi'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('transcript.row.copyText', undefined, 'vi') })).toBeInTheDocument();
   });
 
   it('keeps hidden rows mounted with the hidden attribute', () => {
@@ -106,13 +150,13 @@ describe('TranscriptRow', () => {
   it('clamps long text and reports the toggle by its clamp id', async () => {
     const onToggleExpanded = vi.fn();
     renderRow(unitOf({ k: 'say', text: 'w'.repeat(1700) }), { onToggleExpanded });
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Show more' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: msg('common.showMore') }));
     expect(onToggleExpanded).toHaveBeenCalledWith('e5-text', true);
   });
 
   it('has a Copy text button for the full text', () => {
     renderRow(unitOf({ k: 'say', text: 'copy me' }));
-    expect(screen.getByRole('button', { name: 'Copy text' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: msg('transcript.row.copyText') })).toBeInTheDocument();
   });
 
   it('shows new text when the entry at the same index is replaced (transcript reset)', () => {
@@ -138,7 +182,7 @@ describe('TranscriptRow', () => {
     const first = unitOf({ k: 'say', text: 'same' });
     const onToggleExpanded = () => undefined;
     const props = { hidden: false, expanded: false, isTarget: false, onToggleExpanded };
-    const { rerender } = render(
+    const { rerender } = renderWithIntl(
       <ol>
         <TranscriptRow unit={first} {...props} />
       </ol>,

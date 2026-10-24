@@ -5,8 +5,9 @@ import { routes, type TranscriptWindowResponse } from '@mcs/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDataEnv } from '../data/hooks/useInstance.ts';
-import { ApiError } from '../data/api-errors.ts';
+import { ApiError, describeApiError } from '../data/api-errors.ts';
 import { pathFor } from '../data/endpoints.ts';
+import { useT } from '../i18n/context.ts';
 import { mergeEvents, type JumpTarget } from '../lib/timeline-model.ts';
 import {
   MAX_TRANSCRIPT_EVENTS,
@@ -31,7 +32,7 @@ export interface TranscriptWindowApi {
 }
 
 export interface UseTranscriptWindowOptions {
-  /** Announcements: "Loaded N older events", "The transcript was reset; reloading events". */
+  /** Announcements, worded through the catalogue (`transcript.notice.*`): "Loaded N older events", "The transcript was reset; reloading events". */
   onNotice?: (message: string) => void;
   /** Whether the viewer follows the latest edge; the cap rule of 4.4.3 step 12 reads it. Default true. */
   following?: boolean;
@@ -67,7 +68,7 @@ function isAborted(signal: AbortSignal): boolean {
 
 function asApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
-  return new ApiError(error instanceof Error ? error.message : 'Request failed', {
+  return new ApiError(error instanceof Error ? error.message : String(error), {
     kind: 'network',
     status: 0,
     code: null,
@@ -82,6 +83,7 @@ export function useTranscriptWindow(
   options: UseTranscriptWindowOptions = {},
 ): TranscriptWindowApi {
   const { api, iid, live, poll } = useDataEnv();
+  const t = useT();
   const agent = agentId ?? 'main';
   const max = options.maxEvents ?? MAX_TRANSCRIPT_EVENTS;
   const reduce = useMemo(() => createTranscriptReducer(max), [max]);
@@ -93,9 +95,9 @@ export function useTranscriptWindow(
     controlRef.current ??= newControl();
     return controlRef.current;
   }, []);
-  const latest = useRef({ options, reduce, max });
+  const latest = useRef({ options, reduce, max, t });
   useEffect(() => {
-    latest.current = { options, reduce, max };
+    latest.current = { options, reduce, max, t };
   });
 
   const send = useCallback((action: TranscriptAction): void => {
@@ -181,7 +183,7 @@ export function useTranscriptWindow(
           });
           const s = mirror.current;
           if (s.needsReset) {
-            latest.current.options.onNotice?.('The transcript was reset; reloading events');
+            latest.current.options.onNotice?.(latest.current.t('transcript.notice.reset'));
             c.inFlight = false;
             startOver();
             return;
@@ -237,7 +239,8 @@ export function useTranscriptWindow(
       if (signal.aborted) return 0;
       const added = mergeEvents(mirror.current.events, resp.events).olderAdded;
       send({ type: 'loaded', gen, mode: 'before', resp, at: Date.now() });
-      if (added > 0) latest.current.options.onNotice?.(`Loaded ${String(added)} older events`);
+      if (added > 0)
+        latest.current.options.onNotice?.(latest.current.t('transcript.notice.olderLoaded', { count: added }));
       return added;
     } catch (error) {
       fail(error, gen, signal);
@@ -277,7 +280,13 @@ export function useTranscriptWindow(
         if (isAborted(signal)) return null;
         const apiError = asApiError(error);
         if (apiError.info.code !== 'event_not_found' && apiError.info.kind !== 'aborted') {
-          latest.current.options.onNotice?.(`Could not jump: ${apiError.message}`);
+          const { t: say } = latest.current;
+          const detail = describeApiError(apiError, say);
+          latest.current.options.onNotice?.(
+            detail === undefined
+              ? say('transcript.notice.jumpFailedPlain')
+              : say('transcript.notice.jumpFailed', { detail }),
+          );
         }
         return null;
       }

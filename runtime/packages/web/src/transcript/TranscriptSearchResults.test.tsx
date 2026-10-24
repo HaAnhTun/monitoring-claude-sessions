@@ -1,9 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../data/api-errors.ts';
 import { iso, makeTranscriptSearch } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
 import { TranscriptSearchResults } from './TranscriptSearchResults.tsx';
 
 const MATCHES = [
@@ -15,7 +17,10 @@ function search(extra: Parameters<typeof makeTranscriptSearch>[0] = {}) {
   return makeTranscriptSearch({ matches: MATCHES, count: 2, ...extra });
 }
 
-function renderResults(props: Partial<Parameters<typeof TranscriptSearchResults>[0]> = {}) {
+function renderResults(
+  props: Partial<Parameters<typeof TranscriptSearchResults>[0]> = {},
+  options: Parameters<typeof renderWithIntl>[1] = {},
+) {
   const merged = {
     status: 'ready' as const,
     response: search(),
@@ -24,7 +29,7 @@ function renderResults(props: Partial<Parameters<typeof TranscriptSearchResults>
     onClose: vi.fn(),
     ...props,
   };
-  render(<TranscriptSearchResults {...merged} />);
+  renderWithIntl(<TranscriptSearchResults {...merged} />, options);
   return merged;
 }
 
@@ -35,8 +40,8 @@ describe('TranscriptSearchResults', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent('#12');
     expect(rows[0]).toHaveTextContent('12:00:00');
-    expect(rows[0]).toHaveTextContent('Claude');
-    expect(rows[1]).toHaveTextContent('Tool Bash');
+    expect(rows[0]).toHaveTextContent(msg('transcript.kind.say'));
+    expect(rows[1]).toHaveTextContent(`${msg('transcript.kind.tool')} Bash`);
   });
 
   it('highlights matches with mark elements built from text segments', () => {
@@ -58,13 +63,15 @@ describe('TranscriptSearchResults', () => {
 
   it('jumps to the entry of a clicked row', async () => {
     const props = renderResults();
-    await userEvent.setup().click(screen.getAllByRole('button', { name: /^Jump to #/ })[1]!);
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: msg('transcript.search.jumpTo', { index: '30' }) }));
     expect(props.onJump).toHaveBeenCalledWith(30);
   });
 
   it('notes a truncated result', () => {
     renderResults({ response: search({ truncated: true }) });
-    expect(screen.getByText('Showing the first 2 matches')).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.search.truncated', { count: 2 }))).toBeInTheDocument();
   });
 
   it('never claims the whole transcript was searched when coverage is incomplete', () => {
@@ -76,18 +83,18 @@ describe('TranscriptSearchResults', () => {
       }),
     });
     expect(screen.getByText('Searched 1 of 2 files.')).toBeInTheDocument();
-    expect(screen.getByText('Not every part of the transcript was searched')).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.search.incomplete'))).toBeInTheDocument();
   });
 
   it('shows the coverage note without a warning when complete', () => {
     renderResults();
     expect(screen.getByText('FIXTURE coverage note')).toBeInTheDocument();
-    expect(screen.queryByText('Not every part of the transcript was searched')).toBeNull();
+    expect(screen.queryByText(msg('transcript.search.incomplete'))).toBeNull();
   });
 
   it('says when there is no match', () => {
     renderResults({ response: search({ matches: [], count: 0 }) });
-    expect(screen.getByText('No matches in the searched part of the transcript.')).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.search.empty'))).toBeInTheDocument();
   });
 
   it('shows a busy message for search_busy', () => {
@@ -99,7 +106,7 @@ describe('TranscriptSearchResults', () => {
       requestId: null,
     });
     renderResults({ status: 'error', response: null, error });
-    expect(screen.getByText('Another search is running; try again in a moment')).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.search.busy'))).toBeInTheDocument();
   });
 
   it('shows the message of other failures and a loading state', () => {
@@ -110,19 +117,48 @@ describe('TranscriptSearchResults', () => {
       endpoint: 'transcriptSearch',
       requestId: null,
     });
-    const { rerender } = render(
+    const { rerender } = renderWithIntl(
       <TranscriptSearchResults status="error" response={null} error={error} onJump={vi.fn()} onClose={vi.fn()} />,
     );
-    expect(screen.getByText('Search failed: Monitor error (500)')).toBeInTheDocument();
+    expect(
+      screen.getByText(msg('transcript.search.failed', { detail: msg('error.api.server', { status: 500 }) })),
+    ).toBeInTheDocument();
     rerender(
       <TranscriptSearchResults status="loading" response={null} error={null} onJump={vi.fn()} onClose={vi.fn()} />,
     );
-    expect(screen.getByText('Searching the transcript...')).toBeInTheDocument();
+    expect(screen.getByText(msg('transcript.search.loading'))).toBeInTheDocument();
+  });
+
+  it('words the coverage details in the language, with the stop reason', async () => {
+    renderResults();
+    await userEvent.setup().click(screen.getByRole('button', { name: msg('transcript.search.coverage') }));
+    const coverage = makeTranscriptSearch().coverage;
+    const details = screen
+      .getByRole('button', { name: msg('transcript.search.coverage') })
+      .closest<HTMLElement>('.disclosure');
+    if (details === null) throw new Error('no disclosure');
+    expect(
+      within(details).getByText(msg('transcript.search.entries', { count: coverage.entriesScanned })),
+    ).toBeInTheDocument();
+    expect(
+      within(details).getByText(
+        msg('transcript.search.stoppedBy', {
+          reason: msg(`transcript.search.stopped.${coverage.stoppedBy}`),
+          ms: coverage.elapsedMs,
+        }),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('marks the coverage note as server text in a Vietnamese page', () => {
+    renderResults({}, { locale: 'vi' });
+    expect(screen.getByText('FIXTURE coverage note')).toHaveAttribute('lang', 'en');
+    expect(screen.getByRole('button', { name: msg('transcript.search.close', undefined, 'vi') })).toBeInTheDocument();
   });
 
   it('closes on request', async () => {
     const props = renderResults();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Close search results' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: msg('transcript.search.close') }));
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 });

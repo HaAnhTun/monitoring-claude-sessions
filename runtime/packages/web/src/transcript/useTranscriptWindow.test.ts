@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeApi, errorResponse, type FakeApi, type FakeHandler, type FakeHandlers } from '../test/fake-api.ts';
 import { makeInstance, makeTranscript, makeTranscriptWindow, sessionId } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
 import { renderHookWithProviders } from '../test/render.tsx';
 import { useTranscriptWindow, type UseTranscriptWindowOptions } from './useTranscriptWindow.ts';
 
@@ -44,7 +45,7 @@ function windowServer(initial: number) {
 function setup(
   handlers: FakeHandlers,
   options: UseTranscriptWindowOptions = {},
-  extra: { sessionId?: string; agentId?: string | null; poll?: number; live?: boolean } = {},
+  extra: { sessionId?: string; agentId?: string | null; poll?: number; live?: boolean; locale?: 'en' | 'vi' } = {},
 ) {
   const instance = makeInstance();
   const api: FakeApi = createFakeApi({ instance: () => instance, ...handlers });
@@ -55,6 +56,7 @@ function setup(
       instance:
         extra.poll === undefined ? instance : { ...instance, poll: { ...instance.poll, transcriptMs: extra.poll } },
       live: extra.live ?? true,
+      ...(extra.locale === undefined ? {} : { locale: extra.locale }),
       initialProps: { sid: extra.sessionId ?? SID, agent: extra.agentId === undefined ? 'main' : extra.agentId },
     },
   );
@@ -105,7 +107,7 @@ describe('useTranscriptWindow', () => {
     expect(result.current.state.events[0]?.i).toBe(0);
     expect(result.current.state.events).toHaveLength(400);
     expect(result.current.state.next).toBe(400);
-    expect(onNotice).toHaveBeenCalledWith('Loaded 150 older events');
+    expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.olderLoaded', { count: 150 }));
   });
 
   it('does nothing when the first entry is already loaded', async () => {
@@ -197,7 +199,7 @@ describe('useTranscriptWindow', () => {
       result.current.refresh();
     });
     await waitFor(() => {
-      expect(onNotice).toHaveBeenCalledWith('The transcript was reset; reloading events');
+      expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.reset'));
     });
     await waitFor(() => {
       expect(result.current.state.total).toBe(5);
@@ -290,6 +292,20 @@ describe('useTranscriptWindow', () => {
     });
   });
 
+  it('words its announcements in the language of the page', async () => {
+    const server = windowServer(400);
+    const onNotice = vi.fn();
+    const { result } = setup({ transcriptWindow: server.handler }, { onNotice }, { locale: 'vi' });
+    await ready(result);
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.olderLoaded', { count: 150 }, 'vi'));
+    expect(msg('transcript.notice.olderLoaded', { count: 150 }, 'vi')).not.toBe(
+      msg('transcript.notice.olderLoaded', { count: 150 }),
+    );
+  });
+
   describe('jumpTo', () => {
     function locateHandler(
       answer: (q: URLSearchParams) => Response | { i: number; t: string; base: number; total: number },
@@ -351,6 +367,28 @@ describe('useTranscriptWindow', () => {
       });
       expect(index).toBe(700);
       expect(api.callsTo('transcriptLocate')[0]?.query.get('ts')).toBe('2026-10-12T12:00:00.000Z');
+    });
+
+    it('announces why a jump failed, worded from the error, but stays silent for an unknown event', async () => {
+      const server = windowServer(2000);
+      const onNotice = vi.fn();
+      const { result, api } = setup(
+        { transcriptWindow: server.handler, transcriptLocate: () => errorResponse('internal_error') },
+        { onNotice },
+      );
+      await ready(result);
+      await act(async () => {
+        await result.current.jumpTo({ type: 'index', i: 99999 });
+      });
+      expect(onNotice).toHaveBeenCalledTimes(1);
+      const [before] = msg('transcript.notice.jumpFailed', { detail: '@@' }).split('@@');
+      expect(String(onNotice.mock.calls[0]?.[0]).startsWith(before ?? '')).toBe(true);
+      api.handlers = { ...api.handlers, transcriptLocate: () => errorResponse('event_not_found') };
+      onNotice.mockClear();
+      await act(async () => {
+        await result.current.jumpTo({ type: 'index', i: 99998 });
+      });
+      expect(onNotice).not.toHaveBeenCalled();
     });
 
     it('returns null when nothing is located', async () => {

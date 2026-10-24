@@ -3,10 +3,12 @@
 import { toQuery, type EntryKind } from '@mcs/shared';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
+import { Button } from '../components/Button.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { ErrorState } from '../components/ErrorState.tsx';
-import { Button } from '../components/Button.tsx';
+import { describeApiError } from '../data/api-errors.ts';
 import { useTranscriptSearch } from '../data/hooks/useTranscriptSearch.ts';
+import { useT } from '../i18n/context.ts';
 import { collectToolNames, defaultFilters, searchQuery, unitVisible, type TranscriptFilters } from '../lib/filters.ts';
 import {
   atLatestEdge,
@@ -18,12 +20,13 @@ import {
   stepError,
   type JumpTarget,
 } from '../lib/timeline-model.ts';
+import { useShortcut } from '../state/shortcuts-registry.tsx';
 import { PartialBanner } from './PartialBanner.tsx';
 import { ResumeFollowButton } from './ResumeFollowButton.tsx';
 import { ToolUnitRow } from './ToolUnitRow.tsx';
 import { TranscriptRow } from './TranscriptRow.tsx';
 import { TranscriptSearchResults } from './TranscriptSearchResults.tsx';
-import { TranscriptToolbar } from './TranscriptToolbar.tsx';
+import { TranscriptToolbar, type SessionErrorBreakdown } from './TranscriptToolbar.tsx';
 import { useScrollAnchor } from './useScrollAnchor.ts';
 import { useTranscriptWindow } from './useTranscriptWindow.ts';
 
@@ -46,6 +49,8 @@ export interface TranscriptViewerProps {
   onNotice?: (message: string) => void;
   /** Window cap; 5,000 unless a performance fallback (04 O-2) or a test lowers it. */
   maxEvents?: number;
+  /** The errors of the session split into this agent and its subagents, with the link to the Errors tab (ADR 0074 decision 6). */
+  sessionErrors?: SessionErrorBreakdown;
 }
 
 const BASE_KINDS: Readonly<Record<EntryKind, boolean>> = {
@@ -58,16 +63,6 @@ const BASE_KINDS: Readonly<Record<EntryKind, boolean>> = {
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, n) => value === b[n]);
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT'
-  );
 }
 
 function addTo(set: ReadonlySet<string>, value: string): ReadonlySet<string> {
@@ -86,6 +81,7 @@ function toggleIn(set: ReadonlySet<string>, value: string, on: boolean): Readonl
 function TranscriptViewerBody(props: TranscriptViewerProps) {
   const { sessionId, agentId, initialIndex, onInitialIndexDone, refreshToken, maxEvents } = props;
   const agent = agentId ?? 'main';
+  const t = useT();
   const [newestLocal, setNewestLocal] = useState(true);
   const newestFirst = props.newestFirst ?? newestLocal;
   const [filters, setFilters] = useState<TranscriptFilters>(() => ({
@@ -105,7 +101,6 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchButtonRef = useRef<HTMLButtonElement | null>(null);
   const nonce = useRef(0);
 
   const latest = useRef({ filters, props, follow, newestFirst });
@@ -262,7 +257,7 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
       const unit =
         index === null ? undefined : pairEvents(peek().events).find((u) => u.ev.i === index || u.result?.i === index);
       if (index === null || unit === undefined) {
-        say('No event found for that jump');
+        say(t('transcript.notice.noJump'));
         return;
       }
       dispatchFollow({ type: 'off' });
@@ -285,20 +280,21 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
       }
       nonce.current += 1;
       setTarget({ key: unit.key, nonce: nonce.current });
-      say(`Jumped to #${String(index)}`);
-      if (cleared) say(`Filters cleared to show #${String(index)}`);
+      say(t('transcript.notice.jumped', { index: String(index) }));
+      if (cleared) say(t('transcript.notice.filtersCleared', { index: String(index) }));
     },
-    [jumpTo, peek, say, sessionId, agent],
+    [jumpTo, peek, say, t, sessionId, agent],
   );
 
-  const onJump = (text: string): void => {
+  const onJump = (text: string): boolean => {
     const parsed = parseJump(text);
     if (parsed === null) {
-      setJumpError('Enter #N, HH:MM[:SS] or an ISO time');
-      return;
+      setJumpError(t('transcript.notice.jumpUnreadable'));
+      return false;
     }
     setJumpError(null);
     void doJump(parsed);
+    return true;
   };
 
   const initialConsumed = useRef<number | null>(null);
@@ -313,18 +309,18 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
 
   const stepErrors = (dir: number): void => {
     if (errorKeys.length === 0) {
-      say('No errors in the loaded events');
+      say(t('transcript.notice.noErrors'));
       return;
     }
     const next = stepError(errorKeys, errorCursor, dir);
     if (next === null) {
-      say('No more errors in that direction');
+      say(t('transcript.notice.noMoreErrors'));
       return;
     }
     setErrorCursor(next);
     nonce.current += 1;
     setTarget({ key: next, nonce: nonce.current });
-    say(`Error ${String(errorKeys.indexOf(next) + 1)} of ${String(errorKeys.length)}`);
+    say(t('transcript.notice.errorPosition', { position: errorKeys.indexOf(next) + 1, total: errorKeys.length }));
   };
 
   const setFollow = (on: boolean): void => {
@@ -358,60 +354,56 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
       : 'ready';
   const closeSearch = (): void => {
     setSearchOpen(false);
-    searchButtonRef.current?.focus();
+    searchInputRef.current?.focus();
   };
 
-  // ---- shortcuts: / search, f follow, ] and [ errors (04 6.5) ------------------------------------------------------
-  const shortcuts = useRef({ stepErrors, setFollow, say });
-  useEffect(() => {
-    shortcuts.current = { stepErrors, setFollow, say };
-  });
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
-      const handlers = shortcuts.current;
-      if (event.key === '/') {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      } else if (event.key === 'f') {
-        const turnOn = !latest.current.follow.follow;
-        handlers.setFollow(turnOn);
-        handlers.say(turnOn ? 'Following new events' : 'Follow off');
-      } else if (event.key === ']') {
-        handlers.stepErrors(1);
-      } else if (event.key === '[') {
-        handlers.stepErrors(-1);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
+  // ---- shortcuts: / search, f follow, ] and [ errors (04 6.5); the registry skips typing targets and open dialogs ---------
+  useShortcut(
+    '/',
+    () => {
+      searchInputRef.current?.focus();
+    },
+    { description: t('transcript.shortcut.search') },
+  );
+  useShortcut(
+    'f',
+    () => {
+      const turnOn = !latest.current.follow.follow;
+      setFollow(turnOn);
+      say(turnOn ? t('transcript.notice.followOn') : t('transcript.notice.followOff'));
+    },
+    { description: t('transcript.shortcut.follow') },
+  );
+  useShortcut(
+    ']',
+    () => {
+      stepErrors(1);
+    },
+    { description: t('transcript.shortcut.nextError') },
+  );
+  useShortcut(
+    '[',
+    () => {
+      stepErrors(-1);
+    },
+    { description: t('transcript.shortcut.prevError') },
+  );
 
   // ---- render -------------------------------------------------------------------------------------------------------
   const first = events[0]?.i;
-  const olderReason =
-    first === undefined || first <= 0 ? 'Already at the first event' : state.capped ? 'Window limit reached' : null;
+  // "Load older" exists only while something can be loaded: events before the first one, and room in the window.
+  const canLoadOlder = first !== undefined && first > 0 && !state.capped;
   const hasEvents = events.length > 0;
   const noneVisible = hasEvents && visible.size === 0;
   const kindsOff = !filters.kinds.result;
 
-  const olderRow =
-    first !== undefined && first > 0 ? (
-      <li className="tv-older" key="older">
-        <Button
-          icon="clock"
-          loading={state.olderLoading}
-          disabled={olderReason !== null}
-          title={olderReason ?? undefined}
-          onClick={onLoadOlder}
-        >
-          Load older
-        </Button>
-      </li>
-    ) : null;
+  const olderRow = canLoadOlder ? (
+    <li className="tv-older" key="older">
+      <Button icon="clock" loading={state.olderLoading} onClick={onLoadOlder}>
+        {t('transcript.loadOlder')}
+      </Button>
+    </li>
+  ) : null;
 
   const rows = ordered.map((unit) => {
     const hidden = !visible.has(unit.key);
@@ -455,8 +447,9 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
   );
 
   const status = state.status;
+  const refreshDetail = describeApiError(state.error ?? undefined, t);
   return (
-    <section className={newestFirst ? 'tv tv--newest' : 'tv tv--oldest'} aria-label="Transcript">
+    <section className={newestFirst ? 'tv tv--newest' : 'tv tv--oldest'} aria-label={t('transcript.region')}>
       <TranscriptToolbar
         filters={filters}
         onQueryChange={(q) => {
@@ -484,7 +477,7 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
         onJump={onJump}
         jumpError={jumpError}
         onLoadOlder={onLoadOlder}
-        loadOlderDisabledReason={olderReason}
+        canLoadOlder={canLoadOlder}
         olderLoading={state.olderLoading}
         counts={{
           visible: visible.size,
@@ -494,18 +487,20 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
           lastIndex: hasEvents ? lastIndex : null,
           total: state.total,
         }}
+        sessionErrors={props.sessionErrors}
         searchInputRef={searchInputRef}
-        searchButtonRef={searchButtonRef}
       />
       <PartialBanner partial={state.partial} pendingBytes={state.pendingBytes} />
       {state.capped ? (
         <p className="tv-banner" role="status">
-          Window limit reached. Use Jump to view another part.
+          {t('transcript.capped')}
         </p>
       ) : null}
       {state.error !== null && hasEvents && status === 'ready' ? (
         <p className="tv-banner tv-banner--warn" role="status">
-          {`Could not refresh events: ${state.error.message}. Showing the events loaded earlier.`}
+          {refreshDetail === undefined
+            ? t('transcript.refreshFailed')
+            : t('transcript.refreshFailedDetail', { detail: refreshDetail })}
         </p>
       ) : null}
       {notice === '' ? null : (
@@ -524,17 +519,29 @@ function TranscriptViewerBody(props: TranscriptViewerProps) {
           onClose={closeSearch}
         />
       ) : null}
-      {status === 'idle' || (status === 'loading' && !hasEvents) ? <p role="status">Loading events...</p> : null}
+      {status === 'idle' || (status === 'loading' && !hasEvents) ? (
+        <p role="status">{t('transcript.loading')}</p>
+      ) : null}
       {status === 'error' && !hasEvents ? (
-        <ErrorState kind="load" size="block" subject="events" error={state.error ?? undefined} onRetry={refresh} />
+        <ErrorState
+          kind="load"
+          size="block"
+          subjectKey="error.subject.events"
+          error={state.error ?? undefined}
+          onRetry={refresh}
+        />
       ) : null}
       {status === 'not-found' ? <ErrorState kind="not-found" size="block" /> : null}
-      {status === 'gone' ? (
-        <EmptyState title="This transcript is no longer available (the file was removed)." icon="alert" />
-      ) : null}
-      {status === 'ready' && !hasEvents ? <EmptyState title="No events recorded for this session yet." /> : null}
-      {noneVisible ? <EmptyState title="No events match the current filters." /> : null}
-      <div className="tv-scroller" role="region" aria-label="Transcript events" ref={scrollerRef} onScroll={onScroll}>
+      {status === 'gone' ? <EmptyState title={t('transcript.gone')} icon="alert" /> : null}
+      {status === 'ready' && !hasEvents ? <EmptyState title={t('transcript.empty')} /> : null}
+      {noneVisible ? <EmptyState title={t('transcript.noMatch')} /> : null}
+      <div
+        className="tv-scroller"
+        role="region"
+        aria-label={t('transcript.eventsRegion')}
+        ref={scrollerRef}
+        onScroll={onScroll}
+      >
         {newestFirst ? resumeButton : null}
         <ol className="tv-list">
           {newestFirst ? null : olderRow}

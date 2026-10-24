@@ -7,16 +7,18 @@ import { Icon } from '../components/Icon.tsx';
 import type { IconName } from '../components/icons.ts';
 import { Markdown } from '../components/Markdown.tsx';
 import { TagBadge } from '../components/TagBadge.tsx';
-import { fmtClock } from '../lib/format.ts';
+import { useFormat, useT } from '../i18n/context.ts';
+import type { MessageKey } from '../i18n/types.ts';
 import { unitSig, type Unit } from '../lib/timeline-model.ts';
 
-export const ROW_LABELS: Readonly<Record<EntryKind, string>> = {
-  prompt: 'Prompt',
-  say: 'Claude',
-  think: 'Thinking',
-  tool: 'Tool',
-  result: 'Result',
-};
+/** The message of the row label of each kind (`transcript.kind.*`). */
+export const ROW_LABEL_KEYS = {
+  prompt: 'transcript.kind.prompt',
+  say: 'transcript.kind.say',
+  think: 'transcript.kind.think',
+  tool: 'transcript.kind.tool',
+  result: 'transcript.kind.result',
+} as const satisfies Record<EntryKind, MessageKey>;
 
 export const ROW_ICONS: Readonly<Record<EntryKind, IconName>> = {
   prompt: 'user',
@@ -28,8 +30,9 @@ export const ROW_ICONS: Readonly<Record<EntryKind, IconName>> = {
 
 /** `#12`: a button that copies the entry index (legacy). */
 export function EntryIndexButton({ entry }: { entry: TranscriptEntry }) {
+  const t = useT();
   return (
-    <CopyButton text={String(entry.i)} label="Copy event index" compact>
+    <CopyButton text={String(entry.i)} label={t('transcript.row.copyIndex')} compact>
       {`#${String(entry.i)}`}
     </CopyButton>
   );
@@ -37,7 +40,8 @@ export function EntryIndexButton({ entry }: { entry: TranscriptEntry }) {
 
 /** The wall-clock time of an entry; nothing when the record had no timestamp. */
 export function EntryTime({ entry }: { entry: TranscriptEntry }) {
-  const clock = fmtClock(entry.t);
+  const format = useFormat();
+  const clock = format.clock(entry.t);
   if (clock === '') return null;
   return (
     <time className="tr-time muted small" dateTime={entry.t}>
@@ -58,26 +62,28 @@ export interface TranscriptRowProps {
 }
 
 function TranscriptRowView({ unit, hidden, expanded, isTarget, onToggleExpanded }: TranscriptRowProps) {
+  const t = useT();
   const { ev, key } = unit;
   const text = ev.text ?? '';
   const textId = `${key}-text`;
   const isError = unit.kind === 'result' && ev.err === true;
-  const className = `tr tr--${unit.kind}${isTarget ? ' is-target' : ''}`;
+  // The border colour follows the role of the row (`tr--prompt`, `tr--say`, ...); red is kept for errors (ADR 0071 decision 3).
+  const className = `tr tr--${unit.kind}${isError ? ' tr--error' : ''}${isTarget ? ' is-target' : ''}`;
   return (
     <li className={className} id={`row-${key}`} data-row-key={key} hidden={hidden} tabIndex={-1}>
       <div className="tr-head">
         <span className="tr-kind">
           <Icon name={ROW_ICONS[unit.kind]} />
-          <span>{ROW_LABELS[unit.kind]}</span>
+          <span>{t(ROW_LABEL_KEYS[unit.kind])}</span>
         </span>
         {isError ? (
           <TagBadge tone="failed" icon="alert">
-            error
+            {t('transcript.row.errorTag')}
           </TagBadge>
         ) : null}
         <EntryIndexButton entry={ev} />
         <EntryTime entry={ev} />
-        <CopyButton text={text} label="Copy text" compact />
+        <CopyButton text={text} label={t('transcript.row.copyText')} compact />
       </div>
       <div className="tr-body">
         <ClampedText

@@ -1,8 +1,11 @@
-import type { TranscriptEntry, TranscriptSearchResponse } from '@mcs/shared';
+import type { EntryKind, TranscriptEntry, TranscriptSearchResponse } from '@mcs/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { createFormatters } from '../i18n/format.ts';
+import { useShortcutRegistry, ShortcutRegistryProvider } from '../state/shortcuts-registry.tsx';
 import { createFakeApi, errorResponse, type FakeApi, type FakeHandler, type FakeHandlers } from '../test/fake-api.ts';
 import {
   iso,
@@ -12,7 +15,8 @@ import {
   makeTranscriptWindow,
   sessionId,
 } from '../test/fixtures/index.ts';
-import { renderWithProviders } from '../test/render.tsx';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
 import { TranscriptViewer, type TranscriptViewerProps } from './TranscriptViewer.tsx';
 
 const SID = sessionId(1);
@@ -86,7 +90,11 @@ function toolPair(i: number, name: string, err = false, text = 'tool output'): T
   ];
 }
 
-function setup(server: Server, props: Partial<TranscriptViewerProps> = {}, extra: { handlers?: FakeHandlers } = {}) {
+function setup(
+  server: Server,
+  props: Partial<TranscriptViewerProps> = {},
+  extra: { handlers?: FakeHandlers; locale?: 'en' | 'vi' } = {},
+) {
   const instance = makeInstance();
   const api: FakeApi = createFakeApi({
     instance: () => instance,
@@ -96,7 +104,13 @@ function setup(server: Server, props: Partial<TranscriptViewerProps> = {}, extra
   });
   const onNotice = vi.fn();
   const merged: TranscriptViewerProps = { sessionId: SID, agentId: 'main', newestFirst: false, onNotice, ...props };
-  const rendered = renderWithProviders(<TranscriptViewer {...merged} />, { api, instance, live: true });
+  const rendered = renderWithIntl(<TranscriptViewer {...merged} />, {
+    api,
+    instance,
+    live: true,
+    ...(extra.locale === undefined ? {} : { locale: extra.locale }),
+    wrap: (children) => <ShortcutRegistryProvider>{children}</ShortcutRegistryProvider>,
+  });
   const rerenderViewer = (next: Partial<TranscriptViewerProps>): void => {
     rendered.rerender(<TranscriptViewer {...merged} {...next} />);
   };
@@ -133,7 +147,46 @@ function setGeometry(
   });
 }
 
-const scrollerOf = (): HTMLElement => screen.getByRole('region', { name: 'Transcript events' });
+const scrollerOf = (): HTMLElement => screen.getByRole('region', { name: msg('transcript.eventsRegion') });
+
+type User = ReturnType<typeof userEvent.setup>;
+
+const searchbox = (): HTMLElement => screen.getByRole('searchbox', { name: msg('transcript.toolbar.search') });
+const followSwitch = (): HTMLElement => screen.getByRole('switch', { name: msg('transcript.toolbar.follow') });
+
+/** The text of the count line, to assert the loaded range without the wording around it. */
+const countText = (container: HTMLElement): string => container.querySelector('.tv-count')?.textContent ?? '';
+
+async function openMenu(user: User, key: 'transcript.toolbar.show' | 'transcript.toolbar.more'): Promise<HTMLElement> {
+  const open = screen.queryByRole('dialog');
+  if (open === null) {
+    const name = msg(key);
+    const trigger =
+      key === 'transcript.toolbar.more'
+        ? screen.getByRole('button', { name })
+        : screen.getByRole('button', { name, expanded: false });
+    await user.click(trigger);
+  }
+  return screen.getByRole('dialog');
+}
+
+/** Types into the jump box of the overflow menu (opening the menu when it is closed). */
+async function typeJump(user: User, text: string): Promise<void> {
+  const panel = await openMenu(user, 'transcript.toolbar.more');
+  const box = within(panel).getByRole('textbox', { name: msg('transcript.toolbar.jumpTo') });
+  await user.clear(box);
+  await user.type(box, text);
+}
+
+async function toggleKind(user: User, kind: EntryKind): Promise<void> {
+  const panel = await openMenu(user, 'transcript.toolbar.show');
+  await user.click(within(panel).getByRole('button', { name: msg(`transcript.toolbar.kind.${kind}`) }));
+}
+
+async function chooseTool(user: User, tool: string): Promise<void> {
+  const panel = await openMenu(user, 'transcript.toolbar.show');
+  await user.selectOptions(within(panel).getByRole('combobox', { name: msg('transcript.toolbar.tool') }), tool);
+}
 
 describe('TranscriptViewer', () => {
   describe('rendering', () => {
@@ -158,7 +211,11 @@ describe('TranscriptViewer', () => {
       const server = makeServer(makeTranscript(8));
       const { container } = setup(server);
       await loaded(container);
-      expect(screen.getByText(/Showing 6 of 6 loaded items · 0 errors · events #0 to #7 of 8/)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          msg('transcript.count', { visible: 6, loaded: 6, errors: 0, first: '0', last: '7', total: 8 }),
+        ),
+      ).toBeInTheDocument();
     });
 
     it('renders hostile transcript text literally', async () => {
@@ -177,7 +234,7 @@ describe('TranscriptViewer', () => {
 
     it('has the empty, loading and failure states', async () => {
       const empty = setup(makeServer([]));
-      expect(await screen.findByText('No events recorded for this session yet.')).toBeInTheDocument();
+      expect(await screen.findByText(msg('transcript.empty'))).toBeInTheDocument();
       empty.unmount();
 
       const gone = setup(
@@ -185,20 +242,18 @@ describe('TranscriptViewer', () => {
         {},
         { handlers: { transcriptWindow: () => errorResponse('transcript_gone') } },
       );
-      expect(
-        await screen.findByText('This transcript is no longer available (the file was removed).'),
-      ).toBeInTheDocument();
+      expect(await screen.findByText(msg('transcript.gone'))).toBeInTheDocument();
       gone.unmount();
 
       setup(makeServer([]), {}, { handlers: { transcriptWindow: () => errorResponse('session_not_found') } });
-      expect(await screen.findByText(/does not know this session/)).toBeInTheDocument();
+      expect(await screen.findByText(msg('error.sessionNotFound'))).toBeInTheDocument();
     });
 
     it('shows a loading status first', () => {
       const server = makeServer(makeTranscript(4));
       server.gate = new Promise<void>(() => undefined);
       setup(server);
-      expect(screen.getByText('Loading events...')).toBeInTheDocument();
+      expect(screen.getByText(msg('transcript.loading'))).toBeInTheDocument();
     });
 
     it('shows a refresh failure above the kept events', async () => {
@@ -207,9 +262,10 @@ describe('TranscriptViewer', () => {
       await loaded(container);
       api.handlers = { ...api.handlers, transcriptWindow: () => errorResponse('internal_error') };
       rerenderViewer({ refreshToken: 1 });
-      expect(
-        await screen.findByText(/Could not refresh events: .*Showing the events loaded earlier\./),
-      ).toBeInTheDocument();
+      // the sentence around the detail is the catalogue's; the detail is the worded API error
+      const [before, after] = msg('transcript.refreshFailedDetail', { detail: '@@' }).split('@@');
+      const banner = await screen.findByText((text) => text.startsWith(before ?? '') && text.endsWith(after ?? ''));
+      expect(banner).toHaveClass('tv-banner--warn');
       expect(rowKeys(container)).toHaveLength(3);
     });
   });
@@ -221,22 +277,26 @@ describe('TranscriptViewer', () => {
       const { container } = setup(server);
       await loaded(container);
       const before = Array.from(container.querySelectorAll('li[data-row-key]'));
-      await user.type(screen.getByRole('searchbox', { name: 'Search loaded events' }), 'say text 5');
+      await user.type(searchbox(), 'say text 5');
       await waitFor(() => {
         expect(visibleKeys(container)).toEqual(['e5']);
       });
       const after = Array.from(container.querySelectorAll('li[data-row-key]'));
       expect(after).toHaveLength(before.length);
       expect(after.every((node, n) => node === before[n])).toBe(true);
-      expect(screen.getByText(/Showing 1 of 6 loaded items/)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          msg('transcript.count', { visible: 1, loaded: 6, errors: 0, first: '0', last: '7', total: 8 }),
+        ),
+      ).toBeInTheDocument();
     });
 
     it('shows a message when nothing matches', async () => {
       const user = userEvent.setup();
       const { container } = setup(makeServer(makeTranscript(8)));
       await loaded(container);
-      await user.type(screen.getByRole('searchbox', { name: 'Search loaded events' }), 'nothing like this');
-      expect(await screen.findByText('No events match the current filters.')).toBeInTheDocument();
+      await user.type(searchbox(), 'nothing like this');
+      expect(await screen.findByText(msg('transcript.noMatch'))).toBeInTheDocument();
     });
 
     it('filters by kind, tool and errors only', async () => {
@@ -248,12 +308,12 @@ describe('TranscriptViewer', () => {
       ];
       const { container } = setup(makeServer(entries));
       await loaded(container);
-      await user.click(screen.getByRole('checkbox', { name: 'Claude' }));
+      await toggleKind(user, 'say');
       expect(visibleKeys(container)).toEqual(['e1', 'e3']);
-      await user.selectOptions(screen.getByRole('combobox', { name: 'Tool' }), 'Read');
+      await chooseTool(user, 'Read');
       expect(visibleKeys(container)).toEqual(['e3']);
-      await user.selectOptions(screen.getByRole('combobox', { name: 'Tool' }), '');
-      await user.click(screen.getByRole('checkbox', { name: 'Errors only' }));
+      await chooseTool(user, '');
+      await user.click(screen.getByRole('switch', { name: msg('transcript.toolbar.errorsOnly') }));
       expect(visibleKeys(container)).toEqual(['e3']);
     });
 
@@ -261,7 +321,7 @@ describe('TranscriptViewer', () => {
       const user = userEvent.setup();
       const { container } = setup(makeServer(toolPair(0, 'Bash')));
       await loaded(container);
-      await user.click(screen.getByRole('checkbox', { name: 'Results' }));
+      await toggleKind(user, 'result');
       expect(container.querySelector('details')).toHaveClass('hide-result');
     });
 
@@ -270,17 +330,18 @@ describe('TranscriptViewer', () => {
       const server = makeServer([...toolPair(0, 'Bash'), ...toolPair(2, 'Read')]);
       const { container, rerenderViewer } = setup(server);
       await loaded(container);
-      await user.selectOptions(screen.getByRole('combobox', { name: 'Tool' }), 'Read');
-      const options = Array.from(screen.getByRole('combobox', { name: 'Tool' }).querySelectorAll('option'));
+      await chooseTool(user, 'Read');
+      const toolSelect = (): HTMLElement => screen.getByRole('combobox', { name: msg('transcript.toolbar.tool') });
+      const options = Array.from(toolSelect().querySelectorAll('option'));
       server.entries = [...server.entries, ...toolPair(4, 'Bash')];
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(screen.getByText(/events #0 to #5 of 6/)).toBeInTheDocument();
+        expect(countText(container)).toMatch(/#0.*#5.*6/);
       });
-      const same = Array.from(screen.getByRole('combobox', { name: 'Tool' }).querySelectorAll('option'));
+      const same = Array.from(toolSelect().querySelectorAll('option'));
       expect(same).toHaveLength(options.length);
       expect(same.every((option, n) => option === options[n])).toBe(true);
-      expect(screen.getByRole('combobox', { name: 'Tool' })).toHaveValue('Read');
+      expect(toolSelect()).toHaveValue('Read');
     });
   });
 
@@ -297,9 +358,29 @@ describe('TranscriptViewer', () => {
       server.entries = makeTranscript(10);
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(screen.getByText(/events #0 to #9 of 10/)).toBeInTheDocument();
+        expect(countText(container)).toMatch(/#0.*#9.*10/);
       });
       expect(container.querySelector('details')).toHaveAttribute('open');
+    });
+
+    it('keeps an opened tool row open when a filter hides it and shows it again', async () => {
+      const user = userEvent.setup();
+      const entries = [...toolPair(0, 'Bash'), ...toolPair(2, 'Read', true, 'failed read')];
+      const { container } = setup(makeServer(entries));
+      await loaded(container);
+      const summary = container.querySelector<HTMLElement>('li[data-row-key="e0"] summary');
+      if (summary === null) throw new Error('no summary');
+      expect(summary).toHaveAttribute('aria-expanded', 'false');
+      await user.click(summary);
+      expect(summary).toHaveAttribute('aria-expanded', 'true');
+      const row = container.querySelector('li[data-row-key="e0"]');
+      await user.click(screen.getByRole('switch', { name: msg('transcript.toolbar.errorsOnly') }));
+      expect(visibleKeys(container)).toEqual(['e2']);
+      expect(container.querySelector('li[data-row-key="e0"]')).toBe(row);
+      await user.click(screen.getByRole('switch', { name: msg('transcript.toolbar.errorsOnly') }));
+      expect(visibleKeys(container)).toEqual(['e0', 'e2']);
+      expect(container.querySelector('li[data-row-key="e0"] details')).toHaveAttribute('open');
+      expect(container.querySelector('li[data-row-key="e2"] details')).not.toHaveAttribute('open');
     });
 
     it('keeps the expanded state of a clamped text across updates', async () => {
@@ -307,16 +388,16 @@ describe('TranscriptViewer', () => {
       const server = makeServer([{ i: 0, t: iso(0), k: 'say', text: 'long '.repeat(400) }]);
       const { container, rerenderViewer } = setup(server);
       await loaded(container);
-      const more = screen.getByRole('button', { name: 'Show more' });
+      const more = screen.getByRole('button', { name: msg('common.showMore') });
       expect(more).toHaveAttribute('aria-expanded', 'false');
       await user.click(more);
-      expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: msg('common.showLess') })).toHaveAttribute('aria-expanded', 'true');
       server.entries = [...server.entries, { i: 1, t: iso(1), k: 'say', text: 'next' }];
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
         expect(rowKeys(container)).toEqual(['e0', 'e1']);
       });
-      expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: msg('common.showLess') })).toHaveAttribute('aria-expanded', 'true');
     });
   });
 
@@ -326,20 +407,21 @@ describe('TranscriptViewer', () => {
       const server = makeServer(makeTranscript(8));
       const { container, rerenderViewer } = setup(server);
       await loaded(container);
-      const follow = screen.getByRole('checkbox', { name: 'Follow new events' });
+      const follow = followSwitch();
       expect(follow).toBeChecked();
       setGeometry(scrollerOf(), { scrollTop: 100, scrollHeight: 1000, clientHeight: 200 });
       fireEvent.scroll(scrollerOf());
       expect(follow).not.toBeChecked();
-      expect(screen.getByRole('button', { name: 'Resume following' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: msg('transcript.resume') })).toBeInTheDocument();
 
       server.entries = makeTranscript(11);
       rerenderViewer({ refreshToken: 1 });
-      expect(await screen.findByRole('button', { name: 'Resume following (3 new)' })).toBeInTheDocument();
+      const resumeNew = msg('transcript.resumeNew', { count: 3 });
+      expect(await screen.findByRole('button', { name: resumeNew })).toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: 'Resume following (3 new)' }));
+      await user.click(screen.getByRole('button', { name: resumeNew }));
       expect(follow).toBeChecked();
-      expect(screen.queryByRole('button', { name: /Resume following/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: new RegExp(msg('transcript.resume')) })).toBeNull();
     });
 
     it('resumes by itself when the user scrolls back to the latest edge', async () => {
@@ -347,10 +429,10 @@ describe('TranscriptViewer', () => {
       await loaded(container);
       setGeometry(scrollerOf(), { scrollTop: 100, scrollHeight: 1000, clientHeight: 200 });
       fireEvent.scroll(scrollerOf());
-      expect(screen.getByRole('checkbox', { name: 'Follow new events' })).not.toBeChecked();
+      expect(followSwitch()).not.toBeChecked();
       setGeometry(scrollerOf(), { scrollTop: 790, scrollHeight: 1000, clientHeight: 200 });
       fireEvent.scroll(scrollerOf());
-      expect(screen.getByRole('checkbox', { name: 'Follow new events' })).toBeChecked();
+      expect(followSwitch()).toBeChecked();
     });
 
     it('snaps to the latest edge while following', async () => {
@@ -361,7 +443,7 @@ describe('TranscriptViewer', () => {
       server.entries = makeTranscript(12);
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(screen.getByText(/events #0 to #11 of 12/)).toBeInTheDocument();
+        expect(countText(container)).toMatch(/#0.*#11.*12/);
       });
       expect(scrollerOf().scrollTop).toBe(1000);
     });
@@ -372,14 +454,14 @@ describe('TranscriptViewer', () => {
       const { container, rerenderViewer } = setup(server);
       await loaded(container);
       const button = within(container.querySelector('li[data-row-key="e1"]')!).getByRole('button', {
-        name: 'Copy event index',
+        name: msg('transcript.row.copyIndex'),
       });
       await user.click(button);
       button.focus();
       server.entries = makeTranscript(12);
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(screen.getByText(/events #0 to #11 of 12/)).toBeInTheDocument();
+        expect(countText(container)).toMatch(/#0.*#11.*12/);
       });
       expect(document.activeElement).toBe(button);
     });
@@ -389,10 +471,11 @@ describe('TranscriptViewer', () => {
       const { container, onNotice } = setup(makeServer(makeTranscript(8)));
       await loaded(container);
       await user.keyboard('f');
-      expect(screen.getByRole('checkbox', { name: 'Follow new events' })).not.toBeChecked();
-      expect(onNotice).toHaveBeenCalledWith('Follow off');
+      expect(followSwitch()).not.toBeChecked();
+      expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.followOff'));
       await user.keyboard('f');
-      expect(onNotice).toHaveBeenCalledWith('Following new events');
+      expect(followSwitch()).toBeChecked();
+      expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.followOn'));
     });
 
     it('focuses the search box with the slash key but not while typing in a field', async () => {
@@ -400,7 +483,7 @@ describe('TranscriptViewer', () => {
       const { container } = setup(makeServer(makeTranscript(8)));
       await loaded(container);
       await user.keyboard('/');
-      const search = screen.getByRole('searchbox', { name: 'Search loaded events' });
+      const search = searchbox();
       expect(search).toHaveFocus();
       await user.keyboard('f/');
       expect(search).toHaveValue('f/');
@@ -421,16 +504,21 @@ describe('TranscriptViewer', () => {
       const user = userEvent.setup();
       const { container, onNotice } = setup(makeServer(errorEntries()));
       await loaded(container);
-      expect(screen.getByText(/· 2 errors ·/)).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Next error' }));
-      expect(onNotice).toHaveBeenLastCalledWith('Error 1 of 2');
+      expect(
+        screen.getByText(
+          msg('transcript.count', { visible: 4, loaded: 4, errors: 2, first: '0', last: '6', total: 7 }),
+        ),
+      ).toBeInTheDocument();
+      const next = (): HTMLElement => screen.getByRole('button', { name: msg('transcript.toolbar.nextError') });
+      await user.click(next());
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.errorPosition', { position: 1, total: 2 }));
       expect(container.querySelector('li[data-row-key="e1"]')).toHaveClass('is-target');
-      await user.click(screen.getByRole('button', { name: 'Next error' }));
-      expect(onNotice).toHaveBeenLastCalledWith('Error 2 of 2');
-      await user.click(screen.getByRole('button', { name: 'Next error' }));
-      expect(onNotice).toHaveBeenLastCalledWith('No more errors in that direction');
-      await user.click(screen.getByRole('button', { name: 'Previous error' }));
-      expect(onNotice).toHaveBeenLastCalledWith('Error 1 of 2');
+      await user.click(next());
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.errorPosition', { position: 2, total: 2 }));
+      await user.click(next());
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.noMoreErrors'));
+      await user.click(screen.getByRole('button', { name: msg('transcript.toolbar.prevError') }));
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.errorPosition', { position: 1, total: 2 }));
     });
 
     it('uses the bracket keys', async () => {
@@ -438,17 +526,17 @@ describe('TranscriptViewer', () => {
       const { container, onNotice } = setup(makeServer(errorEntries()));
       await loaded(container);
       await user.keyboard(']');
-      expect(onNotice).toHaveBeenLastCalledWith('Error 1 of 2');
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.errorPosition', { position: 1, total: 2 }));
       await user.keyboard('[[');
-      expect(onNotice).toHaveBeenLastCalledWith('No more errors in that direction');
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.noMoreErrors'));
     });
 
     it('says so when the loaded events have no error', async () => {
       const user = userEvent.setup();
       const { container, onNotice } = setup(makeServer(makeTranscript(8)));
       await loaded(container);
-      await user.click(screen.getByRole('button', { name: 'Next error' }));
-      expect(onNotice).toHaveBeenLastCalledWith('No errors in the loaded events');
+      await user.click(screen.getByRole('button', { name: msg('transcript.toolbar.nextError') }));
+      expect(onNotice).toHaveBeenLastCalledWith(msg('transcript.notice.noErrors'));
     });
   });
 
@@ -460,9 +548,9 @@ describe('TranscriptViewer', () => {
       await loaded(container);
       const list = container.querySelector<HTMLElement>('ol.tv-list')!;
       expect(list.firstElementChild).toHaveClass('tv-older');
-      await user.click(within(list).getByRole('button', { name: 'Load older' }));
+      await user.click(within(list).getByRole('button', { name: msg('transcript.loadOlder') }));
       await waitFor(() => {
-        expect(onNotice).toHaveBeenCalledWith('Loaded 150 older events');
+        expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.olderLoaded', { count: 150 }));
       });
       expect(rowKeys(container)[0]).toBe('e0');
       expect(container.querySelector('li.tv-older')).toBeNull();
@@ -480,23 +568,45 @@ describe('TranscriptViewer', () => {
       server.partial = { partial: true, pendingBytes: 2_000_000 };
       const { container, rerenderViewer } = setup(server);
       await loaded(container);
-      expect(
-        screen.getByText(/Indexing this transcript: .* not indexed yet; the newest entries may be missing/),
-      ).toBeInTheDocument();
+      const banner = msg('transcript.partial', { size: createFormatters('en').bytes(2_000_000) });
+      expect(screen.getByText(banner)).toBeInTheDocument();
       server.partial = { partial: false, pendingBytes: 0 };
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(screen.queryByText(/Indexing this transcript/)).toBeNull();
+        expect(screen.queryByText(banner)).toBeNull();
       });
     });
 
-    it('shows the window limit banner and refuses to load more at the cap', async () => {
+    it('shows the window limit banner and offers no Load older at the cap', async () => {
+      const user = userEvent.setup();
       const server = makeServer(makeTranscript(120));
       const { container } = setup(server, { maxEvents: 60 });
       await loaded(container);
-      expect(screen.getByText('Window limit reached. Use Jump to view another part.')).toBeInTheDocument();
-      for (const button of screen.getAllByRole('button', { name: 'Load older' })) expect(button).toBeDisabled();
-      expect(screen.getByText(/events #60 to #119 of 120/)).toBeInTheDocument();
+      expect(screen.getByText(msg('transcript.capped'))).toBeInTheDocument();
+      expect(container.querySelector('li.tv-older')).toBeNull();
+      const menu = await openMenu(user, 'transcript.toolbar.more');
+      expect(within(menu).queryByRole('button', { name: msg('transcript.loadOlder') })).toBeNull();
+      expect(countText(container)).toMatch(/#60.*#119.*120/);
+    });
+
+    it('offers no Load older when the first event is loaded', async () => {
+      const user = userEvent.setup();
+      const { container } = setup(makeServer(makeTranscript(8)));
+      await loaded(container);
+      expect(container.querySelector('li.tv-older')).toBeNull();
+      const menu = await openMenu(user, 'transcript.toolbar.more');
+      expect(within(menu).queryByRole('button', { name: msg('transcript.loadOlder') })).toBeNull();
+    });
+
+    it('offers Load older in the menu while older events exist', async () => {
+      const user = userEvent.setup();
+      const { container, onNotice } = setup(makeServer(makeTranscript(400)));
+      await loaded(container);
+      const menu = await openMenu(user, 'transcript.toolbar.more');
+      await user.click(within(menu).getByRole('button', { name: msg('transcript.loadOlder') }));
+      await waitFor(() => {
+        expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.olderLoaded', { count: 150 }));
+      });
     });
 
     it('announces a reset and reloads when the transcript shrank', async () => {
@@ -506,12 +616,12 @@ describe('TranscriptViewer', () => {
       server.entries = makeTranscript(4);
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(onNotice).toHaveBeenCalledWith('The transcript was reset; reloading events');
+        expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.reset'));
       });
       await waitFor(() => {
-        expect(screen.getByText(/events #0 to #3 of 4/)).toBeInTheDocument();
+        expect(countText(container)).toMatch(/#0.*#3.*4/);
       });
-      expect(screen.getByText('The transcript was reset; reloading events')).toBeInTheDocument();
+      expect(screen.getByText(msg('transcript.notice.reset'))).toBeInTheDocument();
     });
 
     it('shows the reloaded text, not the old text, when a reset keeps the same indices', async () => {
@@ -533,7 +643,7 @@ describe('TranscriptViewer', () => {
       }));
       rerenderViewer({ refreshToken: 1 });
       await waitFor(() => {
-        expect(screen.getByText(/events #0 to #2 of 3/)).toBeInTheDocument();
+        expect(countText(container)).toMatch(/#0.*#2.*3/);
       });
       expect(container).toHaveTextContent('fresh0');
       expect(container).toHaveTextContent('fresh2');
@@ -547,14 +657,15 @@ describe('TranscriptViewer', () => {
       const server = makeServer(makeTranscript(2000));
       const { container, onNotice } = setup(server);
       await loaded(container);
-      await user.type(screen.getByRole('textbox', { name: 'Jump to' }), '#500{Enter}');
+      await typeJump(user, '#500{Enter}');
       await waitFor(() => {
         expect(container.querySelector('li[data-row-key="e500"]')).toHaveClass('is-target');
       });
       expect(container.querySelector('li[data-row-key="e500"]')).toHaveFocus();
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'auto' });
-      expect(screen.getByRole('checkbox', { name: 'Follow new events' })).not.toBeChecked();
-      expect(onNotice).toHaveBeenCalledWith('Jumped to #500');
+      expect(followSwitch()).not.toBeChecked();
+      expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.jumped', { index: '500' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
     });
 
     it('opens the tool row when the jump hits its result', async () => {
@@ -568,7 +679,7 @@ describe('TranscriptViewer', () => {
       ];
       const { container } = setup(makeServer(entries));
       await loaded(container);
-      await user.type(screen.getByRole('textbox', { name: 'Jump to' }), '2{Enter}');
+      await typeJump(user, '2{Enter}');
       await waitFor(() => {
         expect(container.querySelector('li[data-row-key="e1"] details')).toHaveAttribute('open');
       });
@@ -579,15 +690,15 @@ describe('TranscriptViewer', () => {
       const user = userEvent.setup();
       const { container, onNotice } = setup(makeServer(makeTranscript(8)));
       await loaded(container);
-      await user.type(screen.getByRole('searchbox', { name: 'Search loaded events' }), 'say text 5');
+      await user.type(searchbox(), 'say text 5');
       await waitFor(() => {
         expect(visibleKeys(container)).toEqual(['e5']);
       });
-      await user.type(screen.getByRole('textbox', { name: 'Jump to' }), '#0{Enter}');
+      await typeJump(user, '#0{Enter}');
       await waitFor(() => {
-        expect(onNotice).toHaveBeenCalledWith('Filters cleared to show #0');
+        expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.filtersCleared', { index: '0' }));
       });
-      expect(screen.getByRole('searchbox', { name: 'Search loaded events' })).toHaveValue('');
+      expect(searchbox()).toHaveValue('');
       expect(visibleKeys(container)).toContain('e0');
     });
 
@@ -600,12 +711,11 @@ describe('TranscriptViewer', () => {
         { handlers: { transcriptLocate: () => errorResponse('event_not_found') } },
       );
       await loaded(container);
-      await user.type(screen.getByRole('textbox', { name: 'Jump to' }), 'later{Enter}');
-      expect(screen.getByText('Enter #N, HH:MM[:SS] or an ISO time')).toBeInTheDocument();
-      await user.clear(screen.getByRole('textbox', { name: 'Jump to' }));
-      await user.type(screen.getByRole('textbox', { name: 'Jump to' }), '#99999{Enter}');
+      await typeJump(user, 'later{Enter}');
+      expect(screen.getByText(msg('transcript.notice.jumpUnreadable'))).toBeInTheDocument();
+      await typeJump(user, '#99999{Enter}');
       await waitFor(() => {
-        expect(onNotice).toHaveBeenCalledWith('No event found for that jump');
+        expect(onNotice).toHaveBeenCalledWith(msg('transcript.notice.noJump'));
       });
     });
 
@@ -640,18 +750,18 @@ describe('TranscriptViewer', () => {
         });
       const { container, api } = setup(server, {}, { handlers: { searchTranscript: searchHandler } });
       await loaded(container);
-      await user.type(screen.getByRole('searchbox', { name: 'Search loaded events' }), 'needle');
+      await user.type(searchbox(), 'needle');
       await waitFor(() => {
         expect(visibleKeys(container)).toHaveLength(0);
       });
-      await user.click(screen.getByRole('button', { name: 'Search whole transcript' }));
-      const panel = await screen.findByRole('region', { name: 'Transcript search results' });
+      await user.keyboard('{Enter}');
+      const panel = await screen.findByRole('region', { name: msg('transcript.search.region') });
       expect(within(panel).getByText('needle')).toBeInTheDocument();
       const call = api.callsTo('searchTranscript')[0];
       expect(call?.query.get('session')).toBe(SID);
       expect(call?.query.get('q')).toBe('needle');
       expect(call?.query.get('agent')).toBe('main');
-      await user.click(within(panel).getByRole('button', { name: 'Jump to #900' }));
+      await user.click(within(panel).getByRole('button', { name: msg('transcript.search.jumpTo', { index: '900' }) }));
       await waitFor(() => {
         expect(container.querySelector('li[data-row-key="e900"]')).toHaveClass('is-target');
       });
@@ -668,9 +778,8 @@ describe('TranscriptViewer', () => {
         });
       const { container } = setup(server, {}, { handlers: { searchTranscript: searchHandler } });
       await loaded(container);
-      await user.type(screen.getByRole('searchbox', { name: 'Search loaded events' }), 'needle');
-      await user.click(screen.getByRole('button', { name: 'Search whole transcript' }));
-      await screen.findByRole('region', { name: 'Transcript search results' });
+      await user.type(searchbox(), 'needle{Enter}');
+      await screen.findByRole('region', { name: msg('transcript.search.region') });
       expect(screen.queryByText('stale answer')).toBeNull();
     });
 
@@ -692,13 +801,11 @@ describe('TranscriptViewer', () => {
       };
       const { container } = setup(server, {}, { handlers: { searchTranscript: searchHandler } });
       await loaded(container);
-      const box = screen.getByRole('searchbox', { name: 'Search loaded events' });
-      await user.type(box, 'one');
-      await user.click(screen.getByRole('button', { name: 'Search whole transcript' }));
+      const box = searchbox();
+      await user.type(box, 'one{Enter}');
       await user.clear(box);
-      await user.type(box, 'two');
-      await user.click(screen.getByRole('button', { name: 'Search whole transcript' }));
-      const panel = await screen.findByRole('region', { name: 'Transcript search results' });
+      await user.type(box, 'two{Enter}');
+      const panel = await screen.findByRole('region', { name: msg('transcript.search.region') });
       await waitFor(() => {
         expect(panel).toHaveTextContent('answer for two');
       });
@@ -710,18 +817,28 @@ describe('TranscriptViewer', () => {
       expect(panel).toHaveTextContent('answer for two');
     });
 
-    it('says the monitor is busy and returns focus to the search button on close', async () => {
+    it('says the monitor is busy and returns focus to the search box on close', async () => {
       const user = userEvent.setup();
       const server = makeServer(makeTranscript(20));
       const { container } = setup(server, {}, { handlers: { searchTranscript: () => errorResponse('search_busy') } });
       await loaded(container);
-      await user.type(screen.getByRole('searchbox', { name: 'Search loaded events' }), 'needle');
-      const button = screen.getByRole('button', { name: 'Search whole transcript' });
-      await user.click(button);
-      expect(await screen.findByText('Another search is running; try again in a moment')).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Close search results' }));
-      expect(screen.queryByRole('region', { name: 'Transcript search results' })).toBeNull();
-      expect(button).toHaveFocus();
+      await user.type(searchbox(), 'needle{Enter}');
+      expect(await screen.findByText(msg('transcript.search.busy'))).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: msg('transcript.search.close') }));
+      expect(screen.queryByRole('region', { name: msg('transcript.search.region') })).toBeNull();
+      expect(searchbox()).toHaveFocus();
+    });
+
+    it('searches from the overflow menu with the text in the box', async () => {
+      const user = userEvent.setup();
+      const server = makeServer(makeTranscript(20));
+      const { container, api } = setup(server);
+      await loaded(container);
+      await user.type(searchbox(), 'needle');
+      const menu = await openMenu(user, 'transcript.toolbar.more');
+      await user.click(within(menu).getByRole('button', { name: msg('transcript.toolbar.searchWhole') }));
+      await screen.findByRole('region', { name: msg('transcript.search.region') });
+      expect(api.callsTo('searchTranscript')[0]?.query.get('q')).toBe('needle');
     });
   });
 
@@ -739,6 +856,131 @@ describe('TranscriptViewer', () => {
         expect(container.querySelector('details')).not.toBeNull();
       });
       expect(container.querySelector('details')).not.toHaveAttribute('open');
+    });
+  });
+
+  describe('the error breakdown of the session', () => {
+    const errors = { thisAgent: 0, subagents: 1, errorsTabHref: '/sessions/s1?tab=errors' };
+
+    it('says how many errors are in this agent and how many in subagents, with a link to the Errors tab', async () => {
+      const { container } = setup(makeServer(makeTranscript(8)), { sessionErrors: errors });
+      await loaded(container);
+      expect(screen.getByText(msg('transcript.errors.breakdown', { thisAgent: 0, subagents: 1 }))).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: msg('transcript.errors.viewAll') })).toHaveAttribute(
+        'href',
+        errors.errorsTabHref,
+      );
+    });
+
+    it('is not shown when the page passes no counts', async () => {
+      const { container } = setup(makeServer(makeTranscript(8)));
+      await loaded(container);
+      expect(screen.queryByRole('link', { name: msg('transcript.errors.viewAll') })).toBeNull();
+    });
+  });
+
+  describe('shortcuts', () => {
+    function Registered() {
+      const { shortcuts } = useShortcutRegistry();
+      return (
+        <ul aria-label="registered">
+          {shortcuts.map((shortcut) => (
+            <li key={shortcut.key} data-key={shortcut.key}>
+              {shortcut.description}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    it('registers the slash, f, [ and ] keys with a description each, in the shortcuts registry', () => {
+      const instance = makeInstance();
+      const api = createFakeApi({ instance: () => instance, transcriptWindow: makeServer(makeTranscript(4)).handler });
+      renderWithIntl(
+        <>
+          <Registered />
+          <TranscriptViewer sessionId={SID} agentId="main" />
+        </>,
+        {
+          api,
+          instance,
+          live: true,
+          wrap: (children) => <ShortcutRegistryProvider>{children}</ShortcutRegistryProvider>,
+        },
+      );
+      const list = screen.getByRole('list', { name: 'registered' });
+      const descriptions = new Map(
+        Array.from(list.querySelectorAll('li')).map((li) => [li.dataset['key'] ?? '', li.textContent]),
+      );
+      expect(descriptions.get('/')).toBe(msg('transcript.shortcut.search'));
+      expect(descriptions.get('f')).toBe(msg('transcript.shortcut.follow'));
+      expect(descriptions.get(']')).toBe(msg('transcript.shortcut.nextError'));
+      expect(descriptions.get('[')).toBe(msg('transcript.shortcut.prevError'));
+    });
+
+    it('takes the keys away when the viewer unmounts', () => {
+      const instance = makeInstance();
+      const api = createFakeApi({ instance: () => instance, transcriptWindow: makeServer(makeTranscript(4)).handler });
+      const rendered = renderWithIntl(
+        <>
+          <Registered />
+          <TranscriptViewer sessionId={SID} agentId="main" />
+        </>,
+        {
+          api,
+          instance,
+          live: true,
+          wrap: (children) => <ShortcutRegistryProvider>{children}</ShortcutRegistryProvider>,
+        },
+      );
+      expect(screen.getByRole('list', { name: 'registered' }).querySelectorAll('li')).toHaveLength(4);
+      rendered.rerender(<Registered />);
+      expect(screen.getByRole('list', { name: 'registered' }).querySelectorAll('li')).toHaveLength(0);
+    });
+  });
+
+  describe('Vietnamese', () => {
+    it('words the toolbar, the count line and the states in Vietnamese', async () => {
+      const { container } = setup(makeServer(makeTranscript(8)), {}, { locale: 'vi' });
+      await loaded(container);
+      expect(
+        screen.getByRole('switch', { name: msg('transcript.toolbar.follow', undefined, 'vi') }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          msg('transcript.count', { visible: 6, loaded: 6, errors: 0, first: '0', last: '7', total: 8 }, 'vi'),
+        ),
+      ).toBeInTheDocument();
+      expect(container.querySelector('.tr-kind')).not.toBeNull();
+    });
+
+    it('words the empty state in Vietnamese', async () => {
+      setup(makeServer([]), {}, { locale: 'vi' });
+      expect(await screen.findByText(msg('transcript.empty', undefined, 'vi'))).toBeInTheDocument();
+    });
+  });
+
+  describe('accessibility', () => {
+    it('has no axe violation with the toolbar, an open tool row and the Show popover (en and vi)', async () => {
+      for (const locale of ['en', 'vi'] as const) {
+        const user = userEvent.setup();
+        const entries = [
+          { i: 0, t: iso(0), k: 'say' as const, text: 'hello' },
+          ...toolPair(1, 'Bash'),
+          ...toolPair(3, 'Read', true, 'failed read'),
+        ];
+        const { container, unmount } = setup(makeServer(entries), {}, { locale });
+        await loaded(container);
+        await user.click(container.querySelector<HTMLElement>('li[data-row-key="e1"] summary')!);
+        if (locale === 'en') await openMenu(user, 'transcript.toolbar.show');
+        // color contrast needs layout, which the test environment does not have; the contrast gate is lib/tokens-contrast.test.ts
+        const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+        expect(
+          result.violations.map((violation) => violation.id),
+          locale,
+        ).toEqual([]);
+        unmount();
+      }
     });
   });
 });

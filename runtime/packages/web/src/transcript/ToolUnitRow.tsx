@@ -4,8 +4,8 @@ import { ClampedText } from '../components/ClampedText.tsx';
 import { CopyButton } from '../components/CopyButton.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { TagBadge, type Tone } from '../components/TagBadge.tsx';
-import { fmtDuration } from '../lib/format.ts';
-import { toolDurationSec, unitSig, type Unit } from '../lib/timeline-model.ts';
+import { useFormat, useT } from '../i18n/context.ts';
+import { toolDurationSec, unitSig, type Unit, type UnitStatus } from '../lib/timeline-model.ts';
 import { EntryIndexButton, EntryTime } from './TranscriptRow.tsx';
 
 export interface ToolUnitRowProps {
@@ -41,11 +41,11 @@ export function prettyInput(input: string): string {
   }
 }
 
-const PILL: Record<'active' | 'completed' | 'failed', { tone: Tone; word: string }> = {
-  active: { tone: 'running', word: 'running' },
-  completed: { tone: 'ok', word: 'ok' },
-  failed: { tone: 'failed', word: 'failed' },
-};
+const PILL = {
+  active: { tone: 'running', word: 'transcript.tool.status.active' },
+  completed: { tone: 'ok', word: 'transcript.tool.status.completed' },
+  failed: { tone: 'failed', word: 'transcript.tool.status.failed' },
+} as const satisfies Record<UnitStatus, { tone: Tone; word: `transcript.tool.status.${UnitStatus}` }>;
 
 function ToolUnitRowView({
   unit,
@@ -59,13 +59,17 @@ function ToolUnitRowView({
   isTarget,
   nowMs,
 }: ToolUnitRowProps) {
+  const t = useT();
+  const format = useFormat();
   const { ev, result, key } = unit;
   const status = unit.status ?? 'active';
   const seconds = toolDurationSec(unit, nowMs);
   const pill = PILL[status];
-  const pillText = seconds === null ? pill.word : `${pill.word} ${fmtDuration(seconds)}`;
+  const word = t(pill.word);
+  const pillText =
+    seconds === null ? word : t('transcript.tool.statusTime', { status: word, time: format.duration(seconds) });
   const failed = status === 'failed';
-  const className = `tr tr--tool${isTarget ? ' is-target' : ''}`;
+  const className = `tr tr--tool${failed ? ' tr--error' : ''}${isTarget ? ' is-target' : ''}`;
   return (
     <li className={className} id={`row-${key}`} data-row-key={key} hidden={hidden} tabIndex={-1}>
       <details
@@ -76,20 +80,24 @@ function ToolUnitRowView({
           if (next !== open) onOpenChange(key, next);
         }}
       >
-        <summary className="tu-summary">
-          <Icon name="tool" />
+        <summary className="tu-summary" aria-expanded={open}>
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} className="tu-chevron" />
           <TagBadge tone={pill.tone} icon={failed ? 'alert' : undefined}>
             {pillText}
           </TagBadge>
-          <span className="tu-name">{ev.name ?? 'tool'}</span>
-          <span className="tu-line muted">{ev.summary ?? ''}</span>
-          <EntryIndexButton entry={ev} />
+          <span className="tu-name">{ev.name ?? t('transcript.tool.unnamed')}</span>
+          <span className="tu-line muted" title={ev.summary}>
+            {ev.summary ?? ''}
+          </span>
+          <span className="tr-index muted small">{`#${String(ev.i)}`}</span>
           <EntryTime entry={ev} />
         </summary>
         <div className="tu-body">
           <div className="tu-actions">
-            <CopyButton text={ev.input ?? ''} label="Copy tool input" compact />
-            {ev.id === undefined ? null : <CopyButton text={ev.id} label="Copy tool id" compact />}
+            {/* The summary is one control; a button inside it would nest controls, so the index copy button lives here. */}
+            <EntryIndexButton entry={ev} />
+            <CopyButton text={ev.input ?? ''} label={t('transcript.tool.copyInput')} compact />
+            {ev.id === undefined ? null : <CopyButton text={ev.id} label={t('transcript.tool.copyId')} compact />}
           </div>
           {ev.input === undefined || ev.input === '' ? null : (
             <ClampedText
@@ -102,7 +110,9 @@ function ToolUnitRowView({
           )}
           {result === null ? null : (
             <div className={failed ? 'tu-result tu-result--err' : 'tu-result'}>
-              <div className="tu-result__label small">{failed ? 'Result: error' : 'Result'}</div>
+              <div className="tu-result__label small">
+                {failed ? t('transcript.tool.resultError') : t('transcript.tool.result')}
+              </div>
               <ClampedText
                 id={`${key}-result`}
                 text={result.text ?? ''}

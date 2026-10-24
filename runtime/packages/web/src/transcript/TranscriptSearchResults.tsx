@@ -1,11 +1,13 @@
 import type { TranscriptSearchResponse } from '@mcs/shared';
 import { Fragment, useId, type ReactNode } from 'react';
 
-import type { ApiError } from '../data/api-errors.ts';
 import { Button } from '../components/Button.tsx';
 import { Disclosure } from '../components/Disclosure.tsx';
-import { fmtClock, fmtMB } from '../lib/format.ts';
-import { ROW_LABELS } from './TranscriptRow.tsx';
+import { describeApiError, type ApiError } from '../data/api-errors.ts';
+import { useFormat, useT } from '../i18n/context.ts';
+import { ServerText } from '../i18n/ServerText.tsx';
+import type { MessageKey } from '../i18n/types.ts';
+import { ROW_LABEL_KEYS } from './TranscriptRow.tsx';
 
 export interface TranscriptSearchResultsProps {
   status: 'loading' | 'error' | 'ready';
@@ -15,6 +17,13 @@ export interface TranscriptSearchResultsProps {
   onJump: (index: number) => void;
   onClose: () => void;
 }
+
+const STOPPED_KEYS = {
+  complete: 'transcript.search.stopped.complete',
+  match_limit: 'transcript.search.stopped.match_limit',
+  time_budget: 'transcript.search.stopped.time_budget',
+  cancelled: 'transcript.search.stopped.cancelled',
+} as const satisfies Record<TranscriptSearchResponse['coverage']['stoppedBy'], MessageKey>;
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -36,12 +45,14 @@ export function highlight(snippet: string, q: string): ReactNode[] {
 }
 
 function Body({ response, onJump }: { response: TranscriptSearchResponse; onJump: (index: number) => void }) {
+  const t = useT();
+  const format = useFormat();
   const coverageId = useId();
   const { coverage, matches } = response;
   return (
     <>
       {matches.length === 0 ? (
-        <p className="tv-search__empty">No matches in the searched part of the transcript.</p>
+        <p className="tv-search__empty">{t('transcript.search.empty')}</p>
       ) : (
         <ul className="tv-hits">
           {matches.map((match) => (
@@ -49,15 +60,15 @@ function Body({ response, onJump }: { response: TranscriptSearchResponse; onJump
               <button
                 type="button"
                 className="tv-hit"
-                aria-label={`Jump to #${String(match.i)}`}
+                aria-label={t('transcript.search.jumpTo', { index: String(match.i) })}
                 onClick={() => {
                   onJump(match.i);
                 }}
               >
                 <span className="tv-hit__index mono">{`#${String(match.i)}`}</span>
-                <span className="tv-hit__time muted">{fmtClock(match.t)}</span>
+                <span className="tv-hit__time muted">{format.clock(match.t)}</span>
                 <span className="tv-hit__kind">
-                  {ROW_LABELS[match.k]}
+                  {t(ROW_LABEL_KEYS[match.k])}
                   {match.name === null ? '' : ` ${match.name}`}
                 </span>
                 <span className="tv-hit__snippet">
@@ -70,18 +81,30 @@ function Body({ response, onJump }: { response: TranscriptSearchResponse; onJump
           ))}
         </ul>
       )}
-      {response.truncated ? <p className="small">{`Showing the first ${String(matches.length)} matches`}</p> : null}
-      <p className="small muted">{coverage.note}</p>
-      {response.complete ? null : (
-        <p className="small tv-search__warn">Not every part of the transcript was searched</p>
-      )}
-      <Disclosure id={coverageId} label="Coverage details">
+      {response.truncated ? (
+        <p className="small">{t('transcript.search.truncated', { count: matches.length })}</p>
+      ) : null}
+      <ServerText as="p" className="small muted">
+        {coverage.note}
+      </ServerText>
+      {response.complete ? null : <p className="small tv-search__warn">{t('transcript.search.incomplete')}</p>}
+      <Disclosure id={coverageId} label={t('transcript.search.coverage')}>
         <ul className="small muted">
-          <li>{`Files scanned: ${String(coverage.filesScanned)} of ${String(coverage.filesInScope)}`}</li>
-          <li>{`Scanned: ${fmtMB(coverage.bytesScanned)} of ${fmtMB(coverage.bytesInScope)}`}</li>
-          <li>{`Not indexed yet: ${fmtMB(coverage.bytesNotIndexed)}`}</li>
-          <li>{`Entries scanned: ${String(coverage.entriesScanned)}`}</li>
-          <li>{`Stopped by: ${coverage.stoppedBy} after ${String(coverage.elapsedMs)} ms`}</li>
+          <li>{t('transcript.search.files', { scanned: coverage.filesScanned, total: coverage.filesInScope })}</li>
+          <li>
+            {t('transcript.search.bytes', {
+              scanned: format.bytes(coverage.bytesScanned),
+              total: format.bytes(coverage.bytesInScope),
+            })}
+          </li>
+          <li>{t('transcript.search.notIndexed', { size: format.bytes(coverage.bytesNotIndexed) })}</li>
+          <li>{t('transcript.search.entries', { count: coverage.entriesScanned })}</li>
+          <li>
+            {t('transcript.search.stoppedBy', {
+              reason: t(STOPPED_KEYS[coverage.stoppedBy]),
+              ms: coverage.elapsedMs,
+            })}
+          </li>
         </ul>
       </Disclosure>
     </>
@@ -90,24 +113,28 @@ function Body({ response, onJump }: { response: TranscriptSearchResponse; onJump
 
 /** The results of a whole-transcript search (04-ui.md 4.4.3 step 9): honest about what was and was not searched. */
 export function TranscriptSearchResults({ status, response, error, onJump, onClose }: TranscriptSearchResultsProps) {
+  const t = useT();
+  const detail = describeApiError(error ?? undefined, t);
   return (
-    <div className="tv-search" role="region" aria-label="Transcript search results">
+    <div className="tv-search" role="region" aria-label={t('transcript.search.region')}>
       <div className="tv-search__head">
-        <h3 className="tv-search__title">Search results</h3>
-        <Button variant="quiet" icon="x" aria-label="Close search results" onClick={onClose}>
-          Close
+        <h3 className="tv-search__title">{t('transcript.search.title')}</h3>
+        <Button variant="quiet" icon="x" aria-label={t('transcript.search.close')} onClick={onClose}>
+          {t('common.close')}
         </Button>
       </div>
       {status === 'loading' ? (
         <p role="status" aria-busy="true">
-          Searching the transcript...
+          {t('transcript.search.loading')}
         </p>
       ) : null}
       {status === 'error' ? (
         <p role="status">
           {error?.info.code === 'search_busy'
-            ? 'Another search is running; try again in a moment'
-            : `Search failed: ${error?.message ?? 'unknown error'}`}
+            ? t('transcript.search.busy')
+            : detail === undefined
+              ? t('transcript.search.failedPlain')
+              : t('transcript.search.failed', { detail })}
         </p>
       ) : null}
       {status === 'ready' && response !== null ? <Body response={response} onJump={onJump} /> : null}

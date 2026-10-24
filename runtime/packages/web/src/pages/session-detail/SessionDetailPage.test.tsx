@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Route, Routes, useLocation, useNavigationType } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ShortcutRegistryProvider } from '../../state/shortcuts-registry.tsx';
 import { createToastStore, ToastStoreContext } from '../../state/toast-store.ts';
 import { createFakeApi, errorResponse, type FakeApi, type FakeHandlers } from '../../test/fake-api.ts';
 import {
@@ -64,10 +65,12 @@ function renderDetail(setup: Setup = {}) {
     ...setup.handlers,
   });
   const wrap = (children: ReactNode): ReactNode => (
-    <ToastStoreContext value={setup.toasts ?? null}>
-      <Probe />
-      {children}
-    </ToastStoreContext>
+    <ShortcutRegistryProvider>
+      <ToastStoreContext value={setup.toasts ?? null}>
+        <Probe />
+        {children}
+      </ToastStoreContext>
+    </ShortcutRegistryProvider>
   );
   const rendered = renderWithProviders(
     <Routes>

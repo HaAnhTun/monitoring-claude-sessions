@@ -14,19 +14,10 @@ export const LITERAL_BASELINE: readonly string[] = [
   // @wp-begin WP-113
   // @wp-end WP-113
   // @wp-begin WP-114
-  'app/routes.tsx',
-  'lib/sessions-view.ts',
-  'shell/AppShell.tsx',
-  'shell/InstanceChangedNotice.tsx',
-  'shell/Sidebar.tsx',
-  'shell/SidebarNav.tsx',
-  'shell/SidebarSessionList.tsx',
-  'shell/SkipLinks.tsx',
   // @wp-end WP-114
   // @wp-begin WP-115
   // @wp-end WP-115
   // @wp-begin WP-116
-  'components/FilterBar.tsx',
   // @wp-end WP-116
   // @wp-begin WP-117
   'pages/sessions/ListChangedNotice.tsx',
@@ -49,18 +40,8 @@ export const LITERAL_BASELINE: readonly string[] = [
   'pages/session-detail/TimelineRow.tsx',
   // @wp-end WP-119
   // @wp-begin WP-120
-  'components/Markdown.tsx',
-  'transcript/PartialBanner.tsx',
-  'transcript/ResumeFollowButton.tsx',
-  'transcript/ToolUnitRow.tsx',
-  'transcript/TranscriptRow.tsx',
-  'transcript/TranscriptSearchResults.tsx',
-  'transcript/TranscriptToolbar.tsx',
-  'transcript/TranscriptViewer.tsx',
-  'transcript/useTranscriptWindow.ts',
   // @wp-end WP-120
   // @wp-begin WP-124
-  'app/usePageChrome.ts',
   'components/TokenSummary.tsx',
   'data/endpoints.ts',
   'lib/filters.ts',

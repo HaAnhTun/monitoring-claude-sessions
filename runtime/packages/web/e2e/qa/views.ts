@@ -3,7 +3,7 @@
 // writes new entries inside its own marked block below, with ids that no base view and no other block uses.
 import type { Page as BrowserPage } from '@playwright/test';
 
-import type { Page, SessionSummary } from '@mcs/shared';
+import type { InstanceInfo, Page, SessionSummary } from '@mcs/shared';
 
 import { iso, makeSession, makeState } from '../../src/test/fixtures/index.ts';
 import { fixtureId, type FixtureApi, type FixtureState } from './fixture-api.ts';
@@ -138,6 +138,32 @@ export const VIEWS: readonly ViewSpec[] = [
   // @wp-begin WP-65
   // @wp-end WP-65
   // @wp-begin WP-66
+  {
+    id: 'tasks-empty',
+    path: '/tasks',
+    mode: 'fixture',
+    state: 'empty',
+    wait: 'main .state--empty',
+  },
+  {
+    id: 'analytics-no-trend',
+    path: '/analytics',
+    mode: 'fixture',
+    wait: 'main .metric-tiles',
+    // The instance is read once at boot, so the fake answer is changed and the page is loaded again.
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const instance = fixture.fake.handlers.instance;
+      if (instance === undefined) throw new Error('the fixture API has no instance answer');
+      fixture.fake.handlers.instance = async (query, request) => {
+        const body = (await instance(query, request)) as InstanceInfo;
+        return { ...body, features: { ...body.features, usageTrend: false } };
+      };
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.locator('main .metric-tiles').waitFor({ state: 'visible', timeout: 20_000 });
+      if ((await page.locator('main .trend').count()) !== 0) throw new Error('the trend charts are drawn without the flag');
+    },
+  },
   // @wp-end WP-66
   // @wp-begin WP-67
   // @wp-end WP-67
@@ -342,38 +368,40 @@ export const VIEWS: readonly ViewSpec[] = [
     wait: 'main .data-table, main .data-cards',
     setup: async ({ page, fixture }) => {
       if (fixture === null) return;
-      const states: Parameters<typeof makeState>[0][] = [
-        'working',
-        'waiting_tool',
-        'turn_ended',
-        'completed',
-        'failed',
-        'waiting_input',
-        'stale',
-      ];
+      // The rows of the default fixture list (every one is valid for the API schemas), repeated with new ids, labels and times.
+      const { fixtureSessions } = await import('./fixture-api.ts');
+      const base = fixtureSessions();
       fixture.fake.handlers.listSessions = (): Page<SessionSummary> => ({
-        items: Array.from({ length: 1000 }, (_unused, i) =>
-          makeSession({
-            id: fixtureId(100 + i),
+        items: Array.from({ length: 1000 }, (_unused, i) => {
+          const row = base[i % base.length] ?? makeSession();
+          return {
+            ...row,
+            // fixtureId runs out of eight hex digits after about 250 rows
+            id: `${(0x2a000000 + i).toString(16)}-0000-4000-8000-${String(i + 100).padStart(12, '0')}`,
             seq: 100 + i,
-            label: `Nightly job ${String(i + 1)}`,
+            label: i < base.length ? row.label : `${row.label} ${String(i + 1)}`,
             startedAt: iso(-(90 + i) * 60),
             lastActivityAt: iso(-30 - i * 40),
-            errorCount: i % 9 === 0 ? 1 : 0,
-            state: makeState(states[i % states.length] ?? 'working'),
-          }),
-        ),
+          };
+        }),
         nextCursor: null,
         asOfSeq: 10,
         total: 1000,
         totalIsLowerBound: false,
         limit: 100,
       });
-      await page.waitForFunction(
-        `document.querySelectorAll('main tbody tr, main .data-card').length >= 1000`,
-        undefined,
-        { timeout: 30_000 },
-      );
+      // A locator waits without evaluating text as script, which the Content Security Policy of the page refuses.
+      const rows = page.locator('main tbody tr, main .data-card');
+      const problems: string[] = [];
+      page.on('console', (message) => {
+        if (message.type() === 'error') problems.push(message.text());
+      });
+      try {
+        await rows.nth(999).waitFor({ state: 'attached', timeout: 30_000 });
+      } catch {
+        const seen = String(await rows.count());
+        throw new Error(`the list has ${seen} rows, not 1000; console: ${problems.slice(-3).join(' | ')}`);
+      }
     },
   },
   // @wp-end WP-116

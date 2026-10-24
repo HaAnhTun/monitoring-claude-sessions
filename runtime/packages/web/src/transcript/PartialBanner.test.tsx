@@ -1,24 +1,33 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { fmtMB } from '../lib/format.ts';
+import { createFormatters } from '../i18n/format.ts';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
 import { PartialBanner } from './PartialBanner.tsx';
 
 describe('PartialBanner', () => {
   it('says how much is not indexed yet', () => {
-    render(<PartialBanner partial pendingBytes={3_500_000} />);
+    renderWithIntl(<PartialBanner partial pendingBytes={3_500_000} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      `Indexing this transcript: ${fmtMB(3_500_000)} not indexed yet; the newest entries may be missing`,
+      msg('transcript.partial', { size: createFormatters('en').bytes(3_500_000) }),
+    );
+  });
+
+  it('words the size in the language of the page', () => {
+    renderWithIntl(<PartialBanner partial pendingBytes={3_500_000} />, { locale: 'vi' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      msg('transcript.partial', { size: createFormatters('vi').bytes(3_500_000) }, 'vi'),
     );
   });
 
   it('renders nothing when the window is complete', () => {
-    const { container } = render(<PartialBanner partial={false} pendingBytes={0} />);
+    const { container } = renderWithIntl(<PartialBanner partial={false} pendingBytes={0} />);
     expect(container.childNodes).toHaveLength(0);
   });
 
   it('renders nothing when partial is set but no bytes are pending', () => {
-    const { container } = render(<PartialBanner partial pendingBytes={0} />);
+    const { container } = renderWithIntl(<PartialBanner partial pendingBytes={0} />);
     expect(container.childNodes).toHaveLength(0);
   });
 });

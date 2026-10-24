@@ -2,6 +2,7 @@
 // text nodes. No HTML string is ever built or parsed, so transcript text such as "<img onerror=...>" is shown literally.
 import { useMemo, useState } from 'react';
 
+import { useT } from '../i18n/context.ts';
 import { parseMarkdown } from '../lib/markdown.ts';
 import { MAX_EXPANDED_CHARS, clipText } from './ClampedText.tsx';
 import { CopyButton } from './CopyButton.tsx';
@@ -18,6 +19,7 @@ const LONG_BLOCK_LINES = 400;
 const SHORT_LINES = 200;
 
 function CodeBlock({ text }: { text: string }) {
+  const t = useT();
   const [all, setAll] = useState(false);
   const lines = text.split('\n');
   const long = lines.length > LONG_BLOCK_LINES;
@@ -28,11 +30,7 @@ function CodeBlock({ text }: { text: string }) {
       <pre className="md-pre">
         <code>{tooLong ? clipText(body, MAX_EXPANDED_CHARS) : body}</code>
       </pre>
-      {tooLong ? (
-        <span className="md-note muted small">
-          {`Text too long to show here (${String(body.length)} characters). Use Copy.`}
-        </span>
-      ) : null}
+      {tooLong ? <span className="md-note muted small">{t('common.textTooLong', { length: body.length })}</span> : null}
       <span className="md-code__actions">
         {long && !all ? (
           <button
@@ -42,10 +40,10 @@ function CodeBlock({ text }: { text: string }) {
               setAll(true);
             }}
           >
-            {`Show all ${String(lines.length)} lines`}
+            {t('transcript.markdown.showAll', { count: lines.length })}
           </button>
         ) : null}
-        <CopyButton text={text} label="Copy code" compact />
+        <CopyButton text={text} label={t('transcript.markdown.copyCode')} compact />
       </span>
     </>
   );
