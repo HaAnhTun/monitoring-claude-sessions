@@ -145,6 +145,15 @@ export type HttpAttempt =
   | { readonly ok: true; readonly reply: HttpReply }
   | { readonly ok: false; readonly reason: 'refused' | 'timeout' | 'too-large' | 'error' };
 
+/** A reply with its response headers (names in lower case; a header that repeats is joined with `, `). */
+export interface HttpFullReply extends HttpReply {
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+export type HttpFullAttempt =
+  | { readonly ok: true; readonly reply: HttpFullReply }
+  | { readonly ok: false; readonly reason: 'refused' | 'timeout' | 'too-large' | 'error' };
+
 const BASE_RE = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})$/;
 const URL_RE = /^(http:\/\/127\.0\.0\.1:[0-9]{1,5})(\/[^\s]*)$/;
 const HTTP_BODY_MAX_BYTES = 4 * 1024 * 1024;
@@ -166,6 +175,16 @@ export function httpGet(
   url: string,
   o: { readonly timeoutMs: number; readonly maxBytes?: number },
 ): Promise<HttpAttempt> {
+  return httpGetWithHeaders(url, o).then((attempt) =>
+    attempt.ok ? { ok: true, reply: { status: attempt.reply.status, body: attempt.reply.body } } : attempt,
+  );
+}
+
+/** `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`). Same limits and the same refusals. */
+export function httpGetWithHeaders(
+  url: string,
+  o: { readonly timeoutMs: number; readonly maxBytes?: number },
+): Promise<HttpFullAttempt> {
   return new Promise((resolve, reject) => {
     const match = URL_RE.exec(url);
     const base = match?.[1];
@@ -177,7 +196,7 @@ export function httpGet(
     const port = Number(BASE_RE.exec(base)?.[1] ?? '0');
     const maxBytes = o.maxBytes ?? HTTP_BODY_MAX_BYTES;
     let settled = false;
-    const finish = (attempt: HttpAttempt): void => {
+    const finish = (attempt: HttpFullAttempt): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -208,7 +227,14 @@ export function httpGet(
           chunks.push(chunk);
         });
         res.once('end', () => {
-          finish({ ok: true, reply: { status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') } });
+          const headers: Record<string, string> = {};
+          for (const [name, value] of Object.entries(res.headers)) {
+            if (value !== undefined) headers[name.toLowerCase()] = typeof value === 'string' ? value : value.join(', ');
+          }
+          finish({
+            ok: true,
+            reply: { status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8'), headers },
+          });
         });
         res.once('error', () => {
           finish({ ok: false, reason: 'error' });

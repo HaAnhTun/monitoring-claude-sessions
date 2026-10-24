@@ -4,6 +4,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type * as NodeSqlite from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
 
 import { DbError, type DbConstraintKind, type DbErrorCode } from './errors.ts';
 
@@ -307,7 +308,17 @@ function undoQuietly(raw: NodeSqlite.DatabaseSync, statements: readonly string[]
 /** Opens a connection. `timeoutMs` is the busy timeout: how long SQLite waits for a lock before it answers SQLITE_BUSY. */
 export function openSqlite(
   path: string,
-  opts: { readonly: boolean; fileMustExist: boolean; timeoutMs: number },
+  opts: {
+    readonly: boolean;
+    fileMustExist: boolean;
+    timeoutMs: number;
+    /**
+     * Read-only only: open the file as `immutable`. SQLite then creates and reads no `-wal` or `-shm` file, so a read leaves
+     * nothing behind, but it assumes that no process writes the file meanwhile and that no committed frames wait in a
+     * `-wal` file. The caller guarantees both (the `DbReader` of a stopped instance).
+     */
+    immutable?: boolean;
+  },
 ): SqlDriver {
   const { DatabaseSync: Database, backup } = loadSqlite();
   // `node:sqlite` has no `fileMustExist`: a read-write open creates a missing file. The check below refuses it first,
@@ -318,7 +329,9 @@ export function openSqlite(
   // Linux opens a folder read-only and only the first read fails (SQLITE_IOERR): a folder is refused here with the
   // SQLITE_CANTOPEN that Windows gives natively, so the error code is the same on every host (WP-87, Docker run).
   if (path !== ':memory:' && statSync(path, { throwIfNoEntry: false })?.isDirectory() === true) throw fromErrcode(14);
-  const raw = guard(() => new Database(path, { readOnly: opts.readonly, timeout: opts.timeoutMs }));
+  const location =
+    opts.immutable === true && opts.readonly && path !== ':memory:' ? `${pathToFileURL(path).href}?immutable=1` : path;
+  const raw = guard(() => new Database(location, { readOnly: opts.readonly, timeout: opts.timeoutMs }));
   // Least recently used first. The row type `R` of `prepare<R>` is the caller's declaration (03 4.5), so the cache keeps
   // `Stmt<unknown>` and `prepare` hands it out under the row type the caller named.
   const cache = new Map<string, Stmt<unknown>>();

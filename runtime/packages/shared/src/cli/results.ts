@@ -372,6 +372,8 @@ export type SessionTranscriptTail = z.infer<typeof SessionTranscriptTailSchema>;
 export const SessionsShowResultSchema = z.strictObject({
   task: z.string(),
   mode: ReaderModeSchema,
+  /** The change-log head the session was read at. */
+  asOfSeq: CountSchema,
   session: SessionDetailSchema,
   agents: z.array(AgentNodeSchema),
   /** More agents exist than `agents` holds. */

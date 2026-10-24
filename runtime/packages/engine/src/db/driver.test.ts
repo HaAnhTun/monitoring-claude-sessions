@@ -590,6 +590,59 @@ describe('SqlDriver (03 4.5)', () => {
   });
 });
 
+describe('openSqlite: immutable (WP-61, the DbReader of a stopped instance)', () => {
+  /** A WAL database that was closed cleanly: only `db.sqlite` is left next to it. */
+  function closedWalDb(): string {
+    const { path, open } = fileDb();
+    const db = open();
+    db.pragma('journal_mode = WAL');
+    db.exec('CREATE TABLE t (x INTEGER) STRICT');
+    db.prepare('INSERT INTO t VALUES (7)').run();
+    db.close();
+    expect(readdirSync(dirname(path)).filter((name) => name.startsWith('db.sqlite'))).toEqual(['db.sqlite']);
+    return path;
+  }
+
+  const files = (path: string): string[] => readdirSync(dirname(path)).filter((name) => name.startsWith('db.sqlite'));
+
+  it('reads the file and leaves no -wal or -shm file behind, which a plain read-only open does create', () => {
+    const path = closedWalDb();
+    const reader = openSqlite(path, { readonly: true, fileMustExist: true, timeoutMs: 1000, immutable: true });
+    expect(reader.prepare('SELECT x FROM t').get()).toEqual({ x: 7 });
+    expect(reader.path).toBe(path);
+    reader.close();
+    expect(files(path)).toEqual(['db.sqlite']);
+    const plain = openSqlite(path, { readonly: true, fileMustExist: true, timeoutMs: 1000 });
+    expect(plain.prepare('SELECT x FROM t').get()).toEqual({ x: 7 });
+    plain.close();
+    expect(files(path).length).toBeGreaterThan(1);
+  });
+
+  it('refuses a write, and is ignored by a connection that is not read-only', () => {
+    const path = closedWalDb();
+    const reader = openSqlite(path, { readonly: true, fileMustExist: true, timeoutMs: 1000, immutable: true });
+    expect(() => {
+      reader.exec('INSERT INTO t VALUES (8)');
+    }).toThrow();
+    reader.close();
+    const writer = openSqlite(path, { readonly: false, fileMustExist: true, timeoutMs: 1000, immutable: true });
+    writer.exec('INSERT INTO t VALUES (9)');
+    expect(writer.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 2 });
+    writer.close();
+  });
+
+  it('a path with characters of a URL is opened as the file it names', () => {
+    const { path: base } = fileDb();
+    const odd = join(dirname(base), 'odd name #1 %41 &x.sqlite');
+    const db = openSqlite(odd, { readonly: false, fileMustExist: false, timeoutMs: 1000 });
+    db.exec('CREATE TABLE t (x INTEGER) STRICT');
+    db.close();
+    const reader = openSqlite(odd, { readonly: true, fileMustExist: true, timeoutMs: 1000, immutable: true });
+    expect(reader.prepare('SELECT count(*) AS n FROM t').get()).toEqual({ n: 0 });
+    reader.close();
+  });
+});
+
 describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, ADR 0064, I-14)', () => {
   // Module names are assembled from parts: scripts/check-deps.mjs scans source text with a regex and must not take the
   // text of a probe for a real import.

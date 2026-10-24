@@ -48,6 +48,11 @@ export interface OpenInstanceDbOptions extends MigrationsLocation {
   runtimeVersion: string;
   /** Time source (default: the system clock). */
   clock?: Clock;
+  /**
+   * `readonly` only: read the file as it is, with no `-wal` or `-shm` file created or read (`openSqlite` `immutable`). Only for a
+   * database that no process has open and that has no committed frames in a `-wal` file; the `DbReader` checks both.
+   */
+  immutable?: boolean;
 }
 
 /** Boot exit code of the server for each way an open can fail (03 3.2; registry 7.3). `migration_unknown` counts as newer. */
@@ -166,6 +171,7 @@ export function openInstanceDb(o: OpenInstanceDbOptions): InstanceDb {
     readonly: o.mode === 'readonly',
     fileMustExist: o.mode !== 'serve',
     timeoutMs: BUSY_TIMEOUT_MS,
+    ...(o.mode === 'readonly' && o.immutable === true ? { immutable: true } : {}),
   });
   try {
     prepareConnection(driver, o, files, clock);
