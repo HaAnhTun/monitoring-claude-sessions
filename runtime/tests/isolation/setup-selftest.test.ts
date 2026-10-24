@@ -23,8 +23,13 @@ describe('twoInstances (setup self-test)', () => {
     expect(b.readState()).toMatchObject({ pid: b.pid, port: b.port, instanceId: b.instanceId });
     expect((await a.markerProcesses()).map((p) => p.pid)).toEqual([a.pid]);
     expect((await b.markerProcesses()).map((p) => p.pid)).toEqual([b.pid]);
-    // by slug the same processes are found
-    expect((await markerProcesses('a')).map((p) => p.pid)).toEqual([a.pid]);
+    // by slug the same process is found. The lookup is machine-wide and every isolation file (and other suites) names its
+    // first task 'a', so only the processes inside this pair's own repository count.
+    const slashed = (path: string): string => path.replaceAll(String.fromCharCode(92), '/').toLowerCase();
+    const bySlug = (await markerProcesses('a')).filter(
+      (p) => p.instanceDir !== null && slashed(p.instanceDir).startsWith(slashed(a.repo)),
+    );
+    expect(bySlug.map((p) => p.pid)).toEqual([a.pid]);
 
     await pair.teardown();
     await assertPortClosed(a.port);
