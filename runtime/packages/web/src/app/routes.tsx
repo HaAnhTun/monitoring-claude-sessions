@@ -1,32 +1,82 @@
-import { lazy, Suspense, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
+import type { InstanceInfo } from '@mcs/shared';
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useContext,
+  type ComponentType,
+  type LazyExoticComponent,
+  type ReactNode,
+} from 'react';
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router';
 
+import type { IconName } from '../components/icons.ts';
+import { useT } from '../i18n/context.ts';
+import type { MessageKey } from '../i18n/types.ts';
 import { NotFoundPage } from './NotFoundPage.tsx';
 import { PageSkeleton } from './PageSkeleton.tsx';
 import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
 import { usePageChrome } from './usePageChrome.ts';
 
-// Route table of 04-ui.md section 3.1. Every page is a placeholder until its work package registers the real component
+// Route table of ADR 0073 decision 2. Every page is a placeholder until its work package registers the real component
 // in `pageRegistry` below (one marked block per work package, entries only). Registered components load through
-// `lazyPage(() => import(...))`, so a block never needs an import line outside itself.
+// `lazyPage(() => import(...))`, so a block never needs an import line outside itself. The navigation of the shell is generated
+// from this table and the registry (`navItems`): a page that is not registered is not listed.
+
+export type PageKey =
+  'overview' | 'sessions' | 'sessionDetail' | 'activity' | 'tasks' | 'analytics' | 'search' | 'settings';
+
+/** Where an entry sits in the navigation: the main list, or the footer list below it (Settings). */
+export type NavGroup = 'main' | 'footer';
+
+/** The figure shown next to an entry. Tasks has none (ADR 0073 decision 3). */
+export type NavCountKey = 'sessions' | 'settings';
+
+export interface RouteNav {
+  icon: IconName;
+  group: NavGroup;
+  countKey?: NavCountKey;
+}
+
+export type RouteTitleKey = Extract<MessageKey, `route.${string}.title`>;
 
 export interface RouteSpec {
   key: PageKey;
   path: string;
-  title: string;
+  /** The page name: the heading, the document title and the label of its navigation entry. */
+  titleKey: RouteTitleKey;
+  /** Present when the page has a navigation entry. */
+  nav?: RouteNav;
 }
 
-export type PageKey = 'overview' | 'sessions' | 'sessionDetail' | 'activity' | 'tasks' | 'analytics' | 'settings';
-
 export const ROUTES = [
-  { key: 'overview', path: '/', title: 'Overview' },
-  { key: 'sessions', path: '/sessions', title: 'Sessions' },
-  { key: 'sessionDetail', path: '/sessions/:sessionId', title: 'Session' },
-  { key: 'activity', path: '/activity', title: 'Activity' },
-  { key: 'tasks', path: '/tasks', title: 'Tasks' },
-  { key: 'analytics', path: '/analytics', title: 'Analytics' },
-  { key: 'settings', path: '/settings', title: 'Settings' },
+  { key: 'overview', path: '/', titleKey: 'route.overview.title', nav: { icon: 'overview', group: 'main' } },
+  {
+    key: 'sessions',
+    path: '/sessions',
+    titleKey: 'route.sessions.title',
+    nav: { icon: 'sessions', group: 'main', countKey: 'sessions' },
+  },
+  { key: 'sessionDetail', path: '/sessions/:sessionId', titleKey: 'route.sessionDetail.title' },
+  { key: 'activity', path: '/activity', titleKey: 'route.activity.title', nav: { icon: 'activity', group: 'main' } },
+  { key: 'tasks', path: '/tasks', titleKey: 'route.tasks.title', nav: { icon: 'tasks', group: 'main' } },
+  {
+    key: 'analytics',
+    path: '/analytics',
+    titleKey: 'route.analytics.title',
+    nav: { icon: 'analytics', group: 'main' },
+  },
+  { key: 'search', path: '/search', titleKey: 'route.search.title', nav: { icon: 'search', group: 'main' } },
+  {
+    key: 'settings',
+    path: '/settings',
+    titleKey: 'route.settings.title',
+    nav: { icon: 'settings', group: 'footer', countKey: 'settings' },
+  },
 ] as const satisfies readonly RouteSpec[];
+
+/** The table typed as a plain list, for the code that reads `nav` of every entry. */
+const ROUTE_LIST: readonly RouteSpec[] = ROUTES;
 
 /** `shell` is the layout route (renders an Outlet); `legacyHashRedirect` runs before the routes (04-ui.md 3.3). */
 export type RegistryKey = PageKey | 'shell' | 'legacyHashRedirect';
@@ -58,7 +108,48 @@ export const pageRegistry: PageRegistry = {
   // @wp-end WP-67
 };
 
-function PlaceholderPage({ title }: { title: string }) {
+/** The registry of the router in this subtree: the navigation of the shell reads the pages that exist from it. */
+export const PageRegistryContext = createContext<PageRegistry>(pageRegistry);
+
+export function usePageRegistry(): PageRegistry {
+  return useContext(PageRegistryContext);
+}
+
+export interface NavItem {
+  key: PageKey;
+  to: string;
+  titleKey: RouteTitleKey;
+  icon: IconName;
+  group: NavGroup;
+  countKey?: NavCountKey;
+}
+
+/**
+ * The navigation entries: the routes that have `nav` metadata and a registered page, the main group first and the footer group
+ * after it, each in the order of the route table. The Search entry also needs an instance that searches all sessions
+ * (`features.transcriptSearch === 'instance'`); a page that is not registered, or an unknown instance, hides it.
+ */
+export function navItems(registry: PageRegistry, features: InstanceInfo['features'] | null): NavItem[] {
+  const items: NavItem[] = [];
+  for (const spec of ROUTE_LIST) {
+    const { nav } = spec;
+    if (nav === undefined || registry[spec.key] === undefined) continue;
+    if (spec.key === 'search' && features?.transcriptSearch !== 'instance') continue;
+    items.push({
+      key: spec.key,
+      to: spec.path,
+      titleKey: spec.titleKey,
+      icon: nav.icon,
+      group: nav.group,
+      ...(nav.countKey === undefined ? {} : { countKey: nav.countKey }),
+    });
+  }
+  return [...items.filter((item) => item.group === 'main'), ...items.filter((item) => item.group === 'footer')];
+}
+
+function PlaceholderPage({ spec }: { spec: RouteSpec }) {
+  const t = useT();
+  const title = t(spec.titleKey);
   const headingRef = usePageChrome(title);
   const { sessionId } = useParams();
   return (
@@ -71,7 +162,7 @@ function PlaceholderPage({ title }: { title: string }) {
           {sessionId}
         </p>
       )}
-      <p className="muted">This view is not built yet.</p>
+      <p className="muted">{t('route.placeholder')}</p>
     </section>
   );
 }
@@ -99,9 +190,7 @@ function PageRoute({ spec, registry }: { spec: RouteSpec; registry: PageRegistry
   const Page = registry[spec.key];
   return (
     <RouteErrorBoundary>
-      <Suspense fallback={<PageSkeleton />}>
-        {Page === undefined ? <PlaceholderPage title={spec.title} /> : <Page />}
-      </Suspense>
+      <Suspense fallback={<PageSkeleton />}>{Page === undefined ? <PlaceholderPage spec={spec} /> : <Page />}</Suspense>
     </RouteErrorBoundary>
   );
 }
@@ -109,7 +198,7 @@ function PageRoute({ spec, registry }: { spec: RouteSpec; registry: PageRegistry
 export function AppRoutes({ registry = pageRegistry }: { registry?: PageRegistry }) {
   const LegacyHashRedirect = registry.legacyHashRedirect;
   return (
-    <>
+    <PageRegistryContext value={registry}>
       {LegacyHashRedirect === undefined ? null : (
         <Suspense fallback={null}>
           <LegacyHashRedirect />
@@ -117,7 +206,7 @@ export function AppRoutes({ registry = pageRegistry }: { registry?: PageRegistry
       )}
       <Routes>
         <Route element={<ShellRoute registry={registry} />}>
-          {ROUTES.map((spec) => (
+          {ROUTE_LIST.map((spec) => (
             <Route key={spec.key} path={spec.path} element={<PageRoute spec={spec} registry={registry} />} />
           ))}
           <Route path="/health" element={<Navigate to="/settings?section=health" replace />} />
@@ -131,6 +220,6 @@ export function AppRoutes({ registry = pageRegistry }: { registry?: PageRegistry
           />
         </Route>
       </Routes>
-    </>
+    </PageRegistryContext>
   );
 }

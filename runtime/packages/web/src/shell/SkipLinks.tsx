@@ -1,41 +1,38 @@
 import type { MouseEvent } from 'react';
 
-import { usePrefs } from '../state/prefs-store.ts';
+import { useT } from '../i18n/context.ts';
+import { SESSION_LIST_ID, useShowSwitcher } from './SessionSwitcher.tsx';
 
 export const MAIN_ID = 'main';
-export const SESSION_LIST_ID = 'session-list';
+export { SESSION_LIST_ID };
 
 /**
- * "Skip to main content" and "Skip to session list" (04-ui.md 6.6 rule 2). The handler focuses the target and prevents the
- * default navigation, so the URL and the router state stay as they are (legacy kept the `#sid` hash).
+ * "Skip to main content", and on the session page "Skip to session switcher" while the switcher is on screen (04-ui.md 6.6 rule 2).
+ * The handler focuses the target and prevents the default navigation, so the URL and the router state stay as they are.
  */
 export function SkipLinks() {
-  const { prefs, setPref } = usePrefs();
+  const t = useT();
+  const hasSwitcher = useShowSwitcher();
 
   function skipTo(id: string) {
     return (event: MouseEvent<HTMLAnchorElement>): void => {
       event.preventDefault();
-      const target = document.getElementById(id);
-      if (target === null) return;
-      target.focus();
-      // In the narrow layout the session list is hidden while the menu is closed and cannot take focus: open it and retry.
-      if (document.activeElement !== target && id === SESSION_LIST_ID && prefs.navOpen !== true) {
-        setPref('navOpen', true);
-        requestAnimationFrame(() => {
-          document.getElementById(id)?.focus();
-        });
-      }
+      document.getElementById(id)?.focus();
     };
   }
 
+  // The hrefs are literals (the lint rule forbids computed ones): they must equal MAIN_ID and SESSION_LIST_ID, and the shell tests
+  // follow the links to the elements with those ids.
   return (
     <div className="skip-links">
       <a className="skip-links__link" href="#main" onClick={skipTo(MAIN_ID)}>
-        Skip to main content
+        {t('shell.skip.main')}
       </a>
-      <a className="skip-links__link" href="#session-list" onClick={skipTo(SESSION_LIST_ID)}>
-        Skip to session list
-      </a>
+      {hasSwitcher ? (
+        <a className="skip-links__link" href="#session-list" onClick={skipTo(SESSION_LIST_ID)}>
+          {t('shell.skip.switcher')}
+        </a>
+      ) : null}
     </div>
   );
 }

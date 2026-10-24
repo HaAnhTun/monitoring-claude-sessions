@@ -189,10 +189,92 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-113
   // @wp-begin WP-114
+  {
+    // The shell frame on the session page: the full sidebar with the session switcher (1440 px), the 56 px rail (1024 px) or the
+    // Menu bar (600 px). Shoot it at the three widths to see each layout mode.
+    id: 'shell-rail',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: HEADING,
+    params: detail,
+  },
+  {
+    // The navigation sheet: below 900 px the Menu bar is pressed and the sheet is open; at wider windows the sidebar or rail is
+    // the navigation and nothing is pressed.
+    id: 'shell-sheet',
+    path: '/sessions',
+    mode: 'live',
+    wait: '.sidebar-nav, .sidebar-menubar',
+    setup: async ({ page }) => {
+      const menu = page.locator('.sidebar-menubar button');
+      if ((await menu.count()) === 0) return;
+      await menu.click();
+      await page.locator('.sidebar[data-mode="sheet"]:not([hidden]) .sidebar-nav').waitFor({ state: 'visible' });
+    },
+  },
   // @wp-end WP-114
   // @wp-begin WP-115
   // @wp-end WP-115
   // @wp-begin WP-116
+  {
+    // One filter row, the "More filters" popover open over the list, and a removable chip for each hidden filter that is on
+    // (R-06). The query turns on filters that live in the popover (project, model, tokens). The fixture server does not filter,
+    // so the list stays drawn behind the popover. A page that still draws the V3 bar has no popover: nothing is opened then.
+    id: 'sessions-filters',
+    path: '/sessions',
+    mode: 'fixture',
+    query: 'project=billing-service&model=model-a&tokMin=5000&range=7d',
+    wait: 'main form[role="search"]',
+    setup: async ({ page }) => {
+      const trigger = page.locator('main .filter-bar__more .popover > button').first();
+      if ((await trigger.count()) === 0) return;
+      await trigger.click();
+      await page.locator('main .filter-bar__more .popover__panel').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // A thousand sessions in one list (the most the list ever holds, ADR 0038): a table at 1280 and 1024 px, a card list at 600 px.
+    // The fixture server answers with all of them at once; the shot is taken when every row is drawn.
+    id: 'sessions-many',
+    path: '/sessions',
+    mode: 'fixture',
+    wait: 'main .data-table, main .data-cards',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const states: Parameters<typeof makeState>[0][] = [
+        'working',
+        'waiting_tool',
+        'turn_ended',
+        'completed',
+        'failed',
+        'waiting_input',
+        'stale',
+      ];
+      fixture.fake.handlers.listSessions = (): Page<SessionSummary> => ({
+        items: Array.from({ length: 1000 }, (_unused, i) =>
+          makeSession({
+            id: fixtureId(100 + i),
+            seq: 100 + i,
+            label: `Nightly job ${String(i + 1)}`,
+            startedAt: iso(-(90 + i) * 60),
+            lastActivityAt: iso(-30 - i * 40),
+            errorCount: i % 9 === 0 ? 1 : 0,
+            state: makeState(states[i % states.length] ?? 'working'),
+          }),
+        ),
+        nextCursor: null,
+        asOfSeq: 10,
+        total: 1000,
+        totalIsLowerBound: false,
+        limit: 100,
+      });
+      await page.waitForFunction(
+        `document.querySelectorAll('main tbody tr, main .data-card').length >= 1000`,
+        undefined,
+        { timeout: 30_000 },
+      );
+    },
+  },
   // @wp-end WP-116
   // @wp-begin WP-117
   // @wp-end WP-117
@@ -201,6 +283,34 @@ export const VIEWS: readonly ViewSpec[] = [
   // @wp-begin WP-119
   // @wp-end WP-119
   // @wp-begin WP-120
+  {
+    // The transcript of the failing helper of the demo session (the session's only error belongs to this subagent): "Errors only" is
+    // on and the first error is the target row, so the toolbar, the red error border and the target outline show together. (The
+    // breakdown line "0 errors in this agent, 1 in subagents" needs the counts of the session page, WP-118.)
+    id: 'transcript-failing',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: '.tv-list .tr',
+    params: detail,
+    query: 'agent=agentqafailed001',
+    setup: async ({ page }) => {
+      await page.locator('.tv-controls [role="switch"]').first().click();
+      await page.locator('.tv-steps button').last().click();
+      await page.locator('.tv-list .tr--error.is-target').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The Show popover open over the transcript: kind chips, Newest first and the Tool select.
+    id: 'transcript-toolbar',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: '.tv-list .tr',
+    params: detail,
+    setup: async ({ page }) => {
+      await page.locator('.tv-menus .popover > button').first().click();
+      await page.locator('.tv-show').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
   // @wp-end WP-120
   // @wp-begin WP-121
   // @wp-end WP-121

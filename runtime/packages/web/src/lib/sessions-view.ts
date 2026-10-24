@@ -1,14 +1,12 @@
-// Session list grouping and filtering (logic half of legacy modules/sessions.js, 04 sections 4.4 and 10). Pure and
-// generic over the session and agent shapes: the real `SessionSummary` and `AgentNode` of @mcs/shared satisfy them.
+// Session grouping helpers of the shell and of the agent tree (04 section 4.4, ADR 0073 decision 4). Pure and generic over the
+// session and agent shapes: the real `SessionSummary` and `AgentNode` of @mcs/shared satisfy them. The words are catalogue keys
+// (`shell.*`); the `title` and `summary` strings of a group are English aliases for the consumers that are not converted yet.
 import type { LegacyState } from '@mcs/shared';
 
-import {
-  SIDEBAR_GROUPS,
-  legacyStateOf,
-  sidebarGroupOf,
-  type SidebarGroup,
-  type SidebarGroupId,
-} from './lifecycle-display.ts';
+import { formatMessage } from '../i18n/format-message.ts';
+import { enMessages } from '../i18n/messages/en.ts';
+import type { MessageKey, TFunction } from '../i18n/types.ts';
+import { legacyStateOf, sidebarGroupOf } from './lifecycle-display.ts';
 
 export const LAZY_AGENT_THRESHOLD = 30;
 export const AGENT_PAGE = 100;
@@ -43,60 +41,12 @@ export interface ViewAgent extends GroupableAgent {
   state: ViewState;
 }
 
-const lc = (v: string | null | undefined): string => (v ?? '').toLowerCase();
+export type SummaryKey = Extract<MessageKey, `shell.agents.summary.${string}`>;
 
-function sessionHaystack(s: ViewSession): string {
-  return [s.label, s.id, s.state.state, ...(s.state.evidence ?? []).map((e) => e.text)].map(lc).join(' ');
-}
-
-function agentHaystack(a: ViewAgent): string {
-  return [a.label, a.id, a.workflow?.name, a.workflow?.runId, a.model, a.state.state].map(lc).join(' ');
-}
-
-export interface SessionViewEntry<S, A> {
-  s: S;
-  agents: A[];
-  /** The session itself did not match; it is listed because some of its agents did. */
-  viaAgents: boolean;
-}
-
-export interface SessionViewGroup<S, A> extends SidebarGroup {
-  entries: SessionViewEntry<S, A>[];
-}
-
-/**
- * Filters and groups sessions into the sidebar groups (Active, Needs input, Turn ended, Done, Stale or unknown), without empty
- * groups. Filter tokens are ANDed; a session whose own fields do not match but some agent does is kept with only those
- * agents.
- */
-export function buildSessionView<S extends ViewSession, A extends ViewAgent = ViewAgent>(
-  list: readonly S[],
-  filterText = '',
-  agentsOf: (s: S) => readonly A[] = () => [],
-): SessionViewGroup<S, A>[] {
-  const tokens = lc(filterText).split(/\s+/).filter(Boolean);
-  const entries: SessionViewEntry<S, A>[] = [];
-  for (const s of list) {
-    const agents = [...agentsOf(s)];
-    if (tokens.length === 0) {
-      entries.push({ s, agents, viaAgents: false });
-      continue;
-    }
-    const sh = sessionHaystack(s);
-    if (tokens.every((t) => sh.includes(t))) {
-      entries.push({ s, agents, viaAgents: false });
-      continue;
-    }
-    const hit = agents.filter((a) => {
-      const h = `${sh} ${agentHaystack(a)}`;
-      return tokens.every((t) => h.includes(t));
-    });
-    if (hit.length > 0) entries.push({ s, agents: hit, viaAgents: true });
-  }
-  return SIDEBAR_GROUPS.map((g) => ({
-    ...g,
-    entries: entries.filter((e) => sidebarGroupOf(e.s.state.state) === g.id),
-  })).filter((g) => g.entries.length > 0);
+/** One part of "2 running, 5 completed": the message and its count. */
+export interface SummaryPart {
+  key: SummaryKey;
+  count: number;
 }
 
 export interface AgentGroup<I> {
@@ -104,26 +54,60 @@ export interface AgentGroup<I> {
   key: string;
   /** The workflow name, '' for plain subagents and for a run without a name. */
   name: string;
+  /** The title as a message: `shell.agents.subagents`, or `shell.agents.workflow` with `titleArgs`. */
+  titleKey: 'shell.agents.subagents' | 'shell.agents.workflow';
+  /** `{ name }` of the workflow message: the workflow name, or its run id when it has none; null for plain subagents. */
+  titleArgs: { name: string } | null;
+  /** @deprecated English text computed from the catalogue; use `agentGroupTitle(group, t)`. */
   title: string;
   /** The state of the workflow run itself; null for plain subagents. */
   workflowState: string | null;
   agents: I[];
+  /** The count of each legacy state present, in a stable order; render it with `stateSummaryText`. */
+  summaryParts: SummaryPart[];
+  /** @deprecated English text computed from the catalogue; use `stateSummaryText(group.summaryParts, t)`. */
   summary: string;
 }
 
-const LEGACY_ORDER: readonly LegacyState[] = ['RUNNING', 'IDLE', 'COMPLETED', 'FAILED', 'UNKNOWN'];
+const SUMMARY_ORDER: readonly { state: LegacyState; key: SummaryKey }[] = [
+  { state: 'RUNNING', key: 'shell.agents.summary.running' },
+  { state: 'IDLE', key: 'shell.agents.summary.idle' },
+  { state: 'COMPLETED', key: 'shell.agents.summary.completed' },
+  { state: 'FAILED', key: 'shell.agents.summary.failed' },
+  { state: 'UNKNOWN', key: 'shell.agents.summary.unknown' },
+];
 
-/** "2 running, 5 completed" in a stable order of the five legacy states. */
-export function stateSummary(items: readonly { state: { state: string } }[]): string {
+/** The counts of the five legacy states present in `items`, in a stable order. */
+export function stateSummaryParts(items: readonly { state: { state: string } }[]): SummaryPart[] {
   const counts = new Map<LegacyState, number>();
   for (const it of items) {
     const s = legacyStateOf(it.state.state);
     counts.set(s, (counts.get(s) ?? 0) + 1);
   }
-  return LEGACY_ORDER.flatMap((s) => {
-    const n = counts.get(s);
-    return n === undefined ? [] : [`${String(n)} ${s.toLowerCase()}`];
-  }).join(', ');
+  return SUMMARY_ORDER.flatMap(({ state, key }) => {
+    const count = counts.get(state);
+    return count === undefined ? [] : [{ key, count }];
+  });
+}
+
+/** "2 running, 5 completed" in the language of `t`. */
+export function stateSummaryText(parts: readonly SummaryPart[], t: TFunction): string {
+  return parts.map((part) => t(part.key, { count: part.count })).join(', ');
+}
+
+/** The English text of a summary, for the deprecated aliases. */
+function englishSummary(parts: readonly SummaryPart[]): string {
+  return parts.map((part) => formatMessage(enMessages[part.key], { count: part.count }, 'en')).join(', ');
+}
+
+/** @deprecated English text; use `stateSummaryParts` with `stateSummaryText`. */
+export function stateSummary(items: readonly { state: { state: string } }[]): string {
+  return englishSummary(stateSummaryParts(items));
+}
+
+/** The title of an agent group in the language of `t`. */
+export function agentGroupTitle<I>(group: AgentGroup<I>, t: TFunction): string {
+  return group.titleArgs === null ? t('shell.agents.subagents') : t('shell.agents.workflow', group.titleArgs);
 }
 
 /** Groups items by workflow run (plain subagents first as "Subagents", then one group per run in order of appearance). */
@@ -143,23 +127,32 @@ export function groupItems<I>(items: readonly I[], agentOf: (item: I) => Groupab
   }
   const groups: AgentGroup<I>[] = [];
   if (plain.length > 0) {
+    const summaryParts = stateSummaryParts(plain.map(agentOf));
     groups.push({
       key: '',
       name: '',
-      title: 'Subagents',
+      titleKey: 'shell.agents.subagents',
+      titleArgs: null,
+      title: enMessages['shell.agents.subagents'],
       workflowState: null,
       agents: plain,
-      summary: stateSummary(plain.map(agentOf)),
+      summaryParts,
+      summary: englishSummary(summaryParts),
     });
   }
   for (const [runId, run] of runs) {
+    const titleArgs = { name: run.name === '' ? runId : run.name };
+    const summaryParts = stateSummaryParts(run.agents.map(agentOf));
     groups.push({
       key: runId,
       name: run.name,
-      title: `Workflow ${run.name === '' ? runId : run.name}`,
+      titleKey: 'shell.agents.workflow',
+      titleArgs,
+      title: formatMessage(enMessages['shell.agents.workflow'], titleArgs, 'en'),
       workflowState: run.state,
       agents: run.agents,
-      summary: stateSummary(run.agents.map(agentOf)),
+      summaryParts,
+      summary: englishSummary(summaryParts),
     });
   }
   return groups;
@@ -209,14 +202,48 @@ export function diffStates(
   return changes;
 }
 
+// ---- the session switcher of the sidebar (ADR 0073 decision 4) ----------------------------------------------------------------
+
+/** Rows the switcher shows at most; the rest is a "more" link to the Sessions page. */
+export const SWITCHER_MAX_ROWS = 12;
+
+export interface SwitcherSession extends ViewSession {
+  errorCount: number;
+}
+
+export interface SwitcherGroup<S> {
+  id: 'errors' | 'active';
+  titleKey: 'shell.switcher.errors' | 'state.group.active';
+  sessions: S[];
+}
+
+export interface SwitcherView<S> {
+  groups: SwitcherGroup<S>[];
+  /** Sessions that qualify but are not shown because of the cap. */
+  hidden: number;
+}
+
 /**
- * The session the sidebar's "jump to first active" link opens: the first active one, else the first that needs input,
- * else the first listed; null for an empty list (selection itself is the URL since v3).
+ * The compact list of the sidebar on the session page: sessions with errors first, then the sessions that are active now, each
+ * session once (an active session that has errors is in the first group). The list keeps the order it was given, shows at most
+ * `max` rows and always keeps the open session when it qualifies, so that it can be marked.
  */
-export function pickDefaultSession<S>(view: readonly { id: SidebarGroupId; entries: readonly { s: S }[] }[]): S | null {
-  for (const id of ['active', 'needs-input'] as const) {
-    const first = view.find((g) => g.id === id)?.entries[0];
-    if (first !== undefined) return first.s;
+export function switcherView<S extends SwitcherSession>(
+  list: readonly S[],
+  max: number = SWITCHER_MAX_ROWS,
+  currentId: string | null = null,
+): SwitcherView<S> {
+  const withErrors = list.filter((s) => s.errorCount > 0);
+  const active = list.filter((s) => s.errorCount === 0 && sidebarGroupOf(s.state.state) === 'active');
+  const eligible = [...withErrors, ...active];
+  let shown = eligible.slice(0, Math.max(0, max));
+  const current = currentId === null ? undefined : eligible.find((s) => s.id === currentId);
+  if (current !== undefined && !shown.includes(current) && shown.length > 0) {
+    shown = [...shown.slice(0, -1), current];
   }
-  return view.find((g) => g.entries.length > 0)?.entries[0]?.s ?? null;
+  const groups: SwitcherGroup<S>[] = [
+    { id: 'errors', titleKey: 'shell.switcher.errors', sessions: withErrors.filter((s) => shown.includes(s)) },
+    { id: 'active', titleKey: 'state.group.active', sessions: active.filter((s) => shown.includes(s)) },
+  ];
+  return { groups: groups.filter((g) => g.sessions.length > 0), hidden: eligible.length - shown.length };
 }

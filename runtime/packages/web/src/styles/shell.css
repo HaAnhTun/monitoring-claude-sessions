@@ -1,4 +1,5 @@
-/* Application shell: skip links, sidebar, notices, toasts (04-ui.md 4.1, 6.3). Loaded in the pages layer. */
+/* Application shell (ADR 0071 decision 6, ADR 0073 decision 4): skip links, the sidebar in three layouts, the session switcher,
+   notices and toasts. Loaded in the pages layer. The widths are the literals of the ADR: 1200 (sidebar to rail), 900 (rail to sheet). */
 
 .shell {
   display: flex;
@@ -33,116 +34,159 @@
 .skip-links__link:focus {
   top: var(--sp-3);
 }
+
+/* ---- the sidebar: 240 px from 1200 px; the column is as tall as the page and its content sticks to the top of the window ---- */
 .sidebar {
-  display: flex;
   flex: 0 0 var(--side-w);
-  flex-direction: column;
-  gap: var(--sp-3);
   width: var(--side-w);
-  max-width: 100%;
-  min-height: 0;
-  padding: var(--sp-4);
-  overflow-y: auto;
+  min-width: 0;
   background: var(--surface);
   border-right: var(--border-w) solid var(--border);
 }
-.sidebar > .btn {
-  display: none;
-}
-.sidebar__body {
+.sidebar__inner {
+  position: sticky;
+  top: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
-  min-height: 0;
+  gap: var(--sp-5);
+  max-height: 100vh;
+  padding: var(--sp-4) var(--sp-3);
+  overflow-y: auto;
 }
-.sidebar-nav ul {
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.sidebar-nav__list {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
 }
+.sidebar-nav__list + .sidebar-nav__list {
+  padding-top: var(--sp-3);
+  border-top: var(--border-w) solid var(--border);
+}
 .sidebar-nav__link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   min-height: var(--ctl-h);
-  padding: var(--sp-2) var(--sp-3);
+  padding: 0 var(--sp-3);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-md);
   text-decoration: none;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
 }
 .sidebar-nav__link:hover {
   background: var(--surface-2);
-}
-.sidebar-nav__link[aria-current='page'] {
-  background: var(--surface-2);
-  font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.sidebar-nav__count {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-.sidebar-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-.sidebar-list__filter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.sidebar-list__rows:focus {
-  outline: none;
-}
-.sidebar-group + .sidebar-group {
-  margin-top: var(--sp-3);
-}
-.sidebar-group__head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-1);
-}
-.sidebar-group h3 {
-  font-size: var(--fs-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-.sidebar-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  min-height: var(--ctl-h);
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--radius);
   color: var(--text);
   text-decoration: none;
 }
-.sidebar-row:hover {
+/* The selected entry is the one place of the sidebar that uses the accent: a bar and the icon; the text stays at full contrast. */
+.sidebar-nav__link[aria-current='page'] {
   background: var(--surface-2);
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
-.sidebar-row[aria-current='page'] {
-  background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+.sidebar-nav__link[aria-current='page'] .icon {
+  color: var(--accent);
 }
-.sidebar-row__label {
+.sidebar-nav__label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sidebar-agents {
-  margin-left: var(--sp-5);
+.sidebar-nav__count {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-xs);
+  white-space: nowrap;
 }
-.sidebar-agents__title {
-  margin-top: var(--sp-2);
+.sidebar-nav__count[data-tone='alert'] {
+  color: var(--failed-fg);
 }
-.sidebar-row--agent {
+
+/* ---- the session switcher: only on the session page, from 1200 px ---- */
+.sidebar-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+}
+.sidebar-switcher__heading,
+.sidebar-switcher__title {
+  padding: 0 var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
+}
+.sidebar-switcher__title {
+  margin-bottom: var(--sp-1);
+  font-weight: var(--fw-medium);
+}
+.sidebar-switcher__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.sidebar-switcher__rows:focus {
+  outline: none;
+}
+.sidebar-switcher__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--ctl-h);
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius);
+  color: var(--text);
   font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  text-decoration: none;
 }
+.sidebar-switcher__row:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+.sidebar-switcher__row[aria-current='page'] {
+  background: var(--surface-2);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.sidebar-switcher__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-switcher__errors {
+  flex: none;
+  color: var(--failed-fg);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sidebar-switcher__more {
+  padding: 0 var(--sp-3);
+}
+
+/* ---- notices and toasts ---- */
 .notice {
   display: flex;
   flex-wrap: wrap;
@@ -160,6 +204,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  max-width: calc(100vw - 2 * var(--sp-5));
   transform: translateX(-50%);
 }
 .toast {
@@ -170,24 +215,103 @@
   background: var(--surface);
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--elev-2);
+}
+.toast--error {
+  border-color: var(--state-failed-dot);
+}
+
+/* ---- the rail: 56 px from 900 px; labels are tooltips, a count is a dot on the icon ---- */
+@media (min-width: 900px) and (max-width: 1199px) {
+  .sidebar {
+    flex-basis: var(--side-w-rail);
+    width: var(--side-w-rail);
+  }
+  .sidebar__inner {
+    padding: var(--sp-4) var(--sp-2);
+  }
+  .sidebar-nav__link {
+    justify-content: center;
+    padding: 0;
+  }
+  .sidebar-nav__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .sidebar-nav__count {
+    position: absolute;
+    top: 5px;
+    right: 7px;
+    width: 8px;
+    height: 8px;
+    margin: 0;
+    overflow: hidden;
+    background: var(--state-working-dot);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--surface);
+    color: transparent;
+    font-size: 0;
+  }
+  .sidebar-nav__link:hover .sidebar-nav__count,
+  .sidebar-nav__link[aria-current='page'] .sidebar-nav__count {
+    box-shadow: 0 0 0 2px var(--surface-2);
+  }
+  .sidebar-nav__count[data-tone='alert'] {
+    background: var(--state-failed-dot);
+  }
+}
+
+/* ---- the sheet: below 900 px a one-line Menu bar opens the navigation as a dialog over the page ---- */
+.sidebar-menubar {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-2) var(--page-pad);
+  background: var(--surface);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.sidebar__sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.sidebar__sheet-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-lg);
+}
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  background: rgb(0 0 0 / 0.4);
 }
 @media (max-width: 899px) {
   .shell__body {
     flex-direction: column;
   }
   .sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 25;
+    display: flex;
     flex: none;
-    width: auto;
-    overflow-y: visible;
-    border-right: 0;
-    border-bottom: var(--border-w) solid var(--border);
+    flex-direction: column;
+    width: min(20rem, 88vw);
+    border-right: var(--border-w) solid var(--border-strong);
+    box-shadow: var(--elev-2);
   }
-  .sidebar > .btn {
-    display: inline-flex;
-    align-self: flex-start;
-  }
-  .sidebar[data-open='false'] .sidebar__body {
-    display: none;
+  .sidebar__inner {
+    position: static;
+    flex: 1 1 auto;
+    max-height: none;
   }
 }

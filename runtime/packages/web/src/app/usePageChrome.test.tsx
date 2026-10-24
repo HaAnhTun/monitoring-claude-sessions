@@ -3,7 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import { APP_TITLE, documentTitleFor, usePageChrome } from './usePageChrome.ts';
+import { msg } from '../test/msg.ts';
+import { renderWithIntl } from '../test/render.tsx';
+import { documentTitleFor, usePageChrome } from './usePageChrome.ts';
+
+const APP_TITLE = msg('shell.appTitle');
 
 function Page({ title }: { title: string }) {
   const ref = usePageChrome(title);
@@ -33,11 +37,11 @@ function Harness({ initial }: { initial: string }) {
 
 describe('documentTitleFor', () => {
   it('puts the page before the app name', () => {
-    expect(documentTitleFor('Sessions')).toBe(`Sessions - ${APP_TITLE}`);
+    expect(documentTitleFor('Sessions', APP_TITLE)).toBe(`Sessions - ${APP_TITLE}`);
   });
 
   it('is the app name alone for an empty page title', () => {
-    expect(documentTitleFor('')).toBe(APP_TITLE);
+    expect(documentTitleFor('', APP_TITLE)).toBe(APP_TITLE);
   });
 });
 
@@ -72,5 +76,11 @@ describe('usePageChrome', () => {
     await user.click(screen.getByRole('link', { name: 'to a with search' }));
     expect(heading).not.toHaveFocus();
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('puts the application name of the language that is shown after the page name', () => {
+    const page = msg('route.sessions.title', undefined, 'vi');
+    renderWithIntl(<Page title={page} />, { locale: 'vi' });
+    expect(document.title).toBe(`${page} - ${msg('shell.appTitle', undefined, 'vi')}`);
   });
 });

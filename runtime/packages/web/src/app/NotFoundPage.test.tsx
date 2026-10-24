@@ -35,7 +35,7 @@ describe('NotFoundPage', () => {
     const code = screen.getByText('/no/such/page');
     expect(code.tagName).toBe('CODE');
     expect(code.parentElement).toHaveTextContent(msg('notFound.body', { path: '/no/such/page' }));
-    expect(document.title).toBe(`${msg('notFound.documentTitle')} - Claude session monitor`);
+    expect(document.title).toBe(`${msg('notFound.documentTitle')} - ${msg('shell.appTitle')}`);
   });
 
   it('shows a hostile path as plain text, never as markup', () => {
@@ -89,6 +89,8 @@ describe('NotFoundPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: msg('notFound.title', undefined, 'vi') })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: msg('notFound.openOverview', undefined, 'vi') })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: msg('notFound.openSessions', undefined, 'vi') })).toBeInTheDocument();
-    expect(document.title).toBe(`${msg('notFound.documentTitle', undefined, 'vi')} - Claude session monitor`);
+    expect(document.title).toBe(
+      `${msg('notFound.documentTitle', undefined, 'vi')} - ${msg('shell.appTitle', undefined, 'vi')}`,
+    );
   });
 });

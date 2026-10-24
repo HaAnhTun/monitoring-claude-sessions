@@ -6,6 +6,7 @@ import { PageSkeleton } from '../app/PageSkeleton.tsx';
 import { ErrorState } from '../components/ErrorState.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { ApiContext, InstanceIdContext, useInstance } from '../data/hooks/useInstance.ts';
+import { useT } from '../i18n/context.ts';
 import { AnnouncerProvider } from '../state/announcer.tsx';
 import { applyDisplayPrefs, resolveDisplay, usePrefs } from '../state/prefs-store.ts';
 import { ShortcutRegistryProvider, useShortcut, useShortcutRegistry } from '../state/shortcuts-registry.tsx';
@@ -17,18 +18,19 @@ import { MAIN_ID, SkipLinks } from './SkipLinks.tsx';
 import { TopBar } from './TopBar.tsx';
 
 function ToastRegion() {
+  const t = useT();
   const { toasts, dismiss } = useToasts();
   if (toasts.length === 0) return null;
   // Toasts are announced through the live region; the visible copy is not a second live region.
   return (
-    <div className="toasts">
+    <section className="toasts" aria-label={t('toast.region')}>
       {toasts.map((toast) => (
         <div key={toast.id} className={`toast toast--${toast.kind}`}>
           <span>{toast.message}</span>
           <button
             type="button"
             className="btn btn-icon"
-            aria-label="Dismiss notification"
+            aria-label={t('toast.dismiss')}
             onClick={() => {
               dismiss(toast.id);
             }}
@@ -37,12 +39,13 @@ function ToastRegion() {
           </button>
         </div>
       ))}
-    </div>
+    </section>
   );
 }
 
 /** The frame once the instance is known: top bar, sidebar, the routed page, dialogs and notices. */
 function Frame({ instance }: { instance: InstanceInfo }) {
+  const t = useT();
   const { prefs } = usePrefs();
   const { setHelpOpen } = useShortcutRegistry();
   const { theme, density } = resolveDisplay(prefs, instance.ui);
@@ -54,7 +57,7 @@ function Frame({ instance }: { instance: InstanceInfo }) {
     () => {
       setHelpOpen(true);
     },
-    { description: 'Show this list of shortcuts' },
+    { description: t('shell.shortcutsHelp') },
   );
   return (
     <div className="shell">
@@ -102,7 +105,7 @@ function ConnectedShell() {
         <ErrorState
           kind="load"
           size="page"
-          subject="the monitor"
+          subjectKey="error.subject.monitor"
           error={instance.error}
           onRetry={() => {
             void instance.refetch();

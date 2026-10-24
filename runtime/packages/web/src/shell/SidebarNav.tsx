@@ -1,58 +1,99 @@
 import { NavLink } from 'react-router';
 
+import { usePageRegistry, navItems, type NavCountKey, type NavItem } from '../app/routes.tsx';
 import { Icon } from '../components/Icon.tsx';
-import type { IconName } from '../components/icons.ts';
+import { useInstance } from '../data/hooks/useInstance.ts';
+import { useOverview } from '../data/hooks/useOverview.ts';
+import { useT } from '../i18n/context.ts';
+import type { TFunction } from '../i18n/types.ts';
 
-export interface NavCounts {
-  /** Sessions that are active now. */
-  sessions?: number | undefined;
-  /** Work items that need attention. */
-  tasks?: number | undefined;
-  /** Open alerts. */
-  settings?: number | undefined;
+/** The figure of each entry that has one; a figure the server did not send is absent, never zero. */
+export type NavCounts = Partial<Record<NavCountKey, number>>;
+
+/** Active sessions (the `sessions.active` metric of the overview) and open alerts; nothing until the overview is known. */
+export function useNavCounts(): NavCounts {
+  const overview = useOverview().data;
+  if (overview === undefined) return {};
+  const active = overview.metrics.find((metric) => metric.key === 'sessions.active')?.value;
+  return {
+    ...(active === null || active === undefined ? {} : { sessions: active }),
+    settings: overview.alerts.open,
+  };
 }
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: IconName;
-  countKey?: keyof NavCounts;
-  countLabel?: string;
-  end?: boolean;
+interface CountView {
+  text: string;
+  tone: 'working' | 'alert';
 }
 
-const ITEMS: readonly NavItem[] = [
-  { to: '/', label: 'Overview', icon: 'overview', end: true },
-  { to: '/sessions', label: 'Sessions', icon: 'sessions', countKey: 'sessions', countLabel: 'active' },
-  { to: '/activity', label: 'Activity', icon: 'activity' },
-  { to: '/tasks', label: 'Tasks', icon: 'tasks', countKey: 'tasks', countLabel: 'need attention' },
-  { to: '/analytics', label: 'Analytics', icon: 'analytics' },
-  { to: '/settings', label: 'Settings', icon: 'settings', countKey: 'settings', countLabel: 'alerts' },
-];
+/** The count of an entry with its unit ("3 active", "2 alerts"); never a bare number. Settings shows alerts only above zero. */
+function countOf(key: NavCountKey | undefined, counts: NavCounts | null, t: TFunction): CountView | null {
+  if (key === undefined) return null;
+  const count = counts?.[key];
+  if (count === undefined) return null;
+  switch (key) {
+    case 'sessions':
+      return { text: t('nav.count.sessions', { count }), tone: 'working' };
+    case 'settings':
+      return count > 0 ? { text: t('nav.count.alerts', { count }), tone: 'alert' } : null;
+  }
+}
 
-/** The six views (04-ui.md 4.4). `NavLink` sets `aria-current="page"` on the current one; a missing count shows nothing. */
-export function SidebarNav({ counts }: { counts: NavCounts | null }) {
+export interface SidebarNavProps {
+  items: readonly NavItem[];
+  counts: NavCounts | null;
+  /** The rail: the label and the count move into a tooltip (the link keeps its full accessible name). */
+  tooltips?: boolean;
+}
+
+/**
+ * The pages of the navigation (ADR 0073 decision 3). `NavLink` sets `aria-current="page"` on the current one. The main entries come
+ * first and the footer entries (Settings) after them, in a second list.
+ */
+export function SidebarNav({ items, counts, tooltips = false }: SidebarNavProps) {
+  const t = useT();
+  const groups = [items.filter((item) => item.group === 'main'), items.filter((item) => item.group === 'footer')];
   return (
-    <nav aria-label="Main" className="sidebar-nav">
-      <ul className="plain">
-        {ITEMS.map((item) => {
-          const count = item.countKey === undefined ? undefined : counts?.[item.countKey];
-          return (
-            <li key={item.to}>
-              <NavLink to={item.to} end={item.end === true} className="sidebar-nav__link">
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-                {count === undefined ? null : (
-                  <span className="sidebar-nav__count">
-                    {count}
-                    <span className="sr-only"> {item.countLabel}</span>
-                  </span>
-                )}
-              </NavLink>
-            </li>
-          );
-        })}
-      </ul>
+    <nav aria-label={t('nav.label')} className="sidebar-nav">
+      {groups.map((group, index) =>
+        group.length === 0 ? null : (
+          <ul key={index === 0 ? 'main' : 'footer'} className="plain sidebar-nav__list">
+            {group.map((item) => {
+              const label = t(item.titleKey);
+              const count = countOf(item.countKey, counts, t);
+              return (
+                <li key={item.key}>
+                  <NavLink
+                    to={item.to}
+                    end={item.to === '/'}
+                    className="sidebar-nav__link"
+                    title={tooltips ? (count === null ? label : `${label}: ${count.text}`) : undefined}
+                  >
+                    <Icon name={item.icon} size="menu" />
+                    <span className="sidebar-nav__label">{label}</span>
+                    {count === null ? null : (
+                      <>
+                        {' '}
+                        <span className="sidebar-nav__count" data-tone={count.tone}>
+                          {count.text}
+                        </span>
+                      </>
+                    )}
+                  </NavLink>
+                </li>
+              );
+            })}
+          </ul>
+        ),
+      )}
     </nav>
   );
+}
+
+/** The navigation of the running application: the entries come from the registry and the instance, the figures from the overview. */
+export function ConnectedSidebarNav({ tooltips }: { tooltips: boolean }) {
+  const registry = usePageRegistry();
+  const features = useInstance().data?.features ?? null;
+  const counts = useNavCounts();
+  return <SidebarNav items={navItems(registry, features)} counts={counts} tooltips={tooltips} />;
 }

@@ -1,27 +1,31 @@
 import type { InstanceInfo } from '@mcs/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState, type ReactNode } from 'react';
+import { lazy, useState, type ComponentType, type ReactNode } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PageRegistryContext, type PageRegistry } from '../app/routes.tsx';
 import { usePageChrome } from '../app/usePageChrome.ts';
 import { StaleDataIndicator } from '../components/StaleDataIndicator.tsx';
 import { qk } from '../data/query-keys.ts';
 import { createPrefs } from '../lib/prefs.ts';
 import { AnnouncerProvider, useAnnounce } from '../state/announcer.tsx';
-import { createPrefsStore, PrefsStoreContext, type PrefsStore } from '../state/prefs-store.ts';
+import { createPrefsStore, type PrefsStore } from '../state/prefs-store.ts';
 import { ShortcutRegistryProvider, useShortcut } from '../state/shortcuts-registry.tsx';
-import { createToastStore, ToastStoreContext, useShowToast, useToasts } from '../state/toast-store.ts';
+import { createToastStore, ToastStoreContext, useShowToast, useToasts, type ToastStore } from '../state/toast-store.ts';
 import { createFakeApi, errorResponse, type FakeApi } from '../test/fake-api.ts';
 import {
   makeInstance,
+  makeMetric,
+  makeOverview,
   makeSession,
   makeSessionPage,
   makeState,
   sessionId,
   FIXTURE_INSTANCE_ID,
 } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
 import { renderWithProviders } from '../test/render.tsx';
 import { AppShell } from './AppShell.tsx';
 
@@ -50,6 +54,20 @@ function StalePage() {
   );
 }
 
+const lazyOf = (component: ComponentType) => lazy(() => Promise.resolve({ default: component }));
+const page = lazyOf(() => null);
+
+/** Every page of the route table is registered, so the navigation lists them all (the shell reads the registry from the router). */
+const ALL_PAGES: PageRegistry = {
+  overview: page,
+  sessions: page,
+  sessionDetail: page,
+  activity: page,
+  tasks: page,
+  analytics: page,
+  settings: page,
+};
+
 function Pages() {
   return (
     <Routes>
@@ -59,6 +77,7 @@ function Pages() {
         <Route path="/sessions/:sessionId" element={<Page title="Session" />} />
         <Route path="/settings" element={<Page title="Settings" />} />
         <Route path="/stale" element={<StalePage />} />
+        <Route path="*" element={<Page title="Unknown" />} />
       </Route>
     </Routes>
   );
@@ -70,6 +89,9 @@ interface ShellOptions {
   instanceId?: string | null;
   api?: FakeApi;
   store?: PrefsStore;
+  locale?: 'en' | 'vi';
+  openAlerts?: number;
+  toastStore?: ToastStore;
 }
 
 function renderShell(options: ShellOptions = {}) {
@@ -84,16 +106,58 @@ function renderShell(options: ShellOptions = {}) {
           makeSession({ id: sessionId(1), seq: 1, label: 'Alpha build', state: makeState('working') }),
           makeSession({ id: sessionId(2), seq: 2, label: 'Beta done', state: makeState('completed') }),
         ]),
-      sessionAgents: () => makeSessionPage([]),
+      overview: () =>
+        makeOverview({
+          metrics: [makeMetric({ key: 'sessions.active', value: 1 })],
+          alerts: { open: options.openAlerts ?? 0, critical: 0, items: [] },
+        }),
     });
   const rendered = renderWithProviders(<Pages />, {
     route: options.route ?? '/',
     instance,
     api,
+    prefsStore: store,
+    ...(options.locale === undefined ? {} : { locale: options.locale }),
     ...(options.instanceId === undefined ? {} : { instanceId: options.instanceId }),
-    wrap: (children: ReactNode) => <PrefsStoreContext value={store}>{children}</PrefsStoreContext>,
+    wrap: (children: ReactNode) => (
+      <PageRegistryContext value={ALL_PAGES}>
+        {options.toastStore === undefined ? (
+          children
+        ) : (
+          <ToastStoreContext value={options.toastStore}>{children}</ToastStoreContext>
+        )}
+      </PageRegistryContext>
+    ),
   });
   return { ...rendered, store, api };
+}
+
+/**
+ * Makes `matchMedia` answer for a window of `width` px (the max-width queries of ADR 0071); the returned function resizes it and
+ * notifies the listeners, like a browser. The environment has no `matchMedia` otherwise, which reads as a wide window.
+ */
+function stubWidth(initial: number): (next: number) => void {
+  let width = initial;
+  const listeners = new Set<() => void>();
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() {
+      const max = /max-width: *([0-9]+)px/.exec(query);
+      return max !== null && width <= Number(max[1]);
+    },
+    media: query,
+    addEventListener: (_type: string, listener: () => void) => {
+      listeners.add(listener);
+    },
+    removeEventListener: (_type: string, listener: () => void) => {
+      listeners.delete(listener);
+    },
+  }));
+  return (next) => {
+    width = next;
+    act(() => {
+      for (const listener of [...listeners]) listener();
+    });
+  };
 }
 
 function liveRegion(): HTMLElement {
@@ -103,22 +167,34 @@ function liveRegion(): HTMLElement {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   document.documentElement.removeAttribute('data-theme');
   document.documentElement.removeAttribute('data-density');
   document.title = '';
 });
 
 describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
+  // The test environment reports a 1024 px window, which would make every test a rail; the default here is a wide window.
+  beforeEach(() => {
+    stubWidth(1440);
+  });
+
   it('renders the landmarks of 6.6 rule 1 around the routed page', async () => {
     renderShell();
     expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(await screen.findByRole('complementary', { name: 'Navigation and live sessions' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+    expect(await screen.findByRole('complementary', { name: msg('shell.sidebar.label') })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: msg('nav.label') })).toBeInTheDocument();
     const main = screen.getByRole('main');
     expect(main).toHaveAttribute('id', 'main');
     expect(main).toHaveAttribute('tabindex', '-1');
     expect(within(main).getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
     expect(screen.getAllByRole('main')).toHaveLength(1);
+  });
+
+  it('puts the sidebar before the main region in the reading order', async () => {
+    renderShell();
+    const sidebar = await screen.findByRole('complementary');
+    expect(sidebar.compareDocumentPosition(screen.getByRole('main')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows the TopBar: title, task, both chips and the refresh button, and no second heading (CR-WP-48-2)', async () => {
@@ -175,11 +251,11 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
     const api = createFakeApi({ instance: () => pending, listSessions: () => makeSessionPage([]) });
     renderShell({ api, instanceId: null });
     expect(screen.getByRole('main')).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByText('Loading page')).toBeInTheDocument();
+    expect(screen.getByText(msg('common.loadingPage'))).toBeInTheDocument();
     expect(screen.queryByRole('complementary')).toBeNull();
 
     release(makeInstance());
-    expect(await screen.findByRole('complementary', { name: 'Navigation and live sessions' })).toBeInTheDocument();
+    expect(await screen.findByRole('complementary', { name: msg('shell.sidebar.label') })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
   });
 
@@ -193,12 +269,12 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
     });
     renderShell({ api, instanceId: null });
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/Could not load the monitor/);
+    expect(alert).toHaveTextContent(msg('error.subject.monitor'));
     expect(screen.queryByRole('complementary')).toBeNull();
 
     fail = false;
-    await user.click(within(alert).getByRole('button', { name: 'Retry now' }));
-    expect(await screen.findByRole('complementary', { name: 'Navigation and live sessions' })).toBeInTheDocument();
+    await user.click(within(alert).getByRole('button', { name: msg('common.retryNow') }));
+    expect(await screen.findByRole('complementary', { name: msg('shell.sidebar.label') })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -214,53 +290,114 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
   });
 
   describe('skip links', () => {
-    it('are the first focusable elements and move focus without touching the URL', async () => {
+    it('is the first focusable element and moves focus without touching the URL', async () => {
       const user = userEvent.setup();
       renderShell({ route: '/sessions' });
       await screen.findByRole('complementary');
 
       await user.tab();
-      expect(document.activeElement).toHaveTextContent('Skip to main content');
-      await user.tab();
-      expect(document.activeElement).toHaveTextContent('Skip to session list');
+      expect(document.activeElement).toHaveTextContent(msg('shell.skip.main'));
+      expect(screen.getAllByRole('link', { name: /^Skip to/ })).toHaveLength(1);
 
-      await user.click(screen.getByRole('link', { name: 'Skip to main content' }));
+      await user.click(screen.getByRole('link', { name: msg('shell.skip.main') }));
       expect(screen.getByRole('main')).toHaveFocus();
       expect(screen.getByTestId('location')).toHaveTextContent(/^\/sessions$/);
       expect(window.location.hash).toBe('');
+    });
 
-      await user.click(screen.getByRole('link', { name: 'Skip to session list' }));
+    it('adds a link to the session switcher on the session page and nowhere else', async () => {
+      const user = userEvent.setup();
+      renderShell({ route: `/sessions/${sessionId(1)}` });
+      await screen.findByTestId('session-list');
+      await user.tab();
+      await user.tab();
+      expect(document.activeElement).toHaveTextContent(msg('shell.skip.switcher'));
+      await user.click(screen.getByRole('link', { name: msg('shell.skip.switcher') }));
       expect(screen.getByTestId('session-list')).toHaveFocus();
-      expect(screen.getByTestId('location')).toHaveTextContent(/^\/sessions$/);
       expect(window.location.hash).toBe('');
+    });
+
+    it('has no link to the switcher where there is no switcher', async () => {
+      renderShell({ route: '/' });
+      await screen.findByRole('complementary');
+      expect(screen.queryByRole('link', { name: msg('shell.skip.switcher') })).toBeNull();
     });
   });
 
   describe('navigation', () => {
-    it('lists the six views and marks the current one with aria-current', async () => {
+    it('lists the registered pages and marks the current one with aria-current', async () => {
       renderShell({ route: '/sessions' });
-      const nav = await screen.findByRole('navigation', { name: 'Main' });
+      const nav = await screen.findByRole('navigation', { name: msg('nav.label') });
       expect(
         within(nav)
           .getAllByRole('link')
           .map((a) => a.getAttribute('href')),
       ).toEqual(['/', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
-      expect(within(nav).getByRole('link', { name: /^Sessions/ })).toHaveAttribute('aria-current', 'page');
-      expect(within(nav).getByRole('link', { name: /^Overview/ })).not.toHaveAttribute('aria-current');
+      expect(within(nav).getByRole('link', { name: new RegExp(`^${msg('route.sessions.title')}`) })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(within(nav).getByRole('link', { name: msg('route.overview.title') })).not.toHaveAttribute('aria-current');
     });
 
     it('keeps Sessions current on a session page', async () => {
       renderShell({ route: `/sessions/${sessionId(1)}` });
-      const nav = await screen.findByRole('navigation', { name: 'Main' });
-      expect(within(nav).getByRole('link', { name: /^Sessions/ })).toHaveAttribute('aria-current', 'page');
+      const nav = await screen.findByRole('navigation', { name: msg('nav.label') });
+      expect(within(nav).getByRole('link', { name: new RegExp(`^${msg('route.sessions.title')}`) })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
     });
 
-    it('counts the active sessions on the Sessions link', async () => {
+    it('counts the active sessions with their unit, from the overview', async () => {
       renderShell();
-      const nav = await screen.findByRole('navigation', { name: 'Main' });
-      await waitFor(() => {
-        expect(within(nav).getByRole('link', { name: /Sessions 1 active/ })).toBeInTheDocument();
-      });
+      const nav = await screen.findByRole('navigation', { name: msg('nav.label') });
+      expect(
+        await within(nav).findByRole('link', {
+          name: `${msg('route.sessions.title')} ${msg('nav.count.sessions', { count: 1 })}`,
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it('counts the open alerts on Settings only when there are some', async () => {
+      const none = renderShell();
+      await within(await screen.findByRole('navigation', { name: msg('nav.label') })).findByText(
+        msg('nav.count.sessions', { count: 1 }),
+      );
+      expect(screen.queryByText(msg('nav.count.alerts', { count: 0 }))).toBeNull();
+      none.unmount();
+
+      renderShell({ openAlerts: 2 });
+      expect(await screen.findByText(msg('nav.count.alerts', { count: 2 }))).toBeInTheDocument();
+    });
+
+    it('does not load the session list for the sidebar outside the session page', async () => {
+      const { api } = renderShell({ route: '/sessions' });
+      await within(await screen.findByRole('navigation', { name: msg('nav.label') })).findByText(
+        msg('nav.count.sessions', { count: 1 }),
+      );
+      expect(screen.queryByTestId('session-list')).toBeNull();
+      expect(screen.queryByRole('searchbox')).toBeNull();
+      expect(api.callsTo('listSessions')).toHaveLength(0);
+    });
+
+    it('shows the session switcher on the session page', async () => {
+      renderShell({ route: `/sessions/${sessionId(1)}` });
+      const switcher = await screen.findByRole('navigation', { name: msg('shell.switcher.label') });
+      expect(await within(switcher).findByRole('link', { name: /Alpha build/ })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    });
+
+    it('adds one tab stop for the switcher and one per page to the sidebar', async () => {
+      renderShell({ route: `/sessions/${sessionId(1)}` });
+      const sidebar = await screen.findByRole('complementary');
+      await screen.findByRole('link', { name: /Alpha build/ });
+      const stops = [...sidebar.querySelectorAll<HTMLElement>('a[href], button')].filter(
+        (el) => el.getAttribute('tabindex') !== '-1',
+      );
+      expect(stops).toHaveLength(6 + 1);
     });
 
     it('moves focus to the page heading after a navigation but not on the first load', async () => {
@@ -269,27 +406,214 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       await screen.findByRole('complementary');
       expect(document.activeElement).toBe(document.body);
       await user.click(
-        within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: /^Settings/ }),
+        within(screen.getByRole('navigation', { name: msg('nav.label') })).getByRole('link', {
+          name: msg('route.settings.title'),
+        }),
       );
       await waitFor(() => {
         expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
       });
     });
+
+    it('keeps the frame around a route that no page claims', async () => {
+      renderShell({ route: '/no/such/page' });
+      expect(await screen.findByRole('heading', { level: 1, name: 'Unknown' })).toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: msg('nav.label') })).toBeInTheDocument();
+      expect(screen.getAllByRole('main')).toHaveLength(1);
+    });
+
+    it('re-words the navigation when the language changes', async () => {
+      const { prefsStore } = renderShell();
+      const nav = await screen.findByRole('navigation', { name: msg('nav.label') });
+      expect(within(nav).getByRole('link', { name: msg('route.activity.title') })).toBeInTheDocument();
+      act(() => {
+        prefsStore.setPref('locale', 'vi');
+      });
+      expect(await screen.findByRole('navigation', { name: msg('nav.label', undefined, 'vi') })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: msg('route.activity.title', undefined, 'vi') })).toBeInTheDocument();
+      expect(
+        screen.getByRole('complementary', { name: msg('shell.sidebar.label', undefined, 'vi') }),
+      ).toBeInTheDocument();
+    });
   });
 
-  describe('narrow layout menu', () => {
-    it('toggles "Menu and sessions" and remembers the state', async () => {
+  describe('layout modes (ADR 0071 decision 6)', () => {
+    it('is the full sidebar from 1200 px', async () => {
+      stubWidth(1440);
+      renderShell();
+      const sidebar = await screen.findByRole('complementary');
+      expect(sidebar).toHaveAttribute('data-mode', 'full');
+      expect(screen.queryByRole('button', { name: msg('shell.menu.open') })).toBeNull();
+      expect(within(sidebar).getByRole('link', { name: msg('route.activity.title') })).not.toHaveAttribute('title');
+    });
+
+    it('is a rail from 900 px with the labels as tooltips and no session switcher', async () => {
+      stubWidth(1024);
+      renderShell({ route: `/sessions/${sessionId(1)}` });
+      const sidebar = await screen.findByRole('complementary');
+      expect(sidebar).toHaveAttribute('data-mode', 'rail');
+      expect(within(sidebar).getByRole('link', { name: msg('route.activity.title') })).toHaveAttribute(
+        'title',
+        msg('route.activity.title'),
+      );
+      await within(sidebar).findByText(msg('nav.count.sessions', { count: 1 }));
+      expect(
+        within(sidebar).getByRole('link', { name: new RegExp(`^${msg('route.sessions.title')}`) }),
+      ).toHaveAttribute('title', `${msg('route.sessions.title')}: ${msg('nav.count.sessions', { count: 1 })}`);
+      expect(screen.queryByTestId('session-list')).toBeNull();
+      expect(screen.queryByRole('link', { name: msg('shell.skip.switcher') })).toBeNull();
+    });
+
+    describe('sheet below 900 px', () => {
+      it('shows a Menu bar and keeps the navigation closed', async () => {
+        stubWidth(600);
+        renderShell();
+        const menu = await screen.findByRole('button', { name: msg('shell.menu.open') });
+        expect(menu).toHaveAttribute('aria-expanded', 'false');
+        expect(menu).toHaveAttribute('aria-controls', 'sidebar');
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.queryByRole('navigation', { name: msg('nav.label') })).toBeNull();
+      });
+
+      it('opens as a dialog, takes the focus, remembers the state and closes with the button', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        const { prefsStore } = renderShell({ route: '/sessions' });
+        const menu = await screen.findByRole('button', { name: msg('shell.menu.open') });
+        await user.click(menu);
+        const dialog = await screen.findByRole('dialog', { name: msg('shell.menu.title') });
+        expect(menu).toHaveAttribute('aria-expanded', 'true');
+        expect(dialog).toHaveAttribute('aria-modal', 'true');
+        expect(prefsStore.getSnapshot().navOpen).toBe(true);
+        expect(within(dialog).getByRole('navigation', { name: msg('nav.label') })).toBeInTheDocument();
+        expect(dialog.contains(document.activeElement)).toBe(true);
+        expect(document.activeElement).toHaveAttribute('aria-current', 'page');
+
+        await user.click(within(dialog).getByRole('button', { name: msg('shell.menu.close') }));
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(prefsStore.getSnapshot().navOpen).toBe(false);
+        expect(menu).toHaveFocus();
+      });
+
+      it('closes on Escape and gives the focus back to the Menu button', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        renderShell();
+        const menu = await screen.findByRole('button', { name: msg('shell.menu.open') });
+        await user.click(menu);
+        await screen.findByRole('dialog');
+        await user.keyboard('{Escape}');
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(menu).toHaveFocus();
+      });
+
+      it('traps the focus: Tab from the last control goes to the first and Shift+Tab back', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        renderShell();
+        await user.click(await screen.findByRole('button', { name: msg('shell.menu.open') }));
+        const dialog = await screen.findByRole('dialog');
+        const controls = [...dialog.querySelectorAll<HTMLElement>('a[href], button')];
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (first === undefined || last === undefined) throw new Error('no controls in the sheet');
+        act(() => {
+          last.focus();
+        });
+        await user.tab();
+        expect(first).toHaveFocus();
+        await user.tab({ shift: true });
+        expect(last).toHaveFocus();
+        for (let i = 0; i < controls.length + 2; i += 1) {
+          await user.tab();
+          expect(dialog.contains(document.activeElement)).toBe(true);
+        }
+      });
+
+      it('closes after a navigation and leaves the focus to the new page', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        renderShell({ route: '/sessions' });
+        await user.click(await screen.findByRole('button', { name: msg('shell.menu.open') }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('link', { name: msg('route.settings.title') }));
+        await waitFor(() => {
+          expect(screen.queryByRole('dialog')).toBeNull();
+        });
+        await waitFor(() => {
+          expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
+        });
+      });
+
+      it('closes on a click outside the sheet', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        renderShell();
+        await user.click(await screen.findByRole('button', { name: msg('shell.menu.open') }));
+        await screen.findByRole('dialog');
+        const backdrop = document.querySelector('.sidebar-backdrop');
+        if (backdrop === null) throw new Error('no backdrop');
+        await user.click(backdrop);
+        expect(screen.queryByRole('dialog')).toBeNull();
+      });
+
+      it('turns into the full sidebar when the window grows, and does not come back open', async () => {
+        const resize = stubWidth(600);
+        const user = userEvent.setup();
+        const { prefsStore } = renderShell();
+        await user.click(await screen.findByRole('button', { name: msg('shell.menu.open') }));
+        await screen.findByRole('dialog');
+        resize(1440);
+        expect(await screen.findByRole('complementary')).toHaveAttribute('data-mode', 'full');
+        expect(screen.queryByRole('button', { name: msg('shell.menu.open') })).toBeNull();
+        await waitFor(() => {
+          expect(prefsStore.getSnapshot().navOpen).toBe(false);
+        });
+        resize(600);
+        expect(await screen.findByRole('button', { name: msg('shell.menu.open') })).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        );
+      });
+
+      it('words the bar and the sheet in Vietnamese', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        renderShell({ locale: 'vi' });
+        await user.click(await screen.findByRole('button', { name: msg('shell.menu.open', undefined, 'vi') }));
+        const dialog = await screen.findByRole('dialog', { name: msg('shell.menu.title', undefined, 'vi') });
+        expect(
+          within(dialog).getByRole('button', { name: msg('shell.menu.close', undefined, 'vi') }),
+        ).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('toasts', () => {
+    it('shows a toast in a named region and dismisses it with its button', async () => {
       const user = userEvent.setup();
-      const { store } = renderShell();
-      const toggle = await screen.findByRole('button', { name: 'Menu and sessions' });
-      expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      expect(toggle).toHaveAttribute('aria-controls', 'sidebar-body');
-      await user.click(toggle);
-      expect(toggle).toHaveAttribute('aria-expanded', 'true');
-      expect(store.getSnapshot().navOpen).toBe(true);
-      await user.click(toggle);
-      expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      expect(store.getSnapshot().navOpen).toBe(false);
+      const toastStore = createToastStore();
+      renderShell({ toastStore });
+      await screen.findByRole('complementary');
+      expect(screen.queryByRole('region', { name: msg('toast.region') })).toBeNull();
+      act(() => {
+        toastStore.show('Link copied');
+      });
+      const region = await screen.findByRole('region', { name: msg('toast.region') });
+      expect(within(region).getByText('Link copied')).toBeInTheDocument();
+      await user.click(within(region).getByRole('button', { name: msg('toast.dismiss') }));
+      expect(screen.queryByRole('region', { name: msg('toast.region') })).toBeNull();
+    });
+
+    it('words the region and the button in Vietnamese', async () => {
+      const toastStore = createToastStore();
+      renderShell({ toastStore, locale: 'vi' });
+      await screen.findByRole('complementary');
+      act(() => {
+        toastStore.show('Link copied');
+      });
+      const region = await screen.findByRole('region', { name: msg('toast.region', undefined, 'vi') });
+      expect(within(region).getByRole('button', { name: msg('toast.dismiss', undefined, 'vi') })).toBeInTheDocument();
     });
   });
 
@@ -359,13 +683,6 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       await user.click(await screen.findByRole('button', { name: 'Shortcuts' }));
       expect(await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
     });
-
-    it('does not open while typing in the sidebar filter', async () => {
-      const user = userEvent.setup();
-      renderShell();
-      await user.type(await screen.findByRole('searchbox', { name: 'Filter sessions' }), '?');
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
   });
 
   describe('instance changed notice (UI-I11)', () => {
@@ -374,14 +691,14 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       store.setPref('lastInstanceId', FIXTURE_INSTANCE_ID);
       renderShell({ store });
       await screen.findByRole('complementary');
-      expect(screen.queryByText(/different monitor instance/)).toBeNull();
+      expect(screen.queryByText(msg('shell.instanceChanged.body'))).toBeNull();
       expect(store.getSnapshot().lastInstanceId).toBe(FIXTURE_INSTANCE_ID);
     });
 
     it('stays quiet on the very first visit and stores the id', async () => {
       const { store } = renderShell();
       await screen.findByRole('complementary');
-      expect(screen.queryByText(/different monitor instance/)).toBeNull();
+      expect(screen.queryByText(msg('shell.instanceChanged.body'))).toBeNull();
       await waitFor(() => {
         expect(store.getSnapshot().lastInstanceId).toBe(FIXTURE_INSTANCE_ID);
       });
@@ -392,11 +709,11 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       const store = createPrefsStore(createPrefs(null));
       store.setPref('lastInstanceId', OTHER_INSTANCE_ID);
       renderShell({ store });
-      const notice = await screen.findByText(/different monitor instance/);
+      const notice = await screen.findByText(msg('shell.instanceChanged.body'));
       expect(notice).toBeInTheDocument();
       expect(store.getSnapshot().lastInstanceId).toBe(FIXTURE_INSTANCE_ID);
-      await user.click(screen.getByRole('button', { name: 'Dismiss' }));
-      expect(screen.queryByText(/different monitor instance/)).toBeNull();
+      await user.click(screen.getByRole('button', { name: msg('shell.instanceChanged.dismiss') }));
+      expect(screen.queryByText(msg('shell.instanceChanged.body'))).toBeNull();
     });
 
     it('clears the cached data of the old instance when the id changes while the page is open', async () => {
@@ -412,7 +729,7 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
         queryClient.setQueryData(qk.instance(), makeInstance({ instanceId: OTHER_INSTANCE_ID }));
       });
 
-      expect(await screen.findByText(/different monitor instance/)).toBeInTheDocument();
+      expect(await screen.findByText(msg('shell.instanceChanged.body'))).toBeInTheDocument();
       expect(queryClient.getQueryCache().findAll({ queryKey: qk.root(FIXTURE_INSTANCE_ID) })).toHaveLength(0);
     });
   });
