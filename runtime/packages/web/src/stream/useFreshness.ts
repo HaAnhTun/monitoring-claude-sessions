@@ -18,6 +18,7 @@ import {
 import type { EndpointName } from '../data/endpoints.ts';
 import { InstanceIdContext, useApi, usePoll } from '../data/hooks/useInstance.ts';
 import { qk } from '../data/query-keys.ts';
+import { useFormat, useT } from '../i18n/context.ts';
 import type { EndpointRecord } from '../lib/connection-health.ts';
 import { describeFreshness, freshnessAnnouncements, type Freshness } from './freshness.ts';
 import { useStreamSnapshot } from './StreamProvider.tsx';
@@ -30,7 +31,7 @@ export const FRESHNESS_TICK_MS = 1000;
 export interface UseFreshnessOptions {
   /** The active page's primary list endpoint: a failing one counts against the connection (04 5.6 `core`). */
   primary?: EndpointName;
-  /** Called once per transition with the words of 04 5.6 ("Connection lost", ...). */
+  /** Called once per transition with the words of 04 5.6 ("Connection lost", ...), in the language that is shown. */
   announce?: (message: string) => void;
   tickMs?: number;
 }
@@ -71,6 +72,8 @@ function blank(name: string): EndpointRecord {
 }
 
 export function useFreshness(options: UseFreshnessOptions = {}): Freshness {
+  const t = useT();
+  const format = useFormat();
   const { tracker } = useApi();
   const subscribeTracker = useCallback((fn: () => void) => tracker.subscribe(fn), [tracker]);
   const records = useSyncExternalStore(subscribeTracker, () => tracker.snapshot());
@@ -114,10 +117,10 @@ export function useFreshness(options: UseFreshnessOptions = {}): Freshness {
   });
   const previous = useRef<Freshness | null>(null);
   useEffect(() => {
-    const messages = freshnessAnnouncements(previous.current, freshness, now);
+    const messages = freshnessAnnouncements(previous.current, freshness, now, t, format);
     previous.current = freshness;
     for (const message of messages) announce(message);
-  }, [freshness, now]);
+  }, [freshness, now, t, format]);
 
   return freshness;
 }

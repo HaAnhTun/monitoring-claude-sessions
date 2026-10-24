@@ -1,63 +1,396 @@
-/* Top bar: connection and ingestion chips, stale line, health details, preferences, shortcuts dialog (04-ui.md 5.6, 6.7, ADR 0033). */
+/* Top bar, Live control and its popover, user menu, shortcuts dialog, stale-data marker (04-ui.md 5.6, 6.5, ADR 0033, ADR 0073 decisions 4 to 6).
+   The bar is 48 px high on one row and wraps to a second row, never a third, at 600 px. Colour is a second cue: every dot has a word. */
 
-.topbar__identity {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.topbar__task {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  overflow-wrap: anywhere;
-}
-.topbar__status {
+/* ---- the bar ---- */
+.topbar {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  min-height: var(--topbar-h);
+  padding: var(--sp-2) var(--page-pad);
+  background: var(--surface);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.topbar__identity {
+  display: flex;
+  flex: 1 1 10rem;
+  align-items: baseline;
   gap: var(--sp-3);
+  min-width: 0;
+}
+.topbar__title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-lg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar__task {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar__status {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2) var(--sp-3);
+  min-width: 0;
+  margin-inline-start: auto;
 }
 .topbar__age {
   color: var(--text-muted);
   font-size: var(--fs-sm);
+  white-space: nowrap;
 }
-.topbar__details {
-  flex: 1 1 100%;
-}
-.topbar__details[hidden] {
-  display: none;
-}
-a.chip {
-  color: inherit;
-  text-decoration: none;
-}
-a.chip:hover {
-  text-decoration: underline;
-}
-.chip__detail {
-  max-width: 28ch;
-  overflow: hidden;
-  font-weight: 400;
-  text-overflow: ellipsis;
-}
-@media (max-width: 900px) {
-  .chip__detail {
+@media (max-width: 899px) {
+  .topbar__task {
     display: none;
   }
 }
-/* The single connection loader; static under reduced motion (04-ui.md 6.7). */
-.chip[data-status='connecting'] .icon {
-  animation: chip-spin 1.2s linear infinite;
+
+/* ---- the Live control: a dot and a word; the tone is the worse of the connection and the ingestion ---- */
+.live-control {
+  --live-fg: var(--text);
+  --live-bg: transparent;
+  --live-hover: var(--surface-2);
+  min-width: 0;
 }
-@keyframes chip-spin {
-  to {
-    transform: rotate(360deg);
+.live-control[data-live-state='idle'] {
+  --live-fg: var(--text-muted);
+}
+.live-control[data-live-state='stale'] {
+  --live-fg: var(--stale-fg);
+  --live-bg: var(--stale-bg);
+  --live-hover: var(--stale-bg);
+}
+.live-control[data-live-state='failed'] {
+  --live-fg: var(--failed-fg);
+  --live-bg: var(--failed-bg);
+  --live-hover: var(--failed-bg);
+}
+.live-control[data-live-state='unknown'] {
+  --live-fg: var(--unknown-fg);
+  --live-bg: var(--unknown-bg);
+  --live-hover: var(--unknown-bg);
+}
+.live-control .btn {
+  gap: var(--sp-3);
+  color: var(--live-fg);
+  background: var(--live-bg);
+  border-color: transparent;
+}
+.live-control .btn:hover {
+  background: var(--live-hover);
+  border-color: var(--border-strong);
+  color: var(--live-fg);
+}
+.live-control[data-live-state='ok'] .btn,
+.live-control[data-live-state='idle'] .btn {
+  font-weight: var(--fw-medium);
+}
+.live-control__word {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--state-ended-dot);
+  border-radius: 50%;
+}
+.live-dot[data-tone='ok'] {
+  background: var(--state-completed-dot);
+}
+.live-dot[data-tone='stale'] {
+  background: var(--state-stale-dot);
+}
+.live-dot[data-tone='failed'] {
+  background: var(--state-failed-dot);
+}
+.live-dot[data-tone='unknown'] {
+  background: var(--state-unknown-dot);
+}
+.live-control[data-connection='connecting'] .live-dot {
+  animation: live-dot-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-dot-pulse {
+  50% {
+    opacity: 0.35;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .chip[data-status='connecting'] .icon {
-    animation: none;
+
+/* ---- the popover behind the control ---- */
+.live-control .popover__panel {
+  width: min(26rem, calc(100vw - 2 * var(--sp-5)));
+  max-width: none;
+  max-height: min(44rem, calc(100vh - var(--topbar-h) - var(--sp-6)));
+  padding: var(--sp-4);
+  overflow-y: auto;
+}
+/* On a narrow bar the control sits near the middle; the panel spans the bar instead of hanging off the right edge. */
+@media (max-width: 699px) {
+  .live-control .popover {
+    position: static;
+  }
+  .live-control .popover__panel {
+    inset-inline: var(--sp-5);
+    width: auto;
   }
 }
+.live-popover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+.live-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+}
+.live-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.live-section__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+/* Every line of a section lines up with the title text: past the 8 px dot and its gap. */
+.live-section > :not(.live-section__title):not(.live-list) {
+  padding-inline-start: calc(8px + var(--sp-3));
+}
+.live-status {
+  font-weight: var(--fw-medium);
+}
+.live-note {
+  color: var(--text-muted);
+}
+.live-subtitle {
+  margin-top: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+.live-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  list-style: none;
+}
+.live-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.live-row > .live-dot,
+.live-row__gap {
+  width: 8px;
+  margin-top: 5px;
+}
+.live-row__gap {
+  flex: none;
+}
+/* The text of a row flows as one paragraph; an error's head and message are lines of their own. */
+.live-row__text {
+  min-width: 0;
+}
+.live-code {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+.live-error__head {
+  display: block;
+  color: var(--text-muted);
+}
+.live-error__message {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+/* Version and uptime on one row, epoch and start time on the next. */
+.live-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-4);
+}
+.live-facts dt {
+  color: var(--text-muted);
+}
+.live-popover__link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--sp-2);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- the user menu ---- */
+.menu {
+  position: relative;
+  display: inline-block;
+}
+.menu__panel {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  inset-inline-start: 0;
+  z-index: 40;
+  min-width: 14rem;
+  max-width: min(20rem, calc(100vw - 2 * var(--sp-5)));
+  padding: var(--sp-2);
+  background: var(--surface);
+  color: var(--text);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-2);
+}
+.menu__panel--end {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+.menu__panel:focus {
+  outline: none;
+}
+.menu__group {
+  display: flex;
+  flex-direction: column;
+}
+.menu__heading {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
+}
+.menu__separator {
+  height: var(--border-w);
+  margin: var(--sp-2) calc(var(--sp-2) * -1);
+  background: var(--border);
+}
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: 0 var(--sp-3);
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  text-align: start;
+}
+.menu__item:hover,
+.menu__item:focus-visible {
+  background: var(--surface-2);
+}
+.menu__item:focus-visible {
+  outline-offset: -2px;
+}
+/* The chosen entry of a group is the accent: its icon, its word and a check mark at the end. */
+.menu__item[aria-checked='true'] {
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+}
+.menu__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* An entry without an icon lines its word up with the entries that have one (the icon is 18 px). */
+.menu__item > .menu__text:first-child {
+  margin-inline-start: calc(18px + var(--sp-3));
+}
+.menu__check {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* ---- the shortcuts dialog ---- */
+.shortcuts-dialog {
+  width: min(34rem, calc(100vw - 2 * var(--sp-5)));
+  max-height: calc(100vh - 2 * var(--sp-5));
+  margin: auto;
+  padding: var(--sp-5) var(--sp-6);
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-2);
+}
+.shortcuts-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.shortcuts-dialog__title {
+  margin-bottom: var(--sp-4);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-lg);
+}
+.shortcuts-dialog__group + .shortcuts-dialog__group {
+  margin-top: var(--sp-5);
+}
+.shortcuts-dialog__heading {
+  margin-bottom: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
+}
+.shortcuts-dialog__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.shortcuts-dialog__row {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: baseline;
+}
+.shortcuts-dialog__keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.shortcuts-dialog .state__actions {
+  justify-content: flex-end;
+  margin-top: var(--sp-5);
+}
+@media (max-width: 479px) {
+  .shortcuts-dialog__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-2);
+  }
+}
+
+/* ---- the stale-data marker ---- */
 .stale-indicator {
   display: flex;
   align-items: center;
@@ -71,65 +404,4 @@ a.chip:hover {
 main[data-stale='true'] [data-stale-scope] {
   outline: 2px dashed var(--stale-fg);
   outline-offset: -2px;
-}
-.health-details {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--surface-2);
-  border-radius: var(--radius);
-  font-size: var(--fs-sm);
-  overflow-wrap: anywhere;
-}
-.health-details__list {
-  margin: 0;
-  padding-left: var(--sp-5);
-}
-.topbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-5);
-  background: var(--surface);
-  border-bottom: var(--border-w) solid var(--border);
-}
-.topbar__title {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
-.prefs-controls {
-  flex-wrap: wrap;
-}
-.shortcuts-dialog {
-  max-width: min(32rem, calc(100vw - 2 * var(--sp-5)));
-  padding: var(--sp-5);
-  background: var(--surface);
-  color: var(--text);
-  border: var(--border-w) solid var(--border-strong);
-  border-radius: var(--radius-lg);
-}
-.shortcuts-dialog::backdrop {
-  background: rgb(0 0 0 / 0.4);
-}
-.shortcuts-dialog__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  margin: var(--sp-4) 0;
-}
-.shortcuts-dialog__row {
-  display: flex;
-  gap: var(--sp-4);
-}
-.shortcuts-dialog__row dt {
-  flex: 0 0 11em;
-}
-.shortcuts-dialog kbd {
-  font-family: var(--mono);
-  padding: 0 var(--sp-2);
-  border: var(--border-w) solid var(--control-border);
-  border-radius: var(--radius-sm);
 }

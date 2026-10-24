@@ -1,5 +1,14 @@
 // Global keyboard shortcuts: the pure ignore rules and the help table (04 section 6.5). The registry that dispatches keys
 // lives in state/shortcuts-registry.tsx.
+/** The catalogue keys of the rows of the help table; none takes an argument. */
+export type ShortcutDescriptionKey =
+  | 'filters.focusSearch'
+  | 'transcript.shortcut.follow'
+  | 'transcript.shortcut.nextError'
+  | 'transcript.shortcut.prevError'
+  | 'shell.shortcutsHelp'
+  | 'shortcuts.fixed.escape'
+  | 'shortcuts.fixed.sidebar';
 
 /** The parts of an event target the rules read; a DOM element satisfies it. */
 export interface ShortcutTarget {
@@ -51,18 +60,42 @@ export function shouldHandleShortcut(e: KeyboardEventLike, dialogOpen: boolean):
   return !isTextEntry(e.target);
 }
 
+/** The groups of the shortcuts dialog, in the order they are drawn. */
+export const SHORTCUT_GROUPS = ['navigation', 'search', 'transcript'] as const;
+export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
+
+/** The key caps that are words; a key not listed here is drawn as it is (`/`, `f`, `?`). */
+export type KeyCapName = 'esc' | 'up' | 'down' | 'home' | 'end';
+
 export interface ShortcutHelp {
-  keys: string;
-  description: string;
+  /** The keys of the row, one key cap each. */
+  keys: readonly (string | { cap: KeyCapName })[];
+  descriptionKey: ShortcutDescriptionKey;
+  group: ShortcutGroup;
+  /** True for a row that no component registers (native keys and the local handler of the session list). */
+  fixed: boolean;
 }
 
-/** The rows of the shortcuts dialog. */
+/** The rows of the shortcuts dialog and the group of every key that a component registers. */
 export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
-  { keys: '/', description: 'Focus the search box of the page' },
-  { keys: 'f', description: 'Follow new events (transcript) or pause the feed (activity)' },
-  { keys: ']', description: 'Go to the next error' },
-  { keys: '[', description: 'Go to the previous error' },
-  { keys: '?', description: 'Show this list of shortcuts' },
-  { keys: 'Esc', description: 'Close a dialog, or clear the search box when it has focus' },
-  { keys: 'Up / Down / Home / End', description: 'Move through the session list in the sidebar' },
+  { keys: ['/'], descriptionKey: 'filters.focusSearch', group: 'search', fixed: false },
+  { keys: ['f'], descriptionKey: 'transcript.shortcut.follow', group: 'transcript', fixed: false },
+  { keys: [']'], descriptionKey: 'transcript.shortcut.nextError', group: 'transcript', fixed: false },
+  { keys: ['['], descriptionKey: 'transcript.shortcut.prevError', group: 'transcript', fixed: false },
+  { keys: ['?'], descriptionKey: 'shell.shortcutsHelp', group: 'navigation', fixed: false },
+  { keys: [{ cap: 'esc' }], descriptionKey: 'shortcuts.fixed.escape', group: 'navigation', fixed: true },
+  {
+    keys: [{ cap: 'up' }, { cap: 'down' }, { cap: 'home' }, { cap: 'end' }],
+    descriptionKey: 'shortcuts.fixed.sidebar',
+    group: 'navigation',
+    fixed: true,
+  },
 ];
+
+/** The group of a key that a component registered; a key the table does not know is a navigation key. */
+export function groupOfKey(key: string): ShortcutGroup {
+  const row = SHORTCUT_HELP.find(
+    (candidate) => !candidate.fixed && candidate.keys.length === 1 && candidate.keys[0] === key,
+  );
+  return row?.group ?? 'navigation';
+}

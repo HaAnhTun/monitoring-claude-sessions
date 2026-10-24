@@ -11,11 +11,13 @@ import { ShortcutRegistryProvider } from '../state/shortcuts-registry.tsx';
 import { createFakeApi, errorResponse } from '../test/fake-api.ts';
 import { createFakeEventSources, type FakeEventSources } from '../test/fake-event-source.ts';
 import { FIXTURE_EPOCH, FIXTURE_INSTANCE_ID, iso, makeHealth, makeInstance } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
 import { renderWithProviders } from '../test/render.tsx';
 import { TopBar } from './TopBar.tsx';
 
-// 04 11.2 TopBar matrix: chip text for the connection states, the ingestion chip is never "OK" while the client is not in sync
-// (UI-I4), the retry countdown on a fake clock, the details toggle, the preference controls, the polite announcements.
+// 04 11.2 TopBar matrix (ADR 0073 decisions 4 and 5): the bar shows ONE Live control whose colour is the worse of the connection and
+// the ingestion; the two signals stay apart in its popover. The ingestion is never "OK" while the client is not in sync (UI-I4),
+// "updated Ns ago" shows only when the data is stale, the refresh button says "Retry now" while the monitor cannot be reached.
 const INSTANCE = makeInstance({ staleAfterMs: 30_000, title: 'FIXTURE monitor', slug: 'fixture-task' });
 const START = new Date('2026-10-12T12:00:00Z');
 
@@ -63,6 +65,8 @@ function wrapper(stream: boolean) {
   );
 }
 
+const DEGRADED_REASON = '12 hook envelopes rejected in the last hour';
+
 function healthBody() {
   if (healthMode === 'fail') return errorResponse('internal_error', 'FIXTURE health failure');
   return healthMode === 'degraded'
@@ -70,17 +74,18 @@ function healthBody() {
         ingestion: {
           ...makeHealth('degraded').ingestion,
           status: 'degraded',
-          reasons: ['12 hook envelopes rejected in the last hour'],
+          reasons: [DEGRADED_REASON],
         },
       })
     : makeHealth('ok');
 }
 
 /** Renders the bar, lets the instance and the first health poll succeed, as the shell does at boot. */
-async function setup(options: { stream?: boolean } = {}) {
-  const api = createFakeApi({ instance: () => INSTANCE, health: healthBody });
+async function setup(options: { stream?: boolean; instance?: typeof INSTANCE } = {}) {
+  const instance = options.instance ?? INSTANCE;
+  const api = createFakeApi({ instance: () => instance, health: healthBody });
   const rendered = renderWithProviders(<TopBar />, {
-    instance: INSTANCE,
+    instance,
     api,
     wrap: wrapper(options.stream === true),
   });
@@ -116,16 +121,34 @@ async function press(button: HTMLElement): Promise<void> {
   await flush(10);
 }
 
-function connectionChip(): HTMLElement {
-  const chip = screen.getByRole('banner').querySelector<HTMLElement>('[data-chip="connection"]');
-  if (chip === null) throw new Error('no connection chip');
-  return chip;
+function live(): HTMLElement {
+  const control = screen.getByRole('banner').querySelector<HTMLElement>('.live-control');
+  if (control === null) throw new Error('no Live control');
+  return control;
 }
 
-function ingestionChip(): HTMLElement {
-  const chip = screen.getByRole('banner').querySelector<HTMLElement>('[data-chip="ingestion"]');
-  if (chip === null) throw new Error('no ingestion chip');
-  return chip;
+/** The button of the Live control. */
+function liveButton(): HTMLElement {
+  return within(live()).getByRole('button');
+}
+
+async function openLive(): Promise<HTMLElement> {
+  if (liveButton().getAttribute('aria-expanded') !== 'true') await press(liveButton());
+  return screen.getByRole('dialog', { name: msg('live.popover.label') });
+}
+
+function connectionLine(panel: HTMLElement): HTMLElement {
+  const line = panel.querySelector<HTMLElement>('[data-connection]');
+  if (line === null) throw new Error('no connection line');
+  return line;
+}
+
+function ingestionSection(panel: HTMLElement): HTMLElement {
+  const section = within(panel)
+    .getByRole('heading', { level: 3, name: msg('live.section.ingestion') })
+    .closest('section');
+  if (section === null) throw new Error('no ingestion section');
+  return section;
 }
 
 function liveRegion(): HTMLElement {
@@ -143,98 +166,134 @@ describe('TopBar: identity and landmarks', () => {
     expect(within(banner).queryByRole('heading')).toBeNull();
   });
 
-  it('shows the fallback title and a connecting chip before the instance is known', async () => {
+  it('drops the task name when it repeats the title', async () => {
+    await setup({ instance: makeInstance({ staleAfterMs: 30_000, title: 'same-name', slug: 'same-name' }) });
+    const banner = screen.getByRole('banner');
+    expect(banner.querySelectorAll('.topbar__title, .topbar__task')).toHaveLength(1);
+    expect(banner).toHaveTextContent('same-name');
+  });
+
+  it('keeps a very long title in one line: the full text is in the title attribute', async () => {
+    const title = `FIXTURE ${'long-title-'.repeat(30)}`;
+    await setup({ instance: makeInstance({ staleAfterMs: 30_000, title, slug: 'fixture-task' }) });
+    const element = screen.getByRole('banner').querySelector('.topbar__title');
+    expect(element).toHaveTextContent(title);
+    expect(element).toHaveAttribute('title', title);
+  });
+
+  it('shows the fallback title and a connecting Live control before the instance is known', async () => {
     const api = createFakeApi({ instance: () => new Promise(() => undefined) });
     renderWithProviders(<TopBar />, { instance: INSTANCE, instanceId: null, api, wrap: wrapper(false) });
     await flush(10);
-    expect(screen.getByRole('banner')).toHaveTextContent('Claude session monitor');
-    expect(connectionChip()).toHaveTextContent('Connecting...');
-    expect(ingestionChip()).toHaveTextContent('Ingestion unknown');
-    expect(screen.queryByRole('button', { name: /^Theme:/ })).toBeNull();
+    expect(screen.getByRole('banner')).toHaveTextContent(msg('shell.appTitle'));
+    expect(liveButton()).toHaveTextContent(msg('live.bar.connecting'));
+    expect(live()).toHaveAttribute('data-live-state', 'idle');
+    expect(screen.queryByRole('button', { name: msg('menu.trigger') })).toBeNull();
   });
 
-  it('has the preference controls once the instance is known', async () => {
+  it('has the one menu button once the instance is known, and no row of preference buttons', async () => {
     await setup();
-    expect(screen.getByRole('button', { name: 'Theme: auto' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Density: comfortable' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Shortcuts' })).toBeInTheDocument();
+    const banner = screen.getByRole('banner');
+    expect(within(banner).getByRole('button', { name: msg('menu.trigger') })).toHaveAttribute('aria-haspopup', 'menu');
+    expect(within(banner).queryByRole('button', { name: /^(Theme|Density|Shortcuts|Details)/ })).toBeNull();
+  });
+
+  it('has few tab stops: the Live control, the refresh button and the menu', async () => {
+    await setup();
+    expect(within(screen.getByRole('banner')).getAllByRole('button')).toHaveLength(3);
   });
 });
 
-describe('TopBar: connection and ingestion are separate chips (UI-I4)', () => {
-  it('polling without a stream: paused chip, health from the poll', async () => {
+describe('TopBar: one Live control, two signals (UI-I4)', () => {
+  it('polling without a stream: the word is "paused" and the popover has the polled health', async () => {
     await setup();
-    expect(connectionChip()).toHaveTextContent('Live updates paused, refreshing every 6s');
-    expect(connectionChip()).toHaveAttribute('data-status', 'polling');
-    expect(ingestionChip()).toHaveTextContent('Ingestion OK');
+    expect(liveButton()).toHaveTextContent(msg('live.bar.paused'));
+    expect(live()).toHaveAttribute('data-connection', 'polling');
+    const panel = await openLive();
+    expect(connectionLine(panel)).toHaveTextContent(msg('live.conn.polling', { seconds: 6 }));
+    expect(ingestionSection(panel)).toHaveTextContent(msg('live.ingest.ok'));
   });
 
-  it('stream open and hooks delivering: Live and Ingestion OK, no stale marker', async () => {
+  it('stream open and hooks delivering: Live and OK, nothing stale, no "updated" text', async () => {
     await setup({ stream: true });
     streamOpen();
     await flush(1_000);
-    expect(connectionChip()).toHaveTextContent('Live');
-    expect(connectionChip()).toHaveAttribute('data-status', 'live');
-    expect(ingestionChip()).toHaveTextContent('Ingestion OK');
-    expect(screen.queryByText(/updated .* ago/)).toHaveTextContent(/^updated \ds ago$/);
+    expect(liveButton().textContent).toBe(msg('live.bar.live'));
+    expect(live()).toHaveAttribute('data-live-state', 'ok');
+    expect(screen.queryByText(/^updated /)).toBeNull();
+    const panel = await openLive();
+    expect(connectionLine(panel)).toHaveTextContent(msg('live.conn.live'));
+    expect(ingestionSection(panel)).toHaveTextContent(msg('live.ingest.ok'));
   });
 
-  it('stream open but ingestion degraded: Live next to Ingestion degraded with the first reason', async () => {
+  it('stream open but ingestion degraded: the control takes the ingestion word and colour, the popover keeps both apart', async () => {
     healthMode = 'degraded';
     await setup({ stream: true });
     streamOpen();
     await flush(1_000);
-    expect(connectionChip()).toHaveTextContent('Live');
-    expect(ingestionChip()).toHaveTextContent('Ingestion degraded');
-    expect(ingestionChip()).toHaveTextContent('12 hook envelopes rejected in the last hour');
+    expect(liveButton().textContent).toBe(msg('live.bar.ingestionDegraded'));
+    expect(live()).toHaveAttribute('data-live-state', 'stale');
+    expect(live()).toHaveAttribute('data-live-source', 'ingestion');
+    const panel = await openLive();
+    expect(connectionLine(panel)).toHaveTextContent(msg('live.conn.live'));
+    expect(ingestionSection(panel)).toHaveTextContent(msg('live.ingest.degraded'));
+    expect(ingestionSection(panel)).toHaveTextContent(DEGRADED_REASON);
   });
 
-  it('browser offline: Offline, and the ingestion chip is not OK', async () => {
+  it('browser offline: Offline, and the ingestion is not OK', async () => {
     await setup();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     act(() => {
       window.dispatchEvent(new Event('offline'));
     });
     await flush(1_000);
-    expect(connectionChip()).toHaveTextContent('Offline');
-    expect(ingestionChip()).toHaveTextContent('Ingestion unknown');
-    expect(ingestionChip()).not.toHaveTextContent('Ingestion OK');
+    expect(liveButton().textContent).toBe(msg('live.bar.offline'));
+    expect(live()).toHaveAttribute('data-live-state', 'failed');
+    const panel = await openLive();
+    expect(ingestionSection(panel)).toHaveTextContent(msg('live.ingest.unknown'));
+    expect(ingestionSection(panel)).not.toHaveTextContent(msg('live.ingest.ok'));
   });
 
-  it('server gone: the ingestion chip turns to unknown with the last known status as soon as the client is not in sync', async () => {
+  it('server gone: the ingestion turns to unknown with the last known status as soon as the client is not in sync', async () => {
     await setup();
-    expect(ingestionChip()).toHaveTextContent('Ingestion OK');
+    expect(live()).toHaveAttribute('data-ingestion', 'ok');
     healthMode = 'fail';
     await flush(12_000);
-    expect(connectionChip()).toHaveAttribute('data-status', 'reconnecting');
-    expect(ingestionChip()).toHaveTextContent('Ingestion unknown');
-    expect(ingestionChip()).not.toHaveTextContent('Ingestion OK');
-    expect(ingestionChip()).toHaveTextContent(/Last known: ok, \d+s ago/);
+    expect(live()).toHaveAttribute('data-connection', 'reconnecting');
+    expect(live()).toHaveAttribute('data-ingestion', 'unknown');
+    const panel = await openLive();
+    const ingestion = ingestionSection(panel);
+    expect(ingestion).toHaveTextContent(msg('live.ingest.unknown'));
+    expect(ingestion).not.toHaveTextContent(msg('live.ingest.ok'));
+    const lastKnown = msg('live.ingest.lastKnown', { status: msg('live.ingest.status.ok'), age: 'AGE' });
+    expect(ingestion.textContent).toMatch(new RegExp(lastKnown.replace('AGE', '\\d+s')));
   });
 
-  it('server killed for longer than staleAfterMs: connection lost, ingestion unknown, the age of the data shown', async () => {
+  it('server killed for longer than staleAfterMs: connection lost, the age of the data shown beside the control', async () => {
     await setup();
     healthMode = 'fail';
     await flush(41_000);
-    expect(connectionChip()).toHaveAttribute('data-status', 'offline');
-    expect(connectionChip()).toHaveTextContent('Connection lost');
-    expect(ingestionChip()).toHaveTextContent('Ingestion unknown');
-    expect(ingestionChip()).not.toHaveTextContent('Ingestion OK');
+    expect(live()).toHaveAttribute('data-connection', 'offline');
+    expect(liveButton().textContent).toBe(msg('live.bar.lost'));
+    expect(live()).toHaveAttribute('data-live-state', 'failed');
     expect(screen.getByText(/^updated 4\ds ago$/)).toBeInTheDocument();
+    const panel = await openLive();
+    expect(ingestionSection(panel)).not.toHaveTextContent(msg('live.ingest.ok'));
   });
 
-  it('recovers: back to polling and Ingestion OK when the server answers again', async () => {
+  it('recovers: back to polling and OK when the server answers again, and the age text disappears', async () => {
     await setup();
     healthMode = 'fail';
     await flush(41_000);
     healthMode = 'ok';
     await flush(6_000);
-    expect(connectionChip()).toHaveAttribute('data-status', 'polling');
-    expect(ingestionChip()).toHaveTextContent('Ingestion OK');
+    expect(live()).toHaveAttribute('data-connection', 'polling');
+    expect(live()).toHaveAttribute('data-ingestion', 'ok');
+    expect(screen.queryByText(/^updated /)).toBeNull();
   });
 });
 
-describe('TopBar: retry countdown', () => {
+describe('TopBar: retry countdown and the refresh button', () => {
   async function reconnecting() {
     const rendered = await setup({ stream: true });
     streamOpen();
@@ -254,88 +313,90 @@ describe('TopBar: retry countdown', () => {
     return rendered;
   }
 
-  function secondsLeft(): number {
-    const match = /retry in (\d+)s/.exec(connectionChip().textContent);
-    if (match === null) throw new Error(`no countdown in "${connectionChip().textContent}"`);
+  function secondsLeft(panel: HTMLElement): number {
+    const text = connectionLine(panel).textContent;
+    // The message with a 0 for the seconds, turned into a pattern that captures them.
+    const template = msg('live.conn.reconnectingRetry', { seconds: 0 }).replace(/[()]/g, String.raw`\$&`);
+    const pattern = new RegExp(template.replace('0', String.raw`(\d+)`));
+    const match = pattern.exec(text);
+    if (match === null) throw new Error(`no countdown in "${text}"`);
     return Number(match[1]);
   }
 
-  it('counts down every second on the fake clock', async () => {
+  it('counts down every second on the fake clock, in the popover', async () => {
     await reconnecting();
-    expect(connectionChip()).toHaveAttribute('data-status', 'reconnecting');
-    const before = secondsLeft();
+    const panel = await openLive();
+    expect(connectionLine(panel)).toHaveAttribute('data-connection', 'reconnecting');
+    const before = secondsLeft(panel);
     expect(before).toBeGreaterThanOrEqual(3);
     await flush(1_000);
-    expect(secondsLeft()).toBe(before - 1);
+    expect(secondsLeft(panel)).toBe(before - 1);
     await flush(1_000);
-    expect(secondsLeft()).toBe(before - 2);
+    expect(secondsLeft(panel)).toBe(before - 2);
   });
 
-  it('"Retry now" asks the stream to reconnect at once and polls the server again', async () => {
+  it('the refresh button says "Retry now" while the monitor cannot be reached; it asks the stream to reconnect at once and polls again', async () => {
     const { api } = await reconnecting();
     const sourcesBefore = sources.instances.length;
     const healthCallsBefore = api.callsTo('health').length;
-    await press(screen.getByRole('button', { name: 'Retry now' }));
+    await press(within(screen.getByRole('banner')).getByRole('button', { name: msg('common.retryNow') }));
     expect(sources.instances.length).toBe(sourcesBefore + 1);
     expect(api.callsTo('health').length).toBeGreaterThan(healthCallsBefore);
   });
 
-  it('is labelled "Refresh" while everything works', async () => {
+  it('is an icon button named "Refresh" while everything works', async () => {
     const { api } = await setup();
     const before = api.callsTo('health').length;
-    await press(screen.getByRole('button', { name: 'Refresh' }));
+    const refresh = within(screen.getByRole('banner')).getByRole('button', { name: msg('topbar.refresh') });
+    expect(refresh).toHaveTextContent('');
+    expect(refresh.querySelector('svg.icon')).not.toBeNull();
+    await press(refresh);
     expect(api.callsTo('health').length).toBeGreaterThan(before);
   });
 });
 
-describe('TopBar: details', () => {
-  it('toggles the health details with aria-expanded and aria-controls', async () => {
+describe('TopBar: the popover of the Live control', () => {
+  it('opens in place, does not move the page and lists the endpoints', async () => {
     await setup();
-    const toggle = screen.getByRole('button', { name: 'Details' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText(/^instance: ok /)).toBeNull();
-    await press(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
-    expect(panel).not.toBeNull();
-    expect(panel).toContainElement(screen.getByText(/^instance: ok /));
-    await press(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText(/^instance: ok /)).toBeNull();
+    const panel = await openLive();
+    expect(liveButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(panel.id).toBe(liveButton().getAttribute('aria-controls'));
+    expect(within(panel).getByText('instance')).toBeInTheDocument();
+    await press(liveButton());
+    expect(liveButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('survives a stream that drops while it is open', async () => {
+    await setup({ stream: true });
+    streamOpen();
+    await flush(1_000);
+    const panel = await openLive();
+    expect(connectionLine(panel)).toHaveAttribute('data-connection', 'live');
+    act(() => {
+      sources.last().fail();
+    });
+    await flush(1_000);
+    expect(screen.getByRole('dialog')).toBe(panel);
+    expect(connectionLine(panel)).toHaveAttribute('data-connection', 'polling');
   });
 });
 
-describe('TopBar: announcements and preference controls', () => {
-  it('announces a lost and a restored connection once, politely', async () => {
+describe('TopBar: announcements', () => {
+  it('announces a lost and a restored connection once, politely, in the words of the catalogue', async () => {
     await setup();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     act(() => {
       window.dispatchEvent(new Event('offline'));
     });
     await flush(1_100);
-    expect(liveRegion()).toHaveTextContent('Connection lost');
+    expect(liveRegion()).toHaveTextContent(msg('freshness.announce.lost'));
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
     act(() => {
       window.dispatchEvent(new Event('online'));
     });
     await flush(1_100);
-    expect(liveRegion()).toHaveTextContent('Connection restored');
-  });
-
-  it('cycles the theme and announces it', async () => {
-    await setup();
-    await press(screen.getByRole('button', { name: 'Theme: auto' }));
-    expect(screen.getByRole('button', { name: 'Theme: light' })).toBeInTheDocument();
-    await flush(100);
-    expect(liveRegion()).toHaveTextContent('Theme: light');
-  });
-
-  it('toggles the density and announces it', async () => {
-    await setup();
-    await press(screen.getByRole('button', { name: 'Density: comfortable' }));
-    expect(screen.getByRole('button', { name: 'Density: compact' })).toBeInTheDocument();
-    await flush(100);
-    expect(liveRegion()).toHaveTextContent('Density: compact');
+    expect(liveRegion()).toHaveTextContent(msg('freshness.announce.restored'));
   });
 });
 

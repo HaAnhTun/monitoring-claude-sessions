@@ -214,6 +214,107 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-114
   // @wp-begin WP-115
+  {
+    // The Live control open over the sessions page on a healthy instance: the four sections of the popover (ADR 0073 decision 5).
+    id: 'live-popover',
+    path: '/sessions',
+    mode: 'live',
+    wait: '.live-control button',
+    setup: async ({ page }) => {
+      await page.locator('.live-control button').click();
+      await page.locator('.live-popover').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The same popover on a sick instance: ingestion degraded with a reason, an unclean previous run and a long list of server
+    // errors (the most the report holds, 20; the popover lists the newest few and says how many there are), one very long message.
+    id: 'live-popover-busy',
+    path: '/sessions',
+    mode: 'fixture',
+    wait: '.live-control button',
+    setup: async ({ page, fixture }) => {
+      const health = fixture?.fake.handlers.health;
+      if (fixture === null || health === undefined) return;
+      const long = `scan failed for ${'a-very-long-path-segment/'.repeat(14)}file.jsonl`;
+      fixture.fake.handlers.health = async (query, request) => {
+        const body = (await health(query, request)) as { runtime: object; ingestion: object };
+        return {
+          ...body,
+          status: 'degraded',
+          runtime: { ...body.runtime, previousRunUnclean: true },
+          ingestion: {
+            ...body.ingestion,
+            status: 'degraded',
+            reasons: ['12 hook envelopes rejected in the last hour', 'transcript import 90 s behind'],
+          },
+          errors: Array.from({ length: 20 }, (_unused, i) => ({
+            at: iso(-60 * (i + 1)),
+            source: 'server',
+            code: 'INTERNAL',
+            where: null,
+            message: i === 1 ? long : `transcript import failed for session ${String(i + 1)}`,
+            sessionId: null,
+          })),
+        };
+      };
+      await page.locator('.live-control[data-live-state="stale"]').waitFor({ state: 'visible', timeout: 20_000 });
+      await page.locator('.live-control button').click();
+      await page.locator('.live-popover .live-error__message').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The user menu open: Theme, Density, Language and the shortcuts item, the chosen entries in the accent colour.
+    id: 'user-menu',
+    path: '/sessions',
+    mode: 'live',
+    wait: '.topbar button[aria-haspopup="menu"]',
+    setup: async ({ page }) => {
+      await page.locator('.topbar button[aria-haspopup="menu"]').click();
+      await page.locator('.menu__panel[role="menu"]').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The shortcuts dialog over a transcript, so that the registered keys (/, f, [, ]) show next to the fixed ones in their groups.
+    id: 'shortcuts-dialog',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: '.tv-list .tr',
+    params: detail,
+    setup: async ({ page }) => {
+      await page.locator('main').click({ position: { x: 4, y: 4 } });
+      await page.keyboard.press('Shift+Slash');
+      await page.locator('dialog.shortcuts-dialog[open]').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The server goes away after the first draw: the Live control turns to "Reconnecting" or "Connection lost", the refresh button says
+    // "Retry now" and "updated Ns ago" shows. A page that lists data adds the as-of line and the dashed outline (StaleDataIndicator).
+    id: 'disconnected',
+    path: '/sessions',
+    mode: 'fixture',
+    state: 'disconnected',
+    wait: 'main h1',
+    setup: async ({ page }) => {
+      await page
+        .locator('.live-control[data-connection="reconnecting"], .live-control[data-connection="offline"]')
+        .waitFor({ state: 'visible', timeout: 30_000 });
+    },
+  },
+  {
+    // The same state with the popover open: the connection is lost, the ingestion is unknown with its last known status.
+    id: 'disconnected-popover',
+    path: '/sessions',
+    mode: 'fixture',
+    state: 'disconnected',
+    wait: 'main h1',
+    setup: async ({ page }) => {
+      await page
+        .locator('.live-control[data-connection="reconnecting"], .live-control[data-connection="offline"]')
+        .waitFor({ state: 'visible', timeout: 30_000 });
+      await page.locator('.live-control button').click();
+      await page.locator('.live-popover').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
   // @wp-end WP-115
   // @wp-begin WP-116
   {

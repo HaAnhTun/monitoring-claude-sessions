@@ -3,7 +3,7 @@
 // modules/health.js (`computeHealth` thresholds are reused inside `computeConnection`).
 import type { LegacyState } from '@mcs/shared';
 
-import { fmtAge } from './format.ts';
+import type { TFunction } from '../i18n/types.ts';
 
 // ---- legacy health (verbatim thresholds) -------------------------------------------------------------------------------
 
@@ -94,12 +94,17 @@ export function countStates(items: readonly { state: unknown }[]): StateCounts {
 }
 
 /** Page title: plain words, never emoji-only. `connection` accepts the legacy and the v3 vocabulary. */
-export function titleFor(counts: StateCounts, title: string, connection: HealthConnection | ConnectionState): string {
+export function titleFor(
+  t: TFunction,
+  counts: StateCounts,
+  title: string,
+  connection: HealthConnection | ConnectionState,
+): string {
   const parts: string[] = [];
-  if (counts.RUNNING > 0) parts.push(`${String(counts.RUNNING)} running`);
-  if (counts.FAILED > 0) parts.push(`${String(counts.FAILED)} failed`);
-  const prefix = connection === 'lost' || connection === 'offline' ? 'Monitor offline' : parts.join(', ');
-  return prefix === '' ? title : `${prefix} - ${title}`;
+  if (counts.RUNNING > 0) parts.push(t('live.title.running', { count: counts.RUNNING }));
+  if (counts.FAILED > 0) parts.push(t('live.title.failed', { count: counts.FAILED }));
+  const prefix = connection === 'lost' || connection === 'offline' ? t('live.title.offline') : parts.join(', ');
+  return prefix === '' ? title : t('live.title.format', { prefix, title });
 }
 
 // ---- connection model (04 5.6) -----------------------------------------------------------------------------------------
@@ -182,7 +187,10 @@ export type IngestionDisplay = 'ok' | 'degraded' | 'stalled' | 'down' | 'disable
 
 export interface IngestionView {
   display: IngestionDisplay;
+  /** The reasons the server gave (English text from the server). Empty while the display is "unknown". */
   reasons: string[];
+  /** While the display is "unknown": the last status the server reported and how long ago (seconds, null when never). */
+  lastKnown: { status: IngestionDisplay; ageSeconds: number | null } | null;
   asOf: number | null;
   /** True only when the connection is live or polling and the health poll is fresh. */
   known: boolean;
@@ -200,17 +208,26 @@ export function computeIngestionView(
   now: number,
   staleAfterMs: number,
 ): IngestionView {
-  if (health === undefined) return { display: 'unknown', reasons: [], asOf: null, known: false };
+  if (health === undefined) return { display: 'unknown', reasons: [], lastKnown: null, asOf: null, known: false };
   const lastSuccess = healthRecord?.lastSuccess ?? null;
   const known =
     (conn.state === 'live' || conn.state === 'polling') && lastSuccess !== null && now - lastSuccess <= staleAfterMs;
   if (known) {
-    return { display: health.ingestion.status, reasons: [...health.ingestion.reasons], asOf: lastSuccess, known: true };
+    return {
+      display: health.ingestion.status,
+      reasons: [...health.ingestion.reasons],
+      lastKnown: null,
+      asOf: lastSuccess,
+      known: true,
+    };
   }
-  const age = lastSuccess === null ? '' : `, ${fmtAge((now - lastSuccess) / 1000)} ago`;
   return {
     display: 'unknown',
-    reasons: [`Last known: ${health.ingestion.status}${age}`],
+    reasons: [],
+    lastKnown: {
+      status: health.ingestion.status,
+      ageSeconds: lastSuccess === null ? null : Math.round((now - lastSuccess) / 1000),
+    },
     asOf: lastSuccess,
     known: false,
   };

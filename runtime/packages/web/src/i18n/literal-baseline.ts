@@ -24,14 +24,6 @@ export const LITERAL_BASELINE: readonly string[] = [
   'shell/SkipLinks.tsx',
   // @wp-end WP-114
   // @wp-begin WP-115
-  'components/StaleDataIndicator.tsx',
-  'lib/connection-health.ts',
-  'lib/shortcuts.ts',
-  'shell/HealthDetails.tsx',
-  'shell/PrefsControls.tsx',
-  'shell/ShortcutsDialog.tsx',
-  'shell/TopBar.tsx',
-  'stream/freshness.ts',
   // @wp-end WP-115
   // @wp-begin WP-116
   'components/FilterBar.tsx',

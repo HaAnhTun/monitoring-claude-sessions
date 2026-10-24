@@ -3,18 +3,21 @@ import { act, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fmtClock } from '../lib/format.ts';
+import { createFormatters } from '../i18n/format.ts';
 import { StreamProvider } from '../stream/StreamProvider.tsx';
 import { createFakeApi, errorResponse } from '../test/fake-api.ts';
 import { createFakeEventSources, type FakeEventSources } from '../test/fake-event-source.ts';
 import { FIXTURE_EPOCH, FIXTURE_INSTANCE_ID, iso, makeHealth, makeInstance } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
 import { renderWithProviders } from '../test/render.tsx';
 import { StaleDataIndicator } from './StaleDataIndicator.tsx';
 
 // UI-I5: a stale view is never blank; the last good data stays and a marker says how old it is (04 5.6, 7).
 const INSTANCE = makeInstance({ staleAfterMs: 30_000 });
 const START = new Date('2026-10-12T12:00:00Z');
-const CLOCK = fmtClock(START.toISOString());
+const format = createFormatters('en');
+const CLOCK = format.clock(START);
+const asOfLine = (o: { scope: string; time: string; age: string; reason: string }): string => msg('freshness.asOf', o);
 
 let sources: FakeEventSources;
 let healthFails = false;
@@ -45,7 +48,7 @@ function withStream(children: ReactNode): ReactNode {
   );
 }
 
-function setup(ui: ReactNode, options: { stream?: boolean; instance?: typeof INSTANCE } = {}) {
+function setup(ui: ReactNode, options: { stream?: boolean; instance?: typeof INSTANCE; locale?: 'en' | 'vi' } = {}) {
   const instance = options.instance ?? INSTANCE;
   const api = createFakeApi({
     instance: () => instance,
@@ -54,6 +57,7 @@ function setup(ui: ReactNode, options: { stream?: boolean; instance?: typeof INS
   return renderWithProviders(<main data-stale-scope>{ui}</main>, {
     instance,
     api,
+    ...(options.locale === undefined ? {} : { locale: options.locale }),
     ...(options.stream === true ? { wrap: withStream } : {}),
   });
 }
@@ -112,8 +116,33 @@ describe('StaleDataIndicator', () => {
     const rendered = setup(<StaleDataIndicator asOf={null} scope="sessions" />);
     await pollCore(rendered);
     await flush(31_000);
-    expect(screen.getByText(`sessions as of ${CLOCK} (31s ago): refresh failing`)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        asOfLine({ scope: 'sessions', time: CLOCK, age: '31s', reason: msg('freshness.reason.refreshFailing') }),
+      ),
+    ).toBeInTheDocument();
     expect(scope()).toHaveAttribute('data-stale', 'true');
+  });
+
+  it('words the line in Vietnamese when the page is Vietnamese', async () => {
+    const rendered = setup(<StaleDataIndicator asOf={null} scope="scope-vi" />, { locale: 'vi' });
+    await pollCore(rendered);
+    await flush(31_000);
+    const viFormat = createFormatters('vi');
+    expect(
+      screen.getByText(
+        msg(
+          'freshness.asOf',
+          {
+            scope: 'scope-vi',
+            time: viFormat.clock(START),
+            age: viFormat.age(31),
+            reason: msg('freshness.reason.refreshFailing', undefined, 'vi'),
+          },
+          'vi',
+        ),
+      ),
+    ).toBeInTheDocument();
   });
 
   it('uses the time of the data (asOf) in the line when it is given', async () => {
@@ -121,22 +150,34 @@ describe('StaleDataIndicator', () => {
     const rendered = setup(<StaleDataIndicator asOf={asOf} scope="activity" />);
     await pollCore(rendered);
     await flush(31_000);
-    const clock = fmtClock(new Date(asOf).toISOString());
-    expect(screen.getByText(`activity as of ${clock} (51s ago): refresh failing`)).toBeInTheDocument();
+    const clock = format.clock(asOf);
+    expect(
+      screen.getByText(
+        asOfLine({ scope: 'activity', time: clock, age: '51s', reason: msg('freshness.reason.refreshFailing') }),
+      ),
+    ).toBeInTheDocument();
   });
 
   it('shows a failing refresh even while the connection is in sync, with the age of the data', async () => {
     const rendered = setup(<StaleDataIndicator asOf={START.getTime()} fetchFailing scope="sessions" />);
     await pollCore(rendered);
     await flush(4_000);
-    expect(screen.getByText(`sessions as of ${CLOCK} (4s ago): refresh failing`)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        asOfLine({ scope: 'sessions', time: CLOCK, age: '4s', reason: msg('freshness.reason.refreshFailing') }),
+      ),
+    ).toBeInTheDocument();
     expect(scope()).toHaveAttribute('data-stale', 'true');
   });
 
   it('still says something useful when no time is known', async () => {
     setup(<StaleDataIndicator asOf={null} fetchFailing scope="sessions" />);
     await flush(1_000);
-    expect(screen.getByText('sessions: refresh failing')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        msg('freshness.asOfUnknown', { scope: 'sessions', reason: msg('freshness.reason.refreshFailing') }),
+      ),
+    ).toBeInTheDocument();
   });
 
   it('blames the dropped live updates when the connection is lost', async () => {
@@ -144,7 +185,7 @@ describe('StaleDataIndicator', () => {
     await pollCore(rendered);
     await failHealth(rendered);
     await flush(31_000);
-    expect(screen.getByText(/: live updates disconnected$/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`: ${msg('freshness.reason.disconnected')}$`))).toBeInTheDocument();
     expect(scope()).toHaveAttribute('data-stale', 'true');
   });
 
@@ -154,7 +195,7 @@ describe('StaleDataIndicator', () => {
     await pollCore(rendered);
     streamOpen();
     await flush(11_000);
-    expect(screen.getByText(/: no update for 11s$/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`: ${msg('freshness.reason.noUpdate', { age: '11s' })}$`))).toBeInTheDocument();
   });
 
   it('clears the marker when the data is fresh again', async () => {

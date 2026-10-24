@@ -184,13 +184,12 @@ function liveRows(page: Page) {
   return page.getByRole('table', { name: 'Sessions' }).locator('tbody tr');
 }
 
-/** The two chips of the top bar (04 5.6, ADR 0033): what the client observes of its link, and what the server says of ingestion. */
-function connectionChip(page: Page) {
-  return page.getByRole('banner').locator('[data-chip="connection"]');
-}
-
-function ingestionChip(page: Page) {
-  return page.getByRole('banner').locator('[data-chip="ingestion"]');
+/**
+ * The Live control of the top bar (04 5.6, ADR 0033, ADR 0073 decision 5): one control that carries what the client observes of its
+ * link (`data-connection`) and what the server says of ingestion (`data-ingestion`) as two separate signals.
+ */
+function liveControl(page: Page) {
+  return page.getByRole('banner').locator('.live-control');
 }
 
 /** Rows (their text) of the list page; polled with `expect.poll`. */
@@ -221,16 +220,16 @@ test('the open list page follows the event stream: a new session and a new turn 
     expect(response?.headers()['content-type'] ?? '').toContain('text/event-stream');
   });
 
-  await test.step('the shell shows the connection chip live and the ingestion chip as a separate signal', async () => {
-    await expect(connectionChip(page), 'the connection chip reads live once the stream is open').toHaveAttribute(
-      'data-status',
+  await test.step('the shell shows one Live control: the connection live and the ingestion as a separate signal', async () => {
+    await expect(liveControl(page), 'the control reads live once the stream is open').toHaveAttribute(
+      'data-connection',
       'live',
       { timeout: LIVE_TIMEOUT_MS },
     );
-    await expect(connectionChip(page)).toContainText('Live');
-    await expect(ingestionChip(page)).toBeVisible();
-    await expect(ingestionChip(page)).toContainText(/Ingestion|Hooks off/);
-    await expect(page.locator('[data-chip]')).toHaveCount(2);
+    await expect(liveControl(page)).toContainText('Live');
+    await expect(liveControl(page)).toBeVisible();
+    await expect(liveControl(page)).toHaveAttribute('data-ingestion', /^(ok|degraded|stalled|down|disabled)$/);
+    await expect(page.locator('.live-control')).toHaveCount(1);
   });
 
   // Everything after this marker happens in the same document: a reload or a navigation would erase it.
@@ -307,22 +306,22 @@ test('after the instance stops the open page keeps its rows and its connections 
   await page.goto(`${env.baseUrl}/sessions`);
   await expect(liveRows(page)).toHaveCount(env.expected.sessions.length + 1);
 
-  await test.step('before the stop the connection chip is live', async () => {
-    await expect(connectionChip(page)).toHaveAttribute('data-status', 'live', { timeout: LIVE_TIMEOUT_MS });
+  await test.step('before the stop the connection is live', async () => {
+    await expect(liveControl(page)).toHaveAttribute('data-connection', 'live', { timeout: LIVE_TIMEOUT_MS });
   });
 
   await test.step('stop the instance while the page is open', async () => {
     await haltSkeletonInstance(env.paths);
   });
 
-  await test.step('the connection chip leaves live and the ingestion chip stops claiming health (UI-I4)', async () => {
-    // The stream breaks at once and the polls fail after it: the chip must read reconnecting (or connection lost) inside the
+  await test.step('the connection leaves live and the ingestion stops claiming health (UI-I4)', async () => {
+    // The stream breaks at once and the polls fail after it: the control must read reconnecting (or connection lost) inside the
     // documented window, which is shorter than the test timeout (instance.staleAfterMs plus the first retry).
-    await expect(connectionChip(page)).toHaveAttribute('data-status', /^(reconnecting|offline)$/, {
+    await expect(liveControl(page)).toHaveAttribute('data-connection', /^(reconnecting|offline)$/, {
       timeout: LIVE_TIMEOUT_MS,
     });
-    await expect(ingestionChip(page)).toContainText('Ingestion unknown');
-    await expect(ingestionChip(page)).not.toContainText('Ingestion OK');
+    await expect(liveControl(page)).toHaveAttribute('data-ingestion', 'unknown');
+    await expect(liveControl(page)).not.toContainText('Live');
   });
 
   await test.step('the stream and the polls fail, and the rows stay (UI-I5)', async () => {

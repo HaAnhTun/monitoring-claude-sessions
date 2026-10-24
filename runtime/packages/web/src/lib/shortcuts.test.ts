@@ -1,7 +1,16 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { SHORTCUT_HELP, shouldHandleShortcut, type KeyboardEventLike, type ShortcutTarget } from './shortcuts.ts';
+import { hasMessageKey } from '../i18n/translate.ts';
+import { msg } from '../test/msg.ts';
+import {
+  groupOfKey,
+  SHORTCUT_GROUPS,
+  SHORTCUT_HELP,
+  shouldHandleShortcut,
+  type KeyboardEventLike,
+  type ShortcutTarget,
+} from './shortcuts.ts';
 
 function event(over: Partial<KeyboardEventLike> = {}): KeyboardEventLike {
   return {
@@ -77,8 +86,34 @@ describe('shouldHandleShortcut', () => {
     expect(shouldHandleShortcut(event(), false)).toBe(true);
   });
 
-  it('documents the global shortcuts for the help dialog', () => {
-    expect(SHORTCUT_HELP.map((s) => s.keys)).toEqual(['/', 'f', ']', '[', '?', 'Esc', 'Up / Down / Home / End']);
-    for (const s of SHORTCUT_HELP) expect(s.description.length).toBeGreaterThan(5);
+  it('documents the global shortcuts for the help dialog, each row with a catalogue key and a group', () => {
+    expect(SHORTCUT_HELP.map((s) => s.keys)).toEqual([
+      ['/'],
+      ['f'],
+      [']'],
+      ['['],
+      ['?'],
+      [{ cap: 'esc' }],
+      [{ cap: 'up' }, { cap: 'down' }, { cap: 'home' }, { cap: 'end' }],
+    ]);
+    for (const row of SHORTCUT_HELP) {
+      expect(hasMessageKey(row.descriptionKey), row.descriptionKey).toBe(true);
+      expect(SHORTCUT_GROUPS).toContain(row.group);
+      expect(msg(row.descriptionKey).length).toBeGreaterThan(5);
+    }
+  });
+
+  it('only the rows that no component registers are fixed', () => {
+    expect(SHORTCUT_HELP.filter((row) => row.fixed).map((row) => row.descriptionKey)).toEqual([
+      'shortcuts.fixed.escape',
+      'shortcuts.fixed.sidebar',
+    ]);
+  });
+
+  it('groups the registered keys: search, transcript and navigation (an unknown key is navigation)', () => {
+    expect(groupOfKey('/')).toBe('search');
+    expect(['f', ']', '['].map(groupOfKey)).toEqual(['transcript', 'transcript', 'transcript']);
+    expect(groupOfKey('?')).toBe('navigation');
+    expect(groupOfKey('x')).toBe('navigation');
   });
 });

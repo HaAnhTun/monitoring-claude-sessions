@@ -4,20 +4,23 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { qk } from '../data/query-keys.ts';
+import { createFormatters } from '../i18n/format.ts';
 import { createFakeApi } from '../test/fake-api.ts';
 import { createFakeEventSources, type FakeEventSources } from '../test/fake-event-source.ts';
 import { FIXTURE_EPOCH, FIXTURE_INSTANCE_ID, iso, makeHealth, makeInstance } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
 import { renderHookWithProviders } from '../test/render.tsx';
 import { StreamProvider } from './StreamProvider.tsx';
 import { useFreshness } from './useFreshness.ts';
 
 const INSTANCE = makeInstance({ staleAfterMs: 30_000 });
+const START = new Date('2026-10-12T12:00:00Z');
 
 let sources: FakeEventSources;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-10-12T12:00:00Z'));
+  vi.setSystemTime(START);
   sources = createFakeEventSources();
 });
 
@@ -40,13 +43,14 @@ function withStream(children: ReactNode): ReactNode {
   );
 }
 
-function setup(options: { stream?: boolean; announce?: (m: string) => void } = {}) {
+function setup(options: { stream?: boolean; announce?: (m: string) => void; locale?: 'en' | 'vi' } = {}) {
   const api = createFakeApi({ instance: () => INSTANCE, health: () => makeHealth('ok') });
   const rendered = renderHookWithProviders(
     () => useFreshness({ ...(options.announce === undefined ? {} : { announce: options.announce }) }),
     {
       instance: INSTANCE,
       api,
+      ...(options.locale === undefined ? {} : { locale: options.locale }),
       ...(options.stream === true ? { wrap: withStream } : {}),
     },
   );
@@ -82,7 +86,7 @@ describe('useFreshness', () => {
   it('is connecting before anything was fetched', () => {
     const { result } = setup();
     expect(result.current.connection.state).toBe('connecting');
-    expect(result.current.connectionChip.text).toBe('Connecting...');
+    expect(result.current.connectionChip.textKey).toBe('live.conn.connecting');
     expect(result.current.staleLine).toBeNull();
   });
 
@@ -90,8 +94,11 @@ describe('useFreshness', () => {
     const rendered = setup();
     await pollCore(rendered);
     expect(rendered.result.current.connection.state).toBe('polling');
-    expect(rendered.result.current.connectionChip.text).toBe('Live updates paused, refreshing every 6s');
-    expect(rendered.result.current.ingestionChip.text).toBe('Ingestion OK');
+    expect(rendered.result.current.connectionChip).toMatchObject({
+      textKey: 'live.conn.polling',
+      args: { seconds: 6 },
+    });
+    expect(rendered.result.current.ingestionChip.textKey).toBe('live.ingest.ok');
   });
 
   it('is live while the stream is open and in sync, and moves to paused when it drops', async () => {
@@ -100,13 +107,13 @@ describe('useFreshness', () => {
     await pollCore(rendered);
     streamOpen();
     await flush(1_000);
-    expect(rendered.result.current.connectionChip).toMatchObject({ text: 'Live', tone: 'ok' });
+    expect(rendered.result.current.connectionChip).toMatchObject({ textKey: 'live.conn.live', tone: 'ok' });
     act(() => {
       sources.last().fail();
     });
     await flush(1_000);
     expect(rendered.result.current.connection.state).toBe('polling');
-    expect(announce).toHaveBeenCalledWith('Live updates paused');
+    expect(announce).toHaveBeenCalledWith(msg('freshness.announce.paused'));
     expect(announce).toHaveBeenCalledTimes(1);
   });
 
@@ -116,9 +123,9 @@ describe('useFreshness', () => {
     expect(rendered.result.current.staleLine).toBeNull();
     await flush(31_000);
     expect(rendered.result.current.connection.stale).toBe(true);
-    expect(rendered.result.current.staleLine).toBe('as of 12:00:00 (31s ago)');
-    expect(rendered.result.current.connectionChip.text).toBe('Refresh failing');
-    expect(rendered.result.current.ingestionChip.text).toBe('Ingestion unknown');
+    expect(rendered.result.current.staleLine).toEqual({ lastSyncAt: START.getTime(), ageSeconds: 31 });
+    expect(rendered.result.current.connectionChip.textKey).toBe('live.conn.pollingFailing');
+    expect(rendered.result.current.ingestionChip.textKey).toBe('live.ingest.unknown');
   });
 
   it('announces the stale transition once', async () => {
@@ -126,9 +133,19 @@ describe('useFreshness', () => {
     const rendered = setup({ announce });
     await pollCore(rendered);
     await flush(31_000);
-    expect(announce.mock.calls.map(([m]) => m)).toEqual(['Data is stale: no update for 31s']);
+    expect(announce.mock.calls.map(([m]) => m)).toEqual([msg('freshness.announce.stale', { age: '31s' })]);
     await flush(5_000);
     expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces in the language that is shown', async () => {
+    const announce = vi.fn<(m: string) => void>();
+    const rendered = setup({ announce, locale: 'vi' });
+    await pollCore(rendered);
+    await flush(31_000);
+    expect(announce.mock.calls.map(([m]) => m)).toEqual([
+      msg('freshness.announce.stale', { age: createFormatters('vi').age(31) }, 'vi'),
+    ]);
   });
 
   it('follows the browser: offline shows Offline', async () => {
@@ -138,7 +155,7 @@ describe('useFreshness', () => {
     act(() => {
       window.dispatchEvent(new Event('offline'));
     });
-    expect(rendered.result.current.connectionChip.text).toBe('Offline');
+    expect(rendered.result.current.connectionChip.textKey).toBe('live.conn.offline');
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
     act(() => {
       window.dispatchEvent(new Event('online'));

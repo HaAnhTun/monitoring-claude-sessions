@@ -197,28 +197,27 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
     expect(sidebar.compareDocumentPosition(screen.getByRole('main')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('shows the TopBar: title, task, both chips and the refresh button, and no second heading (CR-WP-48-2)', async () => {
+  it('shows the TopBar: title, task, the one Live control, the refresh and menu buttons, and no second heading (CR-WP-48-2)', async () => {
     renderShell();
     const banner = screen.getByRole('banner');
     await waitFor(() => {
       expect(banner).toHaveTextContent('FIXTURE monitor');
     });
-    expect(banner.querySelector('[data-chip="connection"]')).not.toBeNull();
-    expect(banner.querySelector('[data-chip="ingestion"]')).not.toBeNull();
-    expect(within(banner).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
-    expect(within(banner).getByRole('button', { name: 'Details' })).toHaveAttribute('aria-expanded', 'false');
+    expect(banner.querySelectorAll('[data-live-state]')).toHaveLength(1);
+    expect(within(banner).getByRole('button', { name: msg('topbar.refresh') })).toBeInTheDocument();
+    expect(within(banner).getByRole('button', { name: msg('menu.trigger') })).toHaveAttribute('aria-haspopup', 'menu');
+    expect(within(banner).queryByRole('button', { name: /^(Details|Theme|Density)/ })).toBeNull();
     expect(within(banner).queryByRole('heading')).toBeNull();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
-  it('shows the chips and the fallback title while the instance is still loading', () => {
+  it('shows the Live control and the fallback title while the instance is still loading', () => {
     const api = createFakeApi({ instance: () => new Promise<InstanceInfo>(() => undefined) });
     renderShell({ api, instanceId: null });
     const banner = screen.getByRole('banner');
-    expect(banner).toHaveTextContent('Claude session monitor');
-    expect(banner.querySelector('[data-chip="connection"]')).toHaveTextContent('Connecting...');
-    expect(banner.querySelector('[data-chip="ingestion"]')).not.toBeNull();
-    expect(within(banner).queryByRole('button', { name: /^Theme:/ })).toBeNull();
+    expect(banner).toHaveTextContent(msg('shell.appTitle'));
+    expect(banner.querySelector('[data-live-state]')).toHaveTextContent(msg('live.bar.connecting'));
+    expect(within(banner).queryByRole('button', { name: msg('menu.trigger') })).toBeNull();
   });
 
   it('marks the main region data-stale while a page shows a stale line, and only then', async () => {
@@ -617,71 +616,101 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
     });
   });
 
-  describe('preference controls', () => {
-    it('cycles the theme auto, light, dark, auto, sets data-theme and announces it', async () => {
+  describe('user menu (theme, density, language)', () => {
+    async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: msg('menu.trigger') }));
+      return screen.findByRole('menu', { name: msg('menu.trigger') });
+    }
+
+    it('chooses the theme, sets data-theme, marks the choice and announces it', async () => {
       const user = userEvent.setup();
       const { store } = renderShell();
-      const button = await screen.findByRole('button', { name: 'Theme: auto' });
-      await user.click(button);
-      expect(screen.getByRole('button', { name: 'Theme: light' })).toBeInTheDocument();
+      const menu = await openMenu(user);
+      const themes = within(within(menu).getByRole('group', { name: msg('menu.theme') }));
+      expect(themes.getByRole('menuitemradio', { name: msg('menu.theme.auto') })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      await user.click(within(menu).getByRole('menuitemradio', { name: msg('menu.theme.light') }));
       expect(document.documentElement).toHaveAttribute('data-theme', 'light');
-      await user.click(screen.getByRole('button', { name: 'Theme: light' }));
+      await user.click(within(menu).getByRole('menuitemradio', { name: msg('menu.theme.dark') }));
       expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+      expect(within(menu).getByRole('menuitemradio', { name: msg('menu.theme.dark') })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       await waitFor(() => {
-        expect(liveRegion()).toHaveTextContent('Theme: dark');
+        expect(liveRegion()).toHaveTextContent(msg('menu.announce.theme', { value: msg('menu.theme.dark') }));
       });
-      await user.click(screen.getByRole('button', { name: 'Theme: dark' }));
-      expect(document.documentElement).toHaveAttribute('data-theme', 'auto');
-      expect(store.getSnapshot().theme).toBe('auto');
+      expect(store.getSnapshot().theme).toBe('dark');
     });
 
-    it('toggles the density and announces it', async () => {
+    it('chooses the density and announces it', async () => {
       const user = userEvent.setup();
       renderShell();
-      await user.click(await screen.findByRole('button', { name: 'Density: comfortable' }));
+      const menu = await openMenu(user);
+      await user.click(within(menu).getByRole('menuitemradio', { name: msg('menu.density.compact') }));
       expect(document.documentElement).toHaveAttribute('data-density', 'compact');
-      expect(screen.getByRole('button', { name: 'Density: compact' })).toBeInTheDocument();
       await waitFor(() => {
-        expect(liveRegion()).toHaveTextContent('Density: compact');
+        expect(liveRegion()).toHaveTextContent(msg('menu.announce.density', { value: msg('menu.density.compact') }));
       });
     });
 
     it('uses the instance default until a preference is stored', async () => {
+      const user = userEvent.setup();
       renderShell({ instance: makeInstance({ ui: { ...makeInstance().ui, theme: 'dark', density: 'compact' } }) });
-      expect(await screen.findByRole('button', { name: 'Theme: dark' })).toBeInTheDocument();
+      const menu = await openMenu(user);
+      expect(within(menu).getByRole('menuitemradio', { name: msg('menu.theme.dark') })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
       expect(document.documentElement).toHaveAttribute('data-density', 'compact');
     });
 
     it('prefers the stored value over the instance default', async () => {
+      const user = userEvent.setup();
       const store = createPrefsStore(createPrefs(null));
       store.setPref('theme', 'light');
       renderShell({ store, instance: makeInstance({ ui: { ...makeInstance().ui, theme: 'dark' } }) });
-      expect(await screen.findByRole('button', { name: 'Theme: light' })).toBeInTheDocument();
+      const menu = await openMenu(user);
+      expect(within(menu).getByRole('menuitemradio', { name: msg('menu.theme.light') })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
     });
   });
 
   describe('shortcuts dialog', () => {
-    it('opens with ?, lists the active shortcuts and closes with its button', async () => {
+    it('opens with ?, lists the registered and the fixed shortcuts in groups and closes with its button', async () => {
       const user = userEvent.setup();
       renderShell();
       await screen.findByRole('complementary');
       await user.keyboard('?');
-      const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
-      expect(within(dialog).getByText('Show this list of shortcuts')).toBeInTheDocument();
-      expect(within(dialog).getByText('Up / Down / Home / End')).toBeInTheDocument();
-      expect(within(dialog).getByText('Esc')).toBeInTheDocument();
-      await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+      const dialog = await screen.findByRole('dialog', { name: msg('shortcuts.title') });
+      expect(within(dialog).getByText(msg('shell.shortcutsHelp'))).toBeInTheDocument();
+      expect(within(dialog).getByText(msg('shortcuts.fixed.sidebar'))).toBeInTheDocument();
+      expect(within(dialog).getByText(msg('shortcuts.key.esc'))).toBeInTheDocument();
+      expect(within(dialog).getByRole('heading', { name: msg('shortcuts.group.navigation') })).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: msg('common.close') }));
       await waitFor(() => {
         expect(screen.queryByRole('dialog')).toBeNull();
       });
     });
 
-    it('opens from the button of the preference controls', async () => {
+    it('opens from the user menu and gives the focus back to the menu button', async () => {
       const user = userEvent.setup();
       renderShell();
-      await user.click(await screen.findByRole('button', { name: 'Shortcuts' }));
-      expect(await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+      const trigger = await screen.findByRole('button', { name: msg('menu.trigger') });
+      await user.click(trigger);
+      await user.click(await screen.findByRole('menuitem', { name: msg('menu.shortcuts') }));
+      const dialog = await screen.findByRole('dialog', { name: msg('shortcuts.title') });
+      expect(screen.queryByRole('menu')).toBeNull();
+      await user.click(within(dialog).getByRole('button', { name: msg('common.close') }));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).toBeNull();
+      });
+      expect(trigger).toHaveFocus();
     });
   });
 

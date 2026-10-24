@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 
-import { fmtAge, fmtClock } from '../lib/format.ts';
+import { useFormat, useT } from '../i18n/context.ts';
 import { useFreshness } from '../stream/useFreshness.ts';
 import { Icon } from './Icon.tsx';
 import { useNow } from './RelativeTime.tsx';
@@ -39,6 +39,8 @@ function unmark(scope: Element): void {
  * the transitions, so this is not a live region itself.
  */
 export function StaleDataIndicator({ asOf, fetchFailing = false, scope }: StaleDataIndicatorProps) {
+  const t = useT();
+  const format = useFormat();
   const { connection } = useFreshness();
   const now = useNow();
   const lineRef = useRef<HTMLParagraphElement>(null);
@@ -56,15 +58,16 @@ export function StaleDataIndicator({ asOf, fetchFailing = false, scope }: StaleD
 
   if (!shown) return null;
   const since = asOf ?? connection.lastSyncAt;
-  const age = since === null ? '' : fmtAge((now - since) / 1000);
+  const age = since === null ? '' : format.age((now - since) / 1000);
   let reason: string;
-  if (fetchFailing || connection.state === 'polling') reason = 'refresh failing';
-  else if (connection.state === 'reconnecting' || connection.state === 'offline') reason = 'live updates disconnected';
-  else reason = `no update for ${age}`;
+  if (fetchFailing || connection.state === 'polling') reason = t('freshness.reason.refreshFailing');
+  else if (connection.state === 'reconnecting' || connection.state === 'offline')
+    reason = t('freshness.reason.disconnected');
+  else reason = t('freshness.reason.noUpdate', { age });
   const text =
     since === null
-      ? `${scope}: ${reason}`
-      : `${scope} as of ${fmtClock(new Date(since).toISOString())} (${age} ago): ${reason}`;
+      ? t('freshness.asOfUnknown', { scope, reason })
+      : t('freshness.asOf', { scope, time: format.clock(since), age, reason });
   return (
     <p ref={lineRef} className="stale-indicator tone-stale">
       <Icon name="clock" />

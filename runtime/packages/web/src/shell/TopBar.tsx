@@ -1,18 +1,14 @@
-import { useContext, useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { useContext, useEffect, useRef, type RefObject } from 'react';
 
 import { Button } from '../components/Button.tsx';
 import { InstanceIdContext, useInstance } from '../data/hooks/useInstance.ts';
 import { useHealth } from '../data/hooks/useHealth.ts';
-import { fmtAge } from '../lib/format.ts';
+import { useFormat, useT } from '../i18n/context.ts';
 import { useStreamControls } from '../stream/StreamProvider.tsx';
 import { useFreshness } from '../stream/useFreshness.ts';
 import { useAnnounce } from '../state/announcer.tsx';
-import { ConnectionChip } from './ConnectionChip.tsx';
-import { HealthDetails } from './HealthDetails.tsx';
-import { IngestionChip } from './IngestionChip.tsx';
-import { PrefsControls } from './PrefsControls.tsx';
-
-const FALLBACK_TITLE = 'Claude session monitor';
+import { LiveControl } from './LiveControl.tsx';
+import { UserMenu } from './UserMenu.tsx';
 
 /**
  * The shell polls `/health` at `poll.healthMs` whenever an instance is active, with or without a stream (UI-I4). It hands its
@@ -33,12 +29,15 @@ function HealthPoll({ refetchRef }: { refetchRef: RefObject<(() => void) | null>
 }
 
 /**
- * The header of the shell (04 4.1, 4.4, 5.6): the instance title and task, the connection chip and the ingestion chip (two
- * separate signals, ADR 0033), how old the data is, "Retry now"/"Refresh", the health details and the preference controls. It
- * only renders what `useFreshness` and the server's health say. The title is a paragraph, not a heading: every page owns the
- * one `h1` (6.6 rule 3). It also announces the transitions of the connection politely through the shell's live region.
+ * The header of the shell, 48 px (ADR 0073 decision 4, review R-04): the instance title, the one Live control (the worse of the
+ * connection and the ingestion, ADR 0033), "updated Ns ago" while the data is stale, the refresh button (it says "Retry now" while
+ * the monitor cannot be reached) and the user menu. It only renders what `useFreshness` and the server's health say. The title is
+ * a paragraph, not a heading: every page owns the one `h1` (6.6 rule 3). It also announces the transitions of the connection
+ * politely through the shell's live region.
  */
 export function TopBar() {
+  const t = useT();
+  const format = useFormat();
   const instanceQuery = useInstance();
   const instance = instanceQuery.data;
   const iid = useContext(InstanceIdContext);
@@ -46,8 +45,6 @@ export function TopBar() {
   const stream = useStreamControls();
   const announce = useAnnounce();
   const freshness = useFreshness({ announce });
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const detailsId = useId();
   const { connection } = freshness;
 
   function retryNow(): void {
@@ -57,36 +54,41 @@ export function TopBar() {
   }
 
   const needsRetry = connection.state === 'reconnecting' || connection.state === 'offline';
+  const title = instance?.title ?? t('shell.appTitle');
+  // The task name is shown only when it adds something: a title that is the task name already says it.
+  const slug = instance !== undefined && instance.slug !== instance.title ? instance.slug : null;
   return (
     <header className="topbar">
       {iid === null ? null : <HealthPoll refetchRef={refetchHealth} />}
       <div className="topbar__identity">
-        <p className="topbar__title">{instance?.title ?? FALLBACK_TITLE}</p>
-        {instance === undefined ? null : <p className="topbar__task">{instance.slug}</p>}
+        <p className="topbar__title" title={title}>
+          {title}
+        </p>
+        {slug === null ? null : (
+          <p className="topbar__task" title={slug}>
+            {slug}
+          </p>
+        )}
       </div>
       <div className="topbar__status">
-        <ConnectionChip view={connection} chip={freshness.connectionChip} />
-        <IngestionChip view={freshness.ingestion} chip={freshness.ingestionChip} />
-        {connection.ageMs === null ? null : (
-          <span className="topbar__age">{`updated ${fmtAge(connection.ageMs / 1000)} ago`}</span>
+        <LiveControl freshness={freshness} />
+        {connection.stale && connection.ageMs !== null ? (
+          <span className="topbar__age">{t('topbar.updatedAgo', { age: format.age(connection.ageMs / 1000) })}</span>
+        ) : null}
+        {needsRetry ? (
+          <Button icon="refresh" onClick={retryNow}>
+            {t('common.retryNow')}
+          </Button>
+        ) : (
+          <Button
+            variant="icon"
+            icon="refresh"
+            aria-label={t('topbar.refresh')}
+            title={t('topbar.refresh')}
+            onClick={retryNow}
+          />
         )}
-        <Button icon="refresh" onClick={retryNow}>
-          {needsRetry ? 'Retry now' : 'Refresh'}
-        </Button>
-        <Button
-          icon={detailsOpen ? 'chevron-down' : 'chevron-right'}
-          aria-expanded={detailsOpen}
-          aria-controls={detailsId}
-          onClick={() => {
-            setDetailsOpen((open) => !open);
-          }}
-        >
-          Details
-        </Button>
-      </div>
-      {instance === undefined ? null : <PrefsControls />}
-      <div id={detailsId} className="topbar__details" hidden={!detailsOpen}>
-        {detailsOpen ? <HealthDetails /> : null}
+        {instance === undefined ? null : <UserMenu />}
       </div>
     </header>
   );

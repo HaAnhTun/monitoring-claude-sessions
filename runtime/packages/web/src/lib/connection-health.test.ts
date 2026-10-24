@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
+import { createT } from '../i18n/translate.ts';
 import {
   computeConnection,
   computeHealth,
@@ -12,6 +13,8 @@ import {
   type EndpointRecord,
   type StreamStatus,
 } from './connection-health.ts';
+
+const t = createT('en');
 
 function rec(name: string, o: Partial<EndpointRecord> = {}): EndpointRecord {
   return { name, lastSuccess: null, lastError: null, failures: 0, ...o };
@@ -78,11 +81,11 @@ describe('connection health (legacy computeHealth)', () => {
 
   it('legacy: page title uses words, not emoji', () => {
     const counts = countStates([{ state: 'RUNNING' }, { state: 'RUNNING' }, { state: 'FAILED' }, { state: 'x' }]);
-    expect(titleFor(counts, 'Nightly build', 'ok')).toBe('2 running, 1 failed - Nightly build');
-    expect(titleFor(countStates([]), 'Nightly build', 'ok')).toBe('Nightly build');
-    expect(titleFor(counts, 'Nightly build', 'lost')).toBe('Monitor offline - Nightly build');
-    expect(titleFor(counts, 'Nightly build', 'offline')).toBe('Monitor offline - Nightly build');
-    expect(titleFor(counts, 'Nightly build', 'live')).toBe('2 running, 1 failed - Nightly build');
+    expect(titleFor(t, counts, 'Nightly build', 'ok')).toBe('2 running, 1 failed - Nightly build');
+    expect(titleFor(t, countStates([]), 'Nightly build', 'ok')).toBe('Nightly build');
+    expect(titleFor(t, counts, 'Nightly build', 'lost')).toBe('Monitor offline - Nightly build');
+    expect(titleFor(t, counts, 'Nightly build', 'offline')).toBe('Monitor offline - Nightly build');
+    expect(titleFor(t, counts, 'Nightly build', 'live')).toBe('2 running, 1 failed - Nightly build');
   });
 
   it('normalizeState maps anything unknown to UNKNOWN and reads a state assessment', () => {
@@ -237,6 +240,7 @@ describe('computeIngestionView', () => {
     expect(computeIngestionView(undefined, null, liveView('live'), NOW, STALE)).toEqual({
       display: 'unknown',
       reasons: [],
+      lastKnown: null,
       asOf: null,
       known: false,
     });
@@ -254,6 +258,7 @@ describe('computeIngestionView', () => {
     expect(v).toEqual({
       display: 'degraded',
       reasons: ['12 hook envelopes rejected in the last hour'],
+      lastKnown: null,
       asOf: NOW - 1000,
       known: true,
     });
@@ -266,7 +271,8 @@ describe('computeIngestionView', () => {
     const v = computeIngestionView(health('ok'), record, liveView('offline'), NOW, STALE);
     expect(v.display).toBe('unknown');
     expect(v.known).toBe(false);
-    expect(v.reasons).toEqual(['Last known: ok, 40s ago']);
+    expect(v.reasons).toEqual([]);
+    expect(v.lastKnown).toEqual({ status: 'ok', ageSeconds: 40 });
     expect(v.asOf).toBe(NOW - 40000);
   });
 
@@ -274,12 +280,19 @@ describe('computeIngestionView', () => {
     const record = rec('health', { lastSuccess: NOW - 30000 });
     const v = computeIngestionView(health('stalled'), record, liveView('live'), NOW, STALE);
     expect(v.display).toBe('unknown');
-    expect(v.reasons).toEqual(['Last known: stalled, 30s ago']);
+    expect(v.reasons).toEqual([]);
+    expect(v.lastKnown).toEqual({ status: 'stalled', ageSeconds: 30 });
   });
 
   it('without a health record or success the status text has no age', () => {
     const v = computeIngestionView(health('down'), null, liveView('live'), NOW, STALE);
-    expect(v).toEqual({ display: 'unknown', reasons: ['Last known: down'], asOf: null, known: false });
+    expect(v).toEqual({
+      display: 'unknown',
+      reasons: [],
+      lastKnown: { status: 'down', ageSeconds: null },
+      asOf: null,
+      known: false,
+    });
     const never = computeIngestionView(health('down'), rec('health'), liveView('live'), NOW, STALE);
     expect(never.known).toBe(false);
   });

@@ -11,23 +11,27 @@ import {
   type ReactNode,
 } from 'react';
 
-import { shouldHandleShortcut, type KeyboardEventLike } from '../lib/shortcuts.ts';
+import { groupOfKey, shouldHandleShortcut, type KeyboardEventLike, type ShortcutGroup } from '../lib/shortcuts.ts';
 
 export interface ShortcutOptions {
   /** A disabled registration is not in the stack. Default true. */
   enabled?: boolean;
-  /** The row of the shortcuts dialog. */
+  /** The row of the shortcuts dialog, in the language that is shown. */
   description: string;
+  /** The group of the row in the dialog; a key the table of `lib/shortcuts.ts` knows has its own group, any other is navigation. */
+  group?: ShortcutGroup;
 }
 
 export interface ActiveShortcut {
   key: string;
   description: string;
+  group: ShortcutGroup;
 }
 
 interface Registration {
   key: string;
   description: string;
+  group: ShortcutGroup;
   run: (event: KeyboardEvent) => void;
 }
 
@@ -50,7 +54,7 @@ function createRegistry(): Registry {
     // The winner of every key, in order of first registration.
     const winners = new Map<string, Registration>();
     for (const entry of stack) winners.set(entry.key, entry);
-    snapshot = [...winners.values()].map(({ key, description }) => ({ key, description }));
+    snapshot = [...winners.values()].map(({ key, description, group }) => ({ key, description, group }));
     for (const listener of [...listeners]) listener();
   }
 
@@ -136,6 +140,7 @@ export function ShortcutRegistryProvider({ children }: { children: ReactNode }) 
 export function useShortcut(key: string, handler: (event: KeyboardEvent) => void, options: ShortcutOptions): void {
   const { registry } = useRegistryContext();
   const { enabled = true, description } = options;
+  const group = options.group ?? groupOfKey(key);
   const latest = useRef(handler);
   useEffect(() => {
     latest.current = handler;
@@ -145,11 +150,12 @@ export function useShortcut(key: string, handler: (event: KeyboardEvent) => void
     return registry.register({
       key,
       description,
+      group,
       run: (event) => {
         latest.current(event);
       },
     });
-  }, [registry, key, description, enabled]);
+  }, [registry, key, description, group, enabled]);
 }
 
 export interface ShortcutRegistryView {
