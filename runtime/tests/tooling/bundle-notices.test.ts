@@ -225,3 +225,101 @@ describe('embedded notices', () => {
     }
   });
 });
+
+// ---- the libraries that the v2 line of the MCP SDK inlines (ADR 0060, ADR 0063 item 6) ----------------------------------------
+// With the literal v1 package (`@modelcontextprotocol/sdk`) these libraries are separate packages of the lockfile closure and the
+// entries never match; with the v2 package (`@modelcontextprotocol/server`) they sit inside the SDK's own dist files and nothing but
+// this table lists them. The texts below are synthetic stand-ins that carry the code signature of each library.
+describe('the embedded notices of the MCP SDK libraries', () => {
+  const SIGNATURES: Readonly<Record<string, string>> = {
+    ajv: 'throw new Error("CodeGen: name must be a valid identifier");',
+    'ajv-formats': 'exports.fullFormats = {};',
+    'content-type': 'var PARAM_REGEXP = /x/g;',
+    'fast-deep-equal': 'module.exports = function equal(a, b) { return a === b; };',
+    'fast-uri': 'const supportedSchemeNames = ["http"];',
+    'json-schema-traverse': 'traverse.skipKeywords = { default: true };',
+  };
+  const INLINED_TEXT = Object.values(SIGNATURES).join('\n');
+  const names = (notices: readonly { name: string }[]): string[] => notices.map((n) => n.name).sort();
+
+  it('lists Ajv, its format and helper libraries and content-type when the SDK inlines them', () => {
+    expect(names(embeddedNotices(INLINED_TEXT))).toEqual(Object.keys(SIGNATURES));
+  });
+
+  it('fails the check of an inlined library whose entry is missing from the table', () => {
+    // the table is the only record of a vendored library, so a bundle that holds one must be covered entry by entry
+    for (const name of Object.keys(SIGNATURES)) {
+      const covered = EMBEDDED_NOTICES.some((entry) => entry.name === name && entry.pattern.test(INLINED_TEXT));
+      expect(covered, `${name} has no entry that matches its code`).toBe(true);
+    }
+  });
+
+  it('gives every entry a name, a version, an SPDX id of the allow list and a licence text with its copyright line', () => {
+    for (const entry of EMBEDDED_NOTICES) {
+      expect(entry.version, entry.name).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(['MIT', 'BSD-3-Clause'], entry.name).toContain(entry.license);
+      expect(entry.text, entry.name).toMatch(/Copyright \(c\)|Copyright\(c\)/i);
+      expect(entry.text, entry.name).not.toContain('\r');
+    }
+    expect(EMBEDDED_NOTICES.find((e) => e.name === 'fast-uri')?.license).toBe('BSD-3-Clause');
+    expect(EMBEDDED_NOTICES.find((e) => e.name === 'fast-uri')?.text).toContain(
+      'Redistribution and use in source and binary forms',
+    );
+    expect(EMBEDDED_NOTICES.find((e) => e.name === 'ajv')?.text).toContain('Permission is hereby granted');
+  });
+
+  it('never matches when the library is a separate package of the bundle (the v1 package)', () => {
+    const regions = Object.keys(SIGNATURES)
+      .map((name) => `//#region npm/${name}/dist/index.js\n${SIGNATURES[name] ?? ''}`)
+      .join('\n');
+    expect(embeddedNotices(regions)).toEqual([]);
+    // a copy nested below the SDK is written as npm/@modelcontextprotocol/sdk/npm/<name>/ by the bundle normaliser
+    const nested = Object.keys(SIGNATURES)
+      .map((name) => `//#region npm/@modelcontextprotocol/sdk/npm/${name}/lib/a.js\n${SIGNATURES[name] ?? ''}`)
+      .join('\n');
+    expect(embeddedNotices(nested)).toEqual([]);
+  });
+
+  it('matches only the libraries that are inlined, and an unrelated bundle matches nothing', () => {
+    const onlyAjv = `//#region npm/fast-uri/index.js\n${SIGNATURES['fast-uri'] ?? ''}\n${SIGNATURES['ajv'] ?? ''}`;
+    expect(names(embeddedNotices(onlyAjv))).toEqual(['ajv']);
+    expect(embeddedNotices('console.log("no vendored code here");')).toEqual([]);
+  });
+
+  it('adds the notices of an inlined bundle to the generated text, once each, with the licence text', () => {
+    const notices = collectNotices({ moduleIds: [], includeWeb: false, lock: LOCK, root, bundleText: INLINED_TEXT });
+    expect(names(notices)).toEqual(Object.keys(SIGNATURES));
+    const text = renderNotices(notices);
+    for (const name of Object.keys(SIGNATURES)) {
+      expect(
+        text.split('\n').filter((line) => line.startsWith(`${name} `)),
+        name,
+      ).toHaveLength(1);
+    }
+    expect(text).toContain('Redistribution and use in source and binary forms');
+  });
+
+  it('lists the SDK itself once when it is a module of the bundle, through the lockfile closure', () => {
+    const lock: Lock = {
+      packages: {
+        '': { name: 'fixture-root' },
+        'node_modules/@modelcontextprotocol/sdk': { version: '1.32.1', license: 'MIT' },
+        'node_modules/ajv': { version: '8.20.0', license: 'MIT' },
+      },
+    };
+    const ids = [
+      join(root, 'node_modules', '@modelcontextprotocol', 'sdk', 'dist', 'esm', 'server', 'index.js'),
+      join(root, 'node_modules', '@modelcontextprotocol', 'sdk', 'dist', 'esm', 'types.js'),
+      join(root, 'node_modules', 'ajv', 'dist', 'ajv.js'),
+    ];
+    const notices = collectNotices({
+      moduleIds: ids,
+      includeWeb: false,
+      lock,
+      root,
+      bundleText: INLINED_TEXT.replace('throw', '//#region npm/ajv/x\nthrow'),
+    });
+    expect(notices.filter((n) => n.name === '@modelcontextprotocol/sdk')).toHaveLength(1);
+    expect(notices.filter((n) => n.name === 'ajv')).toHaveLength(1);
+  });
+});

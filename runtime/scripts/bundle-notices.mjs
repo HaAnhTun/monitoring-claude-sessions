@@ -27,8 +27,231 @@ export const NO_LICENSE_FILE_MARKER =
  * Code that a bundled package already contains inside its own dist file (a vendored library is not a module of its own, so
  * rolldown does not report it). Each entry: `name`, `version`, `license` (SPDX), `text` (the licence text) and `pattern` (a
  * RegExp that finds the vendored code in the bundle text). A dependency that vendors another library adds its entry here.
+ * The v2 line of the MCP SDK (`@modelcontextprotocol/server`) inlines Ajv, its format and helper libraries and `content-type`; the
+ * v1 package of ADR 0060 does not, so with it these entries stay in place and never match.
  */
-export const EMBEDDED_NOTICES = Object.freeze([]);
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The version of `name` that the installed v2 line of the MCP SDK (`@modelcontextprotocol/server`) pre-bundles into its own dist
+ * files, read from the module comments of those files; `fallback` when that package is not installed (with the literal v1 package
+ * `@modelcontextprotocol/sdk` the libraries below are separate packages of the lockfile closure and are never matched).
+ */
+function inlinedVersion(name, fallback, root = RUNTIME_ROOT) {
+  const dist = join(root, 'node_modules', '@modelcontextprotocol', 'server', 'dist');
+  if (!existsSync(dist)) return fallback;
+  const pattern = new RegExp(`/\\.pnpm/${escapeRegExp(name)}@(\\d+\\.\\d+\\.\\d+)/`);
+  for (const file of readdirSync(dist)
+    .filter((n) => n.endsWith('.mjs'))
+    .sort()) {
+    const match = pattern.exec(readFileSync(join(dist, file), 'utf8'));
+    if (match !== null) return match[1];
+  }
+  return fallback;
+}
+
+/**
+ * One entry of `EMBEDDED_NOTICES`. The pattern matches the bundle text when the code identified by `signature` is present and no
+ * module of the package itself was bundled (rolldown writes a `//#region .../npm/<name>/...` line for each module of a separate
+ * package), so a package that is part of the lockfile closure is never listed twice.
+ */
+function vendored({ name, fallbackVersion, license, signature, text }) {
+  const own = `//#region (?:[^\\n]*/)?npm/${escapeRegExp(name)}/`;
+  return {
+    name,
+    version: inlinedVersion(name, fallbackVersion),
+    license,
+    text,
+    pattern: new RegExp(`^(?![\\s\\S]*${own})[\\s\\S]*?(?:${signature.source})`),
+  };
+}
+
+export const EMBEDDED_NOTICES = Object.freeze([
+  vendored({
+    name: 'ajv',
+    fallbackVersion: '8.18.0',
+    license: 'MIT',
+    signature: /CodeGen: name must be a valid identifier/,
+    text: [
+      'The MIT License (MIT)',
+      '',
+      'Copyright (c) 2015-2021 Evgeny Poberezkin',
+      '',
+      'Permission is hereby granted, free of charge, to any person obtaining a copy',
+      'of this software and associated documentation files (the "Software"), to deal',
+      'in the Software without restriction, including without limitation the rights',
+      'to use, copy, modify, merge, publish, distribute, sublicense, and/or sell',
+      'copies of the Software, and to permit persons to whom the Software is',
+      'furnished to do so, subject to the following conditions:',
+      '',
+      'The above copyright notice and this permission notice shall be included in all',
+      'copies or substantial portions of the Software.',
+      '',
+      'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+      'IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,',
+      'FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE',
+      'AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER',
+      'LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,',
+      'OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE',
+      'SOFTWARE.',
+    ].join('\n'),
+  }),
+  vendored({
+    name: 'ajv-formats',
+    fallbackVersion: '3.0.1',
+    license: 'MIT',
+    signature: /exports\.fullFormats\s*=/,
+    text: [
+      'MIT License',
+      '',
+      'Copyright (c) 2020 Evgeny Poberezkin',
+      '',
+      'Permission is hereby granted, free of charge, to any person obtaining a copy',
+      'of this software and associated documentation files (the "Software"), to deal',
+      'in the Software without restriction, including without limitation the rights',
+      'to use, copy, modify, merge, publish, distribute, sublicense, and/or sell',
+      'copies of the Software, and to permit persons to whom the Software is',
+      'furnished to do so, subject to the following conditions:',
+      '',
+      'The above copyright notice and this permission notice shall be included in all',
+      'copies or substantial portions of the Software.',
+      '',
+      'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+      'IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,',
+      'FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE',
+      'AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER',
+      'LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,',
+      'OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE',
+      'SOFTWARE.',
+    ].join('\n'),
+  }),
+  vendored({
+    name: 'content-type',
+    fallbackVersion: '1.0.5',
+    license: 'MIT',
+    signature: /var PARAM_REGEXP\s*=/,
+    text: [
+      '(The MIT License)',
+      '',
+      'Copyright (c) 2015 Douglas Christopher Wilson',
+      '',
+      'Permission is hereby granted, free of charge, to any person obtaining',
+      'a copy of this software and associated documentation files (the',
+      "'Software'), to deal in the Software without restriction, including",
+      'without limitation the rights to use, copy, modify, merge, publish,',
+      'distribute, sublicense, and/or sell copies of the Software, and to',
+      'permit persons to whom the Software is furnished to do so, subject to',
+      'the following conditions:',
+      '',
+      'The above copyright notice and this permission notice shall be',
+      'included in all copies or substantial portions of the Software.',
+      '',
+      "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,",
+      'EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF',
+      'MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.',
+      'IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY',
+      'CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,',
+      'TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE',
+      'SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.',
+    ].join('\n'),
+  }),
+  vendored({
+    name: 'fast-deep-equal',
+    fallbackVersion: '3.1.3',
+    license: 'MIT',
+    signature: /module\.exports = function equal\(a, b\)/,
+    text: [
+      'MIT License',
+      '',
+      'Copyright (c) 2017 Evgeny Poberezkin',
+      '',
+      'Permission is hereby granted, free of charge, to any person obtaining a copy',
+      'of this software and associated documentation files (the "Software"), to deal',
+      'in the Software without restriction, including without limitation the rights',
+      'to use, copy, modify, merge, publish, distribute, sublicense, and/or sell',
+      'copies of the Software, and to permit persons to whom the Software is',
+      'furnished to do so, subject to the following conditions:',
+      '',
+      'The above copyright notice and this permission notice shall be included in all',
+      'copies or substantial portions of the Software.',
+      '',
+      'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+      'IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,',
+      'FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE',
+      'AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER',
+      'LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,',
+      'OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE',
+      'SOFTWARE.',
+    ].join('\n'),
+  }),
+  vendored({
+    name: 'fast-uri',
+    fallbackVersion: '3.1.0',
+    license: 'BSD-3-Clause',
+    signature: /const supportedSchemeNames\s*=/,
+    text: [
+      'Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae',
+      'Copyright (c) 2021-present The Fastify team <https://github.com/fastify/fastify#team>',
+      'All rights reserved.',
+      '',
+      'Redistribution and use in source and binary forms, with or without',
+      'modification, are permitted provided that the following conditions are met:',
+      '    * Redistributions of source code must retain the above copyright',
+      '      notice, this list of conditions and the following disclaimer.',
+      '    * Redistributions in binary form must reproduce the above copyright',
+      '      notice, this list of conditions and the following disclaimer in the',
+      '      documentation and/or other materials provided with the distribution.',
+      '    * The names of any contributors may not be used to endorse or promote',
+      '      products derived from this software without specific prior written',
+      '      permission.',
+      '',
+      'THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND',
+      'ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED',
+      'WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE',
+      'DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS AND CONTRIBUTORS BE LIABLE FOR ANY',
+      'DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES',
+      '(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;',
+      'LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND',
+      'ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT',
+      '(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS',
+      'SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.',
+      '',
+      '                                  *   *   *',
+      '',
+      'The complete list of contributors can be found at:',
+      '- https://github.com/garycourt/uri-js/graphs/contributors',
+    ].join('\n'),
+  }),
+  vendored({
+    name: 'json-schema-traverse',
+    fallbackVersion: '1.0.0',
+    license: 'MIT',
+    signature: /traverse\.skipKeywords\s*=/,
+    text: [
+      'MIT License',
+      '',
+      'Copyright (c) 2017 Evgeny Poberezkin',
+      '',
+      'Permission is hereby granted, free of charge, to any person obtaining a copy',
+      'of this software and associated documentation files (the "Software"), to deal',
+      'in the Software without restriction, including without limitation the rights',
+      'to use, copy, modify, merge, publish, distribute, sublicense, and/or sell',
+      'copies of the Software, and to permit persons to whom the Software is',
+      'furnished to do so, subject to the following conditions:',
+      '',
+      'The above copyright notice and this permission notice shall be included in all',
+      'copies or substantial portions of the Software.',
+      '',
+      'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+      'IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,',
+      'FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE',
+      'AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER',
+      'LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,',
+      'OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE',
+      'SOFTWARE.',
+    ].join('\n'),
+  }),
+]);
 
 const LICENSE_FILE = /^(licen[cs]e|copying)(\.[a-z0-9]+|-[a-z0-9.-]+)?$/i;
 
