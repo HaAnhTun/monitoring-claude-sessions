@@ -44,6 +44,7 @@ sent. The contract rules (versioning, ids, times, pagination, errors) are in `do
 | [`ingestNudge`](#ingestnudge) | POST | `/api/v3/ingest/nudge` | Tells the server that the spool has new data; the body carries no event data. |
 | [`ingestProbe`](#ingestprobe) | GET | `/api/v3/ingest/probes/:probeSessionId` | Whether a hook probe envelope has been committed (the hook verification check V7). |
 | [`stream`](#stream) | GET | `/api/v3/stream` | Server-sent events: hello, change, heartbeat and reset frames. |
+| [`explainCompletion`](#explaincompletion) | GET | `/api/v3/completion` | Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only. |
 
 ## Errors every route can answer
 
@@ -421,6 +422,17 @@ Server-sent events: hello, change, heartbeat and reset frames.
 - Success: 200 `text/event-stream`
 - Query parameters: `since`, `epoch` ([`api/stream.query.schema.json`](../../schemas/api/stream.query.schema.json))
 - Specific errors: `stream_limit`
+
+## explainCompletion
+
+`GET /api/v3/completion`
+
+Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only.
+
+- Success: 200 `application/json`
+- Query parameters: `session`, `label`, `attemptPart` ([`api/explainCompletion.query.schema.json`](../../schemas/api/explainCompletion.query.schema.json))
+- Response: [`api/explainCompletion.response.schema.json`](../../schemas/api/explainCompletion.response.schema.json)
+- Specific errors: `completion_target_not_found`
 
 ## Stream
 

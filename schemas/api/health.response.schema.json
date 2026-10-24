@@ -85,6 +85,12 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "previousRunUnclean": {
+          "type": "boolean"
+        },
+        "ownershipConflict": {
+          "type": "boolean"
+        },
         "search": {
           "type": "object",
           "properties": {
@@ -146,6 +152,8 @@
         "cpuUserMicros",
         "cpuSystemMicros",
         "sseClients",
+        "previousRunUnclean",
+        "ownershipConflict",
         "search"
       ],
       "additionalProperties": false
