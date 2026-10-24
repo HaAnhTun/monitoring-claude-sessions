@@ -1,6 +1,7 @@
-/* Lists: filter bar, data table, token figures (04-ui.md 4.3). The table scrolls inside its own wrapper. */
+/* Lists: filter bar, summary strip, data table and card list, token figures (04-ui.md 4.3, ADR 0071, ADR 0073 decision 7).
+   The table scrolls inside its own wrapper; below 900 px a page may draw the rows as cards instead. */
 
-/* Filter bar (04-ui.md 4.3): one search form per list page; fields wrap on narrow screens. */
+/* ---- Filter bar: V3 layout (every field inline, label in front) --------------------------------------------------------- */
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -53,30 +54,308 @@
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
-/* Data table (04-ui.md 4.3): scrolls inside its own wrapper, sticky header, one stretched link per row. */
+
+/* ---- Filter bar: one row (search, primary controls, "More filters") and the chips of the filters that are on --------------- */
+/* No wrap here: a wrapping column container measures its rows at their shrink-to-fit width, and the row of controls, which wraps by
+   itself, would then be as tall as two lines at any width. */
+.filter-bar--row {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--sp-3);
+}
+.filter-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+/* The search takes the room that is left, up to a readable width; the magnifier sits inside the box. */
+.filter-bar__search {
+  position: relative;
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  min-width: min(14rem, 100%);
+  max-width: 26rem;
+}
+.filter-bar__search .icon {
+  position: absolute;
+  inset-inline-start: var(--sp-3);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.filter-bar__search .input {
+  width: 100%;
+  padding-inline-start: calc(var(--sp-3) + 16px + var(--sp-2));
+}
+.filter-bar__text {
+  display: flex;
+  flex: 0 1 12rem;
+  min-width: 8rem;
+}
+.filter-bar__text .input {
+  width: 100%;
+}
+/* A flag in the row is a toggle with the box of a control; it takes the accent border while it is on. */
+.filter-bar__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--ctl-h);
+  padding: 0 var(--sp-4);
+  background: var(--surface);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  white-space: nowrap;
+}
+.filter-bar__toggle:hover {
+  border-color: var(--text-muted);
+}
+.filter-bar__toggle:has(input:checked) {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+.filter-bar__toggle:has(input:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+/* The toggle is the one focus ring; where `:has` is missing the checkbox keeps its own. */
+@supports selector(:has(*)) {
+  .filter-bar__toggle input:focus-visible {
+    outline: none;
+  }
+}
+.filter-bar__end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-inline-start: auto;
+}
+.filter-bar__bounds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+}
+.filter-bar__bounds label {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+/* Inside the "More filters" panel: a label above each control. */
+.filter-bar__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: min(20rem, 100%);
+}
+.filter-bar__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.filter-bar__stack > label,
+.filter-bar__stack-label {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.filter-bar__stack > .input,
+.filter-bar__stack input[type='number'] {
+  width: 100%;
+}
+.filter-bar__stack.filter-bar__field--range {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+  column-gap: var(--sp-3);
+}
+/* The checkboxes of a multi field inside a panel need no box of their own: the panel is the box. */
+.filter-bar__menu {
+  min-width: 12rem;
+}
+.filter-bar__menu .filter-bar__group,
+.filter-bar__panel .filter-bar__group {
+  padding: 0;
+  border: 0;
+}
+/* The filters that are on: removable chips and "Clear filters (n)". A long list scrolls inside its own box. */
+.filter-bar__active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-2) var(--sp-3);
+  min-width: 0;
+}
+.filter-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  max-width: 100%;
+  max-height: calc(4 * (var(--ctl-h-inline) + var(--sp-2)));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.filter-bar__chip-text {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Summary strip: big figures with a dot and a word; a tile is a link, a toggle or plain ------------------------------- */
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.summary-strip__item {
+  display: flex;
+  min-width: 0;
+}
+.summary-tile {
+  --tone-dot: var(--state-ended-dot);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  color: var(--text);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+}
+a.summary-tile:hover {
+  text-decoration: none;
+}
+button.summary-tile,
+a.summary-tile {
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+button.summary-tile:hover,
+a.summary-tile:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+/* A pressed tile is the filter that is on: the accent marks it, because it is interactive. */
+button.summary-tile[aria-pressed='true'] {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.summary-tile__value {
+  font-size: var(--fs-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-2xl);
+}
+.summary-tile__value--unknown {
+  color: var(--text-muted);
+}
+.summary-tile__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.summary-tile__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--tone-dot);
+  border-radius: 50%;
+}
+.summary-tile--running {
+  --tone-dot: var(--state-working-dot);
+}
+.summary-tile--completed {
+  --tone-dot: var(--state-completed-dot);
+}
+.summary-tile--failed {
+  --tone-dot: var(--state-failed-dot);
+}
+/* Waiting and quiet-inferred states are drawn as rings, as on the badges (ADR 0074 decision 2). */
+.summary-tile--waiting {
+  --tone-dot: var(--state-waiting-dot);
+}
+.summary-tile--quiet {
+  --tone-dot: var(--state-stale-dot);
+}
+.summary-tile--waiting .summary-tile__dot,
+.summary-tile--quiet .summary-tile__dot {
+  background: transparent;
+  border: 2px solid var(--tone-dot);
+}
+@media (max-width: 899px) {
+  .summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-3);
+  }
+  .summary-tile {
+    padding: var(--sp-3) var(--sp-4);
+  }
+}
+
+/* ---- Data table (04-ui.md 4.3): a card with its own scroll, sticky header, one stretched link per row ------------------------- */
 .tbl-wrap {
   max-width: 100%;
   overflow-x: auto;
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
 }
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
 }
 .data-table th,
 .data-table td {
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
   border-bottom: var(--border-w) solid var(--border);
   text-align: start;
-  vertical-align: top;
+  vertical-align: middle;
+}
+.data-table td {
+  height: calc(44px * var(--d));
+}
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 .data-table th {
   position: sticky;
   top: 0;
   z-index: 2;
+  padding-block: var(--sp-3);
   background: var(--surface-2);
   color: var(--text-muted);
-  font-weight: 600;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
   white-space: nowrap;
 }
 .data-table th[aria-sort='ascending'],
@@ -85,6 +364,25 @@
 }
 .data-table .is-end {
   text-align: end;
+}
+.data-table .is-num {
+  font-variant-numeric: tabular-nums;
+}
+.data-table .is-num,
+.data-table .is-nowrap {
+  white-space: nowrap;
+}
+/* The first column stays in view when a wide table scrolls sideways (ADR 0073 decision 7). */
+.data-table .is-sticky-start {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
+}
+.data-table th.is-sticky-start {
+  z-index: 3;
+  background: var(--surface-2);
 }
 .data-table__sort {
   display: inline-flex;
@@ -103,12 +401,16 @@
 .data-table__row--link {
   position: relative;
 }
-.data-table__row--link:hover {
+.data-table__row--link:hover,
+.data-table__row--link:hover .is-sticky-start {
   background: var(--surface-2);
 }
 .data-table__row[aria-current='true'] {
   background: var(--surface-2);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+.data-table__row[aria-current='true'] .is-sticky-start {
+  background: var(--surface-2);
 }
 .data-table__link {
   color: inherit;
@@ -127,7 +429,9 @@
   outline-offset: -2px;
 }
 .data-table__row--link td button,
-.data-table__row--link td a:not(.data-table__link) {
+.data-table__row--link td a:not(.data-table__link),
+.data-card--link button,
+.data-card--link a:not(.data-table__link) {
   position: relative;
   z-index: 1;
 }
@@ -136,6 +440,151 @@
     display: none;
   }
 }
+
+/* ---- Card list: the rows of a table below 900 px, one link each ---------------------------------------------------------------- */
+.data-cards-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.data-cards__sort {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.data-cards__sort label {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.data-cards__sort .input {
+  flex: 0 1 14rem;
+  min-width: 0;
+}
+.data-cards {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+  list-style: none;
+}
+.data-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.data-card:last-child {
+  border-bottom: 0;
+}
+.data-card--link:hover {
+  background: var(--surface-2);
+}
+.data-card[aria-current='true'] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.data-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.data-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+.data-card__end {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.data-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+
+/* ---- Token figures: Output, Input (new), Cache read in one vocabulary (ADR 0074 decision 5) ---------------------------------- */
+.token-figures {
+  font-variant-numeric: tabular-nums;
+}
+.token-figures--cell {
+  white-space: nowrap;
+}
+.token-figures__na,
+.token-figures__bound {
+  color: var(--text-muted);
+}
+.token-figures--line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-5);
+}
+.token-figures__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.token-figures__label {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.token-figures--tiles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-3) var(--sp-5);
+}
+.token-figures__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0;
+}
+.token-figures__tile dt {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.token-figures__tile dd {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xl);
+}
+.token-figures__breakdown {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: var(--sp-2) var(--sp-5);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.token-figures__row {
+  display: contents;
+}
+.token-figures__row dt {
+  color: var(--text-muted);
+}
+.token-figures__row dd {
+  margin: 0;
+  text-align: end;
+}
+
+/* ---- V3 token components (TokenLine, TokenSummary); WP-124 removes them with their styles ------------------------------------- */
 .token-line,
 .token-summary--line {
   display: inline-flex;

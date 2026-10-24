@@ -1,11 +1,23 @@
 // @vitest-environment node
-import { BOARD_STATES, EVENT_CATEGORIES, LIFECYCLE_STATES } from '@mcs/shared';
+import {
+  ACTIVE_STATES,
+  BOARD_STATES,
+  EVENT_CATEGORIES,
+  LIFECYCLE_STATES,
+  SESSION_SORTS as API_SESSION_SORTS,
+  SessionListQuerySchema,
+  fromQuery,
+  toQuery,
+} from '@mcs/shared';
 import { describe, expect, it } from 'vitest';
 
+import { toSessionFilter } from '../data/endpoints.ts';
 import {
   INVALID,
+  SESSION_SORTS,
   activitySpec,
   analyticsSpec,
+  apiSortOf,
   defaultPresetForWindow,
   flag,
   formatUrlState,
@@ -312,5 +324,141 @@ describe('route specs (04 3.2)', () => {
     expect(parseUrlState(settingsSpec, sp('')).value.section).toBe('health');
     roundTrip(settingsSpec, 'section=preferences');
     expect(parseUrlState(settingsSpec, sp('section=other')).ignored).toEqual(['section']);
+  });
+});
+
+describe('the state alias "active" (R-22)', () => {
+  const spec = sessionsSpec(24);
+  const parse = (query: string) => parseUrlState(spec, sp(query));
+
+  it('expands to the four active states, in the order of the lifecycle', () => {
+    const parsed = parse('state=active');
+    expect(parsed.ignored).toEqual([]);
+    expect(parsed.value.state).toEqual([...ACTIVE_STATES]);
+  });
+
+  it('mixes with concrete states, deduplicates and keeps the lifecycle order', () => {
+    expect(parse('state=failed,active').value.state).toEqual([...ACTIVE_STATES, 'failed']);
+    expect(parse('state=waiting_tool,active,active').value.state).toEqual([...ACTIVE_STATES]);
+    expect(parse('state=waiting_input,active').value.state).toEqual([
+      'running',
+      'working',
+      'waiting_input',
+      'waiting_tool',
+      'waiting_agent',
+    ]);
+  });
+
+  it('is written back as the alias, so a link to ?state=active is already canonical', () => {
+    const state = parse('state=active').value;
+    expect(formatUrlState(spec, state).toString()).toBe('state=active');
+    expect(formatUrlState(spec, parse('state=failed,active').value).toString()).toBe('state=active%2Cfailed');
+    expect(formatUrlState(spec, parse('state=active,failed').value).get('state')).toBe('active,failed');
+  });
+
+  it('reads a bookmarked V3 address that lists the four states the same way', () => {
+    const v3 = parse('state=running,working,waiting_tool,waiting_agent');
+    expect(v3.ignored).toEqual([]);
+    expect(v3.value).toEqual(parse('state=active').value);
+    expect(formatUrlState(spec, v3.value).get('state')).toBe('active');
+  });
+
+  it('keeps a partial selection as the concrete list', () => {
+    expect(formatUrlState(spec, parse('state=running,working').value).get('state')).toBe('running,working');
+    expect(formatUrlState(spec, parse('state=failed,running').value).get('state')).toBe('running,failed');
+  });
+
+  it('still refuses unknown members, other spellings and an empty member', () => {
+    for (const bad of [
+      'state=bogus',
+      'state=active,bogus',
+      'state=Active',
+      'state=ACTIVE',
+      'state=active,',
+      'state=constructor',
+    ]) {
+      const parsed = parse(bad);
+      expect(parsed.value.state, bad).toEqual([]);
+      expect(parsed.ignored, bad).toEqual(['state']);
+    }
+  });
+
+  it('round trips through the canonical text', () => {
+    for (const query of ['state=active', 'state=active,failed', 'state=waiting_input,active,stale']) {
+      const first = parse(query).value;
+      const text1 = formatUrlState(spec, first).toString();
+      expect(parse(text1).value, query).toEqual(first);
+      expect(formatUrlState(spec, parse(text1).value).toString()).toBe(text1);
+    }
+  });
+
+  it('is an option of setOf, not of every set', () => {
+    const plain = setOf('state', LIFECYCLE_STATES);
+    expect(plain.parse('active')).toBe(INVALID);
+    const aliased = setOf('s', ['a', 'b', 'c'] as const, { ab: ['a', 'b'] });
+    expect(aliased.parse('ab')).toEqual(['a', 'b']);
+    expect(aliased.parse('ab,c')).toEqual(['a', 'b', 'c']);
+    expect(aliased.format(['a', 'b'])).toBe('ab');
+    expect(aliased.format(['a'])).toBe('a');
+    expect(aliased.parse('__proto__')).toBe(INVALID);
+  });
+});
+
+describe('the session sorts (R-34)', () => {
+  const spec = sessionsSpec(24);
+
+  it('adds errors (a server sort) and attention (a UI sort) to the V3 list', () => {
+    expect([...SESSION_SORTS]).toEqual([
+      'lastActivity',
+      'started',
+      'duration',
+      'tokens',
+      'state',
+      'label',
+      'errors',
+      'attention',
+    ]);
+    for (const sort of API_SESSION_SORTS) expect(SESSION_SORTS).toContain(sort);
+    for (const sort of SESSION_SORTS) {
+      const parsed = parseUrlState(spec, sp(`sort=${sort}`));
+      expect(parsed.ignored, sort).toEqual([]);
+      expect(parsed.value.sort).toBe(sort);
+    }
+    expect(parseUrlState(spec, sp('sort=Attention')).ignored).toEqual(['sort']);
+  });
+
+  it('writes the default sort as nothing and the others by name', () => {
+    const state = parseUrlState(spec, sp('sort=errors&dir=asc')).value;
+    expect(formatUrlState(spec, state).toString()).toBe('sort=errors&dir=asc');
+    expect(formatUrlState(spec, parseUrlState(spec, sp('sort=attention')).value).toString()).toBe('sort=attention');
+  });
+
+  it('reads the bookmarked V3 addresses the same way', () => {
+    expect(parseUrlState(spec, sp('sort=tokens&dir=asc'))).toEqual({
+      value: { ...parseUrlState(spec, sp('')).value, sort: 'tokens', dir: 'asc' },
+      ignored: [],
+    });
+    expect(parseUrlState(spec, sp('state=active&sort=label&dir=asc&range=7d&errors=1')).ignored).toEqual([]);
+  });
+
+  it('never sends the attention sort to the API', () => {
+    const base = parseUrlState(spec, sp('')).value;
+    expect(apiSortOf({ sort: 'attention', dir: 'asc' })).toEqual({ sort: 'lastActivity', dir: 'desc' });
+    expect(apiSortOf({ sort: 'attention', dir: 'desc' })).toEqual({ sort: 'lastActivity', dir: 'desc' });
+    expect(apiSortOf({ sort: 'errors', dir: 'asc' })).toEqual({ sort: 'errors', dir: 'asc' });
+    const query = toQuery(toSessionFilter({ ...base, sort: 'attention', dir: 'asc' }));
+    expect(query['sort']).toBe('lastActivity');
+    expect(query['dir']).toBe('desc');
+    expect(() => fromQuery(SessionListQuerySchema, query)).not.toThrow();
+    const errors = toQuery(toSessionFilter({ ...base, sort: 'errors' }));
+    expect(errors['sort']).toBe('errors');
+    expect(() => fromQuery(SessionListQuerySchema, errors)).not.toThrow();
+  });
+
+  it('sends the alias as the four concrete states, which the route accepts', () => {
+    const state = parseUrlState(spec, sp('state=active')).value;
+    const query = toQuery(toSessionFilter(state));
+    expect(query['state']).toBe('running,working,waiting_tool,waiting_agent');
+    expect(() => fromQuery(SessionListQuerySchema, query)).not.toThrow();
   });
 });

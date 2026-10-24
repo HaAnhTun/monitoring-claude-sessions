@@ -2,11 +2,13 @@
 // in the query string. A route declares a spec (an object of codecs); parsing is total and never throws, invalid or
 // unknown keys fall back to their defaults and are reported by key only (never by value), and formatting omits defaults.
 import {
+  ACTIVE_STATES,
   BOARD_STATES,
   ENTRY_KINDS,
   EVENT_CATEGORIES,
   LIFECYCLE_STATES,
   PRESETS,
+  SESSION_SORTS as API_SESSION_SORTS,
   type BoardState,
   type EntryKind,
   type EventCategory,
@@ -150,8 +152,19 @@ export function oneOf<T extends string>(key: string, values: readonly T[], def: 
   };
 }
 
-/** A comma list of members of `values`: deduplicated, in `values` order; any unknown member invalidates the whole value. */
-export function setOf<T extends string>(key: string, values: readonly T[]): ParamCodec<T[]> {
+/**
+ * A comma list of members of `values`: deduplicated, in `values` order; any unknown member invalidates the whole value.
+ *
+ * `aliases` name groups of members (`{ active: ACTIVE_STATES }`): the name in a list stands for all its members, and a list that
+ * holds every member of a group is written back as the name, so `?state=active` is already the canonical address and a
+ * bookmarked list of the four members reads the same. Only the exact lower-case name is an alias.
+ */
+export function setOf<T extends string>(
+  key: string,
+  values: readonly T[],
+  aliases: Readonly<Record<string, readonly T[]>> = {},
+): ParamCodec<T[]> {
+  const names = Object.keys(aliases);
   return {
     key,
     default: [],
@@ -160,12 +173,31 @@ export function setOf<T extends string>(key: string, values: readonly T[]): Para
       const members = raw.split(',');
       const known = new Set<string>();
       for (const m of members) {
-        if (!values.some((v) => v === m)) return INVALID;
-        known.add(m);
+        const group = Object.hasOwn(aliases, m) ? aliases[m] : undefined;
+        if (group !== undefined) {
+          for (const member of group) known.add(member);
+        } else if (values.some((v) => v === m)) {
+          known.add(m);
+        } else {
+          return INVALID;
+        }
       }
       return values.filter((v) => known.has(v));
     },
-    format: (v) => v.join(','),
+    format: (v) => {
+      if (names.length === 0) return v.join(',');
+      const rest = new Set<string>(v);
+      const out: string[] = [];
+      for (const name of names) {
+        const group = aliases[name] ?? [];
+        if (group.length > 0 && group.every((member) => rest.has(member))) {
+          out.push(name);
+          for (const member of group) rest.delete(member);
+        }
+      }
+      for (const member of v) if (rest.has(member)) out.push(member);
+      return out.join(',');
+    },
   };
 }
 
@@ -264,8 +296,24 @@ export function defaultPresetForWindow(windowHours: number): Preset {
 
 // ---- route specs (04 3.2 table) --------------------------------------------------------------------------------------------
 
-export const SESSION_SORTS = ['lastActivity', 'started', 'duration', 'tokens', 'state', 'label'] as const;
+/**
+ * The sorts of `/sessions`: the ones the server knows (`errors` included) and `attention`, which only the UI knows. "Attention
+ * first" orders the rows that are loaded (errors, then waiting for you, then quiet, then the rest) and is never sent to the API,
+ * because a live list must not reorder itself under the reader (ADR 0073 decision 7).
+ */
+export const SESSION_SORTS = [...API_SESSION_SORTS, 'attention'] as const;
 export type SessionSort = (typeof SESSION_SORTS)[number];
+/** A sort the server accepts. */
+export type ApiSessionSort = (typeof API_SESSION_SORTS)[number];
+
+/** The sort and direction the `listSessions` request carries: the UI-only `attention` asks for the newest activity first. */
+export function apiSortOf(state: Pick<SessionsUrlState, 'sort' | 'dir'>): {
+  sort: ApiSessionSort;
+  dir: 'asc' | 'desc';
+} {
+  if (state.sort === 'attention') return { sort: 'lastActivity', dir: 'desc' };
+  return { sort: state.sort, dir: state.dir };
+}
 
 export interface SessionsUrlState {
   q: string;
@@ -286,7 +334,7 @@ export interface SessionsUrlState {
 export function sessionsSpec(windowHours: number): Spec<SessionsUrlState> {
   return {
     q: text('q', 200),
-    state: setOf('state', LIFECYCLE_STATES),
+    state: setOf('state', LIFECYCLE_STATES, { active: ACTIVE_STATES }),
     project: idText('project'),
     task: intRange('task', 1, Number.MAX_SAFE_INTEGER),
     model: idText('model'),

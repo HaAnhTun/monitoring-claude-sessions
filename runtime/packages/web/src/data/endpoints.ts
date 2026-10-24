@@ -11,7 +11,13 @@ import {
   type UsageQuery,
 } from '@mcs/shared';
 
-import type { ActivityUrlState, AnalyticsUrlState, SessionsUrlState, TimeRange } from '../lib/url-state.ts';
+import {
+  apiSortOf,
+  type ActivityUrlState,
+  type AnalyticsUrlState,
+  type SessionsUrlState,
+  type TimeRange,
+} from '../lib/url-state.ts';
 import { ApiError } from './api-errors.ts';
 
 export const ENDPOINT_NAMES = [
@@ -126,8 +132,7 @@ export function toSessionFilter(state: SessionsUrlState): SessionFilter {
     ...(state.tokMin === null ? {} : { tokensMin: state.tokMin }),
     ...(state.tokMax === null ? {} : { tokensMax: state.tokMax }),
     ...(state.unmatched ? { includeUnmatched: true as const } : {}),
-    sort: state.sort,
-    dir: state.dir,
+    ...apiSortOf(state),
   };
 }
 
