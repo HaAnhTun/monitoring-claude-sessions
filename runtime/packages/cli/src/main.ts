@@ -246,7 +246,13 @@ const REGISTRY: readonly RegistryEntry[] = [
   { names: ['db rebuild'], load: () => import('./commands/db-rebuild.ts') },
   // @wp-end WP-62
 
+  // @wp-begin WP-108
+  { names: ['export'], load: () => import('./commands/export.ts') },
+  { names: ['verify-completion'], load: () => import('./commands/verify-completion.ts') },
+  // @wp-end WP-108
+
   // @wp-begin WP-64
+  { names: ['mcp'], load: () => import('./commands/mcp.ts') },
   // @wp-end WP-64
 
   // @wp-begin WP-85

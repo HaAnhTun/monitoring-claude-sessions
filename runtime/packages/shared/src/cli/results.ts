@@ -563,7 +563,68 @@ export type DbRebuildResult = z.infer<typeof DbRebuildResultSchema>;
 // @wp-end WP-62
 
 // @wp-begin WP-64
+/** `.mcp.json` entry of the read-only MCP server (ADR 0060 point 6): one stdio server started with `node <launcher> mcp ...`. */
+export const McpJsonSchema = z.strictObject({
+  mcpServers: z.record(
+    z.string(),
+    z.strictObject({ type: z.literal('stdio'), command: z.string(), args: z.array(z.string()) }),
+  ),
+});
+
+/** `mcs mcp --print-config`: the two ways to register the server with Claude Code. Nothing is written. */
+export const McpConfigResultSchema = z.strictObject({
+  task: z.string(),
+  /** The name the server gets in the client, `mcs-<task>`. */
+  serverName: z.string(),
+  /** The server returns transcript text too (`--include-text`). */
+  includeText: z.boolean(),
+  /** The `claude mcp add --transport stdio ...` command, quoted for a shell. */
+  command: z.string(),
+  mcpJson: McpJsonSchema,
+});
+
+export type McpConfigResult = z.infer<typeof McpConfigResultSchema>;
 // @wp-end WP-64
+
+// @wp-begin WP-108
+// Result types of `mcs export` and `mcs verify-completion` (01 6.4). Both carry the task and the mode of the reader that answered.
+import { CompletionEvidenceSchema } from '../api/completion.ts';
+import { ExportSummarySchema } from '../api/export.ts';
+
+/** `mcs export`: the file that was written and the summary of what it holds (`mcs.export/1`, 03 11.1). */
+export const ExportResultSchema = z.strictObject({
+  task: z.string(),
+  mode: ReaderModeSchema,
+  /** The absolute path of the final file. */
+  path: z.string(),
+  /** What the export holds; its `lines` and `bytes` are what the re-read of the file found. */
+  summary: ExportSummarySchema,
+  /** The file existed and `--force` replaced it. */
+  replaced: z.boolean(),
+});
+
+export type ExportResult = z.infer<typeof ExportResultSchema>;
+
+/** The values of `--expect` of `mcs verify-completion`: `terminal` accepts a completed or a failed run. */
+export const COMPLETION_EXPECTATIONS = ['completed', 'failed', 'terminal'] as const;
+
+export const CompletionExpectationSchema = z.enum(COMPLETION_EXPECTATIONS);
+
+export type CompletionExpectation = z.infer<typeof CompletionExpectationSchema>;
+
+/** `mcs verify-completion`: the evidence of one run, and whether it meets `--expect` (exit code 0 exactly then). */
+export const VerifyCompletionResultSchema = z.strictObject({
+  task: z.string(),
+  mode: ReaderModeSchema,
+  expect: CompletionExpectationSchema,
+  met: z.boolean(),
+  /** The value of the selector as given (`--session`, `--label` or `--attempt`). */
+  target: z.string(),
+  completion: CompletionEvidenceSchema,
+});
+
+export type VerifyCompletionResult = z.infer<typeof VerifyCompletionResultSchema>;
+// @wp-end WP-108
 
 // @wp-begin WP-107
 /** The scopes of `mcs cleanup` (01 6.4), in the order the help lists them. */

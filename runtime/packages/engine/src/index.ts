@@ -866,6 +866,12 @@ export { httpGetWithHeaders } from './ops/probe.ts';
 export type { HttpFullAttempt, HttpFullReply } from './ops/probe.ts';
 // @wp-end WP-61
 
+// @wp-begin WP-108
+export { checkExportPath, exportToFile, isWindowsReservedName } from './ops/export-file.ts';
+export type { ExportFileOptions, ExportFileResult, ExportPathOptions, ExportTarget } from './ops/export-file.ts';
+export type { CompletionFlags, CompletionInput, CompletionReport, ExportFlags } from './ops/data.ts';
+// @wp-end WP-108
+
 // @wp-begin WP-62
 export * as opsBackup from './ops/backup.ts';
 export type {

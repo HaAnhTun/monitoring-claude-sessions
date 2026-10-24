@@ -7,7 +7,9 @@
 // from the running instance or from its database. Nothing here prints; the commands render the results.
 import {
   AnalyticsToolsQuerySchema,
+  EXPORT_INCLUDES,
   ErrorsQuerySchema,
+  ExportQuerySchema,
   LIFECYCLE_STATES,
   McsError,
   PRESET_MS,
@@ -21,8 +23,11 @@ import {
   isoMsZ,
   safeFromQuery,
   type ErrorsQuery,
+  type CompletionResponse,
   type ErrorsResult,
+  type ExportQuery,
   type QueryParseResult,
+  type ReaderMode,
   type SeriesQuery,
   type SessionEventLine,
   type SessionListQuery,
@@ -36,6 +41,7 @@ import {
 import { SID_RE } from '@mcs/shared/protocol';
 import type { z } from 'zod';
 
+import type { CompletionTarget } from '../lifecycle/completion.ts';
 import { readerReasonOf, openInstanceReader, type InstanceReader, type ReaderDeps } from '../reader/open.ts';
 import { openWorkspace, type OpContext } from './workspace.ts';
 import type { WorkspaceRef } from '../workspace/paths.ts';
@@ -98,6 +104,9 @@ const FLAG_OF: Readonly<Record<string, string>> = {
   source: '--source',
   groupBy: '--by',
   events: '--events',
+  include: '--include',
+  redaction: '--redaction',
+  includeContent: '--include-content',
 };
 
 const PRESET_TEXT = Object.keys(PRESET_MS).join(', ');
@@ -111,6 +120,8 @@ const EXPECTS: Readonly<Record<string, string>> = {
   to: 'an ISO-8601 time with Z or an offset',
   session: 'one or more session ids (full, as `sessions list --json` shows them)',
   source: 'a comma-separated list of server, spool, transcript, external, writer, handler, alerts, db',
+  include: `a comma-separated list of ${EXPORT_INCLUDES.join(', ')}`,
+  redaction: 'standard or strict',
 };
 
 interface QueryLimits {
@@ -492,3 +503,91 @@ export async function recentErrors(ctx: OpContext, input: ErrorsInput, deps: Dat
     items: await reader.errors(query),
   }));
 }
+
+// @wp-begin WP-108
+// ---- export and verify-completion ---------------------------------------------------------------------------------------------------
+
+export interface ExportFlags {
+  /** Full session ids; absent means the whole instance. */
+  readonly session?: string | readonly string[];
+  /** A preset (`1h` .. `30d`, `all`) or an ISO-8601 time. */
+  readonly since?: string;
+  /** An ISO-8601 time; needs an ISO `since`. */
+  readonly until?: string;
+  /** The record types to write (default all). */
+  readonly include?: string | readonly string[];
+  /** `standard` (default) or `strict`. */
+  readonly redaction?: string;
+  /** Adds the transcript text. Only an explicit flag turns it on: no other flag implies it, and `strict` refuses it. */
+  readonly includeContent?: boolean;
+}
+
+/** The flags of `export` as the parsed query of the `export` route; a value that does not parse is a `USAGE` error naming the flag. */
+export function exportQueryOf(flags: ExportFlags = {}): ExportQuery {
+  const raw: Record<string, string> = { ...timeKeys(flags.since, flags.until) };
+  if (flags.session !== undefined) raw['session'] = listOf(flags.session);
+  if (flags.include !== undefined) raw['include'] = listOf(flags.include);
+  if (flags.redaction !== undefined) raw['redaction'] = flags.redaction.trim();
+  if (flags.includeContent === true) raw['includeContent'] = '1';
+  return parsed(safeFromQuery(ExportQuerySchema, raw), { limitMax: 0 });
+}
+
+/** The three ways to name a run (`verify-completion`): exactly one is given. */
+export interface CompletionFlags {
+  readonly session?: string;
+  readonly label?: string;
+  readonly attempt?: string;
+}
+
+/** The target of `explainCompletion` from the flags: exactly one of `--session`, `--label` and `--attempt` (the empty part is legal). */
+export function completionTargetOf(flags: CompletionFlags): CompletionTarget {
+  const given = [flags.session, flags.label, flags.attempt].filter((value) => value !== undefined).length;
+  if (given !== 1) {
+    throw usageError('give exactly one of --session, --label and --attempt');
+  }
+  if (flags.session !== undefined) return { sessionId: flags.session.trim().toLowerCase() };
+  if (flags.label !== undefined) return { label: flags.label };
+  return { attemptPart: flags.attempt ?? '' };
+}
+
+export interface CompletionInput extends CompletionFlags {
+  readonly task: string;
+}
+
+/** What `completionReport` answers: the evidence of the run and the value of the selector as given. */
+export interface CompletionReport {
+  readonly task: string;
+  readonly mode: ReaderMode;
+  readonly target: string;
+  readonly completion: Omit<CompletionResponse, 'asOfSeq'>;
+}
+
+/** `verify-completion`: did this run really finish? The evidence comes from `InstanceReader.explainCompletion`; only observed facts end a run. */
+export async function completionReport(
+  ctx: OpContext,
+  input: CompletionInput,
+  deps: DataDeps = {},
+): Promise<CompletionReport> {
+  const target = completionTargetOf(input);
+  const shown = input.session ?? input.label ?? input.attempt ?? '';
+  return withReader(ctx, input.task, deps, async (reader) => {
+    const answer = await reader.explainCompletion(target);
+    return {
+      task: input.task,
+      mode: reader.mode,
+      target: shown,
+      completion: {
+        outcome: answer.outcome,
+        state: answer.state,
+        basis: answer.basis,
+        confidence: answer.confidence,
+        evidence: answer.evidence,
+        sessionId: answer.sessionId,
+        ruleId: answer.ruleId,
+        resolvedBy: answer.resolvedBy,
+        candidates: answer.candidates,
+      },
+    };
+  });
+}
+// @wp-end WP-108
