@@ -393,7 +393,6 @@ export interface EngineQueries {
 registerQueryPart(createCompletionQueries, ['explainCompletion']);
 // @wp-end WP-29
 
-// @wp-begin WP-30
 import { createAgentQueries, type AgentQueries } from './agents.ts';
 import { createEventQueries, type EventQueries } from './events.ts';
 import { createSessionQueries, type SessionQueries } from './sessions.ts';
@@ -410,9 +409,7 @@ registerQueryPart(createAgentQueries, ['sessionAgents', 'listAgents', 'agentNode
 registerQueryPart(createEventQueries, ['listEvents', 'getEvent', 'eventsByIdRange']);
 registerQueryPart(createToolCallQueries, ['listToolCalls', 'toolCallsByIds']);
 registerQueryPart(createTransitionQueries, ['sessionTransitions']);
-// @wp-end WP-30
 
-// @wp-begin WP-31
 import { createAlertQueries, type AlertQueries } from './alerts.ts';
 import { createErrorQueries, type ErrorQueries } from './errors.ts';
 import { createOverviewQueries, type OverviewQueries } from './overview.ts';
@@ -424,9 +421,7 @@ registerQueryPart(createOverviewQueries, ['overview']);
 registerQueryPart(createWorkItemQueries, ['workItemBoard', 'getWorkItem']);
 registerQueryPart(createAlertQueries, ['listAlerts', 'alertById', 'alertRules']);
 registerQueryPart(createErrorQueries, ['errors']);
-// @wp-end WP-31
 
-// @wp-begin WP-33
 // The transcript window and locate (03 7.3): `TranscriptQueries.window` and `locate`. The interface merges into `EngineQueries`
 // above, so `ctx.queries` has both; the part reads transcript files on demand and keeps no text (ADR 0016).
 import { createTranscriptQueryPart, type TranscriptWindowQueries } from '../transcript/window.ts';
@@ -436,7 +431,6 @@ export interface EngineQueries {
   locate: TranscriptWindowQueries['locate'];
 }
 registerQueryPart(createTranscriptQueryPart, ['window', 'locate']);
-// @wp-end WP-33
 
 // @wp-begin WP-57
 // Transcript content search (03 7.4): per session and per instance, bounded, with a coverage report; the counters go to the health report.

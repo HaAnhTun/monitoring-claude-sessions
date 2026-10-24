@@ -170,7 +170,6 @@ const REGISTRY: readonly RegistryEntry[] = [
   { names: ['check'], load: () => import('./commands/check.ts') },
   { names: ['version'], load: () => import('./commands/version.ts') },
   { names: ['help'], load: () => import('./commands/help.ts') },
-  // @wp-begin WP-19
   { names: ['start'], load: () => import('./commands/start.ts') },
   { names: ['stop'], load: () => import('./commands/stop.ts') },
   { names: ['status'], load: () => import('./commands/status.ts') },
@@ -193,7 +192,6 @@ const REGISTRY: readonly RegistryEntry[] = [
       },
     }),
   },
-  // @wp-end WP-19
 
   // @wp-begin WP-22
   {
@@ -247,9 +245,6 @@ const REGISTRY: readonly RegistryEntry[] = [
   { names: ['db migrate'], load: () => import('./commands/db-migrate.ts') },
   { names: ['db rebuild'], load: () => import('./commands/db-rebuild.ts') },
   // @wp-end WP-62
-
-  // @wp-begin WP-63
-  // @wp-end WP-63
 
   // @wp-begin WP-64
   // @wp-end WP-64

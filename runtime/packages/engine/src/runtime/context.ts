@@ -517,7 +517,6 @@ export const contextFactories: {
 };
 
 // The block of WP-17, the owner of the real `createQueries` (see above). It is empty until that work package lands.
-// @wp-begin WP-17
 import { createQueries, type EngineQueries as QueryLayerEngineQueries } from '../query/index.ts';
 
 // The seed `EngineQueries` above is widened with the real interface of `query/index.ts`: an interface of the same name
@@ -527,4 +526,3 @@ export interface EngineQueries extends QueryLayerEngineQueries, AuditQueries {}
 
 // The real query layer replaces the stub of `contextFactories` (registry C09: the six deps are passed by `queryDepsOf`).
 contextFactories.createQueries = createQueries;
-// @wp-end WP-17

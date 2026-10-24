@@ -270,35 +270,27 @@ import { completionRoutes } from './routes/completion.ts';
 ROUTE_MODULES.push(completionRoutes);
 // @wp-end WP-29
 
-// @wp-begin WP-30
 import { agentRoutes } from './routes/agents.ts';
 import { eventRoutes } from './routes/events.ts';
 import { sessionRoutes } from './routes/sessions.ts';
 import { toolCallRoutes } from './routes/tool-calls.ts';
 
 ROUTE_MODULES.push(sessionRoutes, agentRoutes, eventRoutes, toolCallRoutes);
-// @wp-end WP-30
 
-// @wp-begin WP-31
 import { alertRoutes } from './routes/alerts.ts';
 import { errorRoutes } from './routes/errors.ts';
 import { overviewRoutes } from './routes/overview.ts';
 import { workItemRoutes } from './routes/work-items.ts';
 
 ROUTE_MODULES.push(overviewRoutes, workItemRoutes, alertRoutes, errorRoutes);
-// @wp-end WP-31
 
-// @wp-begin WP-33
 import { transcriptRoutes } from './routes/transcript.ts';
 
 ROUTE_MODULES.push(transcriptRoutes);
-// @wp-end WP-33
 
-// @wp-begin WP-36
 import { streamRoutes } from './stream/sse.ts';
 
 ROUTE_MODULES.push(streamRoutes);
-// @wp-end WP-36
 
 // @wp-begin WP-41
 import { panelRoutes } from './routes/panels.ts';

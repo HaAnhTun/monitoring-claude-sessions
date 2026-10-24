@@ -38,22 +38,16 @@ export function lazyPage(load: () => Promise<{ default: ComponentType }>): LazyE
 }
 
 export const pageRegistry: PageRegistry = {
-  // @wp-begin WP-49
   shell: lazyPage(() => import('../shell/AppShell.tsx').then((m) => ({ default: m.AppShell }))),
   legacyHashRedirect: lazyPage(() =>
     import('../app/LegacyHashRedirect.tsx').then((m) => ({ default: m.LegacyHashRedirect })),
   ),
-  // @wp-end WP-49
-  // @wp-begin WP-50
   sessions: lazyPage(() =>
     import('../pages/sessions/SessionExplorerPage.tsx').then((m) => ({ default: m.SessionExplorerPage })),
   ),
-  // @wp-end WP-50
-  // @wp-begin WP-52
   sessionDetail: lazyPage(() =>
     import('../pages/session-detail/SessionDetailPage.tsx').then((m) => ({ default: m.SessionDetailPage })),
   ),
-  // @wp-end WP-52
   // @wp-begin WP-53
   // @wp-end WP-53
   // @wp-begin WP-54

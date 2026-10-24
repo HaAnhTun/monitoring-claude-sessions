@@ -1,8 +1,5 @@
-// @wp-begin WP-05
 export * from './json/index.ts';
-// @wp-end WP-05
 
-// @wp-begin WP-07
 export { hostPlatform, pathsCaseInsensitive } from './platform/host.ts';
 export type { HostPlatform } from './platform/host.ts';
 export {
@@ -62,9 +59,7 @@ export { MutexTimeoutError, acquireMutex, mutexName, tryAcquireMutex } from './p
 export type { AcquireOptions, ProcessMutex } from './platform/mutex.ts';
 export { hasRuntimeMarker, listRuntimeProcesses } from './platform/markers.ts';
 export type { RuntimeProcess } from './platform/markers.ts';
-// @wp-end WP-07
 
-// @wp-begin WP-08
 export { AGENT_RE, RUN_ID_RE, SID_RE, isContained, resolveContained, walkNoLinks } from './security/paths.ts';
 export type { WalkOptions, WalkSummary } from './security/paths.ts';
 export {
@@ -76,9 +71,7 @@ export {
   createLogger,
 } from './log/logger.ts';
 export type { LogFields, LogLevel, Logger, LoggerOptions, LoggerStats } from './log/logger.ts';
-// @wp-end WP-08
 
-// @wp-begin WP-09
 export {
   openSqlite,
   pragmaNumber,
@@ -118,9 +111,7 @@ export {
 export { backupDb, type BackupOptions, type BackupSourcePath } from './db/backup.ts';
 export { onCommitted, withWriteTx, type WriteTx } from './db/write.ts';
 export type { ChangeRecorder } from './db/changes.ts';
-// @wp-end WP-09
 
-// @wp-begin WP-12
 export {
   checkSchemaVersion,
   defaultRuntimeDir,
@@ -157,9 +148,7 @@ export {
   validateLegacy,
 } from './config/validate-legacy.ts';
 export type { CompiledPatterns, LegacyKeySpec, LegacyValidateOptions } from './config/validate-legacy.ts';
-// @wp-end WP-12
 
-// @wp-begin WP-13
 export {
   appendWorkspaceFile,
   assertNotLink,
@@ -229,9 +218,7 @@ export {
 export type { AuditAction, ChangeEntry } from './audit/writer.ts';
 export { AUDIT_FILES, AUDIT_READ_BYTES, auditFilePath, entriesBetween, readAuditText } from './audit/reader.ts';
 export type { AuditFile, AuditLogSink, AuditRef, EntriesOptions } from './audit/reader.ts';
-// @wp-end WP-13
 
-// @wp-begin WP-14
 export * as opsWorkspace from './ops/workspace.ts';
 export * as opsConfig from './ops/config.ts';
 export * as opsAudit from './ops/audit.ts';
@@ -265,9 +252,7 @@ export type {
   InspectTasksResult,
 } from './ops/config.ts';
 export type { AuditCheckInput, AuditReportItem, DecisionInput, DecisionResult } from './ops/audit.ts';
-// @wp-end WP-14
 
-// @wp-begin WP-16
 export { createErrorRing } from './runtime/error-ring.ts';
 export type { ErrorRing } from './runtime/error-ring.ts';
 export { bindPanelStats, buildInstanceContext } from './runtime/context.ts';
@@ -282,16 +267,12 @@ export type {
 export { createStateWatchdog } from './runtime/state-watchdog.ts';
 export type { StateWatchdog } from './runtime/state-watchdog.ts';
 export { testHook } from './runtime/test-hooks.ts';
-// @wp-end WP-16
 
-// @wp-begin WP-17
 export { createQueries, registerQueryPart } from './query/index.ts';
 export type { AuditQueries, AuditReader, EngineQueries, Queries, QueryDeps, QueryPart } from './query/index.ts';
 export { formatCommand, instanceCommands } from './ops/commands.ts';
 export type { InstanceCommandInput } from './ops/commands.ts';
-// @wp-end WP-17
 
-// @wp-begin WP-19
 export * as opsLifecycle from './ops/lifecycle.ts';
 export {
   controlAddressOf,
@@ -341,7 +322,6 @@ export type {
   TargetInput,
   VerifyResult,
 } from './ops/lifecycle.ts';
-// @wp-end WP-19
 
 // @wp-begin WP-22
 export * as opsInstances from './ops/instances.ts';
@@ -351,12 +331,9 @@ export type { DoctorCheckProvider, DoctorDeps, DoctorInput } from './ops/doctor.
 export type { CheckEnv, DoctorSeams } from './ops/doctor-checks.ts';
 // @wp-end WP-22
 
-// @wp-begin WP-25
 export { DISABLE_ALL_HOOKS_SETTINGS, claudeArgsWithoutHooks } from './external/launch-claude.ts';
 export type { ClaudeLaunch } from './external/launch-claude.ts';
-// @wp-end WP-25
 
-// @wp-begin WP-28
 export {
   AGENT_KINDS,
   AGENT_NOTIFICATION_STATUSES,
@@ -462,7 +439,6 @@ export type {
   WorkItemMember,
   WorkItemSession,
 } from './lifecycle/work-items.ts';
-// @wp-end WP-28
 
 // @wp-begin WP-29
 export { CompletionTargetError, explainCompletion, validateCompletionTarget } from './lifecycle/completion.ts';
@@ -477,18 +453,13 @@ export type {
 export type { CompletionQueries } from './query/completion.ts';
 // @wp-end WP-29
 
-// @wp-begin WP-30
 export { NotFoundError, QueryRefusal } from './query/index.ts';
 export type { NotFoundCode, PathSessionOptions, RefusalCode } from './query/index.ts';
-// @wp-end WP-30
 
-// @wp-begin WP-31
 export { mergeServerErrors } from './query/errors.ts';
 export { registerMetricProvider } from './query/overview.ts';
 export type { MetricProvider, MetricProviderInput } from './query/overview.ts';
-// @wp-end WP-31
 
-// @wp-begin WP-32
 export {
   INGEST_ERROR_CODES,
   INGEST_ERROR_DETAIL_MAX_CP,
@@ -533,9 +504,7 @@ export { applySpoolReplay, planSpoolReplay } from './ingest/spool/replay.ts';
 export type { SpoolReplayPlan, SpoolReplaySegment } from './ingest/spool/replay.ts';
 export { createSpoolDrainer } from './ingest/spool/spool-drainer.ts';
 export type { SpoolDrainer, SpoolDrainerOptions, SpoolStats } from './ingest/spool/spool-drainer.ts';
-// @wp-end WP-32
 
-// @wp-begin WP-33
 export { clipText, countEntries, displayEntries, recordTimestamp } from './transcript/entries.ts';
 export type { DisplayEntry } from './transcript/entries.ts';
 export { INDEX_CHUNK_BYTES, TranscriptError, createEntryIndexService } from './transcript/index-service.ts';
@@ -553,9 +522,7 @@ export type {
   TranscriptWindowService,
   TranscriptWindowServiceOptions,
 } from './transcript/window.ts';
-// @wp-end WP-33
 
-// @wp-begin WP-34
 export {
   detectTranscriptsDir,
   discoverSession as discoverTranscriptSession,
@@ -614,9 +581,7 @@ export type {
 } from './ingest/transcripts/scheduler.ts';
 export { readEntryText } from './ingest/transcripts/entry-text.ts';
 export type { EntryTextFailure, EntryTextOptions, TranscriptRef } from './ingest/transcripts/entry-text.ts';
-// @wp-end WP-34
 
-// @wp-begin WP-35
 export {
   IngestIdleTimeoutError,
   createIngestService,
@@ -676,7 +641,6 @@ export type {
   SchedulerContext,
   SchedulerSeams,
 } from './maintenance/schedule.ts';
-// @wp-end WP-35
 
 // @wp-begin WP-37
 export {
@@ -916,9 +880,6 @@ export type {
 export * as opsInstanceUpgrade from './ops/instance-upgrade.ts';
 export type { DbMigrateInput, DbRebuildInput, UpgradeDeps, UpgradeInput, UpgradeStep } from './ops/instance-upgrade.ts';
 // @wp-end WP-62
-
-// @wp-begin WP-63
-// @wp-end WP-63
 
 // @wp-begin WP-85
 export { PROJECT_NAME_MAX, claudeHomeOf, projectFolderName } from './ingest/transcripts/discovery.ts';

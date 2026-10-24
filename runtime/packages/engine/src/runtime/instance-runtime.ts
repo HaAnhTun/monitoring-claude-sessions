@@ -492,7 +492,6 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
 }
 
 // The blocks of the owners of the real factories (see the header). They are empty until those work packages land.
-// @wp-begin WP-35
 import { createIngestService, publishRouteFile } from '../ingest/service.ts';
 import { createLifecycleSweeper } from '../lifecycle/sweeper.ts';
 import { createDbScheduler } from '../maintenance/schedule.ts';
@@ -501,7 +500,6 @@ registeredFactories.createIngestService = createIngestService;
 registeredFactories.createLifecycleSweeper = createLifecycleSweeper;
 registeredFactories.createDbScheduler = createDbScheduler;
 registeredFactories.publishRouteFile = publishRouteFile;
-// @wp-end WP-35
 
 // @wp-begin WP-41
 import { createPanelService } from '../panels/service.ts';

@@ -1,4 +1,3 @@
-// @wp-begin WP-06
 export { FIXTURE_MARKER_TEXT, makeTempDir, useTempDirs, writeFixtureMarker, type TempDir } from './temp.ts';
 export { VITEST_PORTS, allocatePort, assertPortClosed, type PortRange } from './ports.ts';
 export { eventLoopLagProbe, waitFor } from './wait.ts';
@@ -13,10 +12,6 @@ export { hookPayload, runHookHandler, type HookEventName, type RunHookOptions } 
 export { buildRepo, buildTaskWorkspace, snapshotTree } from './workspace.ts';
 export { buildDemo, type DemoLetter, type DemoOptions, type DemoResult, type DemoSession } from './demo.ts';
 export { FILE_HOLDER_SKIP_REASON, holdFileOpen, type FileHolder } from './file-holder.ts';
-// @wp-end WP-06
-
-// @wp-begin WP-42
-// @wp-end WP-42
 
 // @wp-begin WP-55
 // @wp-end WP-55
