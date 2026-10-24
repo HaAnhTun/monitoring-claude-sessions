@@ -6,10 +6,16 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from 'node:path';
 
 import { RUNTIME_MUTABLE_PATHS } from '@mcs/engine';
-import { buildRepo, hermeticEnv, runCli, snapshotTree, useTempDirs } from '@mcs/testkit';
-import { describe, expect, it } from 'vitest';
+import { buildRepo, hermeticEnv, killAllTracked, runCli, snapshotTree, useTempDirs } from '@mcs/testkit';
+import { afterEach, describe, expect, it } from 'vitest';
 
 const makeTemp = useTempDirs();
+
+// Runs before the temp-folder removal (hooks run in stack order): a command still running when a row times out is ended
+// first, so it cannot hold the folder (EPERM on Windows).
+afterEach(async () => {
+  await killAllTracked();
+}, 120_000);
 
 interface TwoTasks {
   readonly repo: string;
@@ -46,7 +52,13 @@ async function twoTasks(): Promise<TwoTasks> {
   };
 }
 
-describe('config write isolation (T-ISO-06): the commands of task A leave task B byte for byte as it was', () => {
+// Every row starts the real CLI two to ten times (`twoTasks` alone runs it twice); on a loaded machine a row needs far more than
+// 10 s. A row with its own limit keeps it.
+const ROW_TIMEOUT_MS = 180_000;
+
+const SUITE = 'config write isolation (T-ISO-06): the commands of task A leave task B byte for byte as it was';
+
+describe(SUITE, { timeout: ROW_TIMEOUT_MS }, () => {
   it('init a', async () => {
     const t = await twoTasks();
     const before = t.snapshotB();

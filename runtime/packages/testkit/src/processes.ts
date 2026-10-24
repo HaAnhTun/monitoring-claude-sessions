@@ -57,6 +57,22 @@ function killTree(pid: number, child: ChildProcess): void {
   }
 }
 
+/**
+ * Ends the process tree of `pid` at once: the fallback of a cleanup whose polite stop failed or ran out of time on a loaded
+ * machine. Never throws; a process that is already gone is the goal.
+ */
+export function killPidTree(pid: number): void {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/PID', String(pid), '/F', '/T'], { stdio: 'ignore', windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // already gone
+  }
+}
+
 export interface SpawnTrackedOptions {
   cwd?: string;
   /** Added over `baseEnv()` plus `MCS_HOOK_DISABLE=1`. */

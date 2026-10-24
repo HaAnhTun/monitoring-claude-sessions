@@ -22,13 +22,19 @@ import {
   startInstance,
   useTempDirs,
 } from '@mcs/testkit';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Every test starts the real CLI (some also a real instance): on a loaded machine one needs far more than the 10 s default.
+// A test with its own limit keeps it.
+vi.setConfig({ testTimeout: 120_000 });
 
 const makeTemp = useTempDirs();
 
+// A loaded machine needs more than the 20 s hook default to stop a real instance; the stop falls back to ending the tree, so a
+// test that times out never leaves its monitor running.
 afterEach(async () => {
   await killAllTracked();
-});
+}, 120_000);
 
 /** Two synthetic pre-4.0 shapes (the engine test has all four): A has no pattern, D has Python named groups in attempts. */
 const SHAPES = {
@@ -314,7 +320,7 @@ describe('mcs migrate-workspace --all', () => {
     expect(snapshotTree(live, { exclude: mutable })).toBe(before);
     expect((await httpRequest(port, '/api/v3/health')).status).toBe(200);
     await instance.stop();
-  });
+  }, 180_000);
 
   it('a task folder that is a link is skipped and never followed', async () => {
     const sb = sandbox();

@@ -160,6 +160,7 @@ describe('committed files (DA-T-API-2)', () => {
   });
 });
 
+// Each test starts the generator one to four times (it loads every Zod schema): far more than 10 s on a loaded machine, so 120 s.
 describe('scripts/gen-schemas.mjs CLI (from the sources, on throw-away copies)', () => {
   const folders: string[] = [];
 
@@ -194,7 +195,7 @@ describe('scripts/gen-schemas.mjs CLI (from the sources, on throw-away copies)',
     expect(checked.stderr).toBe('');
     expect(checked.status).toBe(0);
     expect(checked.stdout).toContain(`${generated.files.size} files identical`);
-  });
+  }, 120_000);
 
   it('--check exits 1 and names the file when a schema changed without regeneration', () => {
     const root = temp();
@@ -205,13 +206,13 @@ describe('scripts/gen-schemas.mjs CLI (from the sources, on throw-away copies)',
     expect(checked.status).toBe(1);
     expect(checked.stderr).toContain('gen-schemas: changed: schemas/api/health.response.schema.json');
     expect(checked.stderr).toContain('1 file(s) differ');
-  });
+  }, 120_000);
 
   it('--check on the committed files passes', () => {
     const checked = run(['--check']);
     expect(checked.stderr).toBe('');
     expect(checked.status).toBe(0);
-  });
+  }, 120_000);
 
   it('--check reports a missing reference and a stale schema, and a rewrite removes the stale one', () => {
     const root = temp();
@@ -226,14 +227,14 @@ describe('scripts/gen-schemas.mjs CLI (from the sources, on throw-away copies)',
     expect(run(['--root', root]).status).toBe(0);
     expect(existsSync(join(root, 'schemas', 'api', 'retired.query.schema.json'))).toBe(false);
     expect(run(['--check', '--root', root]).status).toBe(0);
-  });
+  }, 120_000);
 
   it('--no-pending fails exactly while a schema source is not exported yet', () => {
     const root = temp();
     const result = run(['--no-pending', '--root', root]);
     expect(result.status).toBe(generated.pending.length > 0 ? 1 : 0);
     for (const line of generated.pending) expect(result.stdout).toContain(`gen-schemas: pending ${line}`);
-  });
+  }, 120_000);
 
   it('rejects unknown arguments with exit 2 and writes nothing', () => {
     const root = temp();
@@ -242,5 +243,5 @@ describe('scripts/gen-schemas.mjs CLI (from the sources, on throw-away copies)',
     expect(result.stderr).toContain('usage: node scripts/gen-schemas.mjs');
     expect(existsSync(join(root, 'schemas'))).toBe(false);
     expect(run(['--root']).status).toBe(2);
-  });
+  }, 120_000);
 });

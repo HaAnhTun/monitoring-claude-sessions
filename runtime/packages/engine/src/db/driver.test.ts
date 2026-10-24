@@ -779,21 +779,22 @@ describe('driver boundary (DA-T-DB-18, 03 4.5, ADR 0020, ADR 0064, I-14)', () =>
     'packages/shared/src/protocol/probe.ts',
   ];
 
+  // The probes load the flat ESLint config and lint a virtual file up to 14 times: 10 to 35 s on a loaded machine, so 120 s.
   it('ESLint negative probes: importing node:sqlite is an error anywhere but in driver.ts', async () => {
     for (const file of ELSEWHERE) {
       expect(await lintErrors(file, PROBE), file).toHaveLength(1);
       expect(await lintErrors(file, TYPE_PROBE), file).toHaveLength(1);
     }
-  });
+  }, 120_000);
 
   it('ESLint negative probes: importing better-sqlite3 is an error everywhere, driver.ts included', async () => {
     for (const file of [...ELSEWHERE, 'packages/engine/src/db/driver.ts']) {
       expect(await lintErrors(file, LEGACY_PROBE), file).toHaveLength(1);
     }
-  });
+  }, 120_000);
 
   it('ESLint positive probe: driver.ts may import node:sqlite', async () => {
     expect(await lintErrors('packages/engine/src/db/driver.ts', PROBE)).toEqual([]);
     expect(await lintErrors('packages/engine/src/db/driver.ts', TYPE_PROBE)).toEqual([]);
-  });
+  }, 120_000);
 });

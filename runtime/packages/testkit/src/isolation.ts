@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 
 import { httpRequest } from './http.ts';
 import { assertPortClosed } from './ports.ts';
-import { baseEnv, onKillAll, runCli, spawnTracked, type TrackedProcess } from './processes.ts';
+import { baseEnv, killPidTree, onKillAll, runCli, spawnTracked, type TrackedProcess } from './processes.ts';
 import { waitFor } from './wait.ts';
 
 /**
@@ -73,22 +73,35 @@ export async function startInstance(ws: InstanceWorkspace, opts: { port: number 
   if (started.code !== 0) {
     throw new Error(`startInstance: \`start\` exited ${String(started.code)}: ${started.stderr || started.stdout}`);
   }
+  // The server now runs detached from this process. The cleanup is registered before anything can fail or time out, so
+  // `killAllTracked` always finds it; when the polite stop fails (a loaded machine, a timed-out test) it ends the tree by pid.
+  let found: number | undefined;
+  try {
+    found = pidOf(ws, started.stdout);
+  } catch {
+    // reported after the health check, once the cleanup is in place
+  }
+  let stopped = false;
+  const stop = async (): Promise<void> => {
+    if (stopped) return;
+    stopped = true;
+    try {
+      const result = await runCli(stopArgs(ws), { mcsHome, env: ws.env });
+      if (result.code !== 0)
+        throw new Error(`startInstance: \`stop\` exited ${String(result.code)}: ${result.stderr || result.stdout}`);
+      await assertPortClosed(opts.port);
+    } catch (error) {
+      if (found !== undefined) killPidTree(found);
+      throw error;
+    }
+  };
+  onKillAll(stop);
   await waitFor(async () => (await httpRequest(opts.port, '/api/v3/health')).status === 200, {
     what: `health of task ${ws.slug} on port ${String(opts.port)}`,
     timeoutMs: 20_000,
     intervalMs: 100,
   });
-  const pid = pidOf(ws, started.stdout);
-  let stopped = false;
-  const stop = async (): Promise<void> => {
-    if (stopped) return;
-    stopped = true;
-    const result = await runCli(stopArgs(ws), { mcsHome, env: ws.env });
-    if (result.code !== 0)
-      throw new Error(`startInstance: \`stop\` exited ${String(result.code)}: ${result.stderr || result.stdout}`);
-    await assertPortClosed(opts.port);
-  };
-  onKillAll(stop);
+  const pid = found ?? pidOf(ws, started.stdout);
   return { repo: ws.repo, slug: ws.slug, port: opts.port, pid, stop };
 }
 

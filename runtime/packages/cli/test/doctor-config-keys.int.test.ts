@@ -6,7 +6,11 @@ import { join } from 'node:path';
 
 import { CliEnvelopeSchema, DoctorReportSchema } from '@mcs/shared';
 import { allocatePort, buildRepo, hermeticEnv, runCli, useTempDirs } from '@mcs/testkit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Every test starts the real CLI (some also a real instance): on a loaded machine one needs far more than the 10 s default.
+// A test with its own limit keeps it.
+vi.setConfig({ testTimeout: 120_000 });
 
 const makeTemp = useTempDirs();
 const LF = String.fromCharCode(10);

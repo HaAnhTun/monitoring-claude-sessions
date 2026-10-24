@@ -4,15 +4,25 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CliEnvelopeSchema, InstanceRowSchema } from '@mcs/shared';
-import { allocatePort, buildRepo, hermeticEnv, killAllTracked, runCli, startInstance, useTempDirs } from '@mcs/testkit';
+import {
+  allocatePort,
+  assertPortClosed,
+  buildRepo,
+  hermeticEnv,
+  killAllTracked,
+  runCli,
+  startInstance,
+  useTempDirs,
+} from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const makeTemp = useTempDirs();
 const LF = String.fromCharCode(10);
 
+// A loaded machine needs more than the 20 s hook default to stop a real instance; the stop falls back to ending the tree.
 afterEach(async () => {
   await killAllTracked();
-});
+}, 120_000);
 
 interface Sandbox {
   readonly repo: string;
@@ -32,6 +42,16 @@ function sandbox(purpose: string): Sandbox {
 function idOf(sb: Sandbox, slug: string): unknown {
   const file = JSON.parse(readFileSync(join(sb.tasksRoot, slug, 'instance.json'), 'utf8')) as { instanceId: unknown };
   return file.instanceId;
+}
+
+/** True while a process with this pid exists (signal 0 only probes). */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** A copy of workspace `from` as `to`: the folder and `task.json` say `to`, `instance.json` still names `from` (01 3.4). */
@@ -84,7 +104,7 @@ describe('mcs instances', () => {
     expect(applied.stdout).toContain('repaired');
     expect(idOf(sb, 'c')).not.toBe(idOf(sb, 'b'));
     await instance.stop();
-  });
+  }, 120_000);
 
   it('repair refuses while the runtime of the identity runs', async () => {
     const sb = sandbox('instances-run');
@@ -97,5 +117,19 @@ describe('mcs instances', () => {
     expect(refused.code).toBe(1);
     expect(JSON.parse(refused.stdout)).toMatchObject({ ok: false, error: { code: 'INSTANCE_RUNNING' } });
     await instance.stop();
-  });
+  }, 120_000);
+
+  it('a stop that fails still ends the server: killAllTracked falls back to its pid and reports the failure', async () => {
+    const sb = sandbox('instances-kill');
+    const port = await allocatePort();
+    const made = await sb.mcs(['init', '--name', 'Task a', '--slug', 'a', '--port', String(port)]);
+    expect(made.code, made.stderr).toBe(0);
+    const workspace = { repo: sb.repo, slug: 'a', env: sb.env };
+    const instance = await startInstance(workspace, { port });
+    // The polite `mcs stop` now names a task that does not exist, so it fails (the case of a stop that ran out of time).
+    workspace.slug = 'no-such-task';
+    await expect(killAllTracked()).rejects.toThrow(/stop/);
+    await assertPortClosed(port);
+    expect(isAlive(instance.pid)).toBe(false);
+  }, 120_000);
 });

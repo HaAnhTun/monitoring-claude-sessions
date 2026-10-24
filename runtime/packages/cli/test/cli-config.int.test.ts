@@ -9,14 +9,26 @@ import {
   buildRepo,
   buildTaskWorkspace,
   hermeticEnv,
+  killAllTracked,
   makeJunction,
   runCli,
   snapshotTree,
   useTempDirs,
 } from '@mcs/testkit';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Every test starts the real CLI (some also a real instance): on a loaded machine one needs far more than the 10 s default.
+// A test with its own limit keeps it.
+vi.setConfig({ testTimeout: 120_000 });
 
 const makeTemp = useTempDirs();
+
+// Runs before the temp-folder removal of `useTempDirs` (hooks run in stack order): a command still running when a test times
+// out is ended first, so it cannot hold the folder (EPERM on Windows).
+afterEach(async () => {
+  await killAllTracked();
+}, 120_000);
+
 const ESC = String.fromCharCode(0x1b);
 const BEL = String.fromCharCode(7);
 const BACKSLASH = String.fromCharCode(92);
@@ -370,7 +382,7 @@ describe('T-CLI-02 --json: one envelope per command, validated against the envel
       expect(envelope.ok).toBe(true);
       expect(envelope.data, args.join(' ')).toMatchObject(data);
     }
-  });
+  }, 300_000);
 
   it('a problem found by audit is exit 1 with the findings as data and no error object', async () => {
     const sb = sandbox();

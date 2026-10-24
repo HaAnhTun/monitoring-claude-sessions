@@ -22,7 +22,7 @@ export function writeFixtureMarker(dir: string): void {
   if (!existsSync(marker)) writeFileSync(marker, FIXTURE_MARKER_TEXT);
 }
 
-/** `mkdtemp` under the OS temp folder, with the marker. On Windows SQLite and just-killed processes hold locks for tens of ms. */
+/** `mkdtemp` under the OS temp folder, with the marker. On Windows SQLite and just-killed processes hold locks for tens of ms, on a loaded machine for seconds (EPERM, EBUSY): the removal retries for about 5 s. */
 export function makeTempDir(purpose: string): TempDir {
   if (!PURPOSE_RE.test(purpose) || purpose.includes('..')) {
     throw new RangeError(`makeTempDir: purpose must match ${String(PURPOSE_RE)}, got '${purpose}' (no '..')`);
@@ -32,7 +32,7 @@ export function makeTempDir(purpose: string): TempDir {
   return {
     path,
     remove: () => {
-      rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }
