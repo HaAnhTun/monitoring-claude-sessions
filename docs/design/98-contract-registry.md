@@ -619,7 +619,7 @@ derived R key falls outside the owner's bounds. Flat configs are not loaded by N
 | `import.backfillShare` | number | 0.25 | 0.05..1 | 02 5.4 | |
 | `health.importLagWarnMs` | int | 30000 | 1000..3600000 | 02 8.2 | |
 | `health.backlogWarnMs` | int | 10000 | 1000..3600000 | 02 8.2 | |
-| `analytics.usageTrend` | boolean | false | - | 03 6.2, 04 4.4.6 | `InstanceInfo.features.usageTrend` |
+| `analytics.usageTrend` | boolean | true | - | 03 6.2, 04 4.4.6 | `InstanceInfo.features.usageTrend` |
 | `board.items` | `{key, title, match: {labels?, labelPrefix?, sessionIds?, attemptParts?}}[]` | `[]` | owner schema | 02 7.11 | 04 S-8 |
 | `panelOptions.attemptsWindowHours` | int | 24 | 1..8760 | 06 3.5 (key table), 3.10.3 | owner `'06'` in `R_KEY_CATALOGUE`; module written by 01 S1 |
 | `panelOptions.machineProcessIntervalMs` | int | 20000 | 10000..300000 | 06 3.5 | owner `'06'` |
@@ -667,7 +667,6 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_HOME` | runtime | `resolveMcsHome(env)` | per-user state folder | 02 2.6.1 |
 | `CLAUDE_CONFIG_DIR` | runtime (non-MCS) | discovery, installer user scope, external pollers | Claude home (default `~/.claude`) | 01 2.10, 02 1.3 |
 | `MCS_FS_WATCH` | runtime | `createWatchHint` | `0` = no `fs.watch` hint | 06 4.4 |
-| `MCS_LAUNCHER_NO_BOOTSTRAP` | runtime | launcher | accepted and ignored (ADR 0062 item 4); removed by the cleanup area | 01 5.1 |
 | `MCS_LAUNCHER_MODE` | runtime | launcher | `bundle` or `dev` forces the runtime the launcher imports (default: the bundle when it exists, else a checkout's `dist`) | ADR 0062 item 4 |
 | `MCS_DEBUG` | runtime | CLI, launcher | `1` = stack traces | 01 2.10 |
 | `MCS_TEST` | test | `testHook`, installer and hooks CLI guards | `1` = test mode | 01 2.10, 02 3.5 |
@@ -678,6 +677,13 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_TEST_CASES` | test | lifecycle property tests (`engine/src/lifecycle/properties.test.ts`) | cases per scenario template, default 500; 1 replays one failing seed together with `MCS_TEST_SEED` | LF-3 |
 | `MCS_PERF_FACTOR` | test | performance tests | budget multiplier (default 1) | 01 2.10, 02 2.10 |
 | `MCS_E2E_CLAUDE` | test | optional real-provider E2E | `1` enables | 02 3.7 |
+| `MCS_SHOTS_DIR` | test | visual QA tool (`web/e2e/qa/global-setup.ts`) | folder for the PNGs and `index.json` (never inside the repository) | WP-122 |
+| `MCS_SHOTS_VIEWS` | test | visual QA tool | views to shoot | WP-122 |
+| `MCS_SHOTS_VIEWPORTS` | test | visual QA tool | viewport widths to shoot | WP-122 |
+| `MCS_SHOTS_THEMES` | test | visual QA tool | colour themes to shoot | WP-122 |
+| `MCS_SHOTS_LOCALES` | test | visual QA tool | languages to shoot | WP-122 |
+| `MCS_SHOTS_MODE` | test | visual QA tool | shooting mode | WP-122 |
+| `MCS_PW_CHANNEL` | test | `web/e2e/qa/playwright.config.ts` | browser channel (default: the installed Chrome; an empty value uses the bundled one) | WP-122 |
 | `MCS_DEV_API` | dev | `vite.config.ts` | proxy target (default `http://127.0.0.1:18765`) | 04 12.2, 05 A.27 |
 | `MCS_WEB_DEV_PORT` | dev | `vite.config.ts` | default 18766 | same |
 | `MCS_WEB_PREVIEW_PORT` | dev | `vite.config.ts` | default 18767 | same |
@@ -767,7 +773,7 @@ All exit 1 except `USAGE` (exit 2). Emitted in `CliEnvelope.error.code`.
 | `CONFIRMATION_REQUIRED` | destructive command without `--confirm` | - |
 | `ISOLATION_VIOLATION` | `configure` step 10 | - |
 | `OUTPUT_EXISTS`, `OUTPUT_PATH_FORBIDDEN` | `export`, `diagnostics --out` | - |
-| `BOOTSTRAP_FAILED`, `NODE_TOO_OLD`, `RUNTIME_IN_USE` | launcher section 5.1 | - |
+| `NODE_TOO_OLD` | launcher section 5.1 | - |
 | `HOOKS_FAILED` | hooks commands; `details.reason` in section 7.6 | - |
 | `NOT_FOUND` | readers, `ingest replay --from` missing segment, completion `target_not_found` | - |
 | `API_ERROR` | `ApiReader` non-2xx | - |
