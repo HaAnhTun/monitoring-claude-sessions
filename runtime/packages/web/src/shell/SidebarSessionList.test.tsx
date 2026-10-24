@@ -18,6 +18,7 @@ import {
   makeState,
   sessionId,
 } from '../test/fixtures/index.ts';
+import { msg } from '../test/msg.ts';
 import { renderWithProviders } from '../test/render.tsx';
 import { createPrefsStore, PrefsStoreContext, type PrefsStore } from '../state/prefs-store.ts';
 import { SidebarSessionList } from './SidebarSessionList.tsx';
@@ -44,6 +45,7 @@ interface Setup {
   agents?: Record<string, AgentNode[]>;
   route?: string;
   store?: PrefsStore;
+  locale?: 'en' | 'vi';
 }
 
 function renderList(setup: Setup = {}) {
@@ -82,6 +84,7 @@ function renderList(setup: Setup = {}) {
       api,
       instance,
       route: setup.route ?? '/sessions',
+      ...(setup.locale === undefined ? {} : { locale: setup.locale }),
       wrap: (children: ReactNode) => <PrefsStoreContext value={store}>{children}</PrefsStoreContext>,
     },
   );
@@ -109,6 +112,21 @@ describe('SidebarSessionList (04-ui.md 4.4, 6.5, 6.6)', () => {
     ]);
     const done = screen.getByRole('region', { name: 'Done' });
     expect(within(done).getByRole('link', { name: /Delta done/ })).toHaveAttribute('href', `/sessions/${sessionId(4)}`);
+  });
+
+  it('names the groups with the catalogue words of the language that is shown', async () => {
+    const keys = [
+      'state.group.active',
+      'state.group.needsInput',
+      'state.turn_ended.label',
+      'state.group.done',
+      'state.group.stale',
+    ] as const;
+    renderList({ locale: 'vi' });
+    await screen.findByRole('link', { name: /Alpha build/ });
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(
+      keys.map((key) => msg(key, undefined, 'vi')),
+    );
   });
 
   it('asks for the current window only, or everything with the show-all preference', async () => {

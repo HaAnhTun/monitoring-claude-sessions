@@ -30,13 +30,7 @@ import { registerRoute, type AppContext, type RouteModule } from '../route-adapt
 type ExportRouteContext = AppContext & { readonly db: InstanceDb; readonly instanceDir: string };
 
 function hasStorage(ctx: AppContext): ctx is ExportRouteContext {
-  return (
-    'db' in ctx &&
-    typeof ctx.db === 'object' &&
-    ctx.db !== null &&
-    'instanceDir' in ctx &&
-    typeof ctx.instanceDir === 'string'
-  );
+  return 'db' in ctx && typeof ctx.db === 'object' && 'instanceDir' in ctx && typeof ctx.instanceDir === 'string';
 }
 
 /** The 400 codes a refusal of the engine carries; recognised by the class name, like the other routes. */

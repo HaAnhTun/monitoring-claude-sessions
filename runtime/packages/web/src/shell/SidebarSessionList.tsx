@@ -9,6 +9,7 @@ import { StateBadge } from '../components/StateBadge.tsx';
 import { useAgents } from '../data/hooks/useAgents.ts';
 import { useInstance } from '../data/hooks/useInstance.ts';
 import { useSidebarSessions } from '../data/hooks/useSessions.ts';
+import { useT } from '../i18n/context.ts';
 import {
   AGENT_PAGE,
   buildSessionView,
@@ -166,6 +167,7 @@ function EmptyCauses({ windowHours }: { windowHours: number | undefined }) {
  * navigation (roving tabindex), focus kept by `data-key` across re-renders.
  */
 export function SidebarSessionList() {
+  const t = useT();
   const { prefs, setPref } = usePrefs();
   const showAll = prefs.showAll ?? false;
   const filter = prefs.filter ?? '';
@@ -275,7 +277,7 @@ export function SidebarSessionList() {
     body = groups.map((group) => (
       <section key={group.id} aria-labelledby={`sidebar-group-${group.id}`} className="sidebar-group">
         <div className="sidebar-group__head">
-          <h3 id={`sidebar-group-${group.id}`}>{group.title}</h3>
+          <h3 id={`sidebar-group-${group.id}`}>{t(group.titleKey)}</h3>
           <span className="muted small">({group.entries.length})</span>
         </div>
         <ul className="plain">

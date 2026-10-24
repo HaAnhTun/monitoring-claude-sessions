@@ -1,6 +1,7 @@
 import { LIFECYCLE_STATES } from '@mcs/shared';
 
 import { FilterBar, type FilterField } from '../../components/FilterBar.tsx';
+import { useT } from '../../i18n/context.ts';
 import { lifecycleDisplay } from '../../lib/lifecycle-display.ts';
 import type { SessionsUrlState } from '../../lib/url-state.ts';
 
@@ -12,8 +13,6 @@ export interface SessionFilterBarProps {
   activeCount: number;
   onClearAll: () => void;
 }
-
-const STATE_OPTIONS = LIFECYCLE_STATES.map((state) => ({ value: state, label: lifecycleDisplay(state).label }));
 
 /** A positive whole number from typed text; null for an empty box; undefined for text that is not a work item id. */
 function parseTask(text: string): number | null | undefined {
@@ -31,6 +30,8 @@ export function SessionFilterBar({
   activeCount,
   onClearAll,
 }: SessionFilterBarProps) {
+  const t = useT();
+  const stateOptions = LIFECYCLE_STATES.map((state) => ({ value: state, label: t(lifecycleDisplay(state).labelKey) }));
   const fields: FilterField[] = [
     {
       kind: 'text',
@@ -48,7 +49,7 @@ export function SessionFilterBar({
       id: 'sessions-state',
       label: 'State',
       value: state.state,
-      options: STATE_OPTIONS,
+      options: stateOptions,
       onChange: (selected) => {
         onChange({ state: LIFECYCLE_STATES.filter((s) => selected.includes(s)) });
       },
