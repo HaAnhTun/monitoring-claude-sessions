@@ -11,7 +11,13 @@ import { describeRow, notMeasured, summarize } from './lib/stats.mjs';
 import { BENCH_DIR, RESULTS_DIR, describeHost, resolveTarget, runNode, writeResult } from './lib/target.mjs';
 
 /** The budgets each script answers for (design 06 section 8.3). */
-const BUDGETS_OF = { 'bench-api.mjs': ['B5'], 'bench-first-import.mjs': ['B4'], 'bench-start.mjs': ['B6'] };
+const BUDGETS_OF = {
+  'bench-api.mjs': ['B5'],
+  'bench-first-import.mjs': ['B4'],
+  'bench-idle.mjs': ['B1', 'B2', 'B3', 'B7'],
+  'bench-search.mjs': [],
+  'bench-start.mjs': ['B6'],
+};
 
 const { values } = parseArgs({
   args: process.argv.slice(2),

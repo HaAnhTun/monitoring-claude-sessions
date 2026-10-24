@@ -4,9 +4,13 @@
 
 /** The limits of design 06 section 8.1, for the budgets this harness measures. */
 export const LIMITS = Object.freeze({
+  B1: { idleRssBytes: 110 * 1024 * 1024, withTabRssBytes: 160 * 1024 * 1024 },
+  B2: { cpuPct: 0.3, spawns: 0 },
+  B3: { oneTabCpuPct: 3.0, secondTabAddsPct: 0.5 },
   B4: { wallMs: 8000, eventLoopP99Ms: 50, rssGrowthBytes: 200 * 1024 * 1024 },
   B5: { idleP95Ms: 50, duringImportP95Ms: 250 },
   B6: { startToHealthyMs: 3000 },
+  B7: { childCpuMs: 250, spawnsPerMin: 3 },
 });
 
 /** Every budget id of the table; the ones no script of this harness measures stay NOT MEASURED. */
@@ -152,6 +156,100 @@ export function evaluateB6(startToHealthyMs) {
   ]);
 }
 
+/**
+ * B1 from `bench-idle`: the RSS p95 (bytes) of the run with no client (`idle`) and of the run with one tab and 300 known
+ * transcripts (`withTab`). A missing run leaves its check NOT MEASURED.
+ */
+export function evaluateB1({ idle, withTab }) {
+  return judge('B1', [
+    check('RSS p95, no client', idle, LIMITS.B1.idleRssBytes, 'bytes'),
+    check('RSS p95, one tab and 300 transcripts', withTab, LIMITS.B1.withTabRssBytes, 'bytes'),
+  ]);
+}
+
+/**
+ * B2 from the run with no client: Node self CPU in percent of one core and the number of child spawns. The part of the budget
+ * for one session being written (1.0%) is not measured by `bench-idle`, which says so in the note.
+ */
+export function evaluateB2({ cpuPct, spawns }) {
+  return judge(
+    'B2',
+    [
+      check('Node CPU, no client', cpuPct, LIMITS.B2.cpuPct, '% of one core'),
+      check('child spawns, no client', spawns, LIMITS.B2.spawns, 'spawns'),
+    ],
+    'the 1.0% limit with one session being written is not measured here',
+  );
+}
+
+/**
+ * B3 from the runs with one and two tabs: `oneTab` and `twoTabs` are `{ selfPct, childPct }` (`childPct` null when the child
+ * CPU cannot be derived from a calibration). The sum needs both parts; the self part alone is checked as well, so that a
+ * failure shows even when the children could not be measured.
+ */
+export function evaluateB3({ oneTab, twoTabs }) {
+  const self = oneTab?.selfPct;
+  const child = oneTab?.childPct;
+  const sum = typeof self === 'number' && typeof child === 'number' ? self + child : null;
+  const total = (run) =>
+    typeof run?.selfPct === 'number' && typeof run?.childPct === 'number' ? run.selfPct + run.childPct : null;
+  const delta = total(oneTab) !== null && total(twoTabs) !== null ? total(twoTabs) - total(oneTab) : null;
+  const notes = [];
+  if (sum === null && typeof self === 'number')
+    notes.push('child CPU is not measured on this host or without a calibration');
+  return judge(
+    'B3',
+    [
+      check('Node CPU alone, one tab', self ?? null, LIMITS.B3.oneTabCpuPct, '% of one core'),
+      check('Node CPU plus children, one tab', sum, LIMITS.B3.oneTabCpuPct, '% of one core'),
+      check('a second tab adds', delta, LIMITS.B3.secondTabAddsPct, 'points'),
+    ],
+    notes.length === 0 ? null : notes.join('; '),
+  );
+}
+
+/**
+ * B7 from the run with one tab and the calibration. `platform` is the `process.platform` of the host, `spawnsPerMin` the
+ * spawns per minute of the run by `ChildKind` (null when no run with a tab exists), `childCpuMs` the worst calibrated CPU of
+ * one sample of the platform's sampler (null when the host cannot measure it). Linux has no per-process sampler child: its
+ * machine panel spawns nothing and no CPU check applies.
+ */
+export function evaluateB7({ platform, spawnsPerMin, childCpuMs }) {
+  const checks = [];
+  const kinds = spawnsPerMin === null ? null : spawnsPerMin;
+  const spawn = (kindList) => (kinds === null ? null : kindList.reduce((sum, kind) => sum + (kinds[kind] ?? 0), 0));
+  if (platform === 'win32') {
+    checks.push(
+      check(
+        'powershell.processes spawns per minute, one tab',
+        spawn(['powershell.processes']),
+        LIMITS.B7.spawnsPerMin,
+        'spawns/min',
+      ),
+    );
+    checks.push(check('child CPU per Windows process sample (worst run)', childCpuMs, LIMITS.B7.childCpuMs, 'ms'));
+  } else if (platform === 'darwin') {
+    checks.push(check('ps spawns per minute, one tab', spawn(['ps']), LIMITS.B7.spawnsPerMin, 'spawns/min'));
+    checks.push(check('child CPU per ps sample (worst run)', childCpuMs, LIMITS.B7.childCpuMs, 'ms'));
+  } else {
+    checks.push(
+      check(
+        'child spawns per minute of the machine panel, one tab',
+        spawn(['ps', 'powershell.processes', 'powershell.cmdline']),
+        0,
+        'spawns/min',
+      ),
+    );
+  }
+  return judge(
+    'B7',
+    checks,
+    childCpuMs === null && platform !== 'linux'
+      ? 'the child CPU part is NOT MEASURED on this host or without a calibration run'
+      : null,
+  );
+}
+
 /** True when the host is the class of the budget table (`host` is `{ platform, cpus, node }` of a result). */
 export function isReferenceHost(host) {
   const major = Number.parseInt(String(host.node).split('.')[0], 10);
@@ -162,7 +260,7 @@ export function isReferenceHost(host) {
   );
 }
 
-const NOT_IN_HARNESS = 'measured by the long-running benchmarks (WP-109), not by this harness';
+const NOT_IN_HARNESS = 'not measured by the scripts of this run (bench-idle.mjs measures B1 to B3 and B7)';
 
 /**
  * The summary of a run: one row per budget B1..B7 (rows not supplied are NOT MEASURED), the host class and the exit code.
