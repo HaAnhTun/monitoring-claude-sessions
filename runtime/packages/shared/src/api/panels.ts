@@ -68,7 +68,7 @@ export const MachinePanelSchema = z.strictObject({
   cpuPct: z.number().nullable(),
   /** Sorted by `mb` descending, then `name` ascending. */
   procs: z.array(z.strictObject({ name: z.string(), count: CountSchema, mb: z.number().nullable() })),
-  /** `<name> (<status>)` lines; empty when disabled, unavailable or in error. */
+  /** `<name> (<status>)` lines; empty when disabled or unavailable, and the last rows are kept while `dockerStatus` is `error`. */
   docker: z.array(z.string()),
   platform: z.enum(['win32', 'linux', 'darwin', 'other']),
   procsSampledAt: NullableIsoTimeSchema,
