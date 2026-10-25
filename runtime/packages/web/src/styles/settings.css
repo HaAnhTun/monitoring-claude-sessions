@@ -1,0 +1,348 @@
+/* Settings page (04-ui.md 4.4.7, ADR 0073 decision 2): section list, cards, fact lists, commands, configuration table, preferences.
+   Calm and dense: data sits on cards, the headline of a card is one word with a dot, labels are muted, nothing has a border of its
+   own except the card. Long values (a path, a command, a configuration value) break inside their box and never widen the page. */
+
+.settings__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.settings__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-5);
+  align-items: start;
+}
+.settings__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.settings__lead {
+  margin-top: calc(-1 * var(--sp-2));
+}
+
+/* ---- the sections: a column from 1200 px, a wrapping row below ------------------------------------------------------ */
+.settings-nav__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-nav__link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--ctl-h);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.settings-nav__link:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+.settings-nav__link[aria-current='page'] {
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+}
+/* The section list is a column only where the content is wide enough for it (from 1200 px, where the sidebar is open); below that it is a row. */
+@media (min-width: 1200px) {
+  .settings__layout {
+    grid-template-columns: 13rem minmax(0, 1fr);
+  }
+  .settings-nav__list {
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+}
+
+/* ---- cards ----------------------------------------------------------------------------------------------------------------- */
+.settings-health,
+.settings-config,
+.settings-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: var(--sp-4);
+  align-items: stretch;
+}
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.settings-card--wide {
+  grid-column: 1 / -1;
+}
+.settings-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.settings-card__subtitle {
+  margin-top: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+.settings-card__note {
+  margin: 0;
+}
+/* The headline of a card: one phrase, larger than the facts under it. */
+.settings-status {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-lg);
+}
+.settings-verdict {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.settings-verdict > .live-dot {
+  align-self: center;
+}
+.settings-notice {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--stale-bg);
+  border-radius: var(--radius);
+  color: var(--stale-fg);
+}
+
+/* ---- facts ----------------------------------------------------------------------------------------------------------------- */
+.settings-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+}
+.settings-facts--cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--sp-3) var(--sp-7);
+}
+.settings-fact {
+  display: grid;
+  grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-4);
+}
+.settings-fact dt {
+  color: var(--text-muted);
+}
+.settings-fact__value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.settings-error__message,
+.settings-server-error__message {
+  margin-top: var(--sp-1);
+  overflow-wrap: anywhere;
+}
+.settings-reasons,
+.settings-flags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-reasons {
+  color: var(--text-muted);
+}
+
+/* Hooks and transcripts side by side inside the ingestion card. */
+.settings-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--sp-4) var(--sp-7);
+}
+.settings-split__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.settings-split__part > .settings-card__subtitle {
+  margin-top: 0;
+}
+
+/* ---- lists of alerts, errors, files and commands ---------------------------------------------------------------------------- */
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-alert,
+.settings-server-error,
+.settings-file,
+.settings-command-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.settings-alert__head,
+.settings-file__head,
+.settings-server-error__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+}
+.settings-alert__title {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+.settings-alert__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-5);
+  margin: 0;
+}
+.settings-alert__link {
+  align-self: flex-start;
+}
+.settings-file__path {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.settings-restart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.settings-outdated {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.settings-outdated > .settings-command {
+  align-self: stretch;
+}
+.settings-retention {
+  overflow-wrap: anywhere;
+}
+
+/* ---- a command and its Copy button ---------------------------------------------------------------------------------------- */
+.settings-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.settings-command__text {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---- the configuration table: the key and the source keep a width, the value takes the rest ----------------------------------- */
+.settings-config-table {
+  min-width: 0;
+}
+.settings-config-table .data-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.settings-config-table th:nth-child(1) {
+  width: 32%;
+}
+/* The card is the frame: the table inside it has none of its own, and its cells start at the top so a long value does not push the key down. */
+.settings-config-table .tbl-wrap,
+.settings-config-table .data-cards {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.settings-config-table td {
+  vertical-align: top;
+}
+.settings-config-table th:nth-child(3) {
+  width: 7.5rem;
+}
+.settings-key,
+.settings-value {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.settings-value {
+  display: block;
+  white-space: pre-wrap;
+}
+.settings-source {
+  white-space: nowrap;
+}
+
+/* ---- preferences ------------------------------------------------------------------------------------------------------------ */
+.settings-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-fieldset > legend {
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.settings-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+}
+.settings-choice,
+.settings-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  min-height: var(--ctl-h-inline);
+  cursor: pointer;
+}
+.settings-choice input,
+.settings-check input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.settings-check__hint {
+  display: block;
+}
+.settings-reset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-5);
+}
