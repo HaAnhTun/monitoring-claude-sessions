@@ -18,6 +18,7 @@ export const qk = {
   timeline: (iid: string, sid: string, q: ApiQuery) => ['mcs', iid, 'session', sid, 'timeline', q] as const,
   activity: (iid: string, q: ApiQuery) => ['mcs', iid, 'activity', q] as const,
   transcriptSearch: (iid: string, q: ApiQuery) => ['mcs', iid, 'transcriptSearch', q] as const,
+  instanceSearch: (iid: string, q: ApiQuery) => ['mcs', iid, 'instanceSearch', q] as const,
   workItems: (iid: string) => ['mcs', iid, 'workItems'] as const,
   analytics: (iid: string, kind: 'usage' | 'series' | 'tools', q: ApiQuery) =>
     ['mcs', iid, 'analytics', kind, q] as const,

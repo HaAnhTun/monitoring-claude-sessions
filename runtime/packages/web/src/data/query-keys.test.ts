@@ -66,6 +66,7 @@ describe('qk: query keys', () => {
       qk.timeline(IID_A, SID, {}),
       qk.activity(IID_A, {}),
       qk.transcriptSearch(IID_A, {}),
+      qk.instanceSearch(IID_A, {}),
       qk.workItems(IID_A),
       qk.analytics(IID_A, 'usage', {}),
       qk.config(IID_A),
@@ -96,6 +97,14 @@ describe('qk: query keys', () => {
     expect(qk.timeline(IID_A, SID, {}).slice(0, session.length)).toEqual([...session]);
   });
 
+  it('keeps the instance search apart from the search in one session and by every parameter', () => {
+    expect(hashKey(qk.instanceSearch(IID_A, { q: 'ab' }))).not.toBe(hashKey(qk.transcriptSearch(IID_A, { q: 'ab' })));
+    expect(hashKey(qk.instanceSearch(IID_A, { q: 'ab' }))).not.toBe(
+      hashKey(qk.instanceSearch(IID_A, { q: 'ab', kinds: 'tool' })),
+    );
+    expect(hashKey(qk.instanceSearch(IID_A, { q: 'ab' }))).not.toBe(hashKey(qk.instanceSearch(IID_B, { q: 'ab' })));
+  });
+
   it('separates the three analytics kinds and the six panels', () => {
     const kinds = (['usage', 'series', 'tools'] as const).map((kind) => hashKey(qk.analytics(IID_A, kind, {})));
     expect(new Set(kinds).size).toBe(3);
@@ -122,6 +131,7 @@ describe('endpoints: names and routes', () => {
       transcript: 'transcriptWindow',
       transcriptLocate: 'transcriptLocate',
       transcriptSearch: 'searchTranscript',
+      instanceSearch: 'searchTranscripts',
       workItems: 'workItemBoard',
       analyticsUsage: 'analyticsUsage',
       analyticsSeries: 'analyticsSeries',

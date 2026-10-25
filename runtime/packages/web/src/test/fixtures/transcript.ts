@@ -1,5 +1,10 @@
 // FIXTURE: invented data for tests
-import type { TranscriptEntry, TranscriptSearchResponse, TranscriptWindowResponse } from '@mcs/shared';
+import type {
+  InstanceSearchResponse,
+  TranscriptEntry,
+  TranscriptSearchResponse,
+  TranscriptWindowResponse,
+} from '@mcs/shared';
 
 import { iso, sessionId } from './ids.ts';
 
@@ -69,6 +74,47 @@ export function makeTranscriptSearch(overrides: Partial<TranscriptSearchResponse
       elapsedMs: 1,
       note: 'FIXTURE coverage note',
     },
+    ...overrides,
+  };
+}
+
+export type InstanceSearchMatch = InstanceSearchResponse['matches'][number];
+
+export function makeInstanceSearchMatch(overrides: Partial<InstanceSearchMatch> = {}): InstanceSearchMatch {
+  return {
+    sessionId: sessionId(1),
+    sessionLabel: 'FIXTURE session',
+    agentId: 'main',
+    i: 4,
+    k: 'say',
+    t: iso(-60),
+    name: null,
+    snippet: 'FIXTURE text with a needle inside',
+    ...overrides,
+  };
+}
+
+export function makeInstanceSearch(overrides: Partial<InstanceSearchResponse> = {}): InstanceSearchResponse {
+  return {
+    query: { q: 'needle', kinds: [] },
+    matches: [],
+    truncated: false,
+    coverage: {
+      scope: 'instance',
+      filesInScope: 3,
+      filesScanned: 3,
+      filesMissing: 0,
+      filesUnreadable: 0,
+      bytesInScope: 4096,
+      bytesScanned: 4096,
+      bytesNotIndexed: 0,
+      entriesScanned: 40,
+      complete: true,
+      stoppedBy: 'complete',
+      elapsedMs: 12,
+      note: 'FIXTURE coverage note',
+    },
+    continuation: null,
     ...overrides,
   };
 }

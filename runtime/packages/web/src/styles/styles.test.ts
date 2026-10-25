@@ -31,6 +31,7 @@ const EXPECTED_LAYER: Record<string, (typeof LAYERS)[number]> = {
   'session-tabs.css': 'pages',
   'work.css': 'pages',
   'activity.css': 'pages',
+  'overview.css': 'pages',
   'settings.css': 'pages',
   'search.css': 'pages',
 };
