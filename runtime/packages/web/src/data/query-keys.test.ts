@@ -64,6 +64,7 @@ describe('qk: query keys', () => {
       qk.session(IID_A, SID),
       qk.agents(IID_A, SID),
       qk.timeline(IID_A, SID, {}),
+      qk.toolCalls(IID_A, SID, {}),
       qk.activity(IID_A, {}),
       qk.transcriptSearch(IID_A, {}),
       qk.instanceSearch(IID_A, {}),
@@ -95,6 +96,9 @@ describe('qk: query keys', () => {
     const session = qk.session(IID_A, SID);
     expect(qk.agents(IID_A, SID).slice(0, session.length)).toEqual([...session]);
     expect(qk.timeline(IID_A, SID, {}).slice(0, session.length)).toEqual([...session]);
+    expect(qk.toolCalls(IID_A, SID, {}).slice(0, session.length)).toEqual([...session]);
+    expect(hashKey(qk.toolCalls(IID_A, SID, { status: 'failed' }))).not.toBe(hashKey(qk.toolCalls(IID_A, SID, {})));
+    expect(hashKey(qk.toolCalls(IID_A, SID, {}))).not.toBe(hashKey(qk.timeline(IID_A, SID, {})));
   });
 
   it('keeps the instance search apart from the search in one session and by every parameter', () => {
@@ -127,6 +131,7 @@ describe('endpoints: names and routes', () => {
       session: 'getSession',
       agents: 'sessionAgents',
       timeline: 'sessionTimeline',
+      toolCalls: 'sessionToolCalls',
       activity: 'listEvents',
       transcript: 'transcriptWindow',
       transcriptLocate: 'transcriptLocate',

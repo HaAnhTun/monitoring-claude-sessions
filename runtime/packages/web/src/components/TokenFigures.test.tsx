@@ -217,3 +217,35 @@ describe('TokenFigures: the language', () => {
     expect(screen.getByText(/^3\s?Tr$/)).toBeInTheDocument();
   });
 });
+
+describe('TokenFigures: the five figures of the Tokens tab', () => {
+  const FIVE = ['output', 'inputNew', 'input', 'cacheWrite', 'cacheRead'] as const;
+
+  it('draws input and cache write as figures of their own, with the exact number in the title', () => {
+    renderWithIntl(<TokenFigures usage={USAGE} variant="tiles" figures={FIVE} breakdown={false} />);
+    const terms = screen.getAllByRole('term').map((term) => term.textContent);
+    expect(terms).toEqual([
+      msg('tokens.output'),
+      msg('tokens.inputNew'),
+      msg('tokens.input'),
+      msg('tokens.cacheWrite'),
+      msg('tokens.cacheRead'),
+    ]);
+    const values = screen.getAllByRole('definition');
+    expect(values[2]?.querySelector('[title]')).toHaveAttribute('title', '1,000');
+    expect(values[3]?.querySelector('[title]')).toHaveAttribute('title', '500');
+  });
+
+  it('leaves out the breakdown popover when the view draws every part itself', () => {
+    renderWithIntl(<TokenFigures usage={USAGE} variant="tiles" figures={FIVE} breakdown={false} />);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('reads a cell of input or cache write, and a missing part as not available', () => {
+    const { unmount } = renderWithIntl(<TokenFigures usage={USAGE} variant="cell" figure="cacheWrite" />);
+    expect(screen.getByText('500')).toBeInTheDocument();
+    unmount();
+    renderWithIntl(<TokenFigures usage={makeUsage({ input: null })} variant="cell" figure="input" />);
+    expect(screen.getByText(msg('tokens.notAvailable'))).toBeInTheDocument();
+  });
+});

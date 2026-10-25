@@ -216,18 +216,20 @@ function Detail({ sessionId }: { sessionId: string }) {
         ) : (
           <>
             <AgentTree sessionId={sessionId} agents={agents.items} selectedAgentId={agentId} />
-            <LoadMore
-              hasMore={agents.query.hasNextPage}
-              loading={agents.query.isFetchingNextPage}
-              onLoad={() => {
-                void agents.query.fetchNextPage();
-              }}
-              shown={agents.items.length}
-              total={null}
-              nounKey="common.noun.agents"
-              capped={agents.capped}
-              pageSize={500}
-            />
+            {agents.query.hasNextPage ? (
+              <LoadMore
+                hasMore
+                loading={agents.query.isFetchingNextPage}
+                onLoad={() => {
+                  void agents.query.fetchNextPage();
+                }}
+                shown={agents.items.length}
+                total={null}
+                nounKey="common.noun.agents"
+                capped={agents.capped}
+                pageSize={500}
+              />
+            ) : null}
           </>
         );
       break;
@@ -235,7 +237,15 @@ function Detail({ sessionId }: { sessionId: string }) {
       panel = <SessionTokens session={detail} agents={agents.items} />;
       break;
     case 'errors':
-      panel = <SessionErrors sessionId={sessionId} agentId={agentId} />;
+      panel = (
+        <SessionErrors
+          sessionId={sessionId}
+          agentId={agentId}
+          agentLabel={agent?.label}
+          errorCount={detail.errorCount}
+          warningCount={detail.warningCount}
+        />
+      );
       break;
   }
 

@@ -7,7 +7,6 @@
 // block. A file that the table of the plan does not name is in the block of WP-124.
 export const LITERAL_BASELINE: readonly string[] = [
   // @wp-begin WP-65
-  'data/hooks/usePanel.ts',
   // @wp-end WP-65
   // @wp-begin WP-112
   // @wp-end WP-112

@@ -1,4 +1,4 @@
-/* Session detail tabs: the tab bar, timeline, agent tree, token panel (04-ui.md 4.4, 7, ADR 0073 decision 8). */
+/* Session detail tabs: the tab bar and the bodies of Errors, Agents, Tokens and Events (04-ui.md 4.4, 7, ADR 0073 decision 8). */
 
 /* The tab bar: a navigation of links that stays at the top of the window while the page scrolls. */
 .session-tabs {
@@ -48,108 +48,432 @@
   text-align: center;
 }
 
-.timeline {
+/* ---- Events: one line per event, 32 to 36 px (review R-18) --------------------------------------------------------------------- */
+.events {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
 }
-.timeline__filter {
+.events__intro {
+  margin: 0;
+  max-width: 80ch;
+}
+.events__filter {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-4);
+  gap: var(--sp-2) var(--sp-5);
   margin: 0;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius);
 }
-.timeline__category {
+.events__filter legend {
+  padding-inline: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.events__category {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
 }
-.timeline-list,
-.agent-tree__list {
-  display: flex;
-  flex-direction: column;
+.event-list {
   margin: 0;
   padding: 0;
   list-style: none;
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+  overflow: hidden;
 }
-.timeline-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
+.event-row {
   border-bottom: var(--border-w) solid var(--border);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
 }
-.timeline-row--error {
-  border-inline-start: 3px solid var(--failed-fg);
+.event-row:last-child {
+  border-bottom: 0;
 }
-.timeline-row--gap {
-  flex-direction: row;
+.event-row--error {
+  box-shadow: inset 3px 0 0 var(--state-failed-dot);
+}
+.event-row--warning {
+  box-shadow: inset 3px 0 0 var(--state-stale-dot);
+}
+/* time, category icon, name, status dot, duration, agent, actions (and the source tags when the events differ in them) */
+.event-row__line {
+  display: grid;
+  grid-template-columns: 4.5rem 1rem minmax(0, 1fr) 1rem 4rem minmax(5rem, 11rem) 4.75rem;
   align-items: center;
+  gap: var(--sp-3);
+  min-height: calc(34px * var(--d));
+  padding: 0 var(--sp-4);
+}
+.event-list--sources .event-row__line {
+  grid-template-columns: 4.5rem 1rem minmax(0, 1fr) 1rem 4rem minmax(5rem, 11rem) 7.5rem 4.75rem;
+}
+.event-row__time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.event-row__icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.event-row__name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.event-row__type {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+.event-row__tool {
+  flex: none;
+  font-weight: var(--fw-semibold);
+}
+.event-row__summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+.event-row__dot {
+  display: inline-flex;
+  justify-content: center;
+}
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot, var(--state-ended-dot));
+}
+.event-dot--running {
+  --dot: var(--state-working-dot);
+}
+.event-dot--completed {
+  --dot: var(--state-completed-dot);
+}
+.event-dot--failed {
+  --dot: var(--state-failed-dot);
+}
+.event-dot--waiting {
+  --dot: var(--state-waiting-dot);
+}
+.event-dot--idle {
+  --dot: var(--state-ended-dot);
+}
+.event-dot--unknown {
+  --dot: var(--state-unknown-dot);
+}
+.event-dot--stale {
+  --dot: var(--state-stale-dot);
+}
+.event-row__duration {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+.event-row__agent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-row__sources {
+  display: inline-flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow: hidden;
+}
+.event-row__sources .badge + .badge::before {
+  content: '\00b7';
+  margin-inline-end: var(--sp-2);
+}
+.event-row__actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+}
+.event-row__actions .btn-icon {
+  min-height: var(--ctl-h-inline);
+  min-width: var(--ctl-h-inline);
+  padding: 0;
+}
+.event-row--gap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: calc(34px * var(--d));
+  padding: 0 var(--sp-4);
   background: var(--stale-bg);
   color: var(--stale-fg);
 }
-.timeline-row__head,
-.agent-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2) var(--sp-3);
-}
-.timeline-row__sources {
-  display: inline-flex;
-  gap: var(--sp-1);
-}
-.timeline-row__severity--error {
-  color: var(--failed-fg);
-}
-.timeline-row__severity--warning {
-  color: var(--stale-fg);
-}
-.timeline-row__summary {
-  overflow-wrap: anywhere;
-}
-.timeline-row__details {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--sp-1) var(--sp-4);
-  margin: 0;
-}
-.timeline-row__details dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.agent-tree {
+.event-row__more {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4) var(--sp-4) calc(var(--sp-4) + 5rem);
 }
-.agent-tree__item {
-  padding: var(--sp-2) 0;
-}
-.agent-tree__item[aria-current='true'],
-.agent-tree__list > li[aria-current='true'] {
-  background: var(--surface-2);
-  border-inline-start: 3px solid var(--accent);
-  padding-inline-start: var(--sp-3);
-}
-.agent-tree__children {
-  margin-inline-start: var(--sp-5);
-}
-.agent-row__label {
-  font-weight: 600;
+.event-row__full {
+  margin: 0;
   overflow-wrap: anywhere;
 }
-.agent-row__errors {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  color: var(--failed-fg);
+.event-row__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0;
+  font-size: var(--fs-xs);
 }
-.session-tokens {
+.event-row__details > div {
+  display: contents;
+}
+.event-row__details dt {
+  color: var(--text-muted);
+}
+.event-row__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 899px) {
+  .event-row__line,
+  .event-list--sources .event-row__line {
+    grid-template-columns: 4.5rem 1rem minmax(0, 1fr) 1rem 4.75rem;
+  }
+  .event-row__duration,
+  .event-row__agent,
+  .event-row__sources {
+    display: none;
+  }
+  .event-row__more {
+    padding-inline-start: var(--sp-4);
+  }
+}
+
+/* ---- Errors: tool, message, event, open in transcript (review R-13) ---------------------------------------------------------- */
+.errors-tab {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
+}
+.errors-tab__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-5);
+  margin: 0;
+}
+.errors-tab__count {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+.error-row__what {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.error-row__severity {
+  display: inline-flex;
+  color: var(--state-stale-fg);
+}
+.error-row__severity--error {
+  color: var(--state-failed-fg);
+}
+.error-row__tool {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+.error-row__message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* In a card the message has the whole line, so the button of every card sits on a line of its own, at the same place. */
+.data-card__meta .error-row__message {
+  flex: 1 1 100%;
+}
+.error-row__name {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.error-row__argument {
+  max-width: 28ch;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.error-row__timing > span + span::before {
+  content: '\00b7';
+  margin-inline: var(--sp-2);
+}
+.error-row__timing {
+  font-size: var(--fs-xs);
+}
+.error-row__agent {
+  display: inline-block;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.error-row__event {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+tr.error-row--error > td:first-child {
+  box-shadow: inset 3px 0 0 var(--state-failed-dot);
+}
+.data-card.error-row--error {
+  box-shadow: inset 3px 0 0 var(--state-failed-dot);
+}
+
+/* ---- Agents: tables in the style of the Sessions list (review R-14) -------------------------------------------------------- */
+.agent-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.agent-tree__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+.agent-tree__summary .muted {
+  font-weight: var(--fw-regular);
+}
+.agent-group {
+  min-width: 0;
+}
+/* The table of a group is as wide as the table of the main agent, so that their columns line up. */
+.agent-group .disclosure__panel {
+  padding-inline: 0;
+}
+/* The table of the main agent and the tables of the groups share their columns, so the columns line up from one table to the next.
+   The model column is the one that leaves below 1000 px (a priority 2 column). */
+@media (min-width: 1000px) {
+  .agent-tree .data-table {
+    table-layout: fixed;
+  }
+  .agent-tree .data-table th:nth-child(1) {
+    width: 10rem;
+  }
+  .agent-tree .data-table th:nth-child(3) {
+    width: 8rem;
+  }
+  .agent-tree .data-table th:nth-child(4) {
+    width: 8rem;
+  }
+  .agent-tree .data-table th:nth-child(5) {
+    width: 13.5rem;
+  }
+  .agent-tree .data-table th:nth-child(6) {
+    width: 6rem;
+  }
+  .agent-tree .data-table td:nth-child(3) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@media (min-width: 900px) and (max-width: 999px) {
+  .agent-tree .data-table {
+    table-layout: fixed;
+  }
+  .agent-tree .data-table th:nth-child(1) {
+    width: 10rem;
+  }
+  .agent-tree .data-table th:nth-child(3) {
+    width: 8rem;
+  }
+  .agent-tree .data-table th:nth-child(4) {
+    width: 13.5rem;
+  }
+  .agent-tree .data-table th:nth-child(5) {
+    width: 6rem;
+  }
+}
+.agent-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+}
+.agent-cell__label {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+.agent-cell__type {
+  font-size: var(--fs-xs);
+}
+.agent-tokens {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-5);
+  justify-content: flex-end;
+}
+
+/* ---- Tokens: five tiles, a table with a total row (review R-15) ------------------------------------------------------------- */
+.session-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.session-tokens__totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+}
+.session-tokens__heading {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-sm);
+}
+.session-tokens__totals .token-figures__tile dd {
+  font-size: var(--fs-2xl);
+  line-height: var(--lh-2xl);
+}
+.session-tokens__cost {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.session-tokens__amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semibold);
+}
+.session-tokens__note {
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+tr.token-total-row > td,
+tr.token-total-row > th {
+  border-top: 2px solid var(--border-strong);
+  background: var(--surface-2);
+  font-weight: var(--fw-semibold);
 }

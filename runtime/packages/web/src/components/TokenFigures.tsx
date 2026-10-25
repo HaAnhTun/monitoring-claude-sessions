@@ -6,15 +6,21 @@ import { tokenParts } from '../lib/format.ts';
 import { Popover } from './Popover.tsx';
 import { TagBadge } from './TagBadge.tsx';
 
-/** The three figures of ADR 0074 decision 5. Input (new) is input plus cache write. */
-export type TokenFigureId = 'output' | 'inputNew' | 'cacheRead';
+/**
+ * The three figures of ADR 0074 decision 5 (Input (new) is input plus cache write) and the two parts it is made of, which the
+ * Tokens tab draws as well.
+ */
+export type TokenFigureId = 'output' | 'inputNew' | 'cacheRead' | 'input' | 'cacheWrite';
 
+/** What `tiles` and `line` draw when `figures` is omitted. */
 const FIGURE_IDS: readonly TokenFigureId[] = ['output', 'inputNew', 'cacheRead'];
 
 const LABEL_KEYS = {
   output: 'tokens.output',
   inputNew: 'tokens.inputNew',
   cacheRead: 'tokens.cacheRead',
+  input: 'tokens.input',
+  cacheWrite: 'tokens.cacheWrite',
 } as const satisfies Readonly<Record<TokenFigureId, MessageKey>>;
 
 export interface TokenFiguresProps {
@@ -29,8 +35,10 @@ export interface TokenFiguresProps {
   figure?: TokenFigureId | undefined;
   /** The numbers include the subagents of the session. */
   includesSubagents?: boolean | undefined;
-  /** Which figures `tiles` and `line` draw, in this order; all three when omitted. The breakdown popover still lists every part. */
+  /** Which figures `tiles` and `line` draw, in this order; the three main ones when omitted. The breakdown popover still lists every part. */
   figures?: readonly TokenFigureId[] | undefined;
+  /** `false` leaves out the breakdown popover of `tiles` and `line`, for a view that draws every part itself. Default true. */
+  breakdown?: boolean | undefined;
 }
 
 interface Resolved {
@@ -47,7 +55,7 @@ function resolve(usage: TokenUsage | null): Resolved {
   if (usage === null || usage.completeness === 'unavailable') {
     return {
       available: false,
-      figures: { output: null, inputNew: null, cacheRead: null },
+      figures: { output: null, inputNew: null, cacheRead: null, input: null, cacheWrite: null },
       input: null,
       cacheWrite: null,
       lowerBound: null,
@@ -56,7 +64,13 @@ function resolve(usage: TokenUsage | null): Resolved {
   const parts = tokenParts(usage);
   return {
     available: true,
-    figures: { output: parts?.out ?? null, inputNew: parts?.newInput ?? null, cacheRead: parts?.cacheRead ?? null },
+    figures: {
+      output: parts?.out ?? null,
+      inputNew: parts?.newInput ?? null,
+      cacheRead: parts?.cacheRead ?? null,
+      input: usage.input,
+      cacheWrite: usage.cacheCreation,
+    },
     input: usage.input,
     cacheWrite: usage.cacheCreation,
     lowerBound: usage.completeness === 'partial' || usage.lowerBound ? { scannedPct: usage.scannedPct } : null,
@@ -93,7 +107,13 @@ function useTitles(resolved: Resolved): Record<TokenFigureId, string> {
     input !== null && cacheWrite !== null && figures.inputNew !== null
       ? t('tokens.inputNewTip', { input: exact(input), cacheWrite: exact(cacheWrite), sum: exact(figures.inputNew) })
       : exact(figures.inputNew);
-  return { output: exact(figures.output), inputNew: inputNewTitle, cacheRead: exact(figures.cacheRead) };
+  return {
+    output: exact(figures.output),
+    inputNew: inputNewTitle,
+    cacheRead: exact(figures.cacheRead),
+    input: exact(figures.input),
+    cacheWrite: exact(figures.cacheWrite),
+  };
 }
 
 function LowerBoundTag({ scannedPct }: { scannedPct: number | null }) {
@@ -154,6 +174,7 @@ export function TokenFigures({
   figure = 'output',
   includesSubagents = false,
   figures = FIGURE_IDS,
+  breakdown = true,
 }: TokenFiguresProps) {
   const t = useT();
   const resolved = resolve(usage);
@@ -197,7 +218,7 @@ export function TokenFigures({
         ))}
         {lowerBound === null ? null : <LowerBoundTag scannedPct={lowerBound.scannedPct} />}
         {note}
-        <Breakdown resolved={resolved} />
+        {breakdown ? <Breakdown resolved={resolved} /> : null}
       </div>
     );
   }
@@ -216,7 +237,7 @@ export function TokenFigures({
       </dl>
       {lowerBound === null ? null : <LowerBoundTag scannedPct={lowerBound.scannedPct} />}
       {note}
-      {resolved.available ? <Breakdown resolved={resolved} /> : null}
+      {resolved.available && breakdown ? <Breakdown resolved={resolved} /> : null}
     </div>
   );
 }

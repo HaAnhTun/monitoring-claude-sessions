@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentTree, type AgentTreeNode, type TreeAgent } from './agent-tree.ts';
+import { buildAgentTree, flattenNodes, isMainAgent, type AgentTreeNode, type TreeAgent } from './agent-tree.ts';
 
 function agent(id: string, over: Partial<TreeAgent> = {}): TreeAgent {
   return {
@@ -83,9 +83,18 @@ describe('agent tree', () => {
       agent('w2', { workflow: run, state: { state: 'running' } }),
       agent('p1', { state: { state: 'failed' } }),
     ]);
-    expect(tree.groups.map((g) => [g.key, g.title, g.agents.length, g.summary])).toEqual([
-      ['', 'Subagents', 1, '1 failed'],
-      ['run-1', 'Workflow release', 2, '1 running, 1 completed'],
+    expect(tree.groups.map((g) => [g.key, g.titleKey, g.titleArgs, g.agents.length, g.summaryParts])).toEqual([
+      ['', 'shell.agents.subagents', null, 1, [{ key: 'shell.agents.summary.failed', count: 1 }]],
+      [
+        'run-1',
+        'shell.agents.workflow',
+        { name: 'release' },
+        2,
+        [
+          { key: 'shell.agents.summary.running', count: 1 },
+          { key: 'shell.agents.summary.completed', count: 1 },
+        ],
+      ],
     ]);
     expect(tree.groups[1]?.workflowState).toBe('running');
   });
@@ -101,10 +110,56 @@ describe('agent tree', () => {
   });
 
   it('an empty list gives an empty tree and the input is not changed', () => {
-    expect(buildAgentTree([])).toEqual({ groups: [], count: 0, orphans: 0 });
+    expect(buildAgentTree([])).toEqual({ main: null, groups: [], count: 0, orphans: 0 });
     const input = [agent('b'), agent('a')];
     const copy = [...input];
     buildAgentTree(input);
     expect(input).toEqual(copy);
+  });
+
+  it('keeps the main agent out of the count and hands it back as the root', () => {
+    const tree = buildAgentTree([MAIN, agent('a'), agent('b')]);
+    expect(tree.main?.id).toBe('main');
+    expect(tree.count).toBe(2);
+    expect(rootIds(tree)).toEqual(['a', 'b']);
+    expect(buildAgentTree([MAIN]).count).toBe(0);
+    expect(buildAgentTree([MAIN]).main?.id).toBe('main');
+    expect(buildAgentTree([agent('a')]).main).toBeNull();
+  });
+
+  it('reads the agent called main as the main agent even when its kind says otherwise', () => {
+    expect(isMainAgent({ id: 'main', kind: 'subagent' })).toBe(true);
+    expect(isMainAgent({ id: 'x', kind: 'main' })).toBe(true);
+    expect(isMainAgent({ id: 'x', kind: 'subagent' })).toBe(false);
+    const tree = buildAgentTree([agent('main', { kind: 'subagent', parentAgentId: null }), agent('a')]);
+    expect(tree.count).toBe(1);
+    expect(rootIds(tree)).toEqual(['a']);
+  });
+
+  it('flattens depth first with the depth of every agent, orphans and cycles included', () => {
+    const tree = buildAgentTree([
+      MAIN,
+      agent('a', { startedAt: '2026-10-11T10:00:01.000Z' }),
+      agent('a1', { parentAgentId: 'a', startedAt: '2026-10-11T10:00:02.000Z' }),
+      agent('a1x', { parentAgentId: 'a1', startedAt: '2026-10-11T10:00:03.000Z' }),
+      agent('a2', { parentAgentId: 'a', startedAt: '2026-10-11T10:00:04.000Z' }),
+      agent('b', { startedAt: '2026-10-11T10:00:05.000Z' }),
+      agent('lost', { parentAgentId: 'not-loaded', startedAt: '2026-10-11T10:00:06.000Z' }),
+      agent('loop1', { parentAgentId: 'loop2', startedAt: '2026-10-11T10:00:07.000Z' }),
+      agent('loop2', { parentAgentId: 'loop1', startedAt: '2026-10-11T10:00:08.000Z' }),
+    ]);
+    const rows = flattenNodes(tree.groups.flatMap((group) => group.agents));
+    expect(rows.map((row) => [row.agent.id, row.depth, row.orphan])).toEqual([
+      ['a', 0, false],
+      ['a1', 1, false],
+      ['a1x', 2, false],
+      ['a2', 1, false],
+      ['b', 0, false],
+      ['lost', 0, true],
+      ['loop1', 0, true],
+      ['loop2', 0, true],
+    ]);
+    expect(tree.count).toBe(8);
+    expect(tree.orphans).toBe(3);
   });
 });

@@ -16,6 +16,7 @@ export const qk = {
   session: (iid: string, sid: string) => ['mcs', iid, 'session', sid] as const,
   agents: (iid: string, sid: string) => ['mcs', iid, 'session', sid, 'agents'] as const,
   timeline: (iid: string, sid: string, q: ApiQuery) => ['mcs', iid, 'session', sid, 'timeline', q] as const,
+  toolCalls: (iid: string, sid: string, q: ApiQuery) => ['mcs', iid, 'session', sid, 'toolCalls', q] as const,
   activity: (iid: string, q: ApiQuery) => ['mcs', iid, 'activity', q] as const,
   transcriptSearch: (iid: string, q: ApiQuery) => ['mcs', iid, 'transcriptSearch', q] as const,
   instanceSearch: (iid: string, q: ApiQuery) => ['mcs', iid, 'instanceSearch', q] as const,

@@ -20,14 +20,21 @@ export interface AgentTreeNode<A extends TreeAgent> {
 }
 
 export interface AgentTree<A extends TreeAgent> {
+  /** The main agent of the session when the list holds it. It is the root of the tree, never one of its nodes. */
+  main: A | null;
   /** Children of the session root, grouped. */
   groups: AgentGroup<AgentTreeNode<A>>[];
-  /** Agents in the tree (the main agent is not counted). */
+  /** Subagents in the tree: every agent but the main one. */
   count: number;
   orphans: number;
 }
 
 const ROOT_ID = 'main';
+
+/** The main agent is the session itself: the agent of kind 'main', or the one whose id is 'main'. */
+export function isMainAgent(agent: { id: string; kind: string }): boolean {
+  return agent.kind === 'main' || agent.id === ROOT_ID;
+}
 
 function byStart(a: TreeAgent, b: TreeAgent): number {
   const ta = Date.parse(a.startedAt);
@@ -41,7 +48,7 @@ export function buildAgentTree<A extends TreeAgent>(agents: readonly A[]): Agent
   const index = new Map<string, A>();
   for (const a of agents) index.set(a.id, a);
   const isRoot = (id: string): boolean => id === ROOT_ID || index.get(id)?.kind === 'main';
-  const members = agents.filter((a) => a.kind !== 'main');
+  const members = agents.filter((a) => !isMainAgent(a));
 
   // Parent of an agent inside the tree: undefined = attached to the session root.
   const parentOf = (a: A): A | undefined => {
@@ -84,5 +91,21 @@ export function buildAgentTree<A extends TreeAgent>(agents: readonly A[]): Agent
   };
   for (const [id, node] of nodes) node.children = groupOf(childrenOf.get(id) ?? []);
 
-  return { groups: groupOf(rootChildren), count: members.length, orphans };
+  return { main: agents.find(isMainAgent) ?? null, groups: groupOf(rootChildren), count: members.length, orphans };
+}
+
+/** One agent of a flattened tree, with how deep it sits below the session root's children. */
+export interface AgentRow<A extends TreeAgent> {
+  agent: A;
+  orphan: boolean;
+  /** 0 for a child of the main agent. */
+  depth: number;
+}
+
+/** The given nodes and everything below them, depth first: every agent is followed by its own subtree. */
+export function flattenNodes<A extends TreeAgent>(nodes: readonly AgentTreeNode<A>[], depth = 0): AgentRow<A>[] {
+  return nodes.flatMap((node) => [
+    { agent: node.agent, orphan: node.orphan, depth },
+    ...node.children.flatMap((group) => flattenNodes(group.agents, depth + 1)),
+  ]);
 }

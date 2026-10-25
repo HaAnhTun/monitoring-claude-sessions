@@ -84,6 +84,13 @@ function renderDetail(setup: Setup = {}) {
   return { ...rendered, api };
 }
 
+/** The five tiles of the Tokens tab (the tiles of the page header are another element of the same kind). */
+function tilesOf(): HTMLElement {
+  const tiles = document.querySelector<HTMLElement>('.session-tokens .token-figures--tiles');
+  if (tiles === null) throw new Error('the Tokens tab has no tiles');
+  return tiles;
+}
+
 function location(): string {
   return screen.getByTestId('location').textContent;
 }
@@ -371,10 +378,10 @@ describe('SessionDetailPage', () => {
     expect(screen.getByRole('button', { name: msg('detail.details', undefined, 'vi') })).toBeInTheDocument();
   });
 
-  describe('Timeline tab', () => {
+  describe('Events tab', () => {
     const route = `/sessions/${SID}?tab=events`;
 
-    it('lists the events with their sources and shows a gap as a separator', async () => {
+    it('lists the events one per line, with a gap as a separator, and says that no category chosen means all', async () => {
       renderDetail({
         route,
         handlers: {
@@ -388,45 +395,40 @@ describe('SessionDetailPage', () => {
                 severity: 'error',
                 type: 'tool.failure',
                 category: 'tool',
+                sources: ['transcript'],
               }),
             ]),
         },
       });
       expect(await screen.findByText('FIXTURE tool event')).toBeInTheDocument();
       const row = screen.getByText('FIXTURE tool event').closest('li') as HTMLElement;
-      expect(within(row).getByText('hook')).toBeInTheDocument();
-      expect(within(row).getByText('transcript')).toBeInTheDocument();
-      const gap = screen.getByRole('note');
-      expect(gap).toHaveTextContent('Events may be missing here: FIXTURE missing events');
+      // the sources differ between the events, so each row names its sources
+      expect(within(row).getByText(msg('tabs.events.source.hook'))).toBeInTheDocument();
+      expect(within(row).getByText(msg('tabs.events.source.transcript'))).toBeInTheDocument();
+      expect(screen.getByRole('note')).toHaveTextContent(
+        msg('tabs.events.gapDetail', { detail: 'FIXTURE missing events' }),
+      );
       const failed = screen.getByText('FIXTURE failed').closest('li') as HTMLElement;
-      expect(within(failed).getByText('error')).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          'Events recorded by the monitor (hooks and lifecycle). For the conversation itself see Transcript.',
-        ),
-      ).toBeInTheDocument();
+      expect(within(failed).getByText(msg('tabs.severity.error'))).toBeInTheDocument();
+      expect(screen.getByText(msg('tabs.events.intro'))).toBeInTheDocument();
     });
 
-    it('explains an empty timeline when hooks are off', async () => {
+    it('explains an empty list when hooks are off', async () => {
       renderDetail({ route, detail: { sources: { hooks: false, transcript: true } } });
-      expect(
-        await screen.findByText(
-          'No monitor events for this session. Hooks may be off; the Transcript tab shows the conversation.',
-        ),
-      ).toBeInTheDocument();
+      expect(await screen.findByText(msg('tabs.events.empty.noHooks'))).toBeInTheDocument();
     });
 
     it('filters by category through the URL', async () => {
       const { api } = renderDetail({ route });
-      await screen.findByRole('group', { name: 'Event categories' });
-      await userEvent.click(screen.getByRole('checkbox', { name: 'tool' }));
+      await screen.findByRole('group', { name: msg('tabs.events.categories') });
+      await userEvent.click(screen.getByRole('checkbox', { name: msg('activity.category.tool') }));
       expect(location()).toBe(`/sessions/${SID}?tab=events&types=tool`);
       await waitFor(() => {
         expect(api.callsTo('sessionTimeline').some((call) => call.query.get('category') === 'tool')).toBe(true);
       });
     });
 
-    it('restricts the timeline to the chosen agent', async () => {
+    it('restricts the events to the chosen agent', async () => {
       const { api } = renderDetail({ route: `${route}&agent=${agentId(1)}` });
       await screen.findByRole('navigation', { name: msg('detail.tabs.label') });
       await waitFor(() => {
@@ -438,6 +440,7 @@ describe('SessionDetailPage', () => {
       const event: ActivityEvent = makeEvent({
         id: 5,
         summary: 'FIXTURE locatable',
+        toolName: 'Grep',
         transcriptRef: { agentId: agentId(2), offset: 128 },
       });
       const { api } = renderDetail({
@@ -447,7 +450,9 @@ describe('SessionDetailPage', () => {
           transcriptLocate: () => ({ i: 7, t: iso(-5), base: 0, total: 10 }),
         },
       });
-      await userEvent.click(await screen.findByRole('button', { name: 'Show in transcript' }));
+      await userEvent.click(
+        await screen.findByRole('button', { name: msg('tabs.events.showInTranscriptFor', { what: 'Grep' }) }),
+      );
       await waitFor(() => {
         expect(location()).toBe(`/sessions/${SID}?agent=${agentId(2)}&i=7`);
       });
@@ -462,31 +467,33 @@ describe('SessionDetailPage', () => {
         route,
         toasts,
         handlers: {
-          sessionTimeline: () => makeEventPage([makeEvent({ id: 5, transcriptRef: { agentId: 'main', offset: 0 } })]),
+          sessionTimeline: () =>
+            makeEventPage([makeEvent({ id: 5, toolName: 'Grep', transcriptRef: { agentId: 'main', offset: 0 } })]),
           transcriptLocate: () => errorResponse('transcript_gone'),
         },
       });
-      await userEvent.click(await screen.findByRole('button', { name: 'Show in transcript' }));
+      await userEvent.click(
+        await screen.findByRole('button', { name: msg('tabs.events.showInTranscriptFor', { what: 'Grep' }) }),
+      );
+      const prefix = msg('tabs.events.locateFailed', { detail: '' }).trim();
       await waitFor(() => {
-        expect(toasts.getSnapshot().some((toast) => toast.message.startsWith('Could not open the transcript'))).toBe(
-          true,
-        );
+        expect(toasts.getSnapshot().some((toast) => toast.message.startsWith(prefix))).toBe(true);
       });
       expect(location()).toBe(`/sessions/${SID}?tab=events`);
     });
 
-    it('offers no transcript link for an event without a transcript reference', async () => {
+    it('offers no transcript button for an event without a transcript reference', async () => {
       renderDetail({
         route,
         handlers: { sessionTimeline: () => makeEventPage([makeEvent({ id: 5, transcriptRef: null })]) },
       });
       await screen.findByText('FIXTURE assistant reply');
-      expect(screen.queryByRole('button', { name: 'Show in transcript' })).toBeNull();
+      expect(screen.queryByRole('button', { name: new RegExp(msg('tabs.events.showInTranscript')) })).toBeNull();
     });
   });
 
   describe('Agents tab', () => {
-    it('renders the agent tree', async () => {
+    it('renders the agents as tables, and counts the subagents without the main agent', async () => {
       renderDetail({
         route: `/sessions/${SID}?tab=agents`,
         handlers: {
@@ -499,16 +506,19 @@ describe('SessionDetailPage', () => {
       });
       expect(await screen.findByText('FIXTURE agent A')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Subagents/ })).toBeInTheDocument();
+      expect(screen.getByText(msg('tabs.agents.summary', { count: 1 }))).toBeInTheDocument();
     });
 
-    it('says so when the session has no subagents', async () => {
+    it('says "Main agent only" when the session has no subagents, next to no count of subagents', async () => {
       renderDetail({ route: `/sessions/${SID}?tab=agents` });
-      expect(await screen.findByText('This session has no subagents.')).toBeInTheDocument();
+      expect(await screen.findByText(msg('tabs.agents.mainOnly'))).toBeInTheDocument();
+      expect(screen.queryByText(/no subagents/i)).toBeNull();
+      expect(screen.queryByText(/\d+ subagents?/)).toBeNull();
     });
   });
 
   describe('Tokens tab', () => {
-    it('shows the token source note, the session numbers and one row per agent', async () => {
+    it('shows the five totals, one row per agent and the note at the bottom', async () => {
       renderDetail({
         route: `/sessions/${SID}?tab=tokens`,
         handlers: {
@@ -525,16 +535,17 @@ describe('SessionDetailPage', () => {
             ]),
         },
       });
-      expect(
-        await screen.findByText('Token numbers come from transcripts only; hooks carry no usage.'),
-      ).toBeInTheDocument();
-      expect(screen.getByText('Cache read')).toBeInTheDocument();
-      const table = await screen.findByRole('table', { name: 'Tokens per agent' });
+      const table = await screen.findByRole('table', { name: msg('tabs.tokens.caption') });
+      const tiles = tilesOf();
+      expect(within(tiles).getAllByRole('term')).toHaveLength(5);
+      expect(within(tiles).getByText(msg('tokens.cacheWrite'))).toBeInTheDocument();
       const partial = within(table).getByText('FIXTURE partial agent').closest('tr') as HTMLElement;
       const complete = within(table).getByText('FIXTURE complete agent').closest('tr') as HTMLElement;
-      expect(within(partial).getByText('lower bound')).toBeInTheDocument();
+      expect(within(partial).getAllByText(msg('tokens.lowerBound')).length).toBeGreaterThan(0);
       expect(within(partial).getByText('fixture-model-b')).toBeInTheDocument();
-      expect(within(complete).queryByText('lower bound')).toBeNull();
+      expect(within(complete).queryByText(msg('tokens.lowerBound'))).toBeNull();
+      expect(within(table).getByText(msg('tabs.tokens.total'))).toBeInTheDocument();
+      expect(screen.getByText(msg('tabs.tokens.note'))).toBeInTheDocument();
     });
 
     it('labels session numbers as a lower bound when the usage says so', async () => {
@@ -542,16 +553,28 @@ describe('SessionDetailPage', () => {
         route: `/sessions/${SID}?tab=tokens`,
         detail: { usageInclSubagents: makeUsage({ lowerBound: true, completeness: 'partial', scannedPct: 10 }) },
       });
-      await screen.findByText('Cache read');
-      expect(screen.getAllByText('lower bound').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('(incl. subagents)').length).toBeGreaterThan(1);
+      await screen.findByRole('heading', { name: msg('tabs.tokens.totals') });
+      expect(screen.getAllByText(msg('tokens.lowerBound')).length).toBeGreaterThan(0);
+    });
+
+    it('shows the same numbers as the Sessions list for the same session', async () => {
+      const usage = makeUsage({ input: 1000, cacheCreation: 500, output: 2500, cacheRead: 3_000_000 });
+      renderDetail({ route: `/sessions/${SID}?tab=tokens`, detail: { usageInclSubagents: usage } });
+      await screen.findByRole('heading', { name: msg('tabs.tokens.totals') });
+      const tiles = tilesOf();
+      const values = within(tiles)
+        .getAllByRole('definition')
+        .map((value) => value.textContent);
+      // Output, Input (new), Input, Cache write, Cache read: the compact forms the list draws for the same usage
+      expect(values).toEqual(['2.5K', '1.5K', '1K', '500', '3M']);
     });
   });
 
   describe('Errors tab', () => {
-    it('asks for warnings and errors only and lists them', async () => {
+    it('asks for warnings and errors only and lists them, with the count of the session above', async () => {
       const { api } = renderDetail({
         route: `/sessions/${SID}?tab=errors`,
+        detail: { errorCount: 1, warningCount: 1 },
         handlers: {
           sessionTimeline: () =>
             makeEventPage([
@@ -568,12 +591,13 @@ describe('SessionDetailPage', () => {
       });
       expect(await screen.findByText('FIXTURE the error')).toBeInTheDocument();
       expect(screen.getByText('FIXTURE the warning')).toBeInTheDocument();
+      expect(screen.getByText(msg('tabs.errors.summary', { errors: 1, warnings: 1 }))).toBeInTheDocument();
       expect(api.callsTo('sessionTimeline')[0]?.query.get('severity')).toBe('warning,error');
     });
 
     it('says so when there are no errors', async () => {
       renderDetail({ route: `/sessions/${SID}?tab=errors` });
-      expect(await screen.findByText('No errors or warnings recorded for this session.')).toBeInTheDocument();
+      expect(await screen.findByText(msg('tabs.errors.empty'))).toBeInTheDocument();
     });
   });
 });

@@ -6,6 +6,8 @@ import { ErrorState } from '../../components/ErrorState.tsx';
 import { LoadMore } from '../../components/LoadMore.tsx';
 import { Skeleton } from '../../components/Skeleton.tsx';
 import { TIMELINE_PAGE_LIMIT, useTimeline } from '../../data/hooks/useTimeline.ts';
+import { useT } from '../../i18n/context.ts';
+import type { MessageKey } from '../../i18n/types.ts';
 import { useShowToast } from '../../state/toast-store.ts';
 import { TimelineRow, useShowInTranscript } from './TimelineRow.tsx';
 
@@ -16,13 +18,27 @@ export interface SessionTimelineProps {
   types: EventCategory[];
   /** Absent: the category filter is not offered. */
   onTypesChange?: ((types: EventCategory[]) => void) | undefined;
-  /** `session.sources.hooks`; without hooks an empty timeline is expected and says so. */
+  /** `session.sources.hooks`; without hooks an empty list is expected and says so. */
   hooksEnabled?: boolean;
 }
 
-const SKELETON_ROWS = 6;
+const SKELETON_ROWS = 8;
 
-/** The events the monitor recorded for a session (hooks, transcript entries and its own rows), newest first. */
+const CATEGORY_KEYS = {
+  lifecycle: 'activity.category.lifecycle',
+  prompt: 'activity.category.prompt',
+  tool: 'activity.category.tool',
+  agent: 'activity.category.agent',
+  notification: 'activity.category.notification',
+  compaction: 'activity.category.compaction',
+  error: 'activity.category.error',
+  ingest: 'activity.category.ingest',
+} as const satisfies Readonly<Record<EventCategory, MessageKey>>;
+
+/**
+ * The events the monitor recorded for a session (hooks, transcript entries and its own rows), newest first, one line each
+ * (review R-18). No category chosen means every category. The source of an event is drawn only when the events differ in it.
+ */
 export function SessionTimeline({
   sessionId,
   agentId,
@@ -30,6 +46,7 @@ export function SessionTimeline({
   onTypesChange,
   hooksEnabled = true,
 }: SessionTimelineProps) {
+  const t = useT();
   const query = useMemo(
     () =>
       toQuery({ ...(types.length === 0 ? {} : { category: types }), ...(agentId === null ? {} : { agent: agentId }) }),
@@ -38,7 +55,7 @@ export function SessionTimeline({
   const showToast = useShowToast();
   const list = useTimeline(sessionId, query, {
     onCursorReset: () => {
-      showToast('The list changed; reloaded from the top');
+      showToast(t('error.handling.listChanged'));
     },
   });
   const showInTranscript = useShowInTranscript();
@@ -51,6 +68,12 @@ export function SessionTimeline({
       return next;
     });
   }, []);
+  const showSources = useMemo(
+    () =>
+      new Set(list.items.filter((event) => event.type !== 'monitor.gap').map((event) => event.sources.join('+'))).size >
+      1,
+    [list.items],
+  );
 
   const result = list.query;
   let body;
@@ -58,32 +81,29 @@ export function SessionTimeline({
     body = result.isError ? (
       <ErrorState
         kind="load"
-        subject="events"
+        subjectKey="error.subject.events"
         error={result.error}
         onRetry={() => {
           void result.refetch();
         }}
       />
     ) : (
-      <Skeleton variant="list" rows={SKELETON_ROWS} label="Loading events" />
+      <Skeleton variant="list" rows={SKELETON_ROWS} label={t('tabs.events.loading')} />
     );
   } else if (list.items.length === 0) {
+    let reason = t('tabs.events.empty.noHooks');
+    if (types.length > 0) reason = t('tabs.events.empty.filtered');
+    else if (hooksEnabled) reason = t('tabs.events.empty.none');
     body = (
-      <EmptyState title="No events" icon="activity">
-        <p>
-          {types.length > 0
-            ? 'No monitor events match the chosen categories.'
-            : hooksEnabled
-              ? 'No monitor events recorded for this session yet.'
-              : 'No monitor events for this session. Hooks may be off; the Transcript tab shows the conversation.'}
-        </p>
+      <EmptyState title={t('tabs.events.empty')} icon="activity">
+        <p>{reason}</p>
       </EmptyState>
     );
   } else {
     const lastPage = result.data.pages.at(-1);
     body = (
       <>
-        <ul className="timeline-list">
+        <ul className={showSources ? 'event-list event-list--sources' : 'event-list'}>
           {list.items.map((event) => (
             <TimelineRow
               key={event.id}
@@ -91,6 +111,7 @@ export function SessionTimeline({
               open={openRows.has(event.id)}
               onToggle={toggleRow}
               onShowInTranscript={showInTranscript}
+              showSources={showSources}
             />
           ))}
         </ul>
@@ -103,7 +124,7 @@ export function SessionTimeline({
           shown={list.items.length}
           total={lastPage?.total ?? null}
           totalIsLowerBound={lastPage?.totalIsLowerBound ?? false}
-          noun="events"
+          nounKey="common.noun.events"
           capped={list.capped}
           pageSize={TIMELINE_PAGE_LIMIT}
         />
@@ -113,15 +134,13 @@ export function SessionTimeline({
 
   const refreshFailing = result.isError && result.data !== undefined && !result.isFetchNextPageError;
   return (
-    <section className="timeline" aria-label="Timeline">
-      <p className="muted">
-        Events recorded by the monitor (hooks and lifecycle). For the conversation itself see Transcript.
-      </p>
+    <section className="events" aria-label={t('tabs.events.region')}>
+      <p className="muted events__intro">{t('tabs.events.intro')}</p>
       {onTypesChange === undefined ? null : (
-        <fieldset className="timeline__filter">
-          <legend>Event categories</legend>
+        <fieldset className="events__filter">
+          <legend>{t('tabs.events.categories')}</legend>
           {EVENT_CATEGORIES.map((category) => (
-            <label key={category} className="timeline__category">
+            <label key={category} className="events__category">
               <input
                 type="checkbox"
                 checked={types.includes(category)}
@@ -132,7 +151,7 @@ export function SessionTimeline({
                   onTypesChange(EVENT_CATEGORIES.filter((candidate) => chosen.has(candidate)));
                 }}
               />
-              <span>{category}</span>
+              <span>{t(CATEGORY_KEYS[category])}</span>
             </label>
           ))}
         </fieldset>
@@ -141,7 +160,7 @@ export function SessionTimeline({
         <ErrorState
           kind="refresh"
           size="inline"
-          subject="events"
+          subjectKey="error.subject.events"
           error={result.error}
           lastGoodAt={result.dataUpdatedAt}
           onRetry={() => {
