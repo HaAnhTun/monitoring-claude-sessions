@@ -17,12 +17,16 @@
 @import './session-tabs.css' layer(pages);
 /* Page stylesheets: each work package adds its own import inside its block, in the pages layer. */
 /* @wp-begin WP-53 */
+@import './activity.css' layer(pages);
 /* @wp-end WP-53 */
 /* @wp-begin WP-54 */
 /* @wp-end WP-54 */
 /* @wp-begin WP-66 */
+@import './work.css' layer(pages);
 /* @wp-end WP-66 */
 /* @wp-begin WP-67 */
+@import './settings.css' layer(pages);
 /* @wp-end WP-67 */
 /* @wp-begin WP-121 */
+@import './search.css' layer(pages);
 /* @wp-end WP-121 */

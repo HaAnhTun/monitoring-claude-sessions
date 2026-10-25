@@ -99,13 +99,22 @@ export const pageRegistry: PageRegistry = {
     import('../pages/session-detail/SessionDetailPage.tsx').then((m) => ({ default: m.SessionDetailPage })),
   ),
   // @wp-begin WP-53
+  activity: lazyPage(() => import('../pages/activity/ActivityPage.tsx').then((m) => ({ default: m.ActivityPage }))),
   // @wp-end WP-53
   // @wp-begin WP-54
   // @wp-end WP-54
   // @wp-begin WP-66
+  tasks: lazyPage(() =>
+    import('../pages/work-items/WorkItemBoardPage.tsx').then((m) => ({ default: m.WorkItemBoardPage })),
+  ),
+  analytics: lazyPage(() => import('../pages/analytics/AnalyticsPage.tsx').then((m) => ({ default: m.AnalyticsPage }))),
   // @wp-end WP-66
   // @wp-begin WP-67
+  settings: lazyPage(() => import('../pages/settings/SettingsPage.tsx').then((m) => ({ default: m.SettingsPage }))),
   // @wp-end WP-67
+  // @wp-begin WP-121
+  search: lazyPage(() => import('../pages/search/SearchPage.tsx').then((m) => ({ default: m.SearchPage }))),
+  // @wp-end WP-121
 };
 
 /** The registry of the router in this subtree: the navigation of the shell reads the pages that exist from it. */

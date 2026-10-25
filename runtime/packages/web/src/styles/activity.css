@@ -1,0 +1,252 @@
+/* Activity page and feed (04-ui.md 4.4.4, ADR 0071, ADR 0073).
+   Rows are lines on one card: a quiet time column, then the event (type and tool on the first line, the summary on the second, who
+   and where on the third). An error row takes the failed colour on its left edge; a gap in the record is a tinted separator. */
+
+.activity__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.activity__header p {
+  margin: 0;
+}
+
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.activity-feed__body {
+  min-width: 0;
+}
+
+/* ---- toolbar: the live status on the left, Pause or Resume on the right ---- */
+.activity-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.activity-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  margin: 0;
+  background: transparent;
+  color: var(--tone-fg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-sm);
+}
+
+/* ---- the list ---- */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.activity-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5) var(--sp-4) calc(var(--sp-5) - 3px);
+  border-bottom: var(--border-w) solid var(--border);
+  border-inline-start: 3px solid transparent;
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--row-cv-size);
+}
+.activity-row:last-child {
+  border-bottom: 0;
+}
+.activity-row:hover {
+  background: var(--surface-2);
+}
+.activity-row--error {
+  border-inline-start-color: var(--state-failed-dot);
+}
+.activity-row__time {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-md);
+  white-space: nowrap;
+}
+.activity-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.activity-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-md);
+}
+.activity-row__type {
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+.activity-row__tool {
+  overflow-wrap: anywhere;
+}
+.activity-row__severity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: var(--fw-semibold);
+}
+.activity-row__severity--error {
+  color: var(--failed-fg);
+}
+.activity-row__severity--warning {
+  color: var(--stale-fg);
+}
+.activity-row__duration {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The summary is one line; the whole text is in the tooltip. A text over 200 characters is clamped with Show more and wraps. */
+.activity-row__summary {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-row__summary--long {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.activity-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.activity-row__session {
+  display: inline-block;
+  max-width: min(32ch, 100%);
+  overflow: hidden;
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.activity-row__agent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: min(24ch, 100%);
+}
+.activity-row__agent span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-row__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+/* One pair per line, the names in a column of their own. */
+.activity-row__details > div {
+  display: contents;
+}
+.activity-row__details dt {
+  color: var(--text-muted);
+}
+.activity-row__details dd {
+  margin: 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* The quiet buttons of a row (Show more, Details) line up with the text above them, not with their own padding. */
+.activity-row .clamped__toggle {
+  margin-inline-start: calc(-1 * (var(--sp-4) + var(--border-w)));
+}
+.activity-row .disclosure__toggle {
+  margin-inline-start: calc(-1 * (var(--sp-2) + var(--border-w)));
+}
+.activity-row .disclosure__panel {
+  padding-inline: 0;
+}
+
+/* ---- a gap in the record ---- */
+.activity-row--gap {
+  display: block;
+  padding-block: var(--sp-3);
+  background: var(--stale-bg);
+  border-inline-start-color: var(--state-stale-dot);
+  color: var(--stale-fg);
+  font-size: var(--fs-sm);
+}
+.activity-row--gap:hover {
+  background: var(--stale-bg);
+}
+.activity-row__gap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.activity-row__gap > .icon {
+  flex: none;
+}
+.activity-row__gap-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.activity-row__gap-reason::before {
+  content: ': ';
+  white-space: pre;
+}
+.activity-row__gap time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- compact: the Overview shows the newest events as lines without a card ---- */
+.activity-list--compact .activity-row {
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  padding: var(--sp-3) 0;
+  padding-inline-start: var(--sp-3);
+}
+.activity-list--compact .activity-row:hover {
+  background: transparent;
+}
+.activity-list--compact .activity-row--gap {
+  padding-inline: var(--sp-3);
+}
+.activity-list--compact .activity-row__session {
+  align-self: start;
+  font-size: var(--fs-xs);
+  max-width: 22ch;
+}
+
+@media (max-width: 520px) {
+  .activity-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-1);
+  }
+  .activity-list--compact .activity-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

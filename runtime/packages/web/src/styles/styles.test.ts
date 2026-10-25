@@ -29,6 +29,10 @@ const EXPECTED_LAYER: Record<string, (typeof LAYERS)[number]> = {
   'sessions.css': 'pages',
   'session-detail.css': 'pages',
   'session-tabs.css': 'pages',
+  'work.css': 'pages',
+  'activity.css': 'pages',
+  'settings.css': 'pages',
+  'search.css': 'pages',
 };
 
 /** Marked blocks that index.css keeps for the work packages that add a page stylesheet. */

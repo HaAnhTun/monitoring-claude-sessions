@@ -5,7 +5,14 @@ import type { Page as BrowserPage } from '@playwright/test';
 
 import type { InstanceInfo, Page, SessionSummary } from '@mcs/shared';
 
-import { iso, makeSession, makeState } from '../../src/test/fixtures/index.ts';
+import {
+  iso,
+  makeSession,
+  makeState,
+  makeUsage,
+  makeWorkItem,
+  makeWorkItemBoard,
+} from '../../src/test/fixtures/index.ts';
 import { fixtureId, type FixtureApi, type FixtureState } from './fixture-api.ts';
 import type { QaInstance } from './qa-instance.ts';
 
@@ -51,7 +58,7 @@ export interface ViewSpec {
  * Routes of ADR 0073 that the app does not register yet. A view of such a route is shot anyway (the app answers "not found"
  * until its page lands). The selftest fails when an entry is already in `ROUTES`, so the list cannot rot.
  */
-export const PLANNED_ROUTE_PATHS: readonly string[] = ['/search'];
+export const PLANNED_ROUTE_PATHS: readonly string[] = [];
 
 const detail = (data: ViewData): Record<string, string> => ({ sessionId: data.detailSessionId });
 
@@ -132,6 +139,130 @@ export const VIEWS: readonly ViewSpec[] = [
   { id: 'not-found', path: '*', mode: 'live', wait: HEADING, params: () => ({ '*': 'no-such-page' }) },
   // ---- marked blocks of the work packages that add variants (entries only; each entry ends with a comma) ----
   // @wp-begin WP-53
+  {
+    // Paused: the live instance keeps its stream, so the status line reads "Paused" and the button reads Resume.
+    id: 'activity-paused',
+    path: '/activity',
+    mode: 'live',
+    wait: 'main .activity-toolbar',
+    setup: async ({ page }) => {
+      await page.locator('main .activity-toolbar button').click();
+      await page.locator('main .activity-status.tone-idle').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The target of the Overview error figure: only errors, each with the failed bar on its left.
+    id: 'activity-errors',
+    path: '/activity',
+    mode: 'fixture',
+    query: 'severity=error',
+    wait: 'main .activity-row--error',
+    // The fake server ignores filters, so it is made to answer the severity of the request, as the real one does.
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const listEvents = fixture.fake.handlers.listEvents;
+      if (listEvents === undefined) throw new Error('the fixture API has no event list');
+      fixture.fake.handlers.listEvents = async (query, request) => {
+        const body = (await listEvents(query, request)) as { items: { severity: string }[] };
+        const severities = (query.get('severity') ?? '').split(',');
+        return { ...body, items: body.items.filter((item) => severities.includes(item.severity)) };
+      };
+      // The page polls every 3 s without a stream; the rows that are not errors go with the next answer.
+      await page
+        .locator('main .activity-row:not(.activity-row--error)')
+        .first()
+        .waitFor({ state: 'detached', timeout: 20_000 });
+      await page.locator('main .activity-row--error').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // Every row shape at once: a gap separator, a warning, a long summary that is clamped, and an event with details opened.
+    id: 'activity-rows',
+    path: '/activity',
+    mode: 'fixture',
+    wait: 'main .activity-row',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const listEvents = fixture.fake.handlers.listEvents;
+      if (listEvents === undefined) throw new Error('the fixture API has no event list');
+      fixture.fake.handlers.listEvents = async (query, request) => {
+        const body = (await listEvents(query, request)) as { items: Record<string, unknown>[] };
+        const base = body.items[0];
+        if (base === undefined) return body;
+        const extra = [
+          {
+            ...base,
+            id: 901,
+            seq: 901,
+            type: 'monitor.gap',
+            category: 'ingest',
+            severity: 'warning',
+            toolName: null,
+            summary: 'hooks were not reporting for 4 minutes',
+            details: {},
+          },
+          {
+            ...base,
+            id: 902,
+            seq: 902,
+            type: 'permission.denied',
+            category: 'notification',
+            severity: 'warning',
+            toolName: 'Write',
+            summary: 'The write to a protected path was denied',
+            details: {},
+          },
+          {
+            ...base,
+            id: 903,
+            seq: 903,
+            type: 'tool.result',
+            category: 'tool',
+            severity: 'info',
+            toolName: 'Bash',
+            toolStatus: 'succeeded',
+            durationMs: 84_000,
+            summary: `${'Compiled the workspace and ran the whole suite; '.repeat(6)}done`,
+            details: { exitCode: 0, cwd: '/work/demo', branch: 'feature/activity' },
+          },
+        ];
+        return { ...body, items: [...extra, ...body.items] };
+      };
+      // The page polls every 3 s without a stream, so the new rows arrive by themselves.
+      await page.locator('main .activity-row--gap').first().waitFor({ state: 'visible', timeout: 20_000 });
+      await page.locator('main .activity-row .disclosure__toggle').first().click();
+    },
+  },
+  {
+    // The "More filters" panel open.
+    id: 'activity-filters',
+    path: '/activity',
+    mode: 'fixture',
+    wait: 'main .activity-row',
+    setup: async ({ page }) => {
+      await page.locator('main .filter-bar__more .popover > button').click();
+      await page.locator('main .filter-bar__panel').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  { id: 'activity-loading', path: '/activity', mode: 'fixture', state: 'loading', wait: 'main .skeleton--list' },
+  { id: 'activity-error', path: '/activity', mode: 'fixture', state: 'error', wait: 'main .state--error' },
+  { id: 'activity-empty', path: '/activity', mode: 'fixture', state: 'empty', wait: 'main .state--empty' },
+  {
+    // Filters that hide everything: the way out is one button.
+    id: 'activity-no-match',
+    path: '/activity',
+    mode: 'fixture',
+    state: 'empty',
+    query: 'severity=error',
+    wait: 'main .state--empty',
+  },
+  {
+    id: 'activity-disconnected',
+    path: '/activity',
+    mode: 'fixture',
+    state: 'disconnected',
+    wait: 'main .activity-row',
+  },
   // @wp-end WP-53
   // @wp-begin WP-54
   // @wp-end WP-54
@@ -161,11 +292,269 @@ export const VIEWS: readonly ViewSpec[] = [
       };
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.locator('main .metric-tiles').waitFor({ state: 'visible', timeout: 20_000 });
-      if ((await page.locator('main .trend').count()) !== 0) throw new Error('the trend charts are drawn without the flag');
+      if ((await page.locator('main .trend').count()) !== 0)
+        throw new Error('the trend charts are drawn without the flag');
+    },
+  },
+  {
+    id: 'tasks-populated',
+    path: '/tasks',
+    mode: 'fixture',
+    wait: 'main .board__col',
+    // A board with every shape that stresses a card: a long title, many sessions, evidence, a task without figures, a full column.
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const usage = makeUsage({
+        output: 48_200,
+        input: 9100,
+        cacheCreation: 3100,
+        cacheRead: 2_400_000,
+        total: 2_460_400,
+      });
+      const evidence = [
+        { kind: 'session:state', at: iso(-6 * 60), text: 'Parser refactor: working (S-7b)' },
+        { kind: 'session:state', at: iso(-40 * 60), text: 'Compile the backend: completed (S-2a)' },
+        { kind: 'session:state', at: null, text: 'Flaky cache test: working (S-7e)' },
+      ];
+      const ids = [1, 2, 3, 4, 5, 6, 7].map((n) => fixtureId(n));
+      const working = Array.from({ length: 6 }, (_unused, i) =>
+        makeWorkItem({
+          id: 10 + i,
+          key: `working-${String(i)}`,
+          title: i === 0 ? 'Backend build and tests' : `Search index migration, part ${String(i)}`,
+          source: i === 1 ? 'attempts' : 'declared',
+          rule: i === 1 ? 'W-ATT' : 'W-DECL',
+          state: 'working',
+          boardReason: 'a member is working (S-7b)',
+          evidence: i === 0 ? evidence : [],
+          sessionIds: ids,
+          sessionCount: i === 0 ? 9 : 7,
+          usage: i === 2 ? null : usage,
+        }),
+      );
+      const board = makeWorkItemBoard({
+        derivation:
+          'Each session belongs to at most one item and the first matching rule wins: W-DECL (items declared in the configuration), W-ATT (attempt rows grouped by part), W-LBL (matched sessions grouped by exact label).',
+        items: [
+          ...working,
+          makeWorkItem({
+            id: 20,
+            key: 'review',
+            title: 'Release review',
+            source: 'label',
+            rule: 'W-LBL',
+            state: 'waiting',
+            boardReason: 'a member waits for input (S-6a)',
+            evidence: evidence.slice(0, 1),
+            sessionIds: [fixtureId(6)],
+            sessionCount: 1,
+            usage,
+          }),
+          makeWorkItem({
+            id: 21,
+            key: 'billing',
+            title:
+              'Migrate the billing service to the new payment provider, update every integration test, the runbook and the dashboards',
+            state: 'completed',
+            boardReason: 'the most recently started member completed (S-2a)',
+            sessionIds: [fixtureId(7)],
+            sessionCount: 1,
+            lastActivityAt: iso(-3 * 3600),
+            usage: makeUsage({ ...usage, completeness: 'partial', lowerBound: true, scannedPct: 82 }),
+          }),
+          makeWorkItem({
+            id: 22,
+            key: 'deploy',
+            title: 'Deploy to staging',
+            state: 'failed',
+            boardReason: 'the most recently started member failed (S-3a)',
+            sessionIds: [fixtureId(8)],
+            sessionCount: 1,
+            usage,
+          }),
+          makeWorkItem({
+            id: 23,
+            key: 'sync',
+            title: 'Sync the translation files',
+            state: 'stale',
+            boardReason: 'a member is stale (S-7f)',
+            sessionIds: [fixtureId(9)],
+            sessionCount: 1,
+            lastActivityAt: iso(-45 * 60),
+            usage: null,
+          }),
+        ],
+      });
+      fixture.fake.handlers.workItemBoard = () => board;
+      await page
+        .locator('main .work-card', { hasText: 'Sync the translation files' })
+        .first()
+        .waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    id: 'analytics-tooltip',
+    path: '/analytics',
+    mode: 'fixture',
+    wait: 'main .chart',
+    // Hourly buckets (24 bars): the keyboard focus of one bar shows its tooltip.
+    setup: async ({ page }) => {
+      await page.locator('main .chart[data-metric="output"] .chart__hit').nth(20).focus();
+      await page.locator('main .chart__tip').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    id: 'analytics-table',
+    path: '/analytics',
+    mode: 'fixture',
+    wait: 'main .chart',
+    setup: async ({ page }) => {
+      await page.locator('main .trend__head button').click();
+      await page.locator('main .trend table').waitFor({ state: 'visible', timeout: 20_000 });
     },
   },
   // @wp-end WP-66
   // @wp-begin WP-67
+  // The settings sections that need data the live QA instance does not have, and the two that only need a page of their own.
+  {
+    // Long values, a long key, every source tag and long file paths: the case that must clamp inside the page at 600 px.
+    id: 'settings-config',
+    path: '/settings',
+    mode: 'fixture',
+    query: 'section=config',
+    wait: 'main .settings-value',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const longPath = `/work/${'a-very-long-folder-name/'.repeat(8)}transcripts`;
+      const rules = Array.from({ length: 6 }, (_unused, index) => ({
+        match: `project-${String(index)}/**`,
+        label: `Fixture project number ${String(index)}`,
+        tags: ['alpha', 'beta'],
+      }));
+      fixture.fake.handlers.config = () => ({
+        entries: [
+          { key: 'hooks.enabled', value: true, source: 'runtime' },
+          { key: 'logging.level', value: 'info', source: 'env' },
+          { key: 'poll.overview_ms', value: 5000, source: 'config' },
+          { key: 'port', value: 18900, source: 'builtin' },
+          { key: 'projects.rules', value: rules, source: 'config' },
+          { key: 'retention.sessions_days', value: 90, source: 'skill' },
+          { key: 'transcripts.dir', value: longPath, source: 'cli' },
+          {
+            key: 'ui.a.configuration.key.that.keeps.going.on.and.on.for.quite.a.while.longer',
+            value: null,
+            source: 'builtin',
+          },
+        ],
+        files: [
+          { name: 'defaults.json', path: `${longPath}/defaults.json`, schemaVersion: 1, present: true, ok: true },
+          { name: 'config.json', path: `${longPath}/config.json`, schemaVersion: 1, present: true, ok: false },
+          { name: 'runtime.json', path: `${longPath}/runtime.json`, schemaVersion: null, present: false, ok: true },
+        ],
+        effectivePort: 18900,
+        engine: 'node',
+      });
+      // The configuration is read once per instance, so the page is loaded again to read the new answer.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.locator('main .settings-value').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    id: 'settings-preferences',
+    path: '/settings',
+    mode: 'live',
+    query: 'section=preferences',
+    wait: 'main .settings-prefs',
+  },
+  {
+    // A server with trouble: degraded ingestion, hooks with an error, an old run, open alerts and server errors.
+    id: 'settings-health-busy',
+    path: '/settings',
+    mode: 'fixture',
+    query: 'section=health',
+    wait: 'main h1',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const health = fixture.fake.handlers.health;
+      if (health === undefined) throw new Error('the fixture API has no health answer');
+      const error = (n: number): Record<string, unknown> => ({
+        at: iso(-n * 90),
+        source: n % 2 === 0 ? 'server' : 'ingest',
+        code: n % 2 === 0 ? 'INTERNAL' : 'SPOOL_LINE_BAD',
+        where: n % 3 === 0 ? `routes/session-${String(n)}` : null,
+        message: `Fixture failure number ${String(n)}: the request could not be completed (a long message to check the wrapping)`,
+        sessionId: null,
+      });
+      const alert = (
+        id: number,
+        severity: 'warning' | 'critical',
+        title: string,
+        sessionId: string | null,
+      ): unknown => ({
+        id,
+        seq: id,
+        ruleId: 'import_lag',
+        rule: 'import_lag',
+        severity,
+        status: 'open',
+        title,
+        scope: { kind: 'instance', key: 'instance' },
+        sessionId,
+        since: iso(-1800),
+        lastFiredAt: iso(-45),
+        fireCount: 12,
+        resolvedAt: null,
+        resolvedReason: null,
+        detail: {},
+      });
+      fixture.fake.handlers.health = async (query, request) => {
+        const body = (await health(query, request)) as Record<string, Record<string, unknown>>;
+        const ingestion = body['ingestion'] ?? {};
+        return {
+          ...body,
+          status: 'degraded',
+          runtime: { ...body['runtime'], outdated: true, previousRunUnclean: true },
+          ingestion: {
+            ...ingestion,
+            status: 'degraded',
+            reasons: ['The transcript import is 4 minutes behind', 'No hook event arrived for 12 minutes'],
+            hooks: {
+              enabled: true,
+              installed: true,
+              lastReceivedAt: iso(-720),
+              lastEventAt: iso(-725),
+              spoolPendingBytes: 4096,
+              spoolLagMs: 2500,
+              errorsLastHour: 3,
+              lastError: error(1),
+            },
+          },
+          alerts: [
+            alert(1, 'critical', 'The import has not caught up for 30 minutes', fixtureId(2)),
+            alert(2, 'warning', 'Hooks are quiet', null),
+          ],
+          errors: [1, 2, 3, 4, 5, 6].map(error),
+        };
+      };
+      await page.locator('main .settings-alert').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The same server with trouble, scrolled to the open alerts and the server errors.
+    id: 'settings-health-lists',
+    path: '/settings',
+    mode: 'fixture',
+    query: 'section=health',
+    wait: 'main h1',
+    setup: async (context) => {
+      await VIEWS.find((view) => view.id === 'settings-health-busy')?.setup?.(context);
+      await context.page.evaluate(
+        `(() => document.querySelector('main [data-list="alerts"]')?.closest('section')?.scrollIntoView({ block: 'start' }))()`,
+      );
+    },
+  },
+  { id: 'settings-data', path: '/settings', mode: 'live', query: 'section=data', wait: 'main .settings-command' },
+  { id: 'settings-about', path: '/settings', mode: 'live', query: 'section=about', wait: 'main .settings-fact' },
   // @wp-end WP-67
   // @wp-begin WP-112
   // The new loading and error states on the sessions page: the request never finishes, or the server answers 500 every time.
@@ -406,8 +795,97 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-116
   // @wp-begin WP-117
+  {
+    // No session at all: the list of causes. The fixture server answers an empty list (a second live instance would need its own
+    // port and a second workspace for the same picture).
+    id: 'sessions-empty',
+    path: '/sessions',
+    mode: 'fixture',
+    state: 'empty',
+    wait: 'main .state--empty',
+  },
+  {
+    // Filters that match nothing: one message and one "Clear filters" button (the bar's own button is not drawn then).
+    id: 'sessions-no-match',
+    path: '/sessions',
+    mode: 'fixture',
+    state: 'empty',
+    query: 'errors=1&state=failed&project=billing-service',
+    wait: 'main .state--empty',
+  },
+  {
+    // The column chooser open, with the extra columns of the table on: Project / task, Model, Started and Active span.
+    id: 'sessions-columns',
+    path: '/sessions',
+    mode: 'fixture',
+    wait: 'main .data-table, main .data-cards',
+    setup: async ({ page }) => {
+      const trigger = page.locator('main .explorer__tools .popover > button').first();
+      if ((await trigger.count()) === 0) return;
+      await trigger.click();
+      await page.locator('main .column-chooser').waitFor({ state: 'visible', timeout: 20_000 });
+      // The options are in the order of the table: state, session, project, model, started, last activity, active span, ...
+      const boxes = page.locator('main .column-chooser input[type="checkbox"]');
+      for (const index of [2, 3, 4, 6]) await boxes.nth(index).check();
+    },
+  },
   // @wp-end WP-117
   // @wp-begin WP-118
+  {
+    // The session header with its Details section open: back link, title, state with evidence, four tiles, and the fields that
+    // have a value (no row of dashes). The demo session has a subagent with the only error, so the Errors tile shows the split.
+    id: 'session-detail-header',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: 'main .session-frame h1',
+    params: detail,
+    setup: async ({ page }) => {
+      await page.locator('main .session-frame__row .disclosure__toggle').click();
+      await page.locator('main .session-details').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The first load: the header-shaped placeholder in the frame the loaded page uses (the request never finishes).
+    id: 'session-detail-loading',
+    path: '/sessions/:sessionId',
+    mode: 'fixture',
+    state: 'loading',
+    wait: 'main .session-frame[data-loading]',
+    params: detail,
+  },
+  {
+    // A session the monitor does not know (a real instance answers session_not_found): the heading, the explanation and the way back.
+    id: 'session-detail-not-found',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: 'main .state--error',
+    params: () => ({ sessionId: 'no-such-session' }),
+  },
+  {
+    // The tab bar stays at the top of the window while the page scrolls: Details is open (a taller page) and the page is scrolled
+    // to its end. Where the page is too short to scroll (a tall window) nothing moves and the check is skipped.
+    id: 'session-detail-scrolled',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: 'main .session-frame h1',
+    params: detail,
+    setup: async ({ page }) => {
+      await page.locator('main .session-frame__row .disclosure__toggle').click();
+      await page.locator('main .session-details').waitFor({ state: 'visible', timeout: 20_000 });
+      const measured: unknown = await page.evaluate(
+        `(() => {
+          const root = document.scrollingElement || document.documentElement;
+          window.scrollTo(0, root.scrollHeight);
+          const bar = document.querySelector('main nav.session-tabs');
+          return { scrolled: window.scrollY, top: bar ? bar.getBoundingClientRect().top : null };
+        })()`,
+      );
+      const { scrolled, top } = measured as { scrolled: number; top: number | null };
+      if (top === null) throw new Error('the page has no tab bar');
+      if (scrolled > 0 && Math.abs(top) > 1)
+        throw new Error(`the tab bar is at y = ${String(top)} after scrolling ${String(scrolled)} px`);
+    },
+  },
   // @wp-end WP-118
   // @wp-begin WP-119
   // @wp-end WP-119
@@ -442,6 +920,125 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-120
   // @wp-begin WP-121
+  {
+    // A real instance: a text that is in several sessions is typed and submitted, and the matches are shown grouped by session.
+    id: 'search-results',
+    path: '/search',
+    mode: 'live',
+    wait: 'main .search-form__q',
+    setup: async ({ page }) => {
+      await page.locator('main .search-form__q').fill('test');
+      await page.locator('main .search-form__q').press('Enter');
+      await page.locator('main .search-group').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The fake server answers a search that stopped at its time limit: matches in two sessions, a subagent among them, and the coverage
+    // warning with its reasons. "Not every part was searched" must be impossible to miss.
+    id: 'search-incomplete',
+    path: '/search',
+    mode: 'fixture',
+    wait: 'main .search-form__q',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const { makeInstanceSearch, makeInstanceSearchMatch } = await import('../../src/test/fixtures/index.ts');
+      fixture.fake.handlers.searchTranscripts = () =>
+        makeInstanceSearch({
+          query: { q: 'migration', kinds: [] },
+          truncated: true,
+          matches: [
+            makeInstanceSearchMatch({
+              sessionId: fixtureId(1),
+              sessionLabel: 'Parser refactor',
+              i: 12,
+              k: 'say',
+              t: iso(-300),
+              snippet: 'Starting the migration of the parser module to the new grammar, one rule at a time.',
+            }),
+            makeInstanceSearchMatch({
+              sessionId: fixtureId(1),
+              sessionLabel: 'Parser refactor',
+              agentId: 'agentqafailed001',
+              i: 3,
+              k: 'tool',
+              name: 'Bash',
+              t: iso(-900),
+              snippet: 'npm run migration:check -- --workspace parser',
+            }),
+            makeInstanceSearchMatch({
+              sessionId: fixtureId(9),
+              sessionLabel: 'Search index migration',
+              i: 1,
+              k: 'prompt',
+              t: iso(-3600),
+              snippet: `FIXTURE Run the index migration and report how long it takes. ${'The migration must not block reads. '.repeat(3)}`,
+            }),
+          ],
+          coverage: {
+            ...makeInstanceSearch().coverage,
+            filesInScope: 14,
+            filesScanned: 9,
+            filesMissing: 1,
+            filesUnreadable: 1,
+            bytesInScope: 48_000_000,
+            bytesScanned: 31_000_000,
+            bytesNotIndexed: 2_400_000,
+            entriesScanned: 18_200,
+            complete: false,
+            stoppedBy: 'time_budget',
+            elapsedMs: 3010,
+            note: 'Searched 9 of 14 transcript files (31.0 MB) of 6 sessions. 1 file was deleted and could not be searched.',
+          },
+        });
+      await page.locator('main .search-form__q').fill('migration');
+      await page.locator('main .search-form__q').press('Enter');
+      await page.locator('main .search-coverage__warn').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // A search that never answers: the skeleton, the cancel hint and the Cancel button.
+    id: 'search-loading',
+    path: '/search',
+    mode: 'fixture',
+    wait: 'main .search-form__q',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      fixture.fake.handlers.searchTranscripts = () => new Promise(() => undefined);
+      await page.locator('main .search-form__q').fill('migration');
+      await page.locator('main .search-form__q').press('Enter');
+      await page.locator('main .search-loading').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // The server is running its other searches (429 search_busy): the message and the Retry button.
+    id: 'search-busy',
+    path: '/search',
+    mode: 'fixture',
+    wait: 'main .search-form__q',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const { errorResponse } = await import('../../src/test/fake-api.ts');
+      fixture.fake.handlers.searchTranscripts = () => errorResponse('search_busy');
+      await page.locator('main .search-form__q').fill('migration');
+      await page.locator('main .search-form__q').press('Enter');
+      await page.locator('main .state--error').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // A complete search with no match: the empty state and a coverage block without a warning.
+    id: 'search-empty',
+    path: '/search',
+    mode: 'fixture',
+    wait: 'main .search-form__q',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const { makeInstanceSearch } = await import('../../src/test/fixtures/index.ts');
+      fixture.fake.handlers.searchTranscripts = () => makeInstanceSearch({ query: { q: 'zzzz', kinds: [] } });
+      await page.locator('main .search-form__q').fill('zzzz');
+      await page.locator('main .search-form__q').press('Enter');
+      await page.locator('main .search-coverage').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
   // @wp-end WP-121
 ];
 
