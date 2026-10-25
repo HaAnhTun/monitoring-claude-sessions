@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { toSessionFilter } from '../data/endpoints.ts';
 import {
+  DETAIL_TABS,
   INVALID,
   SESSION_SORTS,
   activitySpec,
@@ -284,7 +285,7 @@ describe('route specs (04 3.2)', () => {
   it('/sessions/:id: tab, agent, jump index and client filters round trip', () => {
     const canonical = roundTrip(
       sessionDetailSpec,
-      'tab=timeline&agent=a-1&i=42&kinds=tool,prompt&tq=hello&tool=Bash&terr=1&types=tool,error',
+      'tab=events&agent=a-1&i=42&kinds=tool,prompt&tq=hello&tool=Bash&terr=1&types=tool,error',
     );
     const out = new URLSearchParams(canonical);
     expect(out.get('kinds')).toBe('prompt,tool');
@@ -293,6 +294,16 @@ describe('route specs (04 3.2)', () => {
     expect(parseUrlState(sessionDetailSpec, sp('tab=nope')).ignored).toEqual(['tab']);
     expect(parseUrlState(sessionDetailSpec, sp('kinds=think,zzz')).value.kinds).toEqual([]);
     expect(parseUrlState(sessionDetailSpec, sp('tq=' + 'x'.repeat(500))).value.tq).toHaveLength(200);
+  });
+
+  it('/sessions/:id: the tabs are in the order of the tab bar and the old timeline tab reads as events', () => {
+    expect([...DETAIL_TABS]).toEqual(['transcript', 'errors', 'agents', 'tokens', 'events']);
+    const old = parseUrlState(sessionDetailSpec, sp('tab=timeline&agent=a-1'));
+    expect(old.value.tab).toBe('events');
+    expect(old.ignored).toEqual([]);
+    expect(formatUrlState(sessionDetailSpec, old.value).toString()).toBe('tab=events&agent=a-1');
+    expect(parseUrlState(sessionDetailSpec, sp('tab=toString')).ignored).toEqual(['tab']);
+    expect(parseUrlState(sessionDetailSpec, sp('tab=errors')).value.tab).toBe('errors');
   });
 
   it('/activity: categories, severity, scope ids and a 24h default', () => {

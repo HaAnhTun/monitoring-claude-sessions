@@ -29,6 +29,8 @@ export interface TokenFiguresProps {
   figure?: TokenFigureId | undefined;
   /** The numbers include the subagents of the session. */
   includesSubagents?: boolean | undefined;
+  /** Which figures `tiles` and `line` draw, in this order; all three when omitted. The breakdown popover still lists every part. */
+  figures?: readonly TokenFigureId[] | undefined;
 }
 
 interface Resolved {
@@ -146,7 +148,13 @@ function Breakdown({ resolved }: { resolved: Resolved }) {
  * `TokenLine` and `TokenSummary`. A table cell is plain text, because a popover inside the scrolling wrapper of a table would be
  * clipped; the breakdown is in the title there.
  */
-export function TokenFigures({ usage, variant, figure = 'output', includesSubagents = false }: TokenFiguresProps) {
+export function TokenFigures({
+  usage,
+  variant,
+  figure = 'output',
+  includesSubagents = false,
+  figures = FIGURE_IDS,
+}: TokenFiguresProps) {
   const t = useT();
   const resolved = resolve(usage);
   const titles = useTitles(resolved);
@@ -181,7 +189,7 @@ export function TokenFigures({ usage, variant, figure = 'output', includesSubage
     }
     return (
       <div className="token-figures token-figures--line">
-        {FIGURE_IDS.map((id) => (
+        {figures.map((id) => (
           <span className="token-figures__item" key={id}>
             <span className="token-figures__label">{t(LABEL_KEYS[id])}</span>
             <Value value={resolved.figures[id]} title={titles[id]} />
@@ -197,7 +205,7 @@ export function TokenFigures({ usage, variant, figure = 'output', includesSubage
   return (
     <div className="token-figures token-figures--tiles">
       <dl className="token-figures__grid">
-        {FIGURE_IDS.map((id) => (
+        {figures.map((id) => (
           <div className="token-figures__tile" key={id}>
             <dt>{t(LABEL_KEYS[id])}</dt>
             <dd>

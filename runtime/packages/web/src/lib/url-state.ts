@@ -348,8 +348,23 @@ export function sessionsSpec(windowHours: number): Spec<SessionsUrlState> {
   };
 }
 
-export const DETAIL_TABS = ['transcript', 'timeline', 'agents', 'tokens', 'errors'] as const;
+/** The tabs of the session page, in the order of the tab bar (ADR 0073 decision 8). `timeline` is the old name of `events`. */
+export const DETAIL_TABS = ['transcript', 'errors', 'agents', 'tokens', 'events'] as const;
 export type DetailTab = (typeof DETAIL_TABS)[number];
+
+/** Old values of `tab` that are still read and written back under their new name. */
+export const DETAIL_TAB_ALIASES: Readonly<Record<string, DetailTab>> = { timeline: 'events' };
+
+function detailTab(): ParamCodec<DetailTab> {
+  const base = oneOf('tab', DETAIL_TABS, 'transcript');
+  return {
+    ...base,
+    parse: (raw) => {
+      const alias = raw === null || !Object.hasOwn(DETAIL_TAB_ALIASES, raw) ? undefined : DETAIL_TAB_ALIASES[raw];
+      return alias ?? base.parse(raw);
+    },
+  };
+}
 
 export interface SessionDetailUrlState {
   tab: DetailTab;
@@ -366,7 +381,7 @@ export interface SessionDetailUrlState {
 }
 
 export const sessionDetailSpec: Spec<SessionDetailUrlState> = {
-  tab: oneOf('tab', DETAIL_TABS, 'transcript'),
+  tab: detailTab(),
   agent: idText('agent'),
   i: intRange('i', 0, 1e9),
   kinds: setOf('kinds', ENTRY_KINDS),

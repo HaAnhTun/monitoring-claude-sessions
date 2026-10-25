@@ -77,15 +77,24 @@ async function checkDetailPage(page: Page, baseUrl: string, session: EnvSession)
     await expect(page.getByRole('heading', { level: 1, name: session.label })).toBeVisible();
     const header = page.locator('header.session-header');
     await expect(header.locator('.session-header__state')).toContainText(STATE_TEXT[session.state]);
-    const meta = header.locator('dl.session-header__meta');
-    await expect(meta).toContainText(session.id);
-    await expect(meta.locator('.session-header__field', { hasText: 'Provider' })).toContainText(/\S/);
-    await expect(meta.locator('.session-header__field', { hasText: 'Started' })).toContainText(/\S/);
-    await expect(meta.locator('.session-header__field', { hasText: 'Duration' })).toContainText(/\S/);
+    // the whole id is not in the header: it is in the Details section, which is closed until asked for
+    await expect(header).not.toContainText(session.id);
+    await expect(page.locator('.session-stats')).toContainText('Active span');
+    await page.getByRole('button', { name: 'Details' }).click();
+    const details = page.locator('dl.session-details');
+    await expect(details).toContainText(session.id);
+    await expect(details.locator('.session-details__field', { hasText: 'Provider' })).toContainText(/\S/);
+    await expect(details.locator('.session-details__field', { hasText: 'Started' })).toContainText(/\S/);
   });
 
-  await test.step(name('token summary in the header'), async () => {
-    await expect(page.locator('header.session-header .token-summary')).toContainText(tokenLineOf(session));
+  await test.step(name('token figures in the tiles under the header'), async () => {
+    const u = session.inclSubagents;
+    const tokens = page.locator('.session-stat--tokens');
+    await expect(tokens).toContainText('Output');
+    await expect(tokens).toContainText('Input (new)');
+    // the exact numbers are in the titles of the figures; Input (new) says its sum
+    await expect(tokens.locator(`[title="${u.output.toLocaleString('en-US')}"]`)).toHaveCount(1);
+    await expect(tokens.locator(`[title*="= ${(u.input + u.cacheCreation).toLocaleString('en-US')}"]`)).toHaveCount(1);
   });
 
   await test.step(name('tool calls of the main agent with their results'), async () => {
@@ -105,7 +114,7 @@ async function checkDetailPage(page: Page, baseUrl: string, session: EnvSession)
   }
 
   await test.step(name('exact token figures on the Tokens tab'), async () => {
-    await page.getByRole('tab', { name: 'Tokens' }).click();
+    await page.getByRole('navigation', { name: 'Session views' }).getByRole('link', { name: 'Tokens' }).click();
     const u = session.inclSubagents;
     const figures = page.locator('.token-summary--grid .token-summary__figure');
     const exact = {

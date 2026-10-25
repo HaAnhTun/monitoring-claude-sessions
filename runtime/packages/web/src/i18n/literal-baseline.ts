@@ -20,17 +20,8 @@ export const LITERAL_BASELINE: readonly string[] = [
   // @wp-begin WP-116
   // @wp-end WP-116
   // @wp-begin WP-117
-  'pages/sessions/ListChangedNotice.tsx',
-  'pages/sessions/SessionExplorerPage.tsx',
-  'pages/sessions/SessionFilterBar.tsx',
-  'pages/sessions/SessionRow.tsx',
-  'pages/sessions/SessionTable.tsx',
   // @wp-end WP-117
   // @wp-begin WP-118
-  'pages/session-detail/AuditRefs.tsx',
-  'pages/session-detail/SessionDetailPage.tsx',
-  'pages/session-detail/SessionHeader.tsx',
-  'pages/session-detail/SessionTabs.tsx',
   // @wp-end WP-118
   // @wp-begin WP-119
   'pages/session-detail/AgentTree.tsx',

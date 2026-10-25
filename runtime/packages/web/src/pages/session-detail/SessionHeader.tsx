@@ -3,13 +3,15 @@ import type { ReactNode, Ref } from 'react';
 import { Link, useLocation } from 'react-router';
 
 import { CopyButton } from '../../components/CopyButton.tsx';
-import { Disclosure } from '../../components/Disclosure.tsx';
+import { EvidenceLine } from '../../components/EvidenceLine.tsx';
+import { Icon } from '../../components/Icon.tsx';
+import { Popover } from '../../components/Popover.tsx';
 import { RelativeTime } from '../../components/RelativeTime.tsx';
 import { StateBadge } from '../../components/StateBadge.tsx';
 import { TagBadge } from '../../components/TagBadge.tsx';
-import { TokenSummary } from '../../components/TokenSummary.tsx';
-import { fmtDuration } from '../../lib/format.ts';
-import { AuditRefs } from './AuditRefs.tsx';
+import { useT } from '../../i18n/context.ts';
+import { ServerText } from '../../i18n/ServerText.tsx';
+import { stateEvidence } from '../../lib/state-evidence.ts';
 
 export interface SessionHeaderProps {
   session: SessionDetail;
@@ -17,107 +19,78 @@ export interface SessionHeaderProps {
   agent: AgentNode | null;
   /** The page heading is focused after a navigation (04 3.1 rule 5). */
   headingRef?: Ref<HTMLHeadingElement>;
-  /** Shown right under the title row (banners). */
+  /** Shown under the title row (banners). */
   children?: ReactNode;
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+/** What the monitor saw that led to the state: how it knows, and the evidence items with their times. */
+function EvidencePanel({ session }: { session: SessionDetail }) {
+  const t = useT();
+  const { state } = session;
+  const words = stateEvidence(state, session.lastActivityAt, 0);
   return (
-    <div className="session-header__field">
-      <dt>{label}</dt>
-      <dd>{children}</dd>
+    <div className="session-evidence">
+      <p className="session-evidence__basis">
+        {t('evidence.basisTip', { basis: t(words.basisKey), confidence: t(words.confidenceKey) })}
+      </p>
+      {state.evidence.length === 0 ? (
+        <p className="muted">{t('detail.evidence.none')}</p>
+      ) : (
+        <ul className="session-evidence__list">
+          {state.evidence.map((item, index) => (
+            <li key={`${item.kind}|${String(index)}`}>
+              <ServerText>{item.text}</ServerText> <RelativeTime iso={item.at} mode="clock" />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-const NONE = <span className="muted">-</span>;
-
-function text(value: string | null): ReactNode {
-  return value === null || value === '' ? NONE : value;
-}
-
 /**
- * Title, state with the evidence behind it, identifying metadata, token totals and audit references of one session (04 4.4).
- * Every value is text; nothing from a transcript or an audit file is interpreted as markup.
+ * The top of the session page (ADR 0073 decision 8): a way back to the list, the title, the state as a dot and a word with the
+ * one-line evidence behind it, and the link of the view. The whole id and the other fields are in `SessionDetails`. Every value is
+ * text; nothing from a transcript or an audit file is interpreted as markup.
  */
 export function SessionHeader({ session, agent, headingRef, children }: SessionHeaderProps) {
+  const t = useT();
   const { pathname, search } = useLocation();
   const title = agent === null || agent.kind === 'main' ? session.label : `${session.label} / ${agent.label}`;
-  const state = session.state;
+  const { state } = session;
   return (
     <header className="session-header">
       <div className="session-header__title">
-        <h1 ref={headingRef} tabIndex={-1}>
+        <Link className="session-header__back" to="/sessions" title={t('detail.back.tip')}>
+          <Icon name="chevron-left" />
+          {t('detail.back')}
+        </Link>
+        <h1 ref={headingRef} tabIndex={-1} title={title}>
           {title}
         </h1>
-        {session.labelSource === 'rule' ? (
-          <TagBadge tone="neutral" tip="The label was set by a project rule">
-            label from rule
-          </TagBadge>
-        ) : null}
-        {session.matched ? null : (
-          <TagBadge tone="neutral" tip="No project rule matched this session">
-            not in list
-          </TagBadge>
-        )}
-        <CopyButton label="Copy link" text={() => `${window.location.origin}${pathname}${search}`}>
-          Copy link
-        </CopyButton>
       </div>
       <div className="session-header__state">
-        <StateBadge state={state.state} />
-        <span className="muted">{`${state.basis} · ${state.confidence} confidence`}</span>
-      </div>
-      <Disclosure id="session-state-evidence" label="Why this state?">
-        {state.evidence.length === 0 ? (
-          <p className="muted">No evidence recorded.</p>
-        ) : (
-          <ul className="session-header__evidence">
-            {state.evidence.map((item, index) => (
-              <li key={`${item.kind}|${String(index)}`}>
-                <span>{item.text}</span> <RelativeTime iso={item.at} mode="clock" />
-              </li>
-            ))}
-          </ul>
+        <StateBadge state={state.state} assessment={state} lastActivityAt={session.lastActivityAt} />
+        <EvidenceLine assessment={state} lastActivityAt={session.lastActivityAt} />
+        {session.matched ? null : (
+          <TagBadge tone="neutral" tip={t('detail.notInList.tip')}>
+            {t('detail.notInList')}
+          </TagBadge>
         )}
-      </Disclosure>
+        <Popover
+          variant="quiet"
+          icon="chevron-down"
+          label={t('detail.evidence')}
+          panelLabel={t('detail.evidence.panel')}
+        >
+          <EvidencePanel session={session} />
+        </Popover>
+      </div>
+      <CopyButton label={t('detail.copyLink')} text={() => `${window.location.origin}${pathname}${search}`}>
+        <Icon name="link" />
+        <span className="session-header__copy-text">{t('detail.copyLink')}</span>
+      </CopyButton>
       {children}
-      <dl className="session-header__meta">
-        <Field label="Session id">
-          <span className="mono">{session.id}</span>
-        </Field>
-        <Field label="Project">{text(session.projectLabel)}</Field>
-        <Field label="Work items">
-          {session.workItems.length === 0 ? (
-            NONE
-          ) : (
-            <ul className="session-header__items">
-              {session.workItems.map((item) => (
-                <li key={item.id}>
-                  <Link to={`/sessions?task=${String(item.id)}`}>{item.title}</Link>{' '}
-                  <TagBadge tone="neutral">{item.state}</TagBadge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Field>
-        <Field label="Provider">{session.provider}</Field>
-        <Field label="Models">{session.models.length === 0 ? NONE : session.models.join(', ')}</Field>
-        <Field label="Working directory">
-          {session.cwd === null ? NONE : <span className="mono">{session.cwd}</span>}
-        </Field>
-        <Field label="Permission mode">{text(session.permissionMode)}</Field>
-        <Field label="Started">
-          <RelativeTime iso={session.startedAt} mode="both" />
-        </Field>
-        <Field label="Last activity">
-          <RelativeTime iso={session.lastActivityAt} mode="both" />
-        </Field>
-        <Field label="Duration">{fmtDuration(session.durationMs / 1000)}</Field>
-        <Field label="End reason">{text(state.endReason)}</Field>
-      </dl>
-      <TokenSummary usage={session.usageInclSubagents} cost={session.cost} layout="line" includesSubagents />
-      <AuditRefs refs={session.auditRefs} />
     </header>
   );
 }

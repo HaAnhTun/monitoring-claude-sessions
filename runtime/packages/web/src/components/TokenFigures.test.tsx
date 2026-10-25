@@ -47,6 +47,16 @@ describe('TokenFigures: the vocabulary (ADR 0074 decision 5)', () => {
     expect(screen.getByText(msg('tokens.inclSubagents'))).toBeInTheDocument();
   });
 
+  it('draws only the figures it is asked for, in the order given, and keeps every part in the breakdown', async () => {
+    renderWithIntl(<TokenFigures usage={USAGE} variant="tiles" figures={['output', 'inputNew']} />);
+    expect(screen.getAllByRole('term').map((term) => term.textContent)).toEqual([
+      msg('tokens.output'),
+      msg('tokens.inputNew'),
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: msg('tokens.breakdown') }));
+    expect(within(screen.getByRole('dialog')).getByText(msg('tokens.cacheRead'))).toBeInTheDocument();
+  });
+
   it('has no subagent note by default', () => {
     renderWithIntl(<TokenFigures usage={USAGE} variant="line" />);
     expect(screen.queryByText(msg('tokens.inclSubagents'))).toBeNull();

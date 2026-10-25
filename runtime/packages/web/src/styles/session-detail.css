@@ -1,45 +1,286 @@
-/* Session detail: header, banner, audit references (04-ui.md 4.4, 7). */
+/* Session detail: the frame (header, four tiles, Details), banners and audit references (ADR 0073 decision 8, ADR 0074). The tab bar
+   is in session-tabs.css. The frame is one card. At 1440 px the header and the tiles end above y = 200 so that the transcript
+   starts above y = 300; the loading frame has the same rows, so nothing jumps when the session arrives. */
 
 .detail {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
   min-width: 0;
 }
+.detail__panel {
+  min-width: 0;
+}
+
+/* ---- the frame ---- */
+.session-frame {
+  --tight: calc(5px * var(--d));
+  display: flex;
+  flex-direction: column;
+  gap: var(--tight);
+  padding: var(--tight) var(--sp-5);
+}
+
+/* ---- header: back link and title, state with its evidence, copy link; two lines at 600 px ---- */
 .session-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-5);
+  min-width: 0;
+}
+.session-header__title {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+  max-width: 100%;
+}
+.session-header__back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  text-decoration: none;
+}
+.session-header__back:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.session-header__title h1 {
+  min-width: 0;
+  margin: 0;
+  line-height: var(--lh-lg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-header__state {
+  display: flex;
+  flex: 1 1 18rem;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  min-width: 0;
+}
+.session-header__state .evidence-line {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 64ch;
+}
+.session-header__state .badge,
+.session-header__state .popover {
+  flex: none;
+}
+.session-header > .copy-btn {
+  flex: none;
+  gap: var(--sp-2);
+  margin-inline-start: auto;
+}
+.session-header > :not(.session-header__title, .session-header__state, .copy-btn) {
+  flex: 1 1 100%;
+}
+
+/* The popover with the evidence of the state. */
+.session-evidence {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  min-width: min(22rem, 70vw);
+  max-width: 34rem;
 }
-.session-header__title,
-.session-header__state {
+.session-evidence p {
+  margin: 0;
+}
+.session-evidence__basis {
+  font-weight: var(--fw-medium);
+}
+.session-evidence__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding-inline-start: var(--sp-5);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the row under the header: four tiles and the Details toggle; the Details panel opens across the whole row ---- */
+.session-frame__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-3) var(--sp-4);
+}
+.session-frame__row > .disclosure {
+  display: contents;
+}
+.session-frame__row .disclosure__toggle {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+.session-frame__row .disclosure__panel {
+  grid-column: 1 / -1;
+  padding: var(--sp-3) 0 0;
+  border-top: var(--border-w) solid var(--border);
+}
+
+.session-stats {
+  min-width: 0;
+}
+.session-stats__grid,
+.session-frame .skeleton--tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+  margin: 0;
+}
+.session-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-4);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.session-stat dt {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.session-stat dd {
+  margin: 0;
+  min-width: 0;
+}
+.session-stat__value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-3);
+  font-size: var(--fs-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+}
+.session-stat__value [data-tone='failed'] {
+  color: var(--failed-fg);
+}
+.session-stat__link {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-xs);
+}
+.session-stat__sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+
+/* The token figures sit in the tile as one line of two big numbers; the note about the subagents is the small line under them. */
+.session-stat__figures .token-figures--tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 var(--sp-3);
+}
+.session-stat__figures .token-figures__grid {
+  gap: 0 var(--sp-5);
+}
+.session-stat__figures .token-figures__tile {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.session-stat__figures .popover {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+.session-stat__figures .popover .btn {
+  min-height: var(--ctl-h-inline);
+  padding-block: 0;
+}
+.session-stat__figures .token-figures--tiles > :not(.token-figures__grid, .popover) {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+
+/* ---- Details: only the fields that have a value ---- */
+.session-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0;
+}
+.session-details__field {
+  min-width: 0;
+}
+.session-details__field dt {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.session-details__field dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.session-details__id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+}
+.session-details__items {
+  margin: 0;
+  padding-inline-start: var(--sp-5);
+}
+.session-frame__row .audit-refs {
+  grid-column: 1 / -1;
+  margin-top: var(--sp-4);
+}
+
+/* ---- loading: the same rows and heights as the loaded frame ---- */
+.session-frame .skeleton__title {
+  width: 40%;
+  height: var(--lh-lg);
+}
+/* The second line of the header exists only where the header has two lines. */
+.session-frame .skeleton--header {
+  gap: var(--sp-2);
+}
+.session-frame .skeleton--header .skeleton__row {
+  display: none;
+  width: 55%;
+  height: var(--ctl-h);
+}
+.session-frame .skeleton--tiles .skeleton__row {
+  height: calc(var(--lh-xs) * 2 + 1.2 * var(--fs-xl) + var(--sp-1) * 2);
+  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--radius);
+}
+
+/* ---- banners and audit references ---- */
+.detail__banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3);
-}
-.session-header__title h1 {
-  overflow-wrap: anywhere;
-}
-.session-header__evidence,
-.session-header__items,
-.audit-refs__list {
   margin: 0;
-  padding-inline-start: var(--sp-5);
-}
-.session-header__meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: var(--sp-3) var(--sp-5);
-  margin: 0;
-}
-.session-header__field dt {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-}
-.session-header__field dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--stale-bg);
+  color: var(--stale-fg);
+  border-radius: var(--radius);
 }
 .audit-refs {
   display: flex;
@@ -49,20 +290,82 @@
 .audit-refs__title {
   font-size: var(--fs-md);
 }
+.audit-refs__list {
+  margin: 0;
+  padding-inline-start: var(--sp-5);
+}
 .audit-refs__item {
   display: flex;
   flex-direction: column;
 }
-.detail__banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--stale-bg);
-  color: var(--stale-fg);
-  border-radius: var(--radius);
+
+/* ---- from 1200 px the Errors tile gets the widest column, because its breakdown is the longest text ---- */
+@media (min-width: 1200px) {
+  .session-stats__grid,
+  .session-frame .skeleton--tiles {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 0.85fr) minmax(0, 1.2fr) minmax(0, 1.4fr);
+  }
 }
-.detail__panel {
-  min-width: 0;
+
+/* ---- from 900 px the id and the folder, the two long values, take two of the columns ---- */
+@media (min-width: 900px) {
+  .session-details__field--wide {
+    grid-column: span 2;
+  }
+}
+
+/* ---- 1199 px and below: the tiles take two columns before the text gets cramped ---- */
+@media (max-width: 1199px) {
+  .session-stats__grid,
+  .session-frame .skeleton--tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- 899 px and below: a two-line header (back link, title and copy button; then the state), Details on its own line ---- */
+@media (max-width: 899px) {
+  .session-frame {
+    padding: var(--sp-4);
+  }
+  .session-frame .skeleton--header .skeleton__row {
+    display: block;
+  }
+  /* the Details toggle has a line of its own here */
+  .session-frame[data-loading]::after {
+    height: var(--ctl-h);
+    content: '';
+  }
+  .session-header__title {
+    flex: 1 1 0;
+  }
+  .session-header > .copy-btn {
+    order: 2;
+  }
+  .session-header__state {
+    flex-basis: 100%;
+    order: 3;
+    flex-wrap: wrap;
+  }
+  .session-header > :not(.session-header__title, .session-header__state, .copy-btn) {
+    order: 4;
+  }
+  .session-frame__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-frame__row .disclosure__toggle {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
+}
+@media (max-width: 699px) {
+  .session-header__copy-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }

@@ -1,25 +1,53 @@
-/* Session detail tabs: tab bar, timeline, agent tree, token panel (04-ui.md 4.4, 7). */
+/* Session detail tabs: the tab bar, timeline, agent tree, token panel (04-ui.md 4.4, 7, ADR 0073 decision 8). */
 
+/* The tab bar: a navigation of links that stays at the top of the window while the page scrolls. */
 .session-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
-  flex-wrap: wrap;
   gap: var(--sp-1);
+  margin: 0 calc(var(--page-pad) * -1) calc(var(--sp-2) * -1);
+  padding-inline: var(--page-pad);
+  overflow-x: auto;
+  background: var(--bg);
   border-bottom: var(--border-w) solid var(--border);
 }
 .session-tabs__tab {
-  padding: var(--sp-3) var(--sp-4);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-4);
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-md);
   text-decoration: none;
 }
 .session-tabs__tab:hover {
   color: var(--text);
+  text-decoration: none;
 }
-.session-tabs__tab.is-active {
+.session-tabs__tab[aria-current='page'] {
   border-bottom-color: var(--accent);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
+.session-tabs__count {
+  min-width: 1.25rem;
+  padding: 0 var(--sp-2);
+  background: var(--failed-bg);
+  border-radius: var(--radius-pill);
+  color: var(--failed-fg);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
+  text-align: center;
+}
+
 .timeline {
   display: flex;
   flex-direction: column;

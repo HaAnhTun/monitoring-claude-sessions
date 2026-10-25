@@ -265,6 +265,38 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-53
   // @wp-begin WP-54
+  // The base view `overview` (live mode) is WP-122's. These are the variants of the landing page.
+  { id: 'overview-empty', path: '/', mode: 'fixture', state: 'empty', wait: 'main .state--empty' },
+  {
+    // Only the overview route answers 500: the sessions, the ingestion summary and the feed stay usable.
+    id: 'overview-error',
+    path: '/',
+    mode: 'fixture',
+    wait: HEADING,
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const { errorResponse } = await import('../../src/test/fake-api.ts');
+      fixture.fake.handlers.overview = () => errorResponse('internal_error');
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.locator('main .state--error').first().waitFor({ state: 'visible', timeout: 20_000 });
+      await page.locator('main .attention-item').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  // Every route answers 500: the sessions and the figures each say so, the strip shows dashes.
+  { id: 'overview-total-error', path: '/', mode: 'fixture', state: 'error', wait: 'main .state--error' },
+  { id: 'overview-loading', path: '/', mode: 'fixture', state: 'loading', wait: 'main .skeleton--tiles' },
+  { id: 'overview-disconnected', path: '/', mode: 'fixture', state: 'disconnected', wait: 'main .overview-tile' },
+  {
+    // The info tip of the first token tile open: source and rule as the server wrote them.
+    id: 'overview-tip',
+    path: '/',
+    mode: 'fixture',
+    wait: 'main .overview-tile',
+    setup: async ({ page }) => {
+      await page.locator('main [data-metric="tokens.output"] .info-tip button').click();
+      await page.locator('main [data-metric="tokens.output"] .popover__panel').waitFor({ state: 'visible' });
+    },
+  },
   // @wp-end WP-54
   // @wp-begin WP-65
   // @wp-end WP-65
