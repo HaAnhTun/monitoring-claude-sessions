@@ -666,3 +666,59 @@ describe('TokenLine and TokenSummary', () => {
     ]);
   });
 });
+
+describe('DataTable: a class per row and extra sorts for the card list', () => {
+  const cardColumns: Column<Row>[] = [
+    { id: 'name', header: 'Name', cell: (r) => r.name, sortKey: 'name' },
+    { id: 'count', header: 'Count', cell: (r) => String(r.count), sortKey: 'count', numeric: true },
+  ];
+  const card: DataTableProps<Row>['card'] = (r) => ({ title: r.name });
+  const rowClass = (r: Row): string | undefined => (r.id === 'b' ? 'fixture-row--hot' : undefined);
+
+  it('puts the class of the row on its table row', () => {
+    mockMedia();
+    renderTable({ columns: cardColumns, rowClass });
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows[0]).not.toHaveClass('fixture-row--hot');
+    expect(rows[1]).toHaveClass('fixture-row--hot');
+    expect(rows[1]).toHaveClass('data-table__row');
+  });
+
+  it('puts the class of the row on its card', () => {
+    mockMedia(MQ_SHEET);
+    renderTable({ columns: cardColumns, card, rowClass });
+    const items = screen.getAllByRole('listitem');
+    expect(items[0]).not.toHaveClass('fixture-row--hot');
+    expect(items[1]).toHaveClass('fixture-row--hot');
+    expect(items[1]).toHaveClass('data-card');
+  });
+
+  it('offers an extra sort next to the columns in the card list and shows it as chosen', async () => {
+    mockMedia(MQ_SHEET);
+    const onSort = vi.fn();
+    renderTable({
+      columns: cardColumns,
+      card,
+      sort: { key: 'hot', dir: 'desc', onSort, extra: [{ key: 'hot', label: 'FIXTURE hot first' }] },
+    });
+    const select = screen.getByRole('combobox', { name: msg('lists.sortBy') });
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Name', 'Count', 'FIXTURE hot first']);
+    expect(select).toHaveValue('hot');
+    await userEvent.setup().selectOptions(select, 'count');
+    expect(onSort).toHaveBeenCalledWith('count');
+  });
+
+  it('adds no header for an extra sort in the table', () => {
+    mockMedia();
+    renderTable({
+      columns: cardColumns,
+      sort: { key: 'hot', dir: 'desc', onSort: () => undefined, extra: [{ key: 'hot', label: 'FIXTURE hot first' }] },
+    });
+    expect(headers()).toEqual(['Name', 'Count']);
+    for (const header of screen.getAllByRole('columnheader')) expect(header).toHaveAttribute('aria-sort', 'none');
+  });
+});

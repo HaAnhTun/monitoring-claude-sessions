@@ -57,16 +57,29 @@ export interface DataCard {
   meta?: ReactNode;
 }
 
+/**
+ * The sort of a table. `extra` lists sorts that no column carries (an order the page computes itself): the card list offers
+ * them next to the columns, and a table, which has a header per column only, does not show them.
+ */
+export interface DataTableSort {
+  key: string;
+  dir: 'asc' | 'desc';
+  onSort: (key: string) => void;
+  extra?: readonly { key: string; label: string }[];
+}
+
 export interface DataTableProps<R> {
   /** Screen-reader caption and accessible name. */
   caption: string;
   columns: Column<R>[];
   rows: R[];
   rowKey: (r: R) => string;
-  sort?: { key: string; dir: 'asc' | 'desc'; onSort: (key: string) => void };
+  sort?: DataTableSort;
   /** The link column renders a router link; the link stretches over the whole row (CSS), so the row is clickable. */
   rowHref?: (r: R) => string;
   selectedKey?: string | null;
+  /** A class name for the row (its `tr`, or its card), for a state the page wants to mark. */
+  rowClass?: (r: R) => string | undefined;
   /** Below 900 px the rows are drawn as cards through this renderer; without it the table stays. */
   card?: (r: R) => DataCard;
 }
@@ -110,6 +123,10 @@ function useShownColumns<R>(columns: Column<R>[], rows: R[]): Column<R>[] {
     if (priority === 2 && compact) return false;
     return !empty.has(column.id);
   });
+}
+
+function joinClasses(...names: (string | undefined)[]): string {
+  return names.filter((name) => name !== undefined && name !== '').join(' ');
 }
 
 function cellClass<R>(column: Column<R>): string {
@@ -159,7 +176,7 @@ interface ViewProps<R> extends DataTableProps<R> {
   shown: Column<R>[];
 }
 
-function TableView<R>({ caption, shown, rows, rowKey, sort, rowHref, selectedKey }: ViewProps<R>) {
+function TableView<R>({ caption, shown, rows, rowKey, sort, rowHref, selectedKey, rowClass }: ViewProps<R>) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   useRowClick(wrapRef, rowHref !== undefined);
   const linkColumn = shown.find((column) => column.link === true)?.id ?? shown[0]?.id;
@@ -214,7 +231,10 @@ function TableView<R>({ caption, shown, rows, rowKey, sort, rowHref, selectedKey
             return (
               <tr
                 key={key}
-                className={href === undefined ? 'data-table__row' : 'data-table__row data-table__row--link'}
+                className={joinClasses(
+                  href === undefined ? 'data-table__row' : 'data-table__row data-table__row--link',
+                  rowClass?.(row),
+                )}
                 aria-current={selectedKey === key ? 'true' : undefined}
               >
                 {shown.map((column) => (
@@ -240,13 +260,14 @@ function TableView<R>({ caption, shown, rows, rowKey, sort, rowHref, selectedKey
 // ---- the card list ----------------------------------------------------------------------------------------------------------
 
 /** The sort of a table, for a list that has no header row: the column to sort by and the direction, in one line. */
-function CardSort<R>({ columns, sort }: { columns: Column<R>[]; sort: NonNullable<DataTableProps<R>['sort']> }) {
+function CardSort<R>({ columns, sort }: { columns: Column<R>[]; sort: DataTableSort }) {
   const t = useT();
   const id = useId();
   const sortable = columns.flatMap((column) =>
     column.sortKey === undefined ? [] : [{ ...column, sortKey: column.sortKey }],
   );
-  if (sortable.length === 0) return null;
+  const extra = sort.extra ?? [];
+  if (sortable.length === 0 && extra.length === 0) return null;
   const ascending = sort.dir === 'asc';
   return (
     <div className="data-cards__sort">
@@ -262,6 +283,11 @@ function CardSort<R>({ columns, sort }: { columns: Column<R>[]; sort: NonNullabl
         {sortable.map((column) => (
           <option key={column.id} value={column.sortKey}>
             {column.header}
+          </option>
+        ))}
+        {extra.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
           </option>
         ))}
       </select>
@@ -286,6 +312,7 @@ function CardView<R>({
   sort,
   rowHref,
   selectedKey,
+  rowClass,
   card,
 }: DataTableProps<R> & { card: NonNullable<DataTableProps<R>['card']> }) {
   const sortable = useMemo(() => columns.filter((column) => !carriesNothing(column, rows)), [columns, rows]);
@@ -300,7 +327,7 @@ function CardView<R>({
           return (
             <li
               key={key}
-              className={href === undefined ? 'data-card' : 'data-card data-card--link'}
+              className={joinClasses(href === undefined ? 'data-card' : 'data-card data-card--link', rowClass?.(row))}
               data-row=""
               aria-current={selectedKey === key ? 'true' : undefined}
             >

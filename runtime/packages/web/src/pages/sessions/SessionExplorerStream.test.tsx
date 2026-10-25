@@ -11,7 +11,17 @@ import { StreamProvider } from '../../stream/StreamProvider.tsx';
 import { ShortcutRegistryProvider } from '../../state/shortcuts-registry.tsx';
 import { createFakeApi, type FakeApi } from '../../test/fake-api.ts';
 import { createFakeEventSources, type FakeEventSources } from '../../test/fake-event-source.ts';
-import { iso, makeHealth, makeInstance, makeSession, makeSessionPage, sessionId } from '../../test/fixtures/index.ts';
+import {
+  iso,
+  makeHealth,
+  makeInstance,
+  makeOverview,
+  makeSession,
+  makeSessionPage,
+  makeState,
+  sessionId,
+} from '../../test/fixtures/index.ts';
+import { msg } from '../../test/msg.ts';
 import { renderWithProviders } from '../../test/render.tsx';
 import { SessionExplorerPage } from './SessionExplorerPage.tsx';
 
@@ -60,6 +70,7 @@ function setup(): Harness {
     api: createFakeApi({
       instance: () => INSTANCE,
       health: () => makeHealth('ok'),
+      overview: () => makeOverview({ metrics: [] }),
       listSessions: () => makeSessionPage([...state.sessions], { total: state.sessions.length }),
     }),
     sources,
@@ -78,7 +89,7 @@ function setup(): Harness {
 }
 
 async function openStream(h: Harness): Promise<void> {
-  await screen.findByRole('table', { name: 'Sessions' });
+  await screen.findByRole('table', { name: msg('sessions.table.caption') });
   act(() => {
     h.sources.last().open();
     h.sources.last().emit('hello', hello());
@@ -100,9 +111,9 @@ describe('SessionExplorerPage with the realtime stream', () => {
     act(() => {
       h.sources.last().emit('change', sessionChange(11, added));
     });
-    const notice = await screen.findByRole('status', { name: 'List changed' });
-    expect(notice).toHaveTextContent('1 session changed');
-    expect(within(notice).getByRole('button', { name: 'Refresh' })).toBeEnabled();
+    const notice = await screen.findByRole('status', { name: msg('sessions.changed.label') });
+    expect(notice).toHaveTextContent(msg('sessions.changed.text', { count: 1 }));
+    expect(within(notice).getByRole('button', { name: msg('sessions.changed.refresh') })).toBeEnabled();
     expect(screen.queryByText('FIXTURE session 3')).toBeNull();
     expect(listCalls(h)).toBe(before);
   });
@@ -117,9 +128,9 @@ describe('SessionExplorerPage with the realtime stream', () => {
     act(() => {
       h.sources.last().emit('change', sessionChange(11, added));
     });
-    const notice = await screen.findByRole('status', { name: 'List changed' });
+    const notice = await screen.findByRole('status', { name: msg('sessions.changed.label') });
     const before = listCalls(h);
-    const button = within(notice).getByRole('button', { name: 'Refresh' });
+    const button = within(notice).getByRole('button', { name: msg('sessions.changed.refresh') });
     // Reachable with the keyboard: Tab from the page start lands on the first focusable control, the button is a real button.
     button.focus();
     expect(button).toHaveFocus();
@@ -127,7 +138,7 @@ describe('SessionExplorerPage with the realtime stream', () => {
     await screen.findByText('FIXTURE session 3');
     expect(listCalls(h)).toBeGreaterThan(before);
     await waitFor(() => {
-      expect(screen.queryByRole('status', { name: 'List changed' })).toBeNull();
+      expect(screen.queryByRole('status', { name: msg('sessions.changed.label') })).toBeNull();
     });
     expect(screen.getByText('FIXTURE session 1')).toBeInTheDocument();
   });
@@ -144,7 +155,9 @@ describe('SessionExplorerPage with the realtime stream', () => {
         .last()
         .emit('change', sessionChange(12, makeSession({ id: sessionId(4), seq: 4, label: 'FIXTURE session 4' })));
     });
-    expect(await screen.findByRole('status', { name: 'List changed' })).toHaveTextContent('2 sessions changed');
+    expect(await screen.findByRole('status', { name: msg('sessions.changed.label') })).toHaveTextContent(
+      msg('sessions.changed.text', { count: 2 }),
+    );
   });
 
   it('follows the stream without a notice while the list is at the top', async () => {
@@ -157,12 +170,41 @@ describe('SessionExplorerPage with the realtime stream', () => {
     });
     // The first page is invalidated after the 2 s debounce of 04 5.5.
     await screen.findByText('FIXTURE session 3', undefined, { timeout: 5000 });
-    expect(screen.queryByRole('status', { name: 'List changed' })).toBeNull();
+    expect(screen.queryByRole('status', { name: msg('sessions.changed.label') })).toBeNull();
   }, 10_000);
+
+  it('patches a row in place when the stream updates a session that is in the list: same place, no refetch, no notice', async () => {
+    const h = setup();
+    await openStream(h);
+    const labels = (): (string | undefined)[] =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((r) => /FIXTURE session [0-9]/.exec(r.textContent)?.[0]);
+    expect(labels()).toEqual(['FIXTURE session 1', 'FIXTURE session 2']);
+    const before = listCalls(h);
+    act(() => {
+      h.sources
+        .last()
+        .emit(
+          'change',
+          sessionChange(11, { ...row(2), seq: 20, state: makeState('failed'), errorCount: 2, lastActivityAt: iso(-1) }),
+        );
+    });
+    const second = screen.getAllByRole('row')[2]!;
+    await waitFor(() => {
+      expect(within(second).getByText(msg('sessions.errors.count', { count: 2 }))).toBeInTheDocument();
+    });
+    expect(second).toHaveClass('session-row--error');
+    expect(within(second).getByText(msg('state.failed.label'))).toBeInTheDocument();
+    expect(labels()).toEqual(['FIXTURE session 1', 'FIXTURE session 2']);
+    expect(listCalls(h)).toBe(before);
+    expect(screen.queryByRole('status', { name: msg('sessions.changed.label') })).toBeNull();
+  });
 
   it('shows no notice when nothing changed', async () => {
     const h = setup();
     await openStream(h);
-    expect(screen.queryByRole('status', { name: 'List changed' })).toBeNull();
+    expect(screen.queryByRole('status', { name: msg('sessions.changed.label') })).toBeNull();
   });
 });

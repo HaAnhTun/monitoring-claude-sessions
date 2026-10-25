@@ -3,10 +3,15 @@
 // writes new entries inside its own marked block below, with ids that no base view and no other block uses.
 import type { Page as BrowserPage } from '@playwright/test';
 
-import type { InstanceInfo, Page, SessionSummary } from '@mcs/shared';
+import type { ActivityEvent, AgentNode, InstanceInfo, Page, SessionSummary } from '@mcs/shared';
 
 import {
+  agentId,
   iso,
+  makeAgent,
+  makeAgentPage,
+  makeEvent,
+  makeEventPage,
   makeSession,
   makeState,
   makeUsage,
@@ -121,6 +126,211 @@ async function addLongEvidence({ page, fixture }: ViewContext): Promise<void> {
   const { clipped, cell } = measured as { clipped: boolean; cell: number };
   if (!clipped) throw new Error('the long evidence line is not clamped to one line');
   if (cell > 320) throw new Error(`the long evidence line stretched the State column to ${Math.round(cell)} px`);
+}
+
+/**
+ * Fixture mode, WP-119: serves other agents and events for the detail views of the failing session, reloads the page so that its
+ * first draw already holds them, and waits for `ready`. The session has the main agent and two subagents, one of which failed.
+ */
+async function serveDetail(
+  { page, fixture }: ViewContext,
+  patch: { agents?: AgentNode[]; events?: ActivityEvent[] },
+  ready: string,
+): Promise<void> {
+  if (fixture === null) return;
+  const { agents, events } = patch;
+  if (agents !== undefined) fixture.fake.handlers.sessionAgents = () => makeAgentPage(agents);
+  if (events !== undefined) fixture.fake.handlers.sessionTimeline = () => makeEventPage(events);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator(ready).first().waitFor({ state: 'visible', timeout: 20_000 });
+}
+
+const DETAIL_SESSION = fixtureId(3);
+
+/** The main agent, a subagent that failed and one that completed, each with its own usage and model. */
+function detailAgents(): AgentNode[] {
+  const base = { sessionId: DETAIL_SESSION };
+  return [
+    makeAgent({
+      ...base,
+      id: 'main',
+      kind: 'main',
+      depth: 0,
+      parentAgentId: null,
+      label: 'main',
+      agentType: null,
+      model: null,
+      state: makeState('turn_ended'),
+      lastActivityAt: iso(-40),
+      usage: makeUsage({ output: 18_400, input: 21_000, cacheCreation: 9_000, cacheRead: 1_200_000 }),
+    }),
+    makeAgent({
+      ...base,
+      id: agentId(1),
+      label: 'Lint helper',
+      agentType: 'general-purpose',
+      model: 'model-b',
+      errorCount: 1,
+      toolCallCount: 14,
+      state: makeState('failed'),
+      lastActivityAt: iso(-9 * 60),
+      usage: makeUsage({ output: 3_100, input: 4_200, cacheCreation: 1_800, cacheRead: 210_000 }),
+    }),
+    makeAgent({
+      ...base,
+      id: agentId(2),
+      label: 'Test runner',
+      agentType: 'general-purpose',
+      model: 'model-b',
+      toolCallCount: 31,
+      state: makeState('completed'),
+      lastActivityAt: iso(-12 * 60),
+      usage: makeUsage({ output: 7_600, input: 6_300, cacheCreation: 2_400, cacheRead: 480_000 }),
+    }),
+  ];
+}
+
+/** The warnings and errors of the failing session: a tool that failed after 4 s, an API error without a tool, a denied tool. */
+function detailErrors(): ActivityEvent[] {
+  const base = { sessionId: DETAIL_SESSION, sessionLabel: 'Release checklist' };
+  return [
+    makeEvent({
+      ...base,
+      id: 211,
+      key: 't:fixture-error-3',
+      at: iso(-9 * 60),
+      type: 'tool.failure',
+      category: 'error',
+      severity: 'error',
+      toolName: 'Grep',
+      toolStatus: 'failed',
+      durationMs: 4_000,
+      summary: 'TODO pattern in src/**/*.ts: the path src/legacy does not exist',
+      agentId: agentId(1),
+      agentLabel: 'Lint helper',
+    }),
+    makeEvent({
+      ...base,
+      id: 207,
+      key: 't:fixture-error-2',
+      at: iso(-14 * 60),
+      type: 'api.error',
+      category: 'error',
+      severity: 'error',
+      toolName: null,
+      summary: 'The model was overloaded; the request was retried twice before it succeeded and the turn went on',
+      agentId: null,
+      agentLabel: 'main',
+    }),
+    makeEvent({
+      ...base,
+      id: 198,
+      key: 't:fixture-warning-1',
+      at: iso(-21 * 60),
+      type: 'permission.denied',
+      category: 'notification',
+      severity: 'warning',
+      toolName: 'Bash',
+      toolStatus: 'denied',
+      durationMs: null,
+      summary: '',
+      agentId: agentId(2),
+      agentLabel: 'Test runner',
+    }),
+  ];
+}
+
+/** 33 events of one session, newest first, from the three sources, with a status, a duration, an agent and one gap. */
+function detailEvents(): ActivityEvent[] {
+  const base = { sessionId: DETAIL_SESSION, sessionLabel: 'Release checklist' };
+  const shape = [
+    {
+      type: 'prompt.submit',
+      category: 'prompt',
+      summary: 'Run the release checklist with helpers',
+      sources: ['hook', 'transcript'],
+    },
+    {
+      type: 'assistant.message',
+      category: 'prompt',
+      summary: 'Starting with the lint check and the tests.',
+      sources: ['transcript'],
+    },
+    { type: 'tool.call', category: 'tool', toolName: 'Bash', summary: 'npm run lint', sources: ['hook', 'transcript'] },
+    {
+      type: 'tool.result',
+      category: 'tool',
+      toolName: 'Bash',
+      toolStatus: 'succeeded',
+      durationMs: 5_200,
+      summary: 'Lint finished without problems',
+      sources: ['hook', 'transcript'],
+    },
+    { type: 'agent.start', category: 'agent', summary: 'Lint helper', sources: ['hook'] },
+    { type: 'tool.call', category: 'tool', toolName: 'Grep', summary: 'TODO in src', sources: ['transcript'] },
+    {
+      type: 'tool.failure',
+      category: 'error',
+      severity: 'error',
+      toolName: 'Grep',
+      toolStatus: 'failed',
+      durationMs: 4_000,
+      summary: 'the path src/legacy does not exist',
+      sources: ['transcript'],
+    },
+    { type: 'turn.stop', category: 'lifecycle', summary: '', sources: ['hook'] },
+    {
+      type: 'permission.request',
+      category: 'notification',
+      toolName: 'Bash',
+      toolStatus: 'pending',
+      summary: 'rm -rf build',
+      sources: ['hook'],
+    },
+    {
+      type: 'context.compact',
+      category: 'compaction',
+      summary: 'Context compacted after 168,000 tokens',
+      sources: ['transcript'],
+    },
+  ] as const;
+  const events = Array.from({ length: 33 }, (_unused, n): ActivityEvent => {
+    const pick = shape[n % shape.length] ?? shape[0];
+    const agent =
+      n % 4 === 1 ? { agentId: agentId(1), agentLabel: 'Lint helper' } : { agentId: null, agentLabel: 'main' };
+    return makeEvent({
+      ...base,
+      id: 300 - n,
+      seq: 300 - n,
+      key: `t:fixture-event-${String(n)}`,
+      at: iso(-60 - n * 55),
+      severity: 'info',
+      toolName: null,
+      toolStatus: null,
+      durationMs: null,
+      details: n % 5 === 2 ? { tool_use_id: `toolu_fixture_${String(n)}`, cwd: 'FIXTURE project' } : {},
+      ...pick,
+      ...agent,
+    });
+  });
+  events.splice(
+    12,
+    1,
+    makeEvent({
+      ...base,
+      id: 288,
+      seq: 288,
+      key: 'm:fixture-gap',
+      at: iso(-60 - 12 * 55),
+      type: 'monitor.gap',
+      category: 'ingest',
+      source: 'monitor',
+      sources: ['monitor'],
+      summary: 'the transcript was rewritten',
+      transcriptRef: null,
+    }),
+  );
+  return events;
 }
 
 /** The page heading: every page has one, so it is the generic sign that the page is drawn. */
@@ -926,6 +1136,49 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-118
   // @wp-begin WP-119
+  {
+    // The errors of the failing session (a tool that failed after 4 s, an API error and a denied tool): the tool in bold, the first
+    // line of the message, the event number and time, and the button that opens the entry in the transcript.
+    id: 'session-detail-errors',
+    path: '/sessions/:sessionId',
+    mode: 'fixture',
+    wait: 'main .session-frame h1',
+    params: detail,
+    query: 'tab=errors',
+    setup: (context) =>
+      serveDetail(context, { events: detailErrors() }, 'main .session-errors-tab tr.error-row--error'),
+  },
+  {
+    // The main agent and two subagents (one failed, one completed): the main agent is not a subagent, so the tab counts 2, and the tables
+    // have the columns of the Sessions list.
+    id: 'session-detail-agents',
+    path: '/sessions/:sessionId',
+    mode: 'fixture',
+    wait: 'main .session-frame h1',
+    params: detail,
+    query: 'tab=agents',
+    setup: (context) => serveDetail(context, { agents: detailAgents() }, 'main .agent-tree table'),
+  },
+  {
+    // The five totals of the session and the table per agent with its Total row.
+    id: 'session-detail-tokens',
+    path: '/sessions/:sessionId',
+    mode: 'fixture',
+    wait: 'main .session-frame h1',
+    params: detail,
+    query: 'tab=tokens',
+    setup: (context) => serveDetail(context, { agents: detailAgents() }, 'main .session-tokens tr.token-total-row'),
+  },
+  {
+    // 33 events, one line each, from the hooks and the transcript, with a gap row: they have to fit two screens.
+    id: 'session-detail-events',
+    path: '/sessions/:sessionId',
+    mode: 'fixture',
+    wait: 'main .session-frame h1',
+    params: detail,
+    query: 'tab=events',
+    setup: (context) => serveDetail(context, { events: detailEvents() }, 'main .event-row--gap'),
+  },
   // @wp-end WP-119
   // @wp-begin WP-120
   {

@@ -1,37 +1,62 @@
-import { toQuery } from '@mcs/shared';
-import { useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { toQuery, type SessionSummary } from '@mcs/shared';
+import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { usePageChrome } from '../../app/usePageChrome.ts';
+import { AttentionStrip } from '../../components/AttentionStrip.tsx';
 import { Button } from '../../components/Button.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { ErrorState } from '../../components/ErrorState.tsx';
 import { useUrlState } from '../../components/FilterBar.tsx';
 import { LoadMore } from '../../components/LoadMore.tsx';
 import { Skeleton } from '../../components/Skeleton.tsx';
+import { StaleDataIndicator } from '../../components/StaleDataIndicator.tsx';
 import { TagBadge } from '../../components/TagBadge.tsx';
 import { ApiError } from '../../data/api-errors.ts';
 import { toSessionFilter } from '../../data/endpoints.ts';
 import { useHealth } from '../../data/hooks/useHealth.ts';
 import { ApiContext, InstanceIdContext, useIid, useInstance } from '../../data/hooks/useInstance.ts';
+import { useOverview } from '../../data/hooks/useOverview.ts';
 import { SESSIONS_PAGE_LIMIT, useSessions } from '../../data/hooks/useSessions.ts';
 import { qk, type ApiQuery } from '../../data/query-keys.ts';
+import { useFormat, useT } from '../../i18n/context.ts';
+import type { Formatters } from '../../i18n/format.ts';
+import type { MessageKey, TFunction } from '../../i18n/types.ts';
+import {
+  attentionFilterOf,
+  attentionPatch,
+  matchesAttention,
+  sortByAttention,
+  type AttentionFilter,
+} from '../../lib/sessions-attention.ts';
 import {
   formatUrlState,
   sessionsSpec,
+  type Preset,
   type SessionSort,
   type SessionsUrlState,
   type Spec,
+  type TimeRange,
 } from '../../lib/url-state.ts';
+import { useShortcut } from '../../state/shortcuts-registry.tsx';
 import { useShowToast } from '../../state/toast-store.ts';
+import { MQ_SHEET, useMediaQuery } from '../../state/use-media-query.ts';
+import { ColumnChooser, useColumnChoice } from './ColumnChooser.tsx';
 import { ListChangedNotice } from './ListChangedNotice.tsx';
 import { SessionFilterBar } from './SessionFilterBar.tsx';
-import { SessionTable } from './SessionTable.tsx';
+import {
+  DEFAULT_SESSION_COLUMNS,
+  REQUIRED_SESSION_COLUMNS,
+  SESSIONS_TABLE_ID,
+  SESSION_COLUMN_IDS,
+  SessionTable,
+  useSessionColumnOptions,
+} from './SessionTable.tsx';
 
-const TITLE = 'Sessions';
 /** The server refuses a shorter search (`query_too_short`, 03 5.4). */
 const MIN_SEARCH_CHARS = 2;
 const DEFAULT_WINDOW_HOURS = 24;
 const SKELETON_ROWS = 8;
+const SKELETON_COLUMNS = 6;
 
 /** The `listSessions` query of the URL state: renamed filters, a total for "N of M", and no search the server would refuse. */
 function sessionQuery(state: SessionsUrlState): ApiQuery {
@@ -50,58 +75,71 @@ function countActive(spec: Spec<SessionsUrlState>, state: SessionsUrlState): num
   return keys.size;
 }
 
-const RANGE_TEXT: Readonly<Record<string, string>> = {
-  '1h': 'last hour',
-  '6h': 'last 6 hours',
-  '24h': 'last 24 hours',
-  '7d': 'last 7 days',
-  '30d': 'last 30 days',
-};
+const RANGE_KEYS = {
+  '1h': 'filters.range.1h',
+  '6h': 'filters.range.6h',
+  '24h': 'filters.range.24h',
+  '7d': 'filters.range.7d',
+  '30d': 'filters.range.30d',
+  all: 'filters.range.all',
+} as const satisfies Readonly<Record<Preset, MessageKey>>;
+
+/** The time range as a few words: "Last 24 hours", "since 12 Oct, 09:00". */
+function rangeText(range: TimeRange, t: TFunction, format: Formatters): string {
+  if (range.kind === 'preset') return t(RANGE_KEYS[range.preset]);
+  return range.to === null
+    ? t('filters.range.since', { from: format.dateTime(range.from) })
+    : t('filters.range.customValue', { from: format.dateTime(range.from), to: format.dateTime(range.to) });
+}
+
+function LikelyHere() {
+  const t = useT();
+  return (
+    <>
+      {' '}
+      <TagBadge tone="partial" icon="info">
+        {t('sessions.empty.likely')}
+      </TagBadge>
+    </>
+  );
+}
 
 interface EmptyExplorerProps {
   state: SessionsUrlState;
   onShowUnmatched: () => void;
 }
 
-/** No session at all: the legacy list of causes, with the likely one flagged from what the monitor knows. */
+/** No session at all: the list of causes, with the likely one flagged from what the monitor knows. */
 function EmptyExplorer({ state, onShowUnmatched }: EmptyExplorerProps) {
+  const t = useT();
+  const format = useFormat();
   const health = useHealth();
   const folderMissing = health.data?.ingestion.transcripts.dirFound === false;
   const unmatchedHidden = !state.unmatched;
-  const rangeText = state.range.kind === 'preset' ? RANGE_TEXT[state.range.preset] : undefined;
   return (
-    <EmptyState title="No sessions yet" icon="sessions">
+    <EmptyState title={t('sessions.empty.title')} icon="sessions">
       <ul className="causes">
         <li>
-          The transcripts folder was not found, so nothing could be read.
+          {t('sessions.empty.cause.folder')}
           {folderMissing ? <LikelyHere /> : null}
         </li>
         <li>
-          No project rule matched the sessions and unmatched sessions are hidden.
+          {t('sessions.empty.cause.unmatched')}
           {unmatchedHidden ? <LikelyHere /> : null}
           {unmatchedHidden ? (
             <>
               {' '}
               <Button variant="quiet" onClick={onShowUnmatched}>
-                Show unmatched sessions
+                {t('sessions.empty.showUnmatched')}
               </Button>
             </>
           ) : null}
         </li>
-        {rangeText === undefined ? null : <li>{`The time range only covers the ${rangeText}.`}</li>}
+        {state.range.kind === 'preset' && state.range.preset !== 'all' ? (
+          <li>{t('sessions.empty.cause.range', { range: rangeText(state.range, t, format) })}</li>
+        ) : null}
       </ul>
     </EmptyState>
-  );
-}
-
-function LikelyHere() {
-  return (
-    <>
-      {' '}
-      <TagBadge tone="partial" icon="info">
-        Likely here
-      </TagBadge>
-    </>
   );
 }
 
@@ -110,25 +148,62 @@ function kindOf(error: Error | null): 'load' | 'contract' {
 }
 
 function ExplorerUnavailable() {
-  const headingRef = usePageChrome(TITLE);
+  const t = useT();
+  const headingRef = usePageChrome(t('route.sessions.title'));
   return (
     <section className="page explorer">
       <h1 ref={headingRef} tabIndex={-1}>
-        {TITLE}
+        {t('route.sessions.title')}
       </h1>
-      <p className="muted">Waiting for the connection to the monitor.</p>
+      <p className="muted">{t('sessions.waiting')}</p>
     </section>
   );
 }
 
+/**
+ * "Attention first" (ADR 0073 decision 7) on the rows that are loaded. A live list must not reorder under the reader, so the order
+ * is worked out when the sort is chosen or the rows that are loaded are other rows (a filter, a page, a refresh), and is kept
+ * while the rows only change in place.
+ */
+function useAttentionOrder(rows: readonly SessionSummary[], enabled: boolean): readonly SessionSummary[] {
+  const signature = enabled ? rows.map((row) => row.id).join(',') : null;
+  const [kept, setKept] = useState<{ signature: string; ids: readonly string[] } | null>(null);
+  if (signature === null) {
+    if (kept !== null) setKept(null);
+    return rows;
+  }
+  if (kept?.signature !== signature) {
+    const ordered = sortByAttention(rows);
+    setKept({ signature, ids: ordered.map((row) => row.id) });
+    return ordered;
+  }
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return kept.ids.flatMap((id) => byId.get(id) ?? []);
+}
+
+/** `j` and `k`: the focus goes to the link of the next or the previous row. `Enter` then opens it, as on any link. */
+function moveRowFocus(container: HTMLElement | null, step: 1 | -1): void {
+  if (container === null) return;
+  const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a.data-table__link'));
+  if (links.length === 0) return;
+  const current = links.findIndex((link) => link === document.activeElement);
+  const next =
+    current < 0 ? (step > 0 ? 0 : links.length - 1) : Math.min(links.length - 1, Math.max(0, current + step));
+  links[next]?.focus();
+}
+
 function Explorer() {
-  const headingRef = usePageChrome(TITLE);
+  const t = useT();
+  const format = useFormat();
+  const headingRef = usePageChrome(t('route.sessions.title'));
   const instance = useInstance();
   const windowHours = instance.data?.windowHours ?? DEFAULT_WINDOW_HOURS;
   const spec = useMemo(() => sessionsSpec(windowHours), [windowHours]);
   const [state, setState, ignored] = useUrlState(spec);
   const [dismissed, setDismissed] = useState<string[] | null>(null);
   const showToast = useShowToast();
+  const sheet = useMediaQuery(MQ_SHEET);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
 
   const query = useMemo(() => sessionQuery(state), [state]);
   // While the stream is live `useSessions` stops polling (StreamLiveContext) and the stream provider patches rows in place. A
@@ -136,20 +211,53 @@ function Explorer() {
   // it and `ListChangedNotice` offers "Refresh" (04 5.5 rule R3). Without a stream the list refetches at `poll.sessionsMs`.
   const list = useSessions(query, {
     onCursorReset: () => {
-      showToast('The list changed; reloaded from the top');
+      showToast(t('error.handling.listChanged'));
     },
   });
   const { items, capped } = list;
   const result = list.query;
   const listKey = qk.sessions(useIid(), query);
+  const overview = useOverview();
 
   const activeCount = countActive(spec, state);
+  const attention = attentionFilterOf({ state: state.state, errors: state.errors });
+  // The monitor's own counts describe the whole window; they stand in for the rows only while no filter narrows the list.
+  const unfiltered = attention === null && countActive(spec, state) === 0;
+  const complete = result.data !== undefined && !result.hasNextPage;
+
+  const columnOptions = useSessionColumnOptions();
+  const columnChoice = useColumnChoice(
+    SESSIONS_TABLE_ID,
+    SESSION_COLUMN_IDS,
+    REQUIRED_SESSION_COLUMNS,
+    DEFAULT_SESSION_COLUMNS,
+  );
+
+  const quiet = attention === 'quiet';
+  const narrowed = useMemo(
+    () => (quiet ? items.filter((row) => matchesAttention(row, 'quiet')) : items),
+    [quiet, items],
+  );
+  const rows = useAttentionOrder(narrowed, state.sort === 'attention');
+  const tableRows = useMemo(() => [...rows], [rows]);
+
   const onSort = useCallback(
     (key: SessionSort) => {
-      if (key === state.sort) setState({ dir: state.dir === 'desc' ? 'asc' : 'desc' });
+      if (key === 'attention') setState({ sort: 'attention', dir: 'desc' });
+      else if (key === state.sort) setState({ dir: state.dir === 'desc' ? 'asc' : 'desc' });
       else setState({ sort: key, dir: key === 'label' ? 'asc' : 'desc' });
     },
     [state.sort, state.dir, setState],
+  );
+  const toggleAttentionSort = useCallback(() => {
+    if (state.sort === 'attention') setState({ sort: 'lastActivity', dir: 'desc' });
+    else setState({ sort: 'attention', dir: 'desc' });
+  }, [state.sort, setState]);
+  const onAttention = useCallback(
+    (next: AttentionFilter) => {
+      setState(attentionPatch(next));
+    },
+    [setState],
   );
   const clearAll = useCallback(() => {
     setState({
@@ -169,50 +277,73 @@ function Explorer() {
     setState({ unmatched: true });
   }, [setState]);
 
+  useShortcut(
+    'j',
+    () => {
+      moveRowFocus(resultsRef.current, 1);
+    },
+    { description: t('sessions.shortcut.next'), enabled: tableRows.length > 0 },
+  );
+  useShortcut(
+    'k',
+    () => {
+      moveRowFocus(resultsRef.current, -1);
+    },
+    { description: t('sessions.shortcut.prev'), enabled: tableRows.length > 0 },
+  );
+
+  const lastPage = result.data?.pages.at(-1);
+  const noMatch = result.data !== undefined && tableRows.length === 0 && activeCount > 0;
+
   let body: ReactNode;
   if (result.data === undefined) {
     body = result.isError ? (
       <ErrorState
         kind={kindOf(result.error)}
-        subject="sessions"
+        subjectKey="error.subject.sessions"
         error={result.error}
         onRetry={() => {
           void result.refetch();
         }}
       />
     ) : (
-      <Skeleton variant="table" rows={SKELETON_ROWS} label="Loading sessions" />
+      <Skeleton variant="table" rows={SKELETON_ROWS} columns={SKELETON_COLUMNS} label={t('sessions.loading')} />
     );
-  } else if (items.length === 0) {
-    body =
-      activeCount > 0 ? (
-        <EmptyState title="No session matches these filters">
-          <p>Widen the time range or remove a filter to see more.</p>
-          <Button onClick={clearAll}>Clear filters</Button>
-        </EmptyState>
-      ) : (
-        <EmptyExplorer state={state} onShowUnmatched={showUnmatched} />
-      );
+  } else if (tableRows.length === 0) {
+    body = noMatch ? (
+      <EmptyState
+        title={t('sessions.noMatch.title')}
+        primary={{ label: t('sessions.noMatch.clear'), onClick: clearAll }}
+      >
+        <p>{t('sessions.noMatch.hint')}</p>
+      </EmptyState>
+    ) : (
+      <EmptyExplorer state={state} onShowUnmatched={showUnmatched} />
+    );
   } else {
-    const lastPage = result.data.pages.at(-1);
     body = (
       <>
-        <SessionTable rows={items} sort={{ key: state.sort, dir: state.dir }} onSort={onSort} />
+        <SessionTable
+          rows={tableRows}
+          sort={{ key: state.sort, dir: state.dir }}
+          onSort={onSort}
+          columns={columnChoice.selected}
+        />
         <LoadMore
           hasMore={result.hasNextPage}
           loading={result.isFetchingNextPage}
           onLoad={() => {
             void result.fetchNextPage();
           }}
-          shown={items.length}
-          total={lastPage?.total ?? null}
+          shown={tableRows.length}
+          total={quiet ? null : (lastPage?.total ?? null)}
           totalIsLowerBound={lastPage?.totalIsLowerBound ?? false}
-          noun="sessions"
+          nounKey="common.noun.sessions"
           capped={capped}
           pageSize={SESSIONS_PAGE_LIMIT}
         />
         {result.isFetchNextPageError ? (
-          <ErrorState kind="load" size="inline" subject="more sessions" error={result.error} />
+          <ErrorState kind="load" size="inline" subjectKey="error.subject.moreSessions" error={result.error} />
         ) : null}
       </>
     );
@@ -221,33 +352,82 @@ function Explorer() {
   // A failed refetch keeps the rows on screen and says how old they are (UI-I5).
   const refreshFailing = result.isError && result.data !== undefined && !result.isFetchNextPageError;
 
+  let summary: string | null = null;
+  if (result.data !== undefined && tableRows.length > 0) {
+    const total = quiet ? null : (lastPage?.total ?? null);
+    if (total !== null) {
+      summary =
+        lastPage?.totalIsLowerBound === true
+          ? t('sessions.summary.countAtLeast', { count: total })
+          : t('sessions.summary.count', { count: total });
+    } else {
+      summary = result.hasNextPage
+        ? t('sessions.summary.countAtLeast', { count: tableRows.length })
+        : t('sessions.summary.count', { count: tableRows.length });
+    }
+  }
+
   return (
     <section className="page explorer">
-      <h1 ref={headingRef} tabIndex={-1}>
-        {TITLE}
-      </h1>
+      <div className="explorer__head">
+        <div className="explorer__title">
+          <h1 ref={headingRef} tabIndex={-1}>
+            {t('route.sessions.title')}
+          </h1>
+          {summary === null ? null : (
+            <p className="explorer__summary">
+              <span>{summary}</span>
+              <span>{rangeText(state.range, t, format)}</span>
+            </p>
+          )}
+        </div>
+        <div className="explorer__tools">
+          <Button
+            icon="alert"
+            aria-pressed={state.sort === 'attention'}
+            title={t('sessions.sort.attention.tip')}
+            onClick={toggleAttentionSort}
+          >
+            {t('sessions.sort.attention')}
+          </Button>
+          {sheet ? null : (
+            <ColumnChooser tableId={SESSIONS_TABLE_ID} options={columnOptions} defaults={DEFAULT_SESSION_COLUMNS} />
+          )}
+        </div>
+      </div>
+      <AttentionStrip
+        overview={unfiltered ? overview.data : null}
+        loadedRows={items}
+        complete={complete}
+        filter={attention}
+        onFilter={onAttention}
+      />
       <SessionFilterBar
         state={state}
         onChange={setState}
+        rangeDefault={spec.range.default}
         ignoredKeys={ignored.length > 0 && dismissed !== ignored ? ignored : []}
         onDismissIgnored={() => {
           setDismissed(ignored);
         }}
-        activeCount={activeCount}
+        activeCount={noMatch ? 0 : activeCount}
         onClearAll={clearAll}
       />
-      {Array.from(state.q).length === 1 ? <p className="muted">Type at least 2 characters to search.</p> : null}
+      {Array.from(state.q).length === 1 ? <p className="muted">{t('sessions.searchHint')}</p> : null}
       <ListChangedNotice
         queryKey={listKey}
         onRefresh={() => {
           void result.refetch();
         }}
       />
+      {result.data === undefined ? null : (
+        <StaleDataIndicator asOf={result.dataUpdatedAt} scope={t('error.subject.sessions')} />
+      )}
       {refreshFailing ? (
         <ErrorState
           kind="refresh"
           size="inline"
-          subject="sessions"
+          subjectKey="error.subject.sessions"
           error={result.error}
           lastGoodAt={result.dataUpdatedAt}
           onRetry={() => {
@@ -255,10 +435,15 @@ function Explorer() {
           }}
         />
       ) : null}
-      <div className="explorer__results" data-testid="explorer-results" aria-busy={result.isPlaceholderData}>
+      <div
+        className="explorer__results"
+        data-testid="explorer-results"
+        aria-busy={result.isPlaceholderData}
+        ref={resultsRef}
+      >
         {result.isPlaceholderData ? (
           <p role="status" className="muted">
-            Updating...
+            {t('sessions.updating')}
           </p>
         ) : null}
         {body}
@@ -268,8 +453,9 @@ function Explorer() {
 }
 
 /**
- * `/sessions`: filters in the URL, sortable columns, load-more paging and the states of 04 7. Until the app providers are
- * mounted (no API client or no active instance) it shows only its heading, so the route never crashes the shell.
+ * `/sessions`: the attention strip, one filter row in the URL, a sortable table with the columns the user chose (cards below
+ * 900 px), load-more paging and the states of 04 7. Until the app providers are mounted (no API client or no active instance) it
+ * shows only its heading, so the route never crashes the shell.
  */
 export function SessionExplorerPage() {
   const api = useContext(ApiContext);

@@ -1,39 +1,214 @@
-/* Sessions explorer (04-ui.md 4.4). */
+/* Sessions explorer (ADR 0073 decision 7, review R-05 to R-11, R-34, R-35): the title row with its count and tools, the attention
+   strip, the filter row, the table or the cards, and the sticky "list changed" notice. */
+
+/* ---- Title row ---------------------------------------------------------------------------------------------------------------- */
+.explorer {
+  gap: var(--sp-4);
+}
+.explorer__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-5);
+}
+.explorer__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-5);
+  min-width: 0;
+}
+.explorer__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-3);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.explorer__summary > span + span::before {
+  content: '·';
+  margin-inline-end: var(--sp-3);
+}
+.explorer__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+/* "Attention first" is a toggle: pressed, it takes the accent border like the tiles and the filter toggles. */
+.explorer__tools .btn[aria-pressed='true'] {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+/* The strip sits close to the title and is a little lower than on the pages that use it as a hero. */
+.explorer .summary-tile {
+  padding-block: var(--sp-3);
+}
+.explorer .summary-tile__value {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+}
+
+/* ---- Results ------------------------------------------------------------------------------------------------------------------ */
 .explorer__results {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
   min-width: 0;
 }
-.explorer__results[aria-busy='true'] .data-table {
-  opacity: 0.7;
-}
+/* The causes are a list to read: left-aligned and kept together, under the centred title of the empty state. */
 .explorer .causes {
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 64ch;
+  margin: 0 auto;
   padding-inline-start: var(--sp-6);
+  text-align: start;
 }
+
+/* The notice stays in view while the page scrolls: a list that changed behind the reader is the thing not to miss. */
+.list-changed {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  border-color: var(--accent);
+  box-shadow: var(--elev-2);
+}
+
+/* ---- Cells -------------------------------------------------------------------------------------------------------------------- */
+.session-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+.session-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.session-cell__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-3);
+  min-width: 0;
+}
+/* A long label is cut after two lines (the whole label is the tooltip), so a row is never taller than 80 px. */
 .session-cell__label {
-  font-weight: 600;
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: var(--fw-semibold);
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .session-cell__id {
   color: var(--text-muted);
   font-size: var(--fs-xs);
 }
-.session-errors {
-  display: inline-flex;
-  flex-direction: column;
-  gap: var(--sp-1);
+.session-cell__model {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.session-errors__errors {
-  color: var(--failed-fg);
+.session-errors {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  white-space: nowrap;
+}
+.session-errors__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--ctl-h-inline);
+  padding: 0 var(--sp-3);
+  background: var(--state-failed-bg);
+  border-radius: var(--radius-pill);
+  color: var(--state-failed-fg);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
 }
 .session-errors__warnings {
-  color: var(--stale-fg);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--state-stale-fg);
+  font-size: var(--fs-xs);
 }
 .session-tags {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
+}
+.session-token-detail {
+  display: inline-flex;
+  gap: var(--sp-4);
+  white-space: nowrap;
+}
+
+/* A row with errors has a bar on its left side in the error tone (the pattern of the timeline's error rows). */
+tr.session-row--error > td:first-child {
+  box-shadow: inset 3px 0 0 var(--state-failed-dot);
+}
+.data-card.session-row--error {
+  box-shadow: inset 3px 0 0 var(--state-failed-dot);
+}
+
+/* ---- Cards (below 900 px) ----------------------------------------------------------------------------------------------------- */
+.session-card__title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.session-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+}
+.session-card__figure {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Column chooser ----------------------------------------------------------------------------------------------------------- */
+.column-chooser {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  min-width: min(16rem, 100%);
+}
+.column-chooser__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.column-chooser__note {
+  font-size: var(--fs-xs);
+}
+.column-chooser__hint {
+  max-width: 28ch;
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
 }

@@ -24,11 +24,6 @@ export const LITERAL_BASELINE: readonly string[] = [
   // @wp-begin WP-118
   // @wp-end WP-118
   // @wp-begin WP-119
-  'pages/session-detail/AgentTree.tsx',
-  'pages/session-detail/SessionErrors.tsx',
-  'pages/session-detail/SessionTimeline.tsx',
-  'pages/session-detail/SessionTokens.tsx',
-  'pages/session-detail/TimelineRow.tsx',
   // @wp-end WP-119
   // @wp-begin WP-120
   // @wp-end WP-120
