@@ -135,6 +135,21 @@ describe('AttentionStrip', () => {
     expect(onFilter).toHaveBeenLastCalledWith('quiet');
   });
 
+  it('draws links instead of toggles when it is given an address for each tile', () => {
+    const hrefFor = vi.fn((name: string) => `/sessions?tile=${name}`);
+    renderStrip({ hrefFor });
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    const list = screen.getByRole('list', { name: msg('attention.label') });
+    const links = within(list).getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/sessions?tile=working',
+      '/sessions?tile=quiet',
+      '/sessions?tile=errors',
+      '/sessions?tile=waiting',
+    ]);
+    expect(links[2]).toHaveTextContent(/^1/);
+  });
+
   it('describes each tile in its title', () => {
     renderStrip();
     expect(tile('quiet')).toHaveAttribute('title', expect.stringContaining(msg('attention.quiet.tip')));

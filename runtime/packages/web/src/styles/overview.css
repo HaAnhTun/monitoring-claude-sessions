@@ -1,0 +1,370 @@
+/* Overview page (04-ui.md 4.4.1, ADR 0073 decision 9, ADR 0074 decision 8).
+   One column below 1280 px; from 1280 px the main column (strip, attention, running sessions, figures, errors, activity) sits next
+   to a right column (ingestion summary, then the workspace panels). Sections are flush cards: a quiet head with the link to the
+   full page, then rows. Figures are tiles with the headline number at 28 px. */
+
+.overview__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.overview__header p,
+.overview__note {
+  margin: 0;
+}
+.overview__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-5);
+}
+@media (min-width: 1280px) {
+  .overview__layout {
+    grid-template-columns: minmax(0, 2fr) minmax(17rem, 1fr);
+    align-items: start;
+  }
+}
+.overview__main,
+.overview__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.overview__panels:empty {
+  display: none;
+}
+
+/* ---- a section: a flush card with a head ---- */
+.overview-section {
+  padding: 0;
+  overflow: hidden;
+}
+.overview-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.overview-section__head h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+}
+.overview-section__action {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.overview-section__body {
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+}
+.overview-section__note {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-5);
+  border-top: var(--border-w) solid var(--border);
+}
+.overview-section__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-5);
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
+.overview-section > .activity-list {
+  padding-inline: var(--sp-5);
+}
+
+/* ---- needs attention ---- */
+.attention-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.attention-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.attention-item:last-child {
+  border-bottom: 0;
+}
+.attention-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+/* Row links are plain text; the accent shows on hover (the list items would otherwise underline them). */
+.attention-item__title {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attention-item__title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.attention-item__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+}
+.attention-item__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  white-space: nowrap;
+}
+.attention-item__errors {
+  color: var(--failed-fg);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+}
+.attention-item__errors:hover {
+  text-decoration: underline;
+}
+
+/* ---- running now ---- */
+.overview-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.overview-table th,
+.overview-table td {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border);
+  text-align: start;
+  vertical-align: middle;
+}
+.overview-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.overview-table th:first-child,
+.overview-table td:first-child {
+  padding-inline-start: var(--sp-5);
+}
+.overview-table th:last-child,
+.overview-table td:last-child {
+  padding-inline-end: var(--sp-5);
+}
+.overview-table thead th {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.overview-table tbody th {
+  font-weight: var(--fw-medium);
+}
+.overview-table__session {
+  width: 100%;
+  max-width: 0;
+  min-width: 8rem;
+}
+.overview-table__session a {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-table__session a:hover {
+  color: var(--accent);
+}
+.overview-table__state {
+  white-space: nowrap;
+}
+.overview-table__time {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.overview-table th.overview-table__num,
+.overview-table td.overview-table__num {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+/* ---- figures ---- */
+.overview-figures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.overview-figures__title {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+}
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.overview-grid__item {
+  display: flex;
+  min-width: 0;
+}
+.overview-tile {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+}
+.overview-tile__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: calc(var(--ctl-h) - 4px);
+  margin-block: calc(-1 * var(--sp-2));
+}
+.overview-tile__label {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+/* One stretched link per tile: the whole tile opens the page; the info button stays above it. */
+.overview-tile__link {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.overview-tile__link:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.overview-tile__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.overview-tile__link:focus-visible {
+  outline: none;
+}
+.overview-tile__link:focus-visible::after {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.overview-tile:has(.overview-tile__link:hover) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+/* Positioned after the stretched link, so it paints above it without a stacking context that would trap the open panel. */
+.overview-tile .info-tip {
+  position: relative;
+}
+/* The figure line sits at the foot of the tile, so the numbers of a row line up when one label wraps to two lines. */
+.overview-tile__figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  margin: auto 0 0;
+}
+.overview-tile__value {
+  font-size: var(--fs-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-2xl);
+  overflow-wrap: anywhere;
+}
+.overview-tile__value--unknown {
+  color: var(--text-muted);
+}
+.overview-tile__unit {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.overview-tile__tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+}
+.overview-tile__tip {
+  display: grid;
+  gap: var(--sp-3);
+  width: min(22rem, 70vw);
+  margin: 0;
+}
+.overview-tile__tip dt {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-xs);
+}
+.overview-tile__tip dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ---- ingestion ---- */
+.overview-ingestion__status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  font-weight: var(--fw-medium);
+}
+.overview-facts {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+}
+.overview-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.overview-fact dt {
+  color: var(--text-muted);
+}
+.overview-fact dd {
+  margin: 0;
+  text-align: end;
+}
+.overview-fact__critical {
+  color: var(--failed-fg);
+  font-weight: var(--fw-medium);
+}

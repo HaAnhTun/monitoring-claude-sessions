@@ -3,7 +3,15 @@
 // writes new entries inside its own marked block below, with ids that no base view and no other block uses.
 import type { Page as BrowserPage } from '@playwright/test';
 
-import type { ActivityEvent, AgentNode, InstanceInfo, Page, SessionSummary } from '@mcs/shared';
+import type {
+  ActivityEvent,
+  AgentNode,
+  InstanceInfo,
+  Page,
+  SessionDetail,
+  SessionSummary,
+  ToolCallItem,
+} from '@mcs/shared';
 
 import {
   agentId,
@@ -12,11 +20,13 @@ import {
   makeAgentPage,
   makeEvent,
   makeEventPage,
+  makePage,
   makeSession,
   makeState,
   makeUsage,
   makeWorkItem,
   makeWorkItemBoard,
+  toolUseId,
 } from '../../src/test/fixtures/index.ts';
 import { fixtureId, type FixtureApi, type FixtureState } from './fixture-api.ts';
 import type { QaInstance } from './qa-instance.ts';
@@ -134,13 +144,21 @@ async function addLongEvidence({ page, fixture }: ViewContext): Promise<void> {
  */
 async function serveDetail(
   { page, fixture }: ViewContext,
-  patch: { agents?: AgentNode[]; events?: ActivityEvent[] },
+  patch: { agents?: AgentNode[]; events?: ActivityEvent[]; calls?: ToolCallItem[]; warnings?: number },
   ready: string,
 ): Promise<void> {
   if (fixture === null) return;
-  const { agents, events } = patch;
+  const { agents, events, calls = [], warnings } = patch;
   if (agents !== undefined) fixture.fake.handlers.sessionAgents = () => makeAgentPage(agents);
   if (events !== undefined) fixture.fake.handlers.sessionTimeline = () => makeEventPage(events);
+  fixture.fake.handlers.sessionToolCalls = () => makePage(calls);
+  const { getSession } = fixture.fake.handlers;
+  if (warnings !== undefined && getSession !== undefined) {
+    fixture.fake.handlers.getSession = async (query, request) => ({
+      ...((await getSession(query, request)) as SessionDetail),
+      warningCount: warnings,
+    });
+  }
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator(ready).first().waitFor({ state: 'visible', timeout: 20_000 });
 }
@@ -190,6 +208,36 @@ function detailAgents(): AgentNode[] {
   ];
 }
 
+/** The failed call behind the first error: the engine keeps its tool, argument, duration and exit code on the call. */
+function detailToolCalls(): ToolCallItem[] {
+  return [
+    {
+      id: 1,
+      seq: 1,
+      toolUseId: toolUseId(1),
+      sessionId: DETAIL_SESSION,
+      agentId: agentId(1),
+      promptId: null,
+      name: 'Grep',
+      mcpServer: null,
+      status: 'failed',
+      outcome: 'error',
+      summary: 'TODO in src/**/*.ts',
+      inputBytes: null,
+      startedAt: iso(-9 * 60 - 4),
+      endedAt: iso(-9 * 60),
+      batchAt: null,
+      durationMs: 4_000,
+      durationSource: 'timestamps',
+      exitCode: 2,
+      sources: ['transcript_use', 'transcript_result'],
+      subagentId: null,
+      workflowRunId: null,
+      transcriptRef: { agentId: agentId(1), offset: 4096 },
+    },
+  ];
+}
+
 /** The warnings and errors of the failing session: a tool that failed after 4 s, an API error without a tool, a denied tool. */
 function detailErrors(): ActivityEvent[] {
   const base = { sessionId: DETAIL_SESSION, sessionLabel: 'Release checklist' };
@@ -202,10 +250,11 @@ function detailErrors(): ActivityEvent[] {
       type: 'tool.failure',
       category: 'error',
       severity: 'error',
-      toolName: 'Grep',
+      toolName: null,
+      toolUseId: toolUseId(1),
       toolStatus: 'failed',
-      durationMs: 4_000,
-      summary: 'TODO pattern in src/**/*.ts: the path src/legacy does not exist',
+      durationMs: null,
+      summary: '',
       agentId: agentId(1),
       agentLabel: 'Lint helper',
     }),
@@ -243,7 +292,7 @@ function detailErrors(): ActivityEvent[] {
 /** 33 events of one session, newest first, from the three sources, with a status, a duration, an agent and one gap. */
 function detailEvents(): ActivityEvent[] {
   const base = { sessionId: DETAIL_SESSION, sessionLabel: 'Release checklist' };
-  const shape = [
+  const shape: Partial<ActivityEvent>[] = [
     {
       type: 'prompt.submit',
       category: 'prompt',
@@ -293,9 +342,9 @@ function detailEvents(): ActivityEvent[] {
       summary: 'Context compacted after 168,000 tokens',
       sources: ['transcript'],
     },
-  ] as const;
+  ];
   const events = Array.from({ length: 33 }, (_unused, n): ActivityEvent => {
-    const pick = shape[n % shape.length] ?? shape[0];
+    const pick = shape[n % shape.length] ?? {};
     const agent =
       n % 4 === 1 ? { agentId: agentId(1), agentLabel: 'Lint helper' } : { agentId: null, agentLabel: 'main' };
     return makeEvent({
@@ -1146,7 +1195,11 @@ export const VIEWS: readonly ViewSpec[] = [
     params: detail,
     query: 'tab=errors',
     setup: (context) =>
-      serveDetail(context, { events: detailErrors() }, 'main .session-errors-tab tr.error-row--error'),
+      serveDetail(
+        context,
+        { events: detailErrors(), calls: detailToolCalls(), warnings: 1 },
+        'main .errors-tab .error-row--error',
+      ),
   },
   {
     // The main agent and two subagents (one failed, one completed): the main agent is not a subagent, so the tab counts 2, and the tables
@@ -1157,7 +1210,7 @@ export const VIEWS: readonly ViewSpec[] = [
     wait: 'main .session-frame h1',
     params: detail,
     query: 'tab=agents',
-    setup: (context) => serveDetail(context, { agents: detailAgents() }, 'main .agent-tree table'),
+    setup: (context) => serveDetail(context, { agents: detailAgents() }, 'main .agent-tree .agent-cell__label'),
   },
   {
     // The five totals of the session and the table per agent with its Total row.
@@ -1178,6 +1231,25 @@ export const VIEWS: readonly ViewSpec[] = [
     params: detail,
     query: 'tab=events',
     setup: (context) => serveDetail(context, { events: detailEvents() }, 'main .event-row--gap'),
+  },
+  {
+    // The same tab on the real demo instance: what the engine records for the error of the failing helper (the tool, the time, the
+    // event number), with no message body, because the monitor never stores one.
+    id: 'session-detail-errors-live',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: 'main .errors-tab .error-row--error',
+    params: detail,
+    query: 'tab=errors',
+  },
+  {
+    // The events the real instance recorded for the failing session, as the engine writes them.
+    id: 'session-detail-events-live',
+    path: '/sessions/:sessionId',
+    mode: 'live',
+    wait: 'main .event-list .event-row',
+    params: detail,
+    query: 'tab=events',
   },
   // @wp-end WP-119
   // @wp-begin WP-120

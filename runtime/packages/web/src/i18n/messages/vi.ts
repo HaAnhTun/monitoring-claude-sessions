@@ -904,6 +904,7 @@ export const viMessages: Record<MessageKey, string> = {
   'tabs.errors.noMessage': 'Không có thông báo nào được ghi lại',
   'tabs.errors.failedAfter': 'thất bại sau {duration}',
   'tabs.errors.tookDuration': 'mất {duration}',
+  'tabs.errors.exitCode': 'mã thoát {code}',
   'tabs.errors.eventTip': 'Số thứ tự của sự kiện trong nhật ký của công cụ giám sát',
   'tabs.errors.open': 'Mở trong bản ghi',
   'tabs.errors.openFor': 'Mở trong bản ghi: {what}',

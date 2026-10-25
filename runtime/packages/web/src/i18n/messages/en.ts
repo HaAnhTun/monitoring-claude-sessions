@@ -887,6 +887,7 @@ export const enMessages = {
   'tabs.errors.noMessage': 'No message recorded',
   'tabs.errors.failedAfter': 'failed after {duration}',
   'tabs.errors.tookDuration': 'took {duration}',
+  'tabs.errors.exitCode': 'exit code {code}',
   'tabs.errors.eventTip': 'Number of the event in the monitor log',
   'tabs.errors.open': 'Open in transcript',
   'tabs.errors.openFor': 'Open in transcript: {what}',

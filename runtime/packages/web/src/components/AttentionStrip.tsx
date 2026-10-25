@@ -20,10 +20,15 @@ export interface AttentionStripProps {
   loadedRows: readonly AttentionRow[];
   /** No page is left on the server, so the counts of the rows are exact; otherwise they are lower bounds. */
   complete: boolean;
-  /** The tile that is pressed, if any. */
-  filter: AttentionFilter;
-  /** Called with the tile that was pressed, or with null when the pressed tile was pressed again. */
-  onFilter: (next: AttentionFilter) => void;
+  /** The tile that is pressed, if any. Ignored with `hrefFor`. */
+  filter?: AttentionFilter;
+  /** Called with the tile that was pressed, or with null when the pressed tile was pressed again. Ignored with `hrefFor`. */
+  onFilter?: (next: AttentionFilter) => void;
+  /**
+   * Draws every tile as a link to the page this returns instead of a toggle (the Overview, where a tile opens the filtered
+   * Sessions list instead of filtering the page it is on).
+   */
+  hrefFor?: (tile: AttentionTile) => string;
 }
 
 const TONES: Readonly<Record<AttentionTile, SummaryTone>> = {
@@ -53,7 +58,14 @@ const TIP_KEYS = {
  * the whole list is loaded, `N+` with an explanation when more pages exist (deviation D-30 of ADR 0074 decision 8). The strip is
  * drawn as soon as the page renders it: a figure that is not known yet is a dash, never 0.
  */
-export function AttentionStrip({ overview, loadedRows, complete, filter, onFilter }: AttentionStripProps) {
+export function AttentionStrip({
+  overview,
+  loadedRows,
+  complete,
+  filter = null,
+  onFilter,
+  hrefFor,
+}: AttentionStripProps) {
   const t = useT();
   const figures = useMemo(() => attentionFigures(overview, loadedRows, { complete }), [overview, loadedRows, complete]);
 
@@ -67,16 +79,20 @@ export function AttentionStrip({ overview, loadedRows, complete, filter, onFilte
 
   const tiles: SummaryTile[] = ATTENTION_TILES.map((tile) => {
     const figure = figures[tile];
-    return {
+    const common = {
       id: tile,
       label: t(LABEL_KEYS[tile]),
       value: figure.value,
       tone: TONES[tile],
       lowerBound: figure.lowerBound,
       tip: [t(TIP_KEYS[tile]), sourceNote(figure)].filter((part) => part !== '').join(' '),
+    };
+    if (hrefFor !== undefined) return { ...common, href: hrefFor(tile) };
+    return {
+      ...common,
       pressed: filter === tile,
       onToggle: () => {
-        onFilter(filter === tile ? null : tile);
+        onFilter?.(filter === tile ? null : tile);
       },
     };
   });
