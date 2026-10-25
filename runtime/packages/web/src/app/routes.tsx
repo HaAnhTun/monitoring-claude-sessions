@@ -102,6 +102,7 @@ export const pageRegistry: PageRegistry = {
   activity: lazyPage(() => import('../pages/activity/ActivityPage.tsx').then((m) => ({ default: m.ActivityPage }))),
   // @wp-end WP-53
   // @wp-begin WP-54
+  overview: lazyPage(() => import('../pages/overview/OverviewPage.tsx').then((m) => ({ default: m.OverviewPage }))),
   // @wp-end WP-54
   // @wp-begin WP-66
   tasks: lazyPage(() =>

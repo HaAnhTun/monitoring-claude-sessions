@@ -862,27 +862,33 @@ export const VIEWS: readonly ViewSpec[] = [
     params: () => ({ sessionId: 'no-such-session' }),
   },
   {
-    // The tab bar stays at the top of the window while the page scrolls: Details is open (a taller page) and the page is scrolled
-    // to its end. Where the page is too short to scroll (a tall window) nothing moves and the check is skipped.
+    // The tab bar stays at the top of the window while the page scrolls. The page is made long (the demo transcript is short) by a
+    // blank block under the transcript, then scrolled until the bar would have left the window; the bar must still be at y = 0.
     id: 'session-detail-scrolled',
     path: '/sessions/:sessionId',
     mode: 'live',
     wait: 'main .session-frame h1',
     params: detail,
     setup: async ({ page }) => {
-      await page.locator('main .session-frame__row .disclosure__toggle').click();
-      await page.locator('main .session-details').waitFor({ state: 'visible', timeout: 20_000 });
+      await page.locator('main .tv-list .tr').first().waitFor({ state: 'visible', timeout: 20_000 });
       const measured: unknown = await page.evaluate(
         `(() => {
-          const root = document.scrollingElement || document.documentElement;
-          window.scrollTo(0, root.scrollHeight);
           const bar = document.querySelector('main nav.session-tabs');
-          return { scrolled: window.scrollY, top: bar ? bar.getBoundingClientRect().top : null };
+          const section = bar && bar.parentElement;
+          if (!bar || !section) return { top: null, scrolled: 0 };
+          const filler = document.createElement('div');
+          filler.setAttribute('aria-hidden', 'true');
+          filler.style.height = '3000px';
+          section.appendChild(filler);
+          const natural = bar.getBoundingClientRect().top + window.scrollY;
+          window.scrollTo(0, natural + 120);
+          return { top: bar.getBoundingClientRect().top, scrolled: window.scrollY };
         })()`,
       );
-      const { scrolled, top } = measured as { scrolled: number; top: number | null };
+      const { top, scrolled } = measured as { top: number | null; scrolled: number };
       if (top === null) throw new Error('the page has no tab bar');
-      if (scrolled > 0 && Math.abs(top) > 1)
+      if (scrolled <= 0) throw new Error('the page did not scroll');
+      if (Math.abs(top) > 1)
         throw new Error(`the tab bar is at y = ${String(top)} after scrolling ${String(scrolled)} px`);
     },
   },
