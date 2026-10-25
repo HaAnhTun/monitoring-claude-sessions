@@ -53,6 +53,23 @@ describe('toPanelViewStatus (04 4.4.1)', () => {
     });
   });
 
+  it('does not report a source that the configuration switched off', () => {
+    const data = makePanelResponse('git', {
+      status: 'partial',
+      generatedAt: GENERATED,
+      sources: [
+        { source: 'git.status', status: 'ok', sampledAt: GENERATED, message: null },
+        { source: 'git.log', status: 'pending', sampledAt: null, message: null },
+        { source: 'stopFile', status: 'disabled', sampledAt: null, message: null },
+      ],
+    });
+    expect(toPanelViewStatus(state(data), NOW, STALE_AFTER)).toEqual({
+      kind: 'partial',
+      asOf: Date.parse(GENERATED),
+      notes: ['git.log: pending'],
+    });
+  });
+
   it('maps status error with data null to error using the first source message', () => {
     const data = makePanelResponse('git', {
       status: 'error',

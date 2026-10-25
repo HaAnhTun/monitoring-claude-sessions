@@ -255,14 +255,15 @@ export async function startQaInstance(options: QaInstanceOptions = {}): Promise<
     const cli = (args: readonly string[]): ReturnType<typeof runCli> => runCli(args, { mcsHome, env });
 
     // The demo config is the legacy flat config: its event window is narrower than the runtime accepts and its optional
-    // panels read the real machine, a git binary and Docker, so those keys are left out of the seed.
+    // sampler keys (poll, docker, watched processes) are left out of the seed. The Machine and Git panels are on: the Overview
+    // views show the panels of the QA machine and of the demo repository.
     const seed = {
       ...Object.fromEntries(
         Object.entries(demo.configJson).filter(
           ([key]) => !['limits', 'poll', 'docker', 'watched_processes'].includes(key),
         ),
       ),
-      panels: { machine: false, git: false, logs: false, ledger: true, chain_log: true, attempts: true },
+      panels: { machine: true, git: true, logs: false, ledger: true, chain_log: true, attempts: true },
       session_rules: [
         { match: 'STEP=([A-Z]):', label: 'build step {1}' },
         { match: 'FIXTURE QA fresh', label: 'Parser refactor' },

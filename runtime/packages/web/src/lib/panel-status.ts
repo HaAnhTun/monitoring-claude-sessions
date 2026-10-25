@@ -29,14 +29,17 @@ export function isPanelDisabled(error: unknown): boolean {
 }
 
 function notesOf(response: PanelResponse): string[] {
-  return response.sources
-    .filter((source) => source.status !== 'ok')
-    .map((source) => {
-      const parts = [`${source.source}: ${source.status}`];
-      if (source.message !== null) parts.push(source.message);
-      if (source.sampledAt !== null) parts.push(`as of ${fmtClock(source.sampledAt)}`);
-      return parts.join(', ');
-    });
+  return (
+    response.sources
+      // A source the configuration switched off is not a problem and is not reported.
+      .filter((source) => source.status !== 'ok' && source.status !== 'disabled')
+      .map((source) => {
+        const parts = [`${source.source}: ${source.status}`];
+        if (source.message !== null) parts.push(source.message);
+        if (source.sampledAt !== null) parts.push(`as of ${fmtClock(source.sampledAt)}`);
+        return parts.join(', ');
+      })
+  );
 }
 
 function firstMessage(response: PanelResponse): string {

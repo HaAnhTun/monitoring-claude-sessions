@@ -17,6 +17,7 @@ import { useFormat, useT } from '../../i18n/context.ts';
 import { attentionPatch, type AttentionTile } from '../../lib/sessions-attention.ts';
 import { activitySpec, formatUrlState, parseUrlState, sessionsSpec } from '../../lib/url-state.ts';
 import { useShowToast } from '../../state/toast-store.ts';
+import { WorkspacePanels } from '../../panels/WorkspacePanels.tsx';
 import { ActivityFeed } from '../activity/ActivityFeed.tsx';
 import { IngestionSummary } from './IngestionSummary.tsx';
 import { MetricGrid } from './MetricGrid.tsx';
@@ -193,8 +194,7 @@ function Overview() {
         </div>
         <aside className="overview__side" aria-label={t('overview.side.label')}>
           <IngestionSummary alerts={overview.data?.alerts} />
-          {/* WP-65 mounts the workspace panels here. */}
-          <div className="overview__panels" data-slot="workspace-panels" />
+          <WorkspacePanels />
         </aside>
       </div>
     </section>
@@ -204,7 +204,7 @@ function Overview() {
 /**
  * `/`: the landing page for many sessions (ADR 0073 decision 9). The attention strip, the sessions that need attention, the
  * sessions running now, the figures of the monitor with their source and rule, the newest errors and events, and the ingestion
- * summary. A part that fails to load says so and leaves the others usable. Until the app providers are mounted it shows only its
+ * summary, then the workspace panels. A part that fails to load says so and leaves the others usable. Until the app providers are mounted it shows only its
  * heading, so the route never crashes the shell.
  */
 export function OverviewPage() {

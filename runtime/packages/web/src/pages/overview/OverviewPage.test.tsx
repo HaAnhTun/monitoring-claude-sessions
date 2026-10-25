@@ -266,10 +266,14 @@ describe('OverviewPage', () => {
     });
   });
 
-  it('keeps a place for the workspace panels in the side column', () => {
+  it('mounts the workspace panels of the instance in the side column', () => {
     setup();
     const side = screen.getByRole('complementary', { name: msg('overview.side.label') });
-    expect(side.querySelector('[data-slot="workspace-panels"]')).not.toBeNull();
+    const panels = side.querySelector('[data-slot="workspace-panels"]');
+    expect(panels).not.toBeNull();
+    expect(
+      within(panels as HTMLElement).getByRole('heading', { level: 2, name: msg('panels.git.title') }),
+    ).toBeInTheDocument();
   });
 
   it('shows placeholders while the data loads, not zeros', () => {

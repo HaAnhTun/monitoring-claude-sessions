@@ -558,6 +558,244 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-54
   // @wp-begin WP-65
+  // The workspace panels in the right column of the Overview. Before the shot every open panel has drawn its body, and the page is
+  // scrolled so that the panels are the first thing in view (the column starts below the ingestion summary).
+  {
+    // The live instance enables Machine, Git and Ledger, so the machine, the repository and the ledger are the real ones of the QA
+    // folder. Below 900 px the panels start collapsed, which is the state this view shows there.
+    id: 'overview-panels',
+    path: '/',
+    mode: 'live',
+    wait: 'main .workspace-panels .panel[data-panel="git"]',
+    setup: async ({ page }) => {
+      // No open panel is still loading (a panel that failed is a state worth shooting too).
+      const loading = page.locator(
+        'main .workspace-panels .panel[data-status="loading"]:has(.panel-toggle[aria-expanded="true"])',
+      );
+      const deadline = Date.now() + 20_000;
+      while ((await loading.count()) > 0) {
+        if (Date.now() > deadline) throw new Error('a panel is still loading');
+        await page.waitForTimeout(100);
+      }
+      await page.evaluate(
+        `document.querySelector('main .workspace-panels')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -72);`,
+      );
+    },
+  },
+  {
+    // The same panels with every one of them open, whatever the width: the small-window view of their bodies.
+    id: 'overview-panels-open',
+    path: '/',
+    mode: 'live',
+    wait: 'main .workspace-panels .panel[data-panel="git"]',
+    setup: async ({ page }) => {
+      const toggles = page.locator('main .workspace-panels .panel-toggle[aria-expanded="false"]');
+      await page.locator('main .workspace-panels .panel-toggle').first().waitFor({ state: 'visible', timeout: 20_000 });
+      while ((await toggles.count()) > 0) await toggles.first().click();
+      // No open panel is still loading (a panel that failed is a state worth shooting too).
+      const loading = page.locator(
+        'main .workspace-panels .panel[data-status="loading"]:has(.panel-toggle[aria-expanded="true"])',
+      );
+      const deadline = Date.now() + 20_000;
+      while ((await loading.count()) > 0) {
+        if (Date.now() > deadline) throw new Error('a panel is still loading');
+        await page.waitForTimeout(100);
+      }
+      await page.evaluate(
+        `document.querySelector('main .workspace-panels')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -72);`,
+      );
+    },
+  },
+  {
+    // Every panel in a state of its own: Git with the STOP file and a long branch name, Machine partial (memory high, CPU not
+    // supported, Docker unavailable), Attempts with every result, Ledger with PASS and FAIL cells, a chain log that holds a hostile
+    // line, Logs with one file being written and one idle, one of them stale. All panels are open.
+    id: 'overview-panels-partial',
+    path: '/',
+    mode: 'fixture',
+    wait: 'main .workspace-panels .panel[data-panel="git"]',
+    setup: async ({ page, fixture }) => {
+      if (fixture === null) return;
+      const f = await import('../../src/test/fixtures/index.ts');
+      type Attempt = ReturnType<typeof f.makePanelData<'attempts'>>['rows'][number];
+      const attempt = (n: number, over: Partial<Attempt>): Attempt => ({
+        part: `build step ${String(n)}`,
+        n,
+        model: 'FIXTURE-model',
+        effort: 'high',
+        startedAt: f.iso(-3600 + n * 300),
+        endedAt: f.iso(-3600 + n * 300 + 240),
+        exit: 0,
+        status: 'PASS',
+        state: 'COMPLETED',
+        sessionId: null,
+        usage: f.makeUsage({ output: 4200 * n }),
+        attemptId: n,
+        nRaw: String(n),
+        exitRaw: '0',
+        endReason: 'ended',
+        evidence: 'the log line of the part matched a transcript that started 2s later',
+        matchDeltaS: 2,
+        ...over,
+      });
+      const hostile = '<img src=x onerror=alert(1)> FIXTURE hostile line';
+      fixture.fake.handlers.panel = (_query, request) => {
+        switch (request.params['key'] ?? 'logs') {
+          case 'git':
+            return f.makePanelResponse('git', {
+              data: {
+                ...f.makePanelData('git'),
+                branch: 'feature/a-rather-long-branch-name-for-the-overview-panel',
+                dirty: 3,
+                stopFile: true,
+                commits: [
+                  {
+                    hash: 'a1b2c3d4e5f6',
+                    subject: 'Parse the transcript tail without reading the whole file',
+                    at: f.iso(-600),
+                  },
+                  { hash: '0f9e8d7c6b5a', subject: 'Add the machine panel samplers', at: f.iso(-7200) },
+                  { hash: '1122334455aa', subject: 'Fix the stale marker of a list', at: f.iso(-90_000) },
+                ],
+              },
+            });
+          case 'machine':
+            return f.makePanelResponse('machine', {
+              status: 'partial',
+              sources: [
+                { source: 'memory', status: 'ok', sampledAt: f.iso(-1), message: null },
+                {
+                  source: 'cpu',
+                  status: 'unsupported',
+                  sampledAt: null,
+                  message: 'CPU load is not available on this platform',
+                },
+                { source: 'processes', status: 'ok', sampledAt: f.iso(-2), message: null },
+                {
+                  source: 'docker',
+                  status: 'unavailable',
+                  sampledAt: f.iso(-5),
+                  message: 'the docker command was not found',
+                },
+              ],
+              data: {
+                ...f.makePanelData('machine'),
+                usedPct: 88,
+                totalGb: 16,
+                freeGb: 1.9,
+                cpuPct: null,
+                procs: [
+                  { name: 'node', count: 4, mb: 1234 },
+                  { name: 'claude', count: 2, mb: 880 },
+                  { name: 'a-process-with-a-rather-long-name', count: 1, mb: null },
+                ],
+                procsStatus: 'ok',
+                dockerEnabled: true,
+                dockerStatus: 'unavailable',
+                docker: [],
+              },
+            });
+          case 'attempts':
+            return f.makePanelResponse('attempts', {
+              data: {
+                sourceState: 'ok',
+                rows: [
+                  attempt(1, { sessionId: fixtureId(1) }),
+                  attempt(2, { state: 'FAILED', status: 'FAIL', exit: 1, sessionId: fixtureId(2) }),
+                  attempt(3, {
+                    state: 'RUNNING',
+                    endedAt: null,
+                    status: null,
+                    exit: null,
+                    endReason: 'open',
+                    usage: null,
+                  }),
+                  attempt(4, {
+                    state: null,
+                    status: null,
+                    exit: null,
+                    model: null,
+                    effort: null,
+                    part: 'a part whose name is rather long indeed',
+                  }),
+                ],
+              },
+            });
+          case 'ledger':
+            return f.makePanelResponse('ledger', {
+              data: {
+                lines: [
+                  '| part | result | note |',
+                  '| --- | --- | --- |',
+                  '| backend build | PASS | 412 tests |',
+                  '| frontend build | FAIL | 2 type errors |',
+                  '| deploy | BLOCKED | waiting for the build |',
+                ],
+                file: 'ledger/progress.md',
+                exists: true,
+                sizeBytes: 540,
+                modifiedAt: f.iso(-300),
+              },
+            });
+          case 'chainLog':
+            return f.makePanelResponse('chainLog', {
+              data: {
+                lines: [
+                  '[10:01:02] step A started',
+                  '[10:04:11] step A finished',
+                  hostile,
+                  '[10:04:12] step B started with a long line that needs to wrap inside the narrow column of the overview page',
+                ],
+                file: 'chain.log',
+                exists: true,
+                sizeBytes: 300,
+                modifiedAt: f.iso(-20),
+              },
+            });
+          default:
+            return f.makePanelResponse('logs', {
+              generatedAt: f.iso(-120),
+              data: {
+                matchedFiles: 6,
+                files: [
+                  {
+                    name: 'backend.log',
+                    ageS: 4,
+                    sizeBytes: 1_250_000,
+                    tail: ['INFO server started', 'INFO request handled in 12 ms', hostile],
+                    relPath: 'logs/backend.log',
+                    modifiedAt: f.iso(-4),
+                  },
+                  {
+                    name: 'worker.log',
+                    ageS: 640,
+                    sizeBytes: 8200,
+                    tail: ['INFO worker idle'],
+                    relPath: 'logs/worker.log',
+                    modifiedAt: f.iso(-640),
+                  },
+                ],
+              },
+            });
+        }
+      };
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const toggles = page.locator('main .workspace-panels .panel-toggle[aria-expanded="false"]');
+      await page.locator('main .workspace-panels .panel-toggle').first().waitFor({ state: 'visible', timeout: 20_000 });
+      while ((await toggles.count()) > 0) await toggles.first().click();
+      await page
+        .locator('main .workspace-panels .panel[data-panel="logs"] .panel-log')
+        .first()
+        .waitFor({ state: 'visible', timeout: 20_000 });
+      await page
+        .locator('main .workspace-panels .panel[data-panel="machine"] .meter')
+        .first()
+        .waitFor({ state: 'visible', timeout: 20_000 });
+      await page.evaluate(
+        `document.querySelector('main .workspace-panels')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -72);`,
+      );
+    },
+  },
   // @wp-end WP-65
   // @wp-begin WP-66
   {

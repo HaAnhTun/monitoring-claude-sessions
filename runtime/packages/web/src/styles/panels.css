@@ -1,1 +1,431 @@
-/* Workspace panel styles (filled by the panels work package). */
+/* Workspace panels (04-ui.md 4.4.1, ADR 0073 decision 9): Git, Machine, Attempts, Ledger, Chain log and Logs in the right column of the
+   Overview. Each panel is a flush card whose heading is the toggle; the body is a short list of facts, a small table or a text tail.
+   Numbers are tabular, long text is cut with its full text in the title, and nothing here is wider than the column. */
+
+/* One column in the narrow side column of a wide window; two or more where the panels stack under the main column. */
+.workspace-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  align-items: start;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+/* ---- the frame ---- */
+.panel {
+  padding: 0;
+  overflow: hidden;
+}
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-inline-end: var(--sp-5);
+}
+.panel__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+}
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: var(--sp-3) var(--sp-5);
+  color: var(--text);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  text-align: start;
+  cursor: pointer;
+}
+.panel-toggle:hover {
+  background: var(--surface-2);
+}
+.panel-toggle:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.panel-toggle > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel__icon {
+  color: var(--text-muted);
+}
+.panel__asof {
+  flex: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* The status line says what is wrong with the data under it; it is empty (and hidden) while all is well. */
+.panel-status {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+.panel-status:empty {
+  display: none;
+}
+.panel[data-status='error'] .panel-status {
+  color: var(--failed-fg);
+}
+.panel[data-status='stale'] .panel-status {
+  color: var(--stale-fg);
+}
+.panel[data-status='partial'] .panel-status {
+  color: var(--partial-fg);
+}
+.panel-status__notes {
+  margin: var(--sp-1) 0 0;
+  padding-inline-start: var(--sp-5);
+}
+
+.panel-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.panel-section__title {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-xs);
+}
+.panel-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.panel-meta__file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-meta time {
+  flex: none;
+}
+
+/* ---- a meter: label and value above a thin bar ---- */
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.meter__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.meter__label {
+  color: var(--text-muted);
+}
+.meter__value {
+  min-width: 0;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium);
+  text-align: end;
+}
+.meter__value.muted {
+  font-weight: var(--fw-regular);
+}
+.meter__high {
+  padding: 0 var(--sp-2);
+  color: var(--failed-fg);
+  background: var(--failed-bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-xs);
+}
+.meter__track {
+  block-size: 6px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+}
+.meter__fill {
+  display: block;
+  block-size: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: inline-size var(--t-med);
+}
+.meter__track[data-high='true'] .meter__fill {
+  background: var(--state-failed-dot);
+}
+.panel-machine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.panel-machine__meters {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+/* ---- tables (processes, attempts, ledger) ---- */
+.panel-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.panel-table th,
+.panel-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--border-w) solid var(--border);
+  text-align: start;
+  vertical-align: middle;
+}
+.panel-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.panel-table th:first-child,
+.panel-table td:first-child {
+  padding-inline-start: 0;
+}
+.panel-table th:last-child,
+.panel-table td:last-child {
+  padding-inline-end: 0;
+}
+.panel-table thead th {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.panel-table tbody th {
+  font-weight: var(--fw-medium);
+}
+/* The first column takes the room the figures leave and cuts its text (the full text is in the title). */
+.panel-table th.panel-table__name {
+  width: 100%;
+  min-width: 6rem;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-table th.panel-table__num,
+.panel-table td.panel-table__num {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+.panel-attempt__part,
+.panel-attempt__detail {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-attempt__part a {
+  color: var(--text);
+}
+.panel-attempt__part a:hover {
+  color: var(--accent);
+}
+.panel-attempt__detail {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-xs);
+}
+
+/* ---- git ---- */
+.panel-git {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.panel-git__branch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  font-weight: var(--fw-medium);
+}
+.panel-git__branch .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-git__dirty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.panel-git__dirty[data-dirty='true'] {
+  color: var(--text);
+}
+.panel-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--failed-fg);
+  background: var(--failed-bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-sm);
+}
+.panel-commits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.panel-commit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.panel-commit__hash {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.panel-commit__subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-commit__time {
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* ---- text tails (chain log, logs) and docker lines ---- */
+.panel-tail {
+  max-height: 11rem;
+  margin: 0;
+  padding: var(--sp-3);
+  overflow: auto;
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.panel-tail:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.panel-chain-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.panel-logs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.panel-logs__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.panel-log__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.panel-log__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-log__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--tone-fg);
+  background: transparent;
+  white-space: nowrap;
+}
+.panel-log__size {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.panel-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  list-style: none;
+}
+.panel-lines > li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The ledger is free-form: its first column keeps to its text (up to a limit) and the other columns share the rest. */
+.panel-ledger .panel-table th.panel-table__name {
+  width: auto;
+  min-width: 0;
+  max-width: 9rem;
+}
+.panel-ledger .panel-table td {
+  overflow-wrap: anywhere;
+}

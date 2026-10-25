@@ -1,7 +1,7 @@
 import { buildPath, routes, type InstanceInfo, type PanelKey, type PanelResponse } from '@mcs/shared';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
-import { ApiError } from '../api-errors.ts';
+import { ApiError, describeFailure } from '../api-errors.ts';
 import { panelEndpoint } from '../endpoints.ts';
 import { qk } from '../query-keys.ts';
 import { useDataEnv } from './useInstance.ts';
@@ -48,7 +48,7 @@ export function usePanel<K extends PanelKey>(key: K, options: UsePanelOptions): 
         signal,
       });
       if (!isPanelResponse(response, key)) {
-        throw new ApiError(`The monitor sent data this page does not understand (${panelEndpoint(key)})`, {
+        throw new ApiError(`${describeFailure('contract', 200, '', 0)} (${panelEndpoint(key)})`, {
           kind: 'contract',
           status: 200,
           code: null,
