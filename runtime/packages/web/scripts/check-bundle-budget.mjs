@@ -9,7 +9,8 @@ import { gzipSync } from 'node:zlib';
 const KB = 1000;
 export const LIMITS = {
   initialJs: 200 * KB,
-  allJs: 260 * KB,
+  // ADR 0071 decision 12: all chunks, both locales, seven pages and one hand-drawn chart
+  allJs: 340 * KB,
   css: 25 * KB,
 };
 
