@@ -71,6 +71,13 @@ const BUILD_MS = 120_000;
 const NODE_FILES = ['mcs-cli.mjs', 'mcs-hook.mjs', 'mcs-server.mjs'];
 /** Optional requires a bundled package wraps in try/catch and does without (`debug` probes `supports-color`). */
 const OPTIONAL_REQUIRES = new Set(['supports-color']);
+/**
+ * Text that looks like a require call but is not one: the code generator of `ajv` (a dependency of the MCP SDK) keeps
+ * `require("ajv/dist/runtime/validation_error")` (and `ajv-formats` the same for its formats) inside tagged templates that it
+ * only emits into standalone validators, which this runtime never generates. The MCP bundle test (`packages/cli/test/mcp-bundle.int.test.ts`) runs the server from
+ * the bundle alone.
+ */
+const GENERATED_CODE_TEXT = new Set(['ajv/dist/runtime/validation_error', 'ajv-formats/dist/formats']);
 // The native SQLite addon that ADR 0064 rules out, spelled in parts: the driver boundary test of
 // `engine/src/db/driver.test.ts` reads a call with this name as its first argument as an import.
 const NATIVE_SQLITE = ['better', 'sqlite3'].join('-');
@@ -200,7 +207,10 @@ describe('buildBundle', () => {
       for (const spec of importSpecifiers(code)) expect(spec, `${file}: ${spec}`).toMatch(/^node:/);
       for (const match of codeOnly(code).matchAll(/\b(?:__require|require)\(\s*["']([^"']+)["']\s*\)/g)) {
         const spec = match[1] ?? '';
-        expect(builtins.has(spec) || OPTIONAL_REQUIRES.has(spec), `${file} requires ${spec}`).toBe(true);
+        expect(
+          builtins.has(spec) || OPTIONAL_REQUIRES.has(spec) || GENERATED_CODE_TEXT.has(spec),
+          `${file} requires ${spec}`,
+        ).toBe(true);
       }
     }
   });
