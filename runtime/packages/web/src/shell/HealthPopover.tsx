@@ -21,7 +21,7 @@ import { useStreamSnapshot } from '../stream/StreamProvider.tsx';
 /** The most server errors the panel lists; the settings page holds the rest. */
 export const MAX_ERRORS_SHOWN = 5;
 
-const STREAM_STATUS_KEYS = {
+export const STREAM_STATUS_KEYS = {
   idle: 'live.stream.status.idle',
   connecting: 'live.stream.status.connecting',
   open: 'live.stream.status.open',

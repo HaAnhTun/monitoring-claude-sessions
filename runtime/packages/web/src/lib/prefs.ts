@@ -117,6 +117,11 @@ export interface Prefs {
   /** Validates, keeps the value in memory and tries to persist it; false when it was rejected or could not be written. */
   set<K extends PrefName>(name: K, value: PrefsData[K]): boolean;
   all(): Partial<PrefsData>;
+  /**
+   * Forgets every stored preference except the named ones and writes the result under this store's key only (the legacy key and
+   * every other key of the page stay as they are). False when nothing could be written.
+   */
+  clear(keep?: readonly PrefName[]): boolean;
   /** False once storage was missing, corrupt or refused a write. */
   readonly persistent: boolean;
 }
@@ -185,6 +190,12 @@ export function createPrefs(storage: StorageLike | null, key: string = PREFS_KEY
       return flush();
     },
     all: () => ({ ...data }),
+    clear(keep = []) {
+      const kept: Partial<PrefsData> = {};
+      for (const name of keep) copyKnown(kept, data, name);
+      data = kept;
+      return flush();
+    },
     get persistent() {
       return persistent;
     },

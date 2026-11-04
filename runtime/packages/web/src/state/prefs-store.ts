@@ -13,6 +13,8 @@ export interface PrefsStore {
   readonly subscribe: (listener: () => void) => () => void;
   /** False when the value was rejected or could not be persisted (it is still kept in memory when valid). */
   readonly setPref: <K extends PrefName>(name: K, value: PrefsData[K]) => boolean;
+  /** Forgets every stored preference except the named ones (the reset of the display preferences); false when it could not be persisted. */
+  readonly resetPrefs: (keep?: readonly PrefName[]) => boolean;
   readonly persistent: boolean;
 }
 
@@ -34,6 +36,16 @@ export function createPrefsStore(prefs: Prefs): PrefsStore {
       const after = prefs.get(name);
       if (after !== before) {
         snapshot = prefs.all();
+        for (const listener of [...listeners]) listener();
+      }
+      return persisted;
+    },
+    resetPrefs: (keep) => {
+      const before = snapshot;
+      const persisted = prefs.clear(keep);
+      const after = prefs.all();
+      if (Object.keys(before).length > 0 || Object.keys(after).length > 0) {
+        snapshot = after;
         for (const listener of [...listeners]) listener();
       }
       return persisted;

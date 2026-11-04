@@ -26,7 +26,7 @@ const DENSITIES = [
  * The name of a language in that language ("English", the Vietnamese name in Vietnamese), so a reader who cannot read the current
  * language still finds theirs. The browser knows the names; the catalogue name is the fallback of a browser that does not.
  */
-function languageName(code: Locale, fallback: string): string {
+export function languageName(code: Locale, fallback: string): string {
   try {
     const name = new Intl.DisplayNames([code], { type: 'language' }).of(code);
     if (name !== undefined && name !== code) return name.charAt(0).toLocaleUpperCase(code) + name.slice(1);

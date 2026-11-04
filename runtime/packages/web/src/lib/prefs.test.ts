@@ -233,4 +233,37 @@ describe('language and table columns (ADR 0072, ADR 0073)', () => {
     });
     expect(createPrefs(st).all()).toEqual({ theme: 'light' });
   });
+
+  describe('clear (the reset of the display preferences)', () => {
+    it('empties the stored value, keeps the named preferences and leaves every other key alone', () => {
+      const st = new MemStorage({
+        other: 'untouched',
+        [LEGACY_PREFS_KEY]: JSON.stringify({ theme: 'light' }),
+        [PREFS_KEY]: JSON.stringify({ theme: 'dark', density: 'compact', lastInstanceId: 'iid-1' }),
+      });
+      const p = createPrefs(st);
+      expect(p.clear(['lastInstanceId'])).toBe(true);
+      expect(p.all()).toEqual({ lastInstanceId: 'iid-1' });
+      expect(JSON.parse(st.m.get(PREFS_KEY) ?? 'null')).toEqual({ lastInstanceId: 'iid-1' });
+      expect(st.m.get('other')).toBe('untouched');
+      expect(st.m.get(LEGACY_PREFS_KEY)).toBe(JSON.stringify({ theme: 'light' }));
+      expect(st.writes.every((key) => key === PREFS_KEY)).toBe(true);
+    });
+
+    it('clears everything without a keep list, and a later load does not import the legacy key again', () => {
+      const st = new MemStorage({ [PREFS_KEY]: JSON.stringify({ theme: 'dark' }) });
+      const p = createPrefs(st);
+      expect(p.clear()).toBe(true);
+      expect(p.all()).toEqual({});
+      expect(createPrefs(st).all()).toEqual({});
+    });
+
+    it('empties memory and reports false when storage refuses the write', () => {
+      const p = createPrefs(throwing);
+      p.set('theme', 'dark');
+      expect(p.clear()).toBe(false);
+      expect(p.all()).toEqual({});
+      expect(createPrefs(null).clear()).toBe(false);
+    });
+  });
 });

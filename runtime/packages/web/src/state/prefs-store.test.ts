@@ -125,6 +125,31 @@ describe('prefs store (04-ui.md section 9, ADR 0036)', () => {
   });
 });
 
+describe('resetPrefs', () => {
+  it('replaces the snapshot, notifies once and writes only the v3 key; the kept preference stays', () => {
+    const storage = new MemoryStorage();
+    const store = storeOf(storage);
+    store.setPref('theme', 'dark');
+    store.setPref('lastInstanceId', 'iid-1');
+    const before = store.getSnapshot();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    expect(store.resetPrefs(['lastInstanceId'])).toBe(true);
+    expect(store.getSnapshot()).toEqual({ lastInstanceId: 'iid-1' });
+    expect(store.getSnapshot()).not.toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(new Set(storage.writes)).toEqual(new Set([PREFS_KEY]));
+  });
+
+  it('does not notify when there was nothing to clear', () => {
+    const store = storeOf(new MemoryStorage());
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.resetPrefs();
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
 describe('usePrefs', () => {
   function wrapperFor(store: PrefsStore) {
     return ({ children }: { children: ReactNode }) => createElement(PrefsStoreContext, { value: store }, children);
