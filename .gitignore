@@ -16,3 +16,4 @@ runtime/.dev/
 runtime/packages/web/e2e/test-results/
 runtime/packages/web/e2e/playwright-report/
 *.tsbuildinfo
+runtime/bench/results/
