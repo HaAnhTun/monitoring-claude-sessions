@@ -9773,6 +9773,804 @@ const InstanceInfoSchema = strictObject({
 });
 
 //#endregion
+//#region packages/shared/src/api/completion.ts
+/** A label is 1..200 code points (the length a stored session label is clipped to). */
+const COMPLETION_LABEL_MAX = 200;
+/** An attempt part is 0..512 code points (the `attempt_runs.part` column cap of 03 3.5, registry C17). */
+const COMPLETION_PART_MAX = 512;
+const COMPLETION_OUTCOMES = [
+	"completed",
+	"failed",
+	"not_terminal"
+];
+const CompletionOutcomeSchema = _enum(COMPLETION_OUTCOMES);
+const COMPLETION_RESOLVED_BY = [
+	"session_id",
+	"label",
+	"attempt_part"
+];
+const CompletionResolvedBySchema = _enum(COMPLETION_RESOLVED_BY);
+/**
+* True when `text` has at most `max` code points. A text longer than `2 * max` UTF-16 units cannot fit, so a very long
+* text is refused without being walked.
+*/
+function withinCodePoints(text, max) {
+	if (text.length <= max) return true;
+	if (text.length > 2 * max) return false;
+	return Array.from(text).length <= max;
+}
+/**
+* What `explainCompletion` found. `outcome` is terminal (`completed`, `failed`) only when `basis` is `observed` (D9: an
+* inferred state is never terminal). `sessionId` is `null` only for an ended attempt row that no session matched.
+*/
+const CompletionEvidenceSchema = strictObject({
+	outcome: CompletionOutcomeSchema,
+	state: LifecycleStateSchema,
+	basis: StateAssessmentSchema.shape.basis,
+	confidence: StateAssessmentSchema.shape.confidence,
+	/** The evidence of the deciding view, words rendered at the time of the answer. */
+	evidence: array(EvidenceItemSchema).max(8),
+	sessionId: SessionIdSchema.nullable(),
+	/** The lifecycle rule (`S-1` .. `S-10`) or `C-ATT-ENDED`, `C-ATT-OPEN`, `C-ATT-SUPERSEDED` for an attempt row alone. */
+	ruleId: string(),
+	resolvedBy: CompletionResolvedBySchema,
+	/** Sessions (by label) or attempt rows (by part) that matched the target; 1 for a session id. */
+	candidates: number$1().int().min(1).max(Number.MAX_SAFE_INTEGER)
+});
+/** The body of `GET /completion`: the evidence and the change-log head it was read at. */
+const CompletionResponseSchema = CompletionEvidenceSchema.extend({ asOfSeq: CountSchema$1 });
+/**
+* `GET /completion?session=` or `?label=` or `?attemptPart=`: exactly one. `attemptPart` may be present and empty; the
+* label is not trimmed because it is compared to stored labels for exact equality.
+*/
+const CompletionQuerySchema = strictObject({
+	session: SessionIdSchema.optional(),
+	label: string().min(1).refine((text) => withinCodePoints(text, 200), { error: `Expected at most ${String(200)} characters` }).meta({
+		minLength: 1,
+		maxLength: 200
+	}).optional(),
+	attemptPart: string().refine((text) => withinCodePoints(text, 512), { error: `Expected at most ${String(512)} characters` }).meta({ maxLength: 512 }).optional()
+}).refine((q) => [
+	q.session,
+	q.label,
+	q.attemptPart
+].filter((value) => value !== void 0).length === 1, {
+	message: "exactly one of session, label and attemptPart is required",
+	path: ["session"]
+});
+
+//#endregion
+//#region packages/shared/src/api/filters.ts
+const MAX_INT = Number.MAX_SAFE_INTEGER;
+/** `1h 6h 24h 7d 30d all`; presets resolve with the server clock. */
+const PRESETS = [
+	"1h",
+	"6h",
+	"24h",
+	"7d",
+	"30d",
+	"all"
+];
+const PresetSchema = _enum(PRESETS);
+const HOUR_MS$9 = 36e5;
+const DAY_MS$3 = 864e5;
+const PRESET_MS = {
+	"1h": HOUR_MS$9,
+	"6h": 6 * HOUR_MS$9,
+	"24h": 24 * HOUR_MS$9,
+	"7d": 7 * DAY_MS$3,
+	"30d": 30 * DAY_MS$3
+};
+/** A comma-separated list of 1..`max` values, each checked by `item`. */
+function csvOf(item, max) {
+	return string().transform((text) => text.split(",")).pipe(array(item).min(1).max(max));
+}
+/** A flag: the text `1` means true; any other text is refused. */
+const flagParam = literal("1").transform(() => true);
+/** Text trimmed to `min..max` characters. A too-short `q` is reported as `query_too_short` (see `classifyQueryIssues`). */
+function textOf$2(min, max) {
+	return string().transform((text) => text.trim()).pipe(string().min(min).max(max));
+}
+const STATE_FILTER_VALUES = [...LIFECYCLE_STATES, "active"];
+const StateFilterSchema = _enum(STATE_FILTER_VALUES);
+const DirSchema = _enum(["asc", "desc"]);
+const SeveritySchema = _enum([
+	"info",
+	"warning",
+	"error"
+]);
+const CursorParam = string().min(1).max(512);
+/** Expands the alias `active` and removes duplicates; the order of first appearance is kept. */
+function expandStateFilter(states) {
+	const out = [];
+	for (const state of states) for (const concrete of state === "active" ? ACTIVE_STATES : [state]) if (!out.includes(concrete)) out.push(concrete);
+	return out;
+}
+const f = {
+	q: textOf$2(2, 200),
+	state: csvOf(StateFilterSchema, 10),
+	presence: csvOf(_enum([
+		"open",
+		"ended",
+		"unknown"
+	]), 3),
+	project: csvOf(ProjectIdSchema, 20),
+	workItem: intString(1, MAX_INT),
+	session: csvOf(SessionIdSchema, 50),
+	agent: AgentIdSchema,
+	type: csvOf(_enum(EVENT_KINDS), 40),
+	category: csvOf(_enum(EVENT_CATEGORIES), 8),
+	severity: csvOf(SeveritySchema, 3),
+	tool: csvOf(ToolNameSchema, 20),
+	status: csvOf(_enum(TOOL_STATUSES), 6),
+	model: csvOf(ModelIdSchema, 10),
+	hasErrors: flagParam,
+	includeInternal: flagParam,
+	range: PresetSchema,
+	from: IsoTimeInputSchema,
+	to: IsoTimeInputSchema,
+	window: flagParam,
+	includeUnmatched: flagParam,
+	dir: DirSchema,
+	cursor: CursorParam,
+	includeTotal: flagParam
+};
+const opt = (schema) => schema.optional();
+/** `range`, `from`, `to`: the explicit-time group of 5.4. */
+const timeShape = {
+	range: opt(f.range),
+	from: opt(f.from),
+	to: opt(f.to)
+};
+/** The same group plus `window=1`. */
+const windowedTimeShape = {
+	...timeShape,
+	window: opt(f.window)
+};
+function pagingShape(sorts, defaultLimit, maxLimit) {
+	return {
+		sort: _enum(sorts).default(sorts[0]),
+		dir: opt(f.dir),
+		cursor: opt(f.cursor),
+		limit: intString(1, maxLimit).default(defaultLimit)
+	};
+}
+function agentNeedsOneSession(q) {
+	return q.agent === void 0 || q.session?.length === 1;
+}
+const AGENT_NEEDS_SESSION = {
+	message: "agent requires exactly one session",
+	path: ["agent"]
+};
+const SESSION_SORTS = [
+	"lastActivity",
+	"started",
+	"duration",
+	"tokens",
+	"state",
+	"label",
+	"errors"
+];
+const AGENT_SORTS = ["lastActivity", "started"];
+const TOOL_CALL_SORTS = ["started", "duration"];
+const SessionListQuerySchema = strictObject({
+	q: opt(f.q),
+	state: opt(f.state),
+	presence: opt(f.presence),
+	project: opt(f.project),
+	workItem: opt(f.workItem),
+	model: opt(f.model),
+	hasErrors: opt(f.hasErrors),
+	...windowedTimeShape,
+	tokensMin: opt(intString(0, 0x38d7ea4c68000)),
+	tokensMax: opt(intString(0, 0x38d7ea4c68000)),
+	includeUnmatched: opt(f.includeUnmatched),
+	...pagingShape(SESSION_SORTS, 50, 200),
+	/** Only the session list counts its rows (capped at 10000). */
+	includeTotal: opt(f.includeTotal)
+}).refine((q) => q.tokensMin === void 0 || q.tokensMax === void 0 || q.tokensMin <= q.tokensMax, {
+	message: "tokensMin must not exceed tokensMax",
+	path: ["tokensMin"]
+});
+const AgentListQuerySchema = strictObject({
+	state: opt(f.state),
+	kind: opt(csvOf(_enum(AGENT_KINDS$1), 5)),
+	q: opt(f.q),
+	session: opt(f.session),
+	project: opt(f.project),
+	hasErrors: opt(f.hasErrors),
+	includeInternal: opt(f.includeInternal),
+	...windowedTimeShape,
+	includeUnmatched: opt(f.includeUnmatched),
+	...pagingShape(AGENT_SORTS, 50, 200)
+});
+const SessionAgentsQuerySchema = strictObject({
+	state: opt(f.state),
+	includeInternal: opt(f.includeInternal),
+	cursor: opt(f.cursor),
+	limit: intString(1, 500).default(200)
+});
+const eventFilterShape = {
+	type: opt(f.type),
+	category: opt(f.category),
+	severity: opt(f.severity),
+	agent: opt(f.agent),
+	workItem: opt(f.workItem),
+	tool: opt(f.tool),
+	q: opt(f.q),
+	...timeShape,
+	dir: opt(f.dir),
+	cursor: opt(f.cursor),
+	/** At most 200, and up to 500 only with `afterId` (the live tail). */
+	limit: intString(1, 500).default(100),
+	around: opt(intString(1, MAX_INT)),
+	afterId: opt(intString(1, MAX_INT))
+};
+function eventModes(q) {
+	return !(q.around !== void 0 && q.afterId !== void 0);
+}
+const EVENT_MODES = {
+	message: "around and afterId cannot be combined",
+	path: ["around"]
+};
+/** `around` opens a walk; a `cursor` continues one. The pair is refused instead of the cursor being ignored (CR-WP-30-6). */
+function eventAroundStart(q) {
+	return !(q.around !== void 0 && q.cursor !== void 0);
+}
+const EVENT_AROUND_START = {
+	message: "around cannot be combined with cursor",
+	path: ["around"]
+};
+function eventLimit(q) {
+	return q.limit <= 200 || q.afterId !== void 0;
+}
+const EVENT_LIMIT = {
+	message: "limit is at most 200 (500 with afterId)",
+	path: ["limit"]
+};
+const EventListQuerySchema = strictObject({
+	session: opt(f.session),
+	project: opt(f.project),
+	...eventFilterShape
+}).refine(agentNeedsOneSession, AGENT_NEEDS_SESSION).refine(eventModes, EVENT_MODES).refine(eventAroundStart, EVENT_AROUND_START).refine(eventLimit, EVENT_LIMIT);
+/** `sessionTimeline`: the events parameters without `session` and `project` (the session is in the path). */
+const SessionTimelineQuerySchema = strictObject(eventFilterShape).refine(eventModes, EVENT_MODES).refine(eventAroundStart, EVENT_AROUND_START).refine(eventLimit, EVENT_LIMIT);
+const ToolCallListQuerySchema = strictObject({
+	session: opt(f.session),
+	agent: opt(f.agent),
+	project: opt(f.project),
+	tool: opt(f.tool),
+	status: opt(f.status),
+	q: opt(f.q),
+	...timeShape,
+	...pagingShape(TOOL_CALL_SORTS, 50, 200)
+}).refine(agentNeedsOneSession, AGENT_NEEDS_SESSION);
+/** `sessionToolCalls`: the session is in the path. */
+const SessionToolCallsQuerySchema = strictObject({
+	agent: opt(f.agent),
+	tool: opt(f.tool),
+	status: opt(f.status),
+	q: opt(f.q),
+	...timeShape,
+	...pagingShape(TOOL_CALL_SORTS, 50, 200)
+});
+const TransitionListQuerySchema = strictObject({
+	agent: opt(f.agent),
+	cursor: opt(f.cursor),
+	limit: intString(1, 200).default(50)
+});
+const ERROR_SOURCES = [
+	"server",
+	"spool",
+	"transcript",
+	"external",
+	"writer",
+	"handler",
+	"alerts",
+	"db"
+];
+const ErrorsQuerySchema = strictObject({
+	since: opt(f.from),
+	source: opt(csvOf(_enum(ERROR_SOURCES), 8)),
+	limit: intString(1, 200).default(50)
+});
+const OverviewQuerySchema = strictObject({
+	...windowedTimeShape,
+	includeUnmatched: opt(f.includeUnmatched)
+});
+const WorkItemBoardQuerySchema = strictObject({
+	state: opt(csvOf(_enum(BOARD_STATES), 6)),
+	q: opt(f.q)
+});
+const AlertListQuerySchema = strictObject({
+	status: csvOf(_enum(["open", "resolved"]), 2).prefault("open"),
+	severity: opt(csvOf(_enum(["warning", "critical"]), 2)),
+	rule: opt(csvOf(_enum(ALERT_RULE_KINDS), 8)),
+	session: opt(f.session),
+	cursor: opt(f.cursor),
+	limit: intString(1, 200).default(50)
+});
+const UsageQuerySchema = strictObject({
+	groupBy: _enum([
+		"model",
+		"session",
+		"project",
+		"workItem",
+		"agent",
+		"none"
+	]).default("model"),
+	session: opt(f.session),
+	project: opt(f.project),
+	workItem: opt(f.workItem),
+	model: opt(f.model),
+	...windowedTimeShape,
+	limit: intString(1, 500).default(50),
+	includeCost: opt(flagParam)
+});
+const SessionUsageQuerySchema = strictObject({
+	groupBy: _enum(["agent", "model"]).default("agent"),
+	includeCost: opt(flagParam)
+});
+const SeriesQuerySchema = strictObject({
+	bucket: _enum(["hour", "day"]).default("day"),
+	tzOffsetMinutes: intString(-840, 840).default(0),
+	groupBy: _enum(["none", "model"]).default("none"),
+	session: opt(f.session),
+	project: opt(f.project),
+	workItem: opt(f.workItem),
+	model: opt(f.model),
+	...timeShape
+});
+const AnalyticsToolsQuerySchema = strictObject({
+	groupBy: _enum(["tool", "mcpServer"]).default("tool"),
+	session: opt(f.session),
+	agent: opt(f.agent),
+	project: opt(f.project),
+	tool: opt(f.tool),
+	...timeShape,
+	limit: intString(1, 200).default(50)
+}).refine(agentNeedsOneSession, AGENT_NEEDS_SESSION);
+const TranscriptWindowQuerySchema = strictObject({
+	agent: f.agent.default("main"),
+	/** Entries after this index (`-1` = the tail); `before` wins when both are present. */
+	after: intString(-1, MAX_INT).default(-1),
+	before: opt(intString(0, MAX_INT)),
+	/** 1..2000; the server default is 250 for tail and `before`, 2000 for `after`. */
+	limit: opt(intString(1, 2e3)),
+	/** 200..20000; the server default is config `limits.text_chars`. */
+	textChars: opt(intString(200, 2e4)),
+	thinking: opt(flagParam)
+});
+const TranscriptLocateQuerySchema = strictObject({
+	agent: f.agent.default("main"),
+	i: opt(intString(-MAX_INT, MAX_INT)),
+	ts: opt(f.from),
+	offset: opt(intString(0, MAX_INT))
+}).refine((q) => [
+	q.i,
+	q.ts,
+	q.offset
+].filter((value) => value !== void 0).length === 1, {
+	message: "exactly one of i, ts and offset is required",
+	path: ["i"]
+});
+const EntryKindsParam = csvOf(_enum(ENTRY_KINDS), 5);
+const TranscriptSearchQuerySchema = strictObject({
+	session: SessionIdSchema,
+	agent: opt(f.agent),
+	/** 0..200; empty is allowed together with the other filters. */
+	q: opt(textOf$2(0, 200)),
+	kinds: opt(EntryKindsParam),
+	tool: opt(ToolNameSchema),
+	errors: opt(flagParam),
+	limit: intString(1, 1e3).default(200),
+	budgetMs: intString(100, 1e4).default(3e3)
+});
+const InstanceSearchQuerySchema = strictObject({
+	q: f.q,
+	session: opt(f.session),
+	project: opt(f.project),
+	workItem: opt(f.workItem),
+	...windowedTimeShape,
+	kinds: opt(EntryKindsParam),
+	limit: intString(1, 500).default(100),
+	budgetMs: intString(100, 1e4).default(3e3),
+	/** The opaque `c-<random>` handle of a previous response. */
+	continue: opt(string().regex(/^c-[A-Za-z0-9_-]{1,64}$/))
+});
+/** `limit` applies to the `attempts` panel only (default 30, applied by the handler); see `panelQueryAllowed`. */
+const PanelQuerySchema = strictObject({ limit: opt(intString(1, 200)) });
+/**
+* Whether a parsed panel query is valid for the panel: `limit` is only meaningful for `attempts` (06 3.4), so the other
+* five panels refuse it (`validation_failed`). The one rule server, CLI and UI share instead of repeating it.
+*/
+function panelQueryAllowed(key, query) {
+	return key === "attempts" || query.limit === void 0;
+}
+const StreamQuerySchema = strictObject({
+	since: opt(intString(0, MAX_INT)),
+	epoch: opt(EpochSchema)
+});
+function scalarText(key, value) {
+	if (typeof value === "string") {
+		if (value.includes(",")) throw new TypeError(`toQuery: a list item of ${key} contains a comma`);
+		return value;
+	}
+	if (typeof value === "number" && Number.isFinite(value)) return String(value);
+	throw new TypeError(`toQuery: unsupported list item for ${key}`);
+}
+/**
+* Serialises a parsed filter back to query values: `true` is `1`, lists are comma-separated, `undefined`, `null`, `false`
+* and empty lists are left out, keys are sorted. `fromQuery(schema, toQuery(f))` equals `f` for any `f` a schema produced.
+*/
+function toQuery(filter) {
+	const out = {};
+	for (const key of Object.keys(filter).sort()) {
+		const value = filter[key];
+		if (value === void 0 || value === null || value === false) continue;
+		if (value === true) out[key] = "1";
+		else if (typeof value === "string") out[key] = value;
+		else if (typeof value === "number" && Number.isFinite(value)) out[key] = String(value);
+		else if (Array.isArray(value)) {
+			if (value.length > 0) out[key] = value.map((item) => scalarText(key, item)).join(",");
+		} else throw new TypeError(`toQuery: unsupported value for ${key}`);
+	}
+	return out;
+}
+/** `a=1&b=2` with sorted keys and percent-encoding; `''` for an empty record. */
+function queryString(values) {
+	return Object.keys(values).sort().map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(values[key] ?? "")}`).join("&");
+}
+/**
+* The error code of a failed query parse: `query_too_short` when `q` is shorter than its minimum, otherwise
+* `validation_failed`. (`param_repeated`, `cursor_invalid`, `range_invalid` come from the guards and handlers.)
+*/
+function classifyQueryIssues(issues) {
+	return issues.some((issue) => issue.code === "too_small" && issue.path.length === 1 && issue.path[0] === "q") ? "query_too_short" : "validation_failed";
+}
+const MAX_SPAN_MS = 3650 * DAY_MS$3;
+/**
+* Resolves `range` / `from`+`to` / `window` to epoch milliseconds (03 5.4). A preset runs from `now - span` to `now + 1`;
+* `all` has no lower bound; `to` defaults to now; `range`, `from`/`to` and `window` exclude each other; `to` needs `from`,
+* `from` must precede `to` and the span is at most 3650 days.
+*/
+function resolveTimeWindow(q, o) {
+	const explicit = q.from !== void 0 || q.to !== void 0;
+	if ([
+		q.range !== void 0,
+		explicit,
+		q.window === true
+	].filter(Boolean).length > 1 || q.to !== void 0 && q.from === void 0) return {
+		ok: false,
+		code: "range_invalid"
+	};
+	if (explicit && q.from !== void 0) {
+		const fromMs = Date.parse(q.from);
+		const toMs = q.to === void 0 ? o.nowMs : Date.parse(q.to);
+		if (!(fromMs < toMs)) return {
+			ok: false,
+			code: "range_invalid"
+		};
+		if (toMs - fromMs > MAX_SPAN_MS) return {
+			ok: false,
+			code: "range_too_large"
+		};
+		return {
+			ok: true,
+			window: {
+				fromMs,
+				toMs
+			},
+			source: "custom"
+		};
+	}
+	const windowed = () => ({
+		ok: true,
+		window: {
+			fromMs: o.nowMs - o.windowHours * HOUR_MS$9,
+			toMs: o.nowMs + 1
+		},
+		source: "window_hours"
+	});
+	if (q.window === true) return windowed();
+	const preset = q.range ?? o.defaultRange;
+	if (preset === "window") return windowed();
+	return {
+		ok: true,
+		window: {
+			fromMs: preset === "all" ? null : o.nowMs - PRESET_MS[preset],
+			toMs: o.nowMs + 1
+		},
+		source: "range"
+	};
+}
+/**
+* The fold of a `q` needle (03 5.4): Unicode `NFKC`, then lower case. The server's SQL layer, the CLI and the UI buffers
+* all fold with this one function; the haystack is only ASCII-lowered, as SQLite `LIKE` does.
+*/
+function foldQuery(q) {
+	return q.normalize("NFKC").toLowerCase();
+}
+
+//#endregion
+//#region packages/shared/src/api/stream.ts
+/** `retry:` of the first frame, in milliseconds. */
+const STREAM_RETRY_MS = 3e3;
+/** Heartbeat interval; the client reconnects after 2.5 times this without any message. */
+const STREAM_HEARTBEAT_MS = 15e3;
+const CHANGE_KINDS = [
+	"session",
+	"agent",
+	"workflow",
+	"tool_call",
+	"event",
+	"transcript",
+	"work_item",
+	"usage",
+	"alert",
+	"health",
+	"attempt"
+];
+const ChangeKindSchema = _enum(CHANGE_KINDS);
+const CHANGE_OPS = [
+	"upsert",
+	"delete",
+	"append",
+	"invalidate"
+];
+const ChangeOpSchema = _enum(CHANGE_OPS);
+const StreamHelloSchema = strictObject({
+	instanceId: InstanceIdSchema,
+	epoch: EpochSchema,
+	headSeq: CountSchema$1,
+	heartbeatMs: CountSchema$1,
+	serverTime: IsoTimeSchema,
+	runtimeVersion: string(),
+	codeStamp: string()
+});
+const StreamHeartbeatSchema = strictObject({
+	headSeq: CountSchema$1,
+	epoch: EpochSchema,
+	serverTime: IsoTimeSchema
+});
+const STREAM_RESET_REASONS = [
+	"cursor_too_old",
+	"cursor_ahead",
+	"epoch_changed",
+	"cursor_invalid"
+];
+const StreamResetSchema = strictObject({
+	headSeq: CountSchema$1,
+	reason: _enum(STREAM_RESET_REASONS)
+});
+/** Data of `workflow/upsert`. */
+const WorkflowRunItemSchema = strictObject({
+	runId: RunIdSchema,
+	seq: CountSchema$1,
+	sessionId: SessionIdSchema,
+	name: string().nullable(),
+	state: StateAssessmentSchema,
+	agentCount: CountSchema$1.nullable(),
+	started: CountSchema$1,
+	results: CountSchema$1,
+	failed: CountSchema$1,
+	startedAt: NullableIsoTimeSchema,
+	endedAt: NullableIsoTimeSchema
+});
+function change(kind, op, data) {
+	return strictObject({
+		seq: PositiveIdSchema,
+		at: IsoTimeSchema,
+		instanceId: InstanceIdSchema,
+		kind: literal(kind),
+		op: literal(op),
+		sessionId: SessionIdSchema.nullable(),
+		data
+	});
+}
+/**
+* One schema per kind/op pair, keyed `<kind>/<op>` as in the registry. A frame is at most 64 KB, so `event/append`
+* carries at most 50 events and `tool_call/upsert` 50 calls. `data: null` means the entity no longer exists or is not
+* readable now: clients invalidate it.
+*/
+const STREAM_CHANGE_SCHEMAS = {
+	"session/upsert": change("session", "upsert", SessionSummarySchema.nullable()),
+	"session/delete": change("session", "delete", _null()),
+	"agent/upsert": change("agent", "upsert", AgentNodeSchema.nullable()),
+	"workflow/upsert": change("workflow", "upsert", WorkflowRunItemSchema.nullable()),
+	"tool_call/upsert": change("tool_call", "upsert", strictObject({
+		items: array(ToolCallItemSchema).max(50),
+		truncated: boolean()
+	})),
+	"event/append": change("event", "append", strictObject({
+		items: array(ActivityEventSchema).max(50),
+		count: CountSchema$1,
+		truncated: boolean()
+	})),
+	"transcript/append": change("transcript", "append", strictObject({
+		agentId: AgentIdSchema,
+		sizeBytes: CountSchema$1
+	}).nullable()),
+	"work_item/upsert": change("work_item", "upsert", WorkItemSchema.nullable()),
+	"usage/invalidate": change("usage", "invalidate", strictObject({ sessionId: SessionIdSchema })),
+	"alert/upsert": change("alert", "upsert", AlertItemSchema.nullable()),
+	"health/upsert": change("health", "upsert", HealthReportSchema),
+	"attempt/upsert": change("attempt", "upsert", strictObject({
+		ids: array(PositiveIdSchema).max(50),
+		truncated: boolean()
+	}))
+};
+/** One change frame: exactly one of the twelve kind/op pairs. */
+const StreamChangeSchema = union([
+	STREAM_CHANGE_SCHEMAS["session/upsert"],
+	STREAM_CHANGE_SCHEMAS["session/delete"],
+	STREAM_CHANGE_SCHEMAS["agent/upsert"],
+	STREAM_CHANGE_SCHEMAS["workflow/upsert"],
+	STREAM_CHANGE_SCHEMAS["tool_call/upsert"],
+	STREAM_CHANGE_SCHEMAS["event/append"],
+	STREAM_CHANGE_SCHEMAS["transcript/append"],
+	STREAM_CHANGE_SCHEMAS["work_item/upsert"],
+	STREAM_CHANGE_SCHEMAS["usage/invalidate"],
+	STREAM_CHANGE_SCHEMAS["alert/upsert"],
+	STREAM_CHANGE_SCHEMAS["health/upsert"],
+	STREAM_CHANGE_SCHEMAS["attempt/upsert"]
+]);
+
+//#endregion
+//#region packages/shared/src/api/export.ts
+const EXPORT_FORMAT = "mcs.export/1";
+/** The `include` values of the query, in the order of the format. */
+const EXPORT_INCLUDES = [
+	"sessions",
+	"agents",
+	"workflows",
+	"work_items",
+	"events",
+	"tool_calls",
+	"turns",
+	"usage",
+	"transitions",
+	"alerts"
+];
+const ExportIncludeSchema = _enum(EXPORT_INCLUDES);
+const EXPORT_REDACTIONS = ["standard", "strict"];
+/** `GET /api/v3/export` query, and the flags of `mcs export` (01 6.4). `strict` refuses `includeContent`. */
+const ExportQuerySchema = strictObject({
+	/** At most 500 ids; absent means the whole instance. */
+	session: csvOf(SessionIdSchema, 500).optional(),
+	workItem: intString(1, Number.MAX_SAFE_INTEGER).optional(),
+	range: PresetSchema.optional(),
+	from: IsoTimeInputSchema.optional(),
+	to: IsoTimeInputSchema.optional(),
+	/** Default: all. */
+	include: csvOf(ExportIncludeSchema, 10).optional(),
+	/** Default `standard`. */
+	redaction: _enum(EXPORT_REDACTIONS).optional(),
+	/** Default false. */
+	includeContent: flagParam.optional()
+}).refine((q) => !(q.redaction === "strict" && q.includeContent === true), {
+	message: "includeContent is not allowed with strict redaction",
+	path: ["includeContent"]
+});
+const ExportSummarySchema = strictObject({
+	lines: CountSchema$1,
+	bytes: CountSchema$1,
+	sha256: string().regex(/^[0-9a-f]{64}$/),
+	counts: record$1(string(), CountSchema$1),
+	includeContent: boolean()
+});
+const HeaderLineSchema = strictObject({
+	type: literal("header"),
+	format: literal(EXPORT_FORMAT),
+	instanceId: InstanceIdSchema,
+	slug: string(),
+	exportedAt: IsoTimeSchema,
+	runtimeVersion: string(),
+	dbSchemaVersion: CountSchema$1,
+	/** The resolved scope: the time bounds and the session ids. */
+	scope: strictObject({
+		from: NullableIsoTimeSchema,
+		to: IsoTimeSchema,
+		sessions: array(SessionIdSchema)
+	}),
+	include: array(ExportIncludeSchema),
+	redaction: _enum(EXPORT_REDACTIONS),
+	includeContent: boolean(),
+	/** "Metadata only: no prompt, reply, thinking or tool result text." or the confidentiality note for content exports. */
+	privacyNote: string()
+});
+const record = (type, data) => strictObject({
+	type: literal(type),
+	data
+});
+const SessionRecord = SessionSummarySchema.extend({
+	cwd: string().nullable(),
+	gitBranch: string().nullable(),
+	permissionMode: string().nullable()
+});
+const TurnRecord = strictObject({
+	sessionId: SessionIdSchema,
+	agentId: AgentIdSchema,
+	promptId: string().nullable(),
+	startedAt: IsoTimeSchema,
+	endedAt: NullableIsoTimeSchema,
+	endKind: string().nullable(),
+	origin: string().nullable(),
+	toolCount: CountSchema$1
+});
+const nullableCount = CountSchema$1.nullable();
+const UsageRecord = strictObject({
+	messageKey: string(),
+	sessionId: SessionIdSchema,
+	agentId: AgentIdSchema,
+	model: string().nullable(),
+	ts: IsoTimeSchema,
+	input: nullableCount,
+	output: nullableCount,
+	cacheRead: nullableCount,
+	cacheCreation: nullableCount,
+	cacheCreation5m: nullableCount,
+	cacheCreation1h: nullableCount,
+	thinking: nullableCount,
+	finalized: boolean(),
+	synthetic: boolean(),
+	usageSource: string(),
+	files: CountSchema$1
+});
+const TranscriptLineSchema = strictObject({
+	type: literal("transcript"),
+	sessionId: SessionIdSchema,
+	agentId: AgentIdSchema,
+	/** At most 500 entries per line. */
+	entries: array(TranscriptEntrySchema).max(500)
+});
+const TrailerLineSchema = strictObject({
+	type: literal("trailer"),
+	counts: record$1(string(), CountSchema$1),
+	/** Transcript files that were listed but are gone from disk (only with `includeContent`). */
+	missingTranscripts: array(strictObject({
+		sessionId: SessionIdSchema,
+		agentId: AgentIdSchema
+	})),
+	/** Hex SHA-256 of all bytes before the trailer line. */
+	sha256: string().regex(/^[0-9a-f]{64}$/)
+});
+/** One schema per line type; the generator of the JSON Schemas writes one file per key (`schemas/export/<type>`). */
+const ExportLineSchemas = {
+	header: HeaderLineSchema,
+	session: record("session", SessionRecord),
+	agent: record("agent", AgentNodeSchema),
+	workflow: record("workflow", WorkflowRunItemSchema),
+	work_item: record("work_item", WorkItemSchema),
+	turn: record("turn", TurnRecord),
+	event: record("event", ActivityEventSchema.omit({
+		sessionLabel: true,
+		agentLabel: true
+	})),
+	tool_call: record("tool_call", ToolCallItemSchema),
+	usage: record("usage", UsageRecord),
+	transition: record("transition", TransitionItemSchema.extend({ sessionId: SessionIdSchema })),
+	alert: record("alert", AlertItemSchema),
+	transcript: TranscriptLineSchema,
+	trailer: TrailerLineSchema
+};
+const ExportLineSchema = discriminatedUnion("type", [
+	ExportLineSchemas.header,
+	ExportLineSchemas.session,
+	ExportLineSchemas.agent,
+	ExportLineSchemas.workflow,
+	ExportLineSchemas.work_item,
+	ExportLineSchemas.turn,
+	ExportLineSchemas.event,
+	ExportLineSchemas.tool_call,
+	ExportLineSchemas.usage,
+	ExportLineSchemas.transition,
+	ExportLineSchemas.alert,
+	ExportLineSchemas.transcript,
+	ExportLineSchemas.trailer
+]);
+
+//#endregion
 //#region packages/shared/src/cli/results.ts
 const CONFIG_SOURCES = [
 	"builtin",
@@ -10231,6 +11029,51 @@ const DbRebuildResultSchema = strictObject({
 	backup: string().nullable(),
 	pruned: array(string())
 });
+/** `.mcp.json` entry of the read-only MCP server (ADR 0060 point 6): one stdio server started with `node <launcher> mcp ...`. */
+const McpJsonSchema = strictObject({ mcpServers: record$1(string(), strictObject({
+	type: literal("stdio"),
+	command: string(),
+	args: array(string())
+})) });
+/** `mcs mcp --print-config`: the two ways to register the server with Claude Code. Nothing is written. */
+const McpConfigResultSchema = strictObject({
+	task: string(),
+	/** The name the server gets in the client, `mcs-<task>`. */
+	serverName: string(),
+	/** The server returns transcript text too (`--include-text`). */
+	includeText: boolean(),
+	/** The `claude mcp add --transport stdio ...` command, quoted for a shell. */
+	command: string(),
+	mcpJson: McpJsonSchema
+});
+/** `mcs export`: the file that was written and the summary of what it holds (`mcs.export/1`, 03 11.1). */
+const ExportResultSchema = strictObject({
+	task: string(),
+	mode: ReaderModeSchema,
+	/** The absolute path of the final file. */
+	path: string(),
+	/** What the export holds; its `lines` and `bytes` are what the re-read of the file found. */
+	summary: ExportSummarySchema,
+	/** The file existed and `--force` replaced it. */
+	replaced: boolean()
+});
+/** The values of `--expect` of `mcs verify-completion`: `terminal` accepts a completed or a failed run. */
+const COMPLETION_EXPECTATIONS = [
+	"completed",
+	"failed",
+	"terminal"
+];
+const CompletionExpectationSchema = _enum(COMPLETION_EXPECTATIONS);
+/** `mcs verify-completion`: the evidence of one run, and whether it meets `--expect` (exit code 0 exactly then). */
+const VerifyCompletionResultSchema = strictObject({
+	task: string(),
+	mode: ReaderModeSchema,
+	expect: CompletionExpectationSchema,
+	met: boolean(),
+	/** The value of the selector as given (`--session`, `--label` or `--attempt`). */
+	target: string(),
+	completion: CompletionEvidenceSchema
+});
 /** The scopes of `mcs cleanup` (01 6.4), in the order the help lists them. */
 const CLEANUP_SCOPES = [
 	"stale-state",
@@ -10679,459 +11522,6 @@ function filterHash(filter) {
 }
 
 //#endregion
-//#region packages/shared/src/api/filters.ts
-const MAX_INT = Number.MAX_SAFE_INTEGER;
-/** `1h 6h 24h 7d 30d all`; presets resolve with the server clock. */
-const PRESETS = [
-	"1h",
-	"6h",
-	"24h",
-	"7d",
-	"30d",
-	"all"
-];
-const PresetSchema = _enum(PRESETS);
-const HOUR_MS$9 = 36e5;
-const DAY_MS$3 = 864e5;
-const PRESET_MS = {
-	"1h": HOUR_MS$9,
-	"6h": 6 * HOUR_MS$9,
-	"24h": 24 * HOUR_MS$9,
-	"7d": 7 * DAY_MS$3,
-	"30d": 30 * DAY_MS$3
-};
-/** A comma-separated list of 1..`max` values, each checked by `item`. */
-function csvOf(item, max) {
-	return string().transform((text) => text.split(",")).pipe(array(item).min(1).max(max));
-}
-/** A flag: the text `1` means true; any other text is refused. */
-const flagParam = literal("1").transform(() => true);
-/** Text trimmed to `min..max` characters. A too-short `q` is reported as `query_too_short` (see `classifyQueryIssues`). */
-function textOf$2(min, max) {
-	return string().transform((text) => text.trim()).pipe(string().min(min).max(max));
-}
-const STATE_FILTER_VALUES = [...LIFECYCLE_STATES, "active"];
-const StateFilterSchema = _enum(STATE_FILTER_VALUES);
-const DirSchema = _enum(["asc", "desc"]);
-const SeveritySchema = _enum([
-	"info",
-	"warning",
-	"error"
-]);
-const CursorParam = string().min(1).max(512);
-/** Expands the alias `active` and removes duplicates; the order of first appearance is kept. */
-function expandStateFilter(states) {
-	const out = [];
-	for (const state of states) for (const concrete of state === "active" ? ACTIVE_STATES : [state]) if (!out.includes(concrete)) out.push(concrete);
-	return out;
-}
-const f = {
-	q: textOf$2(2, 200),
-	state: csvOf(StateFilterSchema, 10),
-	presence: csvOf(_enum([
-		"open",
-		"ended",
-		"unknown"
-	]), 3),
-	project: csvOf(ProjectIdSchema, 20),
-	workItem: intString(1, MAX_INT),
-	session: csvOf(SessionIdSchema, 50),
-	agent: AgentIdSchema,
-	type: csvOf(_enum(EVENT_KINDS), 40),
-	category: csvOf(_enum(EVENT_CATEGORIES), 8),
-	severity: csvOf(SeveritySchema, 3),
-	tool: csvOf(ToolNameSchema, 20),
-	status: csvOf(_enum(TOOL_STATUSES), 6),
-	model: csvOf(ModelIdSchema, 10),
-	hasErrors: flagParam,
-	includeInternal: flagParam,
-	range: PresetSchema,
-	from: IsoTimeInputSchema,
-	to: IsoTimeInputSchema,
-	window: flagParam,
-	includeUnmatched: flagParam,
-	dir: DirSchema,
-	cursor: CursorParam,
-	includeTotal: flagParam
-};
-const opt = (schema) => schema.optional();
-/** `range`, `from`, `to`: the explicit-time group of 5.4. */
-const timeShape = {
-	range: opt(f.range),
-	from: opt(f.from),
-	to: opt(f.to)
-};
-/** The same group plus `window=1`. */
-const windowedTimeShape = {
-	...timeShape,
-	window: opt(f.window)
-};
-function pagingShape(sorts, defaultLimit, maxLimit) {
-	return {
-		sort: _enum(sorts).default(sorts[0]),
-		dir: opt(f.dir),
-		cursor: opt(f.cursor),
-		limit: intString(1, maxLimit).default(defaultLimit)
-	};
-}
-function agentNeedsOneSession(q) {
-	return q.agent === void 0 || q.session?.length === 1;
-}
-const AGENT_NEEDS_SESSION = {
-	message: "agent requires exactly one session",
-	path: ["agent"]
-};
-const SESSION_SORTS = [
-	"lastActivity",
-	"started",
-	"duration",
-	"tokens",
-	"state",
-	"label",
-	"errors"
-];
-const AGENT_SORTS = ["lastActivity", "started"];
-const TOOL_CALL_SORTS = ["started", "duration"];
-const SessionListQuerySchema = strictObject({
-	q: opt(f.q),
-	state: opt(f.state),
-	presence: opt(f.presence),
-	project: opt(f.project),
-	workItem: opt(f.workItem),
-	model: opt(f.model),
-	hasErrors: opt(f.hasErrors),
-	...windowedTimeShape,
-	tokensMin: opt(intString(0, 0x38d7ea4c68000)),
-	tokensMax: opt(intString(0, 0x38d7ea4c68000)),
-	includeUnmatched: opt(f.includeUnmatched),
-	...pagingShape(SESSION_SORTS, 50, 200),
-	/** Only the session list counts its rows (capped at 10000). */
-	includeTotal: opt(f.includeTotal)
-}).refine((q) => q.tokensMin === void 0 || q.tokensMax === void 0 || q.tokensMin <= q.tokensMax, {
-	message: "tokensMin must not exceed tokensMax",
-	path: ["tokensMin"]
-});
-const AgentListQuerySchema = strictObject({
-	state: opt(f.state),
-	kind: opt(csvOf(_enum(AGENT_KINDS$1), 5)),
-	q: opt(f.q),
-	session: opt(f.session),
-	project: opt(f.project),
-	hasErrors: opt(f.hasErrors),
-	includeInternal: opt(f.includeInternal),
-	...windowedTimeShape,
-	includeUnmatched: opt(f.includeUnmatched),
-	...pagingShape(AGENT_SORTS, 50, 200)
-});
-const SessionAgentsQuerySchema = strictObject({
-	state: opt(f.state),
-	includeInternal: opt(f.includeInternal),
-	cursor: opt(f.cursor),
-	limit: intString(1, 500).default(200)
-});
-const eventFilterShape = {
-	type: opt(f.type),
-	category: opt(f.category),
-	severity: opt(f.severity),
-	agent: opt(f.agent),
-	workItem: opt(f.workItem),
-	tool: opt(f.tool),
-	q: opt(f.q),
-	...timeShape,
-	dir: opt(f.dir),
-	cursor: opt(f.cursor),
-	/** At most 200, and up to 500 only with `afterId` (the live tail). */
-	limit: intString(1, 500).default(100),
-	around: opt(intString(1, MAX_INT)),
-	afterId: opt(intString(1, MAX_INT))
-};
-function eventModes(q) {
-	return !(q.around !== void 0 && q.afterId !== void 0);
-}
-const EVENT_MODES = {
-	message: "around and afterId cannot be combined",
-	path: ["around"]
-};
-/** `around` opens a walk; a `cursor` continues one. The pair is refused instead of the cursor being ignored (CR-WP-30-6). */
-function eventAroundStart(q) {
-	return !(q.around !== void 0 && q.cursor !== void 0);
-}
-const EVENT_AROUND_START = {
-	message: "around cannot be combined with cursor",
-	path: ["around"]
-};
-function eventLimit(q) {
-	return q.limit <= 200 || q.afterId !== void 0;
-}
-const EVENT_LIMIT = {
-	message: "limit is at most 200 (500 with afterId)",
-	path: ["limit"]
-};
-const EventListQuerySchema = strictObject({
-	session: opt(f.session),
-	project: opt(f.project),
-	...eventFilterShape
-}).refine(agentNeedsOneSession, AGENT_NEEDS_SESSION).refine(eventModes, EVENT_MODES).refine(eventAroundStart, EVENT_AROUND_START).refine(eventLimit, EVENT_LIMIT);
-/** `sessionTimeline`: the events parameters without `session` and `project` (the session is in the path). */
-const SessionTimelineQuerySchema = strictObject(eventFilterShape).refine(eventModes, EVENT_MODES).refine(eventAroundStart, EVENT_AROUND_START).refine(eventLimit, EVENT_LIMIT);
-const ToolCallListQuerySchema = strictObject({
-	session: opt(f.session),
-	agent: opt(f.agent),
-	project: opt(f.project),
-	tool: opt(f.tool),
-	status: opt(f.status),
-	q: opt(f.q),
-	...timeShape,
-	...pagingShape(TOOL_CALL_SORTS, 50, 200)
-}).refine(agentNeedsOneSession, AGENT_NEEDS_SESSION);
-/** `sessionToolCalls`: the session is in the path. */
-const SessionToolCallsQuerySchema = strictObject({
-	agent: opt(f.agent),
-	tool: opt(f.tool),
-	status: opt(f.status),
-	q: opt(f.q),
-	...timeShape,
-	...pagingShape(TOOL_CALL_SORTS, 50, 200)
-});
-const TransitionListQuerySchema = strictObject({
-	agent: opt(f.agent),
-	cursor: opt(f.cursor),
-	limit: intString(1, 200).default(50)
-});
-const ERROR_SOURCES = [
-	"server",
-	"spool",
-	"transcript",
-	"external",
-	"writer",
-	"handler",
-	"alerts",
-	"db"
-];
-const ErrorsQuerySchema = strictObject({
-	since: opt(f.from),
-	source: opt(csvOf(_enum(ERROR_SOURCES), 8)),
-	limit: intString(1, 200).default(50)
-});
-const OverviewQuerySchema = strictObject({
-	...windowedTimeShape,
-	includeUnmatched: opt(f.includeUnmatched)
-});
-const WorkItemBoardQuerySchema = strictObject({
-	state: opt(csvOf(_enum(BOARD_STATES), 6)),
-	q: opt(f.q)
-});
-const AlertListQuerySchema = strictObject({
-	status: csvOf(_enum(["open", "resolved"]), 2).prefault("open"),
-	severity: opt(csvOf(_enum(["warning", "critical"]), 2)),
-	rule: opt(csvOf(_enum(ALERT_RULE_KINDS), 8)),
-	session: opt(f.session),
-	cursor: opt(f.cursor),
-	limit: intString(1, 200).default(50)
-});
-const UsageQuerySchema = strictObject({
-	groupBy: _enum([
-		"model",
-		"session",
-		"project",
-		"workItem",
-		"agent",
-		"none"
-	]).default("model"),
-	session: opt(f.session),
-	project: opt(f.project),
-	workItem: opt(f.workItem),
-	model: opt(f.model),
-	...windowedTimeShape,
-	limit: intString(1, 500).default(50),
-	includeCost: opt(flagParam)
-});
-const SessionUsageQuerySchema = strictObject({
-	groupBy: _enum(["agent", "model"]).default("agent"),
-	includeCost: opt(flagParam)
-});
-const SeriesQuerySchema = strictObject({
-	bucket: _enum(["hour", "day"]).default("day"),
-	tzOffsetMinutes: intString(-840, 840).default(0),
-	groupBy: _enum(["none", "model"]).default("none"),
-	session: opt(f.session),
-	project: opt(f.project),
-	workItem: opt(f.workItem),
-	model: opt(f.model),
-	...timeShape
-});
-const AnalyticsToolsQuerySchema = strictObject({
-	groupBy: _enum(["tool", "mcpServer"]).default("tool"),
-	session: opt(f.session),
-	agent: opt(f.agent),
-	project: opt(f.project),
-	tool: opt(f.tool),
-	...timeShape,
-	limit: intString(1, 200).default(50)
-}).refine(agentNeedsOneSession, AGENT_NEEDS_SESSION);
-const TranscriptWindowQuerySchema = strictObject({
-	agent: f.agent.default("main"),
-	/** Entries after this index (`-1` = the tail); `before` wins when both are present. */
-	after: intString(-1, MAX_INT).default(-1),
-	before: opt(intString(0, MAX_INT)),
-	/** 1..2000; the server default is 250 for tail and `before`, 2000 for `after`. */
-	limit: opt(intString(1, 2e3)),
-	/** 200..20000; the server default is config `limits.text_chars`. */
-	textChars: opt(intString(200, 2e4)),
-	thinking: opt(flagParam)
-});
-const TranscriptLocateQuerySchema = strictObject({
-	agent: f.agent.default("main"),
-	i: opt(intString(-MAX_INT, MAX_INT)),
-	ts: opt(f.from),
-	offset: opt(intString(0, MAX_INT))
-}).refine((q) => [
-	q.i,
-	q.ts,
-	q.offset
-].filter((value) => value !== void 0).length === 1, {
-	message: "exactly one of i, ts and offset is required",
-	path: ["i"]
-});
-const EntryKindsParam = csvOf(_enum(ENTRY_KINDS), 5);
-const TranscriptSearchQuerySchema = strictObject({
-	session: SessionIdSchema,
-	agent: opt(f.agent),
-	/** 0..200; empty is allowed together with the other filters. */
-	q: opt(textOf$2(0, 200)),
-	kinds: opt(EntryKindsParam),
-	tool: opt(ToolNameSchema),
-	errors: opt(flagParam),
-	limit: intString(1, 1e3).default(200),
-	budgetMs: intString(100, 1e4).default(3e3)
-});
-const InstanceSearchQuerySchema = strictObject({
-	q: f.q,
-	session: opt(f.session),
-	project: opt(f.project),
-	workItem: opt(f.workItem),
-	...windowedTimeShape,
-	kinds: opt(EntryKindsParam),
-	limit: intString(1, 500).default(100),
-	budgetMs: intString(100, 1e4).default(3e3),
-	/** The opaque `c-<random>` handle of a previous response. */
-	continue: opt(string().regex(/^c-[A-Za-z0-9_-]{1,64}$/))
-});
-/** `limit` applies to the `attempts` panel only (default 30, applied by the handler); see `panelQueryAllowed`. */
-const PanelQuerySchema = strictObject({ limit: opt(intString(1, 200)) });
-/**
-* Whether a parsed panel query is valid for the panel: `limit` is only meaningful for `attempts` (06 3.4), so the other
-* five panels refuse it (`validation_failed`). The one rule server, CLI and UI share instead of repeating it.
-*/
-function panelQueryAllowed(key, query) {
-	return key === "attempts" || query.limit === void 0;
-}
-const StreamQuerySchema = strictObject({
-	since: opt(intString(0, MAX_INT)),
-	epoch: opt(EpochSchema)
-});
-function scalarText(key, value) {
-	if (typeof value === "string") {
-		if (value.includes(",")) throw new TypeError(`toQuery: a list item of ${key} contains a comma`);
-		return value;
-	}
-	if (typeof value === "number" && Number.isFinite(value)) return String(value);
-	throw new TypeError(`toQuery: unsupported list item for ${key}`);
-}
-/**
-* Serialises a parsed filter back to query values: `true` is `1`, lists are comma-separated, `undefined`, `null`, `false`
-* and empty lists are left out, keys are sorted. `fromQuery(schema, toQuery(f))` equals `f` for any `f` a schema produced.
-*/
-function toQuery(filter) {
-	const out = {};
-	for (const key of Object.keys(filter).sort()) {
-		const value = filter[key];
-		if (value === void 0 || value === null || value === false) continue;
-		if (value === true) out[key] = "1";
-		else if (typeof value === "string") out[key] = value;
-		else if (typeof value === "number" && Number.isFinite(value)) out[key] = String(value);
-		else if (Array.isArray(value)) {
-			if (value.length > 0) out[key] = value.map((item) => scalarText(key, item)).join(",");
-		} else throw new TypeError(`toQuery: unsupported value for ${key}`);
-	}
-	return out;
-}
-/** `a=1&b=2` with sorted keys and percent-encoding; `''` for an empty record. */
-function queryString(values) {
-	return Object.keys(values).sort().map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(values[key] ?? "")}`).join("&");
-}
-/**
-* The error code of a failed query parse: `query_too_short` when `q` is shorter than its minimum, otherwise
-* `validation_failed`. (`param_repeated`, `cursor_invalid`, `range_invalid` come from the guards and handlers.)
-*/
-function classifyQueryIssues(issues) {
-	return issues.some((issue) => issue.code === "too_small" && issue.path.length === 1 && issue.path[0] === "q") ? "query_too_short" : "validation_failed";
-}
-const MAX_SPAN_MS = 3650 * DAY_MS$3;
-/**
-* Resolves `range` / `from`+`to` / `window` to epoch milliseconds (03 5.4). A preset runs from `now - span` to `now + 1`;
-* `all` has no lower bound; `to` defaults to now; `range`, `from`/`to` and `window` exclude each other; `to` needs `from`,
-* `from` must precede `to` and the span is at most 3650 days.
-*/
-function resolveTimeWindow(q, o) {
-	const explicit = q.from !== void 0 || q.to !== void 0;
-	if ([
-		q.range !== void 0,
-		explicit,
-		q.window === true
-	].filter(Boolean).length > 1 || q.to !== void 0 && q.from === void 0) return {
-		ok: false,
-		code: "range_invalid"
-	};
-	if (explicit && q.from !== void 0) {
-		const fromMs = Date.parse(q.from);
-		const toMs = q.to === void 0 ? o.nowMs : Date.parse(q.to);
-		if (!(fromMs < toMs)) return {
-			ok: false,
-			code: "range_invalid"
-		};
-		if (toMs - fromMs > MAX_SPAN_MS) return {
-			ok: false,
-			code: "range_too_large"
-		};
-		return {
-			ok: true,
-			window: {
-				fromMs,
-				toMs
-			},
-			source: "custom"
-		};
-	}
-	const windowed = () => ({
-		ok: true,
-		window: {
-			fromMs: o.nowMs - o.windowHours * HOUR_MS$9,
-			toMs: o.nowMs + 1
-		},
-		source: "window_hours"
-	});
-	if (q.window === true) return windowed();
-	const preset = q.range ?? o.defaultRange;
-	if (preset === "window") return windowed();
-	return {
-		ok: true,
-		window: {
-			fromMs: preset === "all" ? null : o.nowMs - PRESET_MS[preset],
-			toMs: o.nowMs + 1
-		},
-		source: "range"
-	};
-}
-/**
-* The fold of a `q` needle (03 5.4): Unicode `NFKC`, then lower case. The server's SQL layer, the CLI and the UI buffers
-* all fold with this one function; the haystack is only ASCII-lowered, as SQLite `LIKE` does.
-*/
-function foldQuery(q) {
-	return q.normalize("NFKC").toLowerCase();
-}
-
-//#endregion
 //#region packages/shared/src/api/legacy-health.ts
 const LegacyHealthSchema = strictObject({
 	ok: literal(true),
@@ -11159,284 +11549,6 @@ const LegacyHealthSchema = strictObject({
 	/** Always `{}`. */
 	reader: strictObject({})
 });
-
-//#endregion
-//#region packages/shared/src/api/stream.ts
-/** `retry:` of the first frame, in milliseconds. */
-const STREAM_RETRY_MS = 3e3;
-/** Heartbeat interval; the client reconnects after 2.5 times this without any message. */
-const STREAM_HEARTBEAT_MS = 15e3;
-const CHANGE_KINDS = [
-	"session",
-	"agent",
-	"workflow",
-	"tool_call",
-	"event",
-	"transcript",
-	"work_item",
-	"usage",
-	"alert",
-	"health",
-	"attempt"
-];
-const ChangeKindSchema = _enum(CHANGE_KINDS);
-const CHANGE_OPS = [
-	"upsert",
-	"delete",
-	"append",
-	"invalidate"
-];
-const ChangeOpSchema = _enum(CHANGE_OPS);
-const StreamHelloSchema = strictObject({
-	instanceId: InstanceIdSchema,
-	epoch: EpochSchema,
-	headSeq: CountSchema$1,
-	heartbeatMs: CountSchema$1,
-	serverTime: IsoTimeSchema,
-	runtimeVersion: string(),
-	codeStamp: string()
-});
-const StreamHeartbeatSchema = strictObject({
-	headSeq: CountSchema$1,
-	epoch: EpochSchema,
-	serverTime: IsoTimeSchema
-});
-const STREAM_RESET_REASONS = [
-	"cursor_too_old",
-	"cursor_ahead",
-	"epoch_changed",
-	"cursor_invalid"
-];
-const StreamResetSchema = strictObject({
-	headSeq: CountSchema$1,
-	reason: _enum(STREAM_RESET_REASONS)
-});
-/** Data of `workflow/upsert`. */
-const WorkflowRunItemSchema = strictObject({
-	runId: RunIdSchema,
-	seq: CountSchema$1,
-	sessionId: SessionIdSchema,
-	name: string().nullable(),
-	state: StateAssessmentSchema,
-	agentCount: CountSchema$1.nullable(),
-	started: CountSchema$1,
-	results: CountSchema$1,
-	failed: CountSchema$1,
-	startedAt: NullableIsoTimeSchema,
-	endedAt: NullableIsoTimeSchema
-});
-function change(kind, op, data) {
-	return strictObject({
-		seq: PositiveIdSchema,
-		at: IsoTimeSchema,
-		instanceId: InstanceIdSchema,
-		kind: literal(kind),
-		op: literal(op),
-		sessionId: SessionIdSchema.nullable(),
-		data
-	});
-}
-/**
-* One schema per kind/op pair, keyed `<kind>/<op>` as in the registry. A frame is at most 64 KB, so `event/append`
-* carries at most 50 events and `tool_call/upsert` 50 calls. `data: null` means the entity no longer exists or is not
-* readable now: clients invalidate it.
-*/
-const STREAM_CHANGE_SCHEMAS = {
-	"session/upsert": change("session", "upsert", SessionSummarySchema.nullable()),
-	"session/delete": change("session", "delete", _null()),
-	"agent/upsert": change("agent", "upsert", AgentNodeSchema.nullable()),
-	"workflow/upsert": change("workflow", "upsert", WorkflowRunItemSchema.nullable()),
-	"tool_call/upsert": change("tool_call", "upsert", strictObject({
-		items: array(ToolCallItemSchema).max(50),
-		truncated: boolean()
-	})),
-	"event/append": change("event", "append", strictObject({
-		items: array(ActivityEventSchema).max(50),
-		count: CountSchema$1,
-		truncated: boolean()
-	})),
-	"transcript/append": change("transcript", "append", strictObject({
-		agentId: AgentIdSchema,
-		sizeBytes: CountSchema$1
-	}).nullable()),
-	"work_item/upsert": change("work_item", "upsert", WorkItemSchema.nullable()),
-	"usage/invalidate": change("usage", "invalidate", strictObject({ sessionId: SessionIdSchema })),
-	"alert/upsert": change("alert", "upsert", AlertItemSchema.nullable()),
-	"health/upsert": change("health", "upsert", HealthReportSchema),
-	"attempt/upsert": change("attempt", "upsert", strictObject({
-		ids: array(PositiveIdSchema).max(50),
-		truncated: boolean()
-	}))
-};
-/** One change frame: exactly one of the twelve kind/op pairs. */
-const StreamChangeSchema = union([
-	STREAM_CHANGE_SCHEMAS["session/upsert"],
-	STREAM_CHANGE_SCHEMAS["session/delete"],
-	STREAM_CHANGE_SCHEMAS["agent/upsert"],
-	STREAM_CHANGE_SCHEMAS["workflow/upsert"],
-	STREAM_CHANGE_SCHEMAS["tool_call/upsert"],
-	STREAM_CHANGE_SCHEMAS["event/append"],
-	STREAM_CHANGE_SCHEMAS["transcript/append"],
-	STREAM_CHANGE_SCHEMAS["work_item/upsert"],
-	STREAM_CHANGE_SCHEMAS["usage/invalidate"],
-	STREAM_CHANGE_SCHEMAS["alert/upsert"],
-	STREAM_CHANGE_SCHEMAS["health/upsert"],
-	STREAM_CHANGE_SCHEMAS["attempt/upsert"]
-]);
-
-//#endregion
-//#region packages/shared/src/api/export.ts
-const EXPORT_FORMAT = "mcs.export/1";
-/** The `include` values of the query, in the order of the format. */
-const EXPORT_INCLUDES = [
-	"sessions",
-	"agents",
-	"workflows",
-	"work_items",
-	"events",
-	"tool_calls",
-	"turns",
-	"usage",
-	"transitions",
-	"alerts"
-];
-const ExportIncludeSchema = _enum(EXPORT_INCLUDES);
-const EXPORT_REDACTIONS = ["standard", "strict"];
-/** `GET /api/v3/export` query, and the flags of `mcs export` (01 6.4). `strict` refuses `includeContent`. */
-const ExportQuerySchema = strictObject({
-	/** At most 500 ids; absent means the whole instance. */
-	session: csvOf(SessionIdSchema, 500).optional(),
-	workItem: intString(1, Number.MAX_SAFE_INTEGER).optional(),
-	range: PresetSchema.optional(),
-	from: IsoTimeInputSchema.optional(),
-	to: IsoTimeInputSchema.optional(),
-	/** Default: all. */
-	include: csvOf(ExportIncludeSchema, 10).optional(),
-	/** Default `standard`. */
-	redaction: _enum(EXPORT_REDACTIONS).optional(),
-	/** Default false. */
-	includeContent: flagParam.optional()
-}).refine((q) => !(q.redaction === "strict" && q.includeContent === true), {
-	message: "includeContent is not allowed with strict redaction",
-	path: ["includeContent"]
-});
-const ExportSummarySchema = strictObject({
-	lines: CountSchema$1,
-	bytes: CountSchema$1,
-	sha256: string().regex(/^[0-9a-f]{64}$/),
-	counts: record$1(string(), CountSchema$1),
-	includeContent: boolean()
-});
-const HeaderLineSchema = strictObject({
-	type: literal("header"),
-	format: literal(EXPORT_FORMAT),
-	instanceId: InstanceIdSchema,
-	slug: string(),
-	exportedAt: IsoTimeSchema,
-	runtimeVersion: string(),
-	dbSchemaVersion: CountSchema$1,
-	/** The resolved scope: the time bounds and the session ids. */
-	scope: strictObject({
-		from: NullableIsoTimeSchema,
-		to: IsoTimeSchema,
-		sessions: array(SessionIdSchema)
-	}),
-	include: array(ExportIncludeSchema),
-	redaction: _enum(EXPORT_REDACTIONS),
-	includeContent: boolean(),
-	/** "Metadata only: no prompt, reply, thinking or tool result text." or the confidentiality note for content exports. */
-	privacyNote: string()
-});
-const record = (type, data) => strictObject({
-	type: literal(type),
-	data
-});
-const SessionRecord = SessionSummarySchema.extend({
-	cwd: string().nullable(),
-	gitBranch: string().nullable(),
-	permissionMode: string().nullable()
-});
-const TurnRecord = strictObject({
-	sessionId: SessionIdSchema,
-	agentId: AgentIdSchema,
-	promptId: string().nullable(),
-	startedAt: IsoTimeSchema,
-	endedAt: NullableIsoTimeSchema,
-	endKind: string().nullable(),
-	origin: string().nullable(),
-	toolCount: CountSchema$1
-});
-const nullableCount = CountSchema$1.nullable();
-const UsageRecord = strictObject({
-	messageKey: string(),
-	sessionId: SessionIdSchema,
-	agentId: AgentIdSchema,
-	model: string().nullable(),
-	ts: IsoTimeSchema,
-	input: nullableCount,
-	output: nullableCount,
-	cacheRead: nullableCount,
-	cacheCreation: nullableCount,
-	cacheCreation5m: nullableCount,
-	cacheCreation1h: nullableCount,
-	thinking: nullableCount,
-	finalized: boolean(),
-	synthetic: boolean(),
-	usageSource: string(),
-	files: CountSchema$1
-});
-const TranscriptLineSchema = strictObject({
-	type: literal("transcript"),
-	sessionId: SessionIdSchema,
-	agentId: AgentIdSchema,
-	/** At most 500 entries per line. */
-	entries: array(TranscriptEntrySchema).max(500)
-});
-const TrailerLineSchema = strictObject({
-	type: literal("trailer"),
-	counts: record$1(string(), CountSchema$1),
-	/** Transcript files that were listed but are gone from disk (only with `includeContent`). */
-	missingTranscripts: array(strictObject({
-		sessionId: SessionIdSchema,
-		agentId: AgentIdSchema
-	})),
-	/** Hex SHA-256 of all bytes before the trailer line. */
-	sha256: string().regex(/^[0-9a-f]{64}$/)
-});
-/** One schema per line type; the generator of the JSON Schemas writes one file per key (`schemas/export/<type>`). */
-const ExportLineSchemas = {
-	header: HeaderLineSchema,
-	session: record("session", SessionRecord),
-	agent: record("agent", AgentNodeSchema),
-	workflow: record("workflow", WorkflowRunItemSchema),
-	work_item: record("work_item", WorkItemSchema),
-	turn: record("turn", TurnRecord),
-	event: record("event", ActivityEventSchema.omit({
-		sessionLabel: true,
-		agentLabel: true
-	})),
-	tool_call: record("tool_call", ToolCallItemSchema),
-	usage: record("usage", UsageRecord),
-	transition: record("transition", TransitionItemSchema.extend({ sessionId: SessionIdSchema })),
-	alert: record("alert", AlertItemSchema),
-	transcript: TranscriptLineSchema,
-	trailer: TrailerLineSchema
-};
-const ExportLineSchema = discriminatedUnion("type", [
-	ExportLineSchemas.header,
-	ExportLineSchemas.session,
-	ExportLineSchemas.agent,
-	ExportLineSchemas.workflow,
-	ExportLineSchemas.work_item,
-	ExportLineSchemas.turn,
-	ExportLineSchemas.event,
-	ExportLineSchemas.tool_call,
-	ExportLineSchemas.usage,
-	ExportLineSchemas.transition,
-	ExportLineSchemas.alert,
-	ExportLineSchemas.transcript,
-	ExportLineSchemas.trailer
-]);
 
 //#endregion
 //#region packages/shared/src/schemas/ingest.ts
@@ -11653,73 +11765,6 @@ const IngestHealthSchema = strictObject({
 		]),
 		since: timestampMs
 	}))
-});
-
-//#endregion
-//#region packages/shared/src/api/completion.ts
-/** A label is 1..200 code points (the length a stored session label is clipped to). */
-const COMPLETION_LABEL_MAX = 200;
-/** An attempt part is 0..512 code points (the `attempt_runs.part` column cap of 03 3.5, registry C17). */
-const COMPLETION_PART_MAX = 512;
-const COMPLETION_OUTCOMES = [
-	"completed",
-	"failed",
-	"not_terminal"
-];
-const CompletionOutcomeSchema = _enum(COMPLETION_OUTCOMES);
-const COMPLETION_RESOLVED_BY = [
-	"session_id",
-	"label",
-	"attempt_part"
-];
-const CompletionResolvedBySchema = _enum(COMPLETION_RESOLVED_BY);
-/**
-* True when `text` has at most `max` code points. A text longer than `2 * max` UTF-16 units cannot fit, so a very long
-* text is refused without being walked.
-*/
-function withinCodePoints(text, max) {
-	if (text.length <= max) return true;
-	if (text.length > 2 * max) return false;
-	return Array.from(text).length <= max;
-}
-/**
-* What `explainCompletion` found. `outcome` is terminal (`completed`, `failed`) only when `basis` is `observed` (D9: an
-* inferred state is never terminal). `sessionId` is `null` only for an ended attempt row that no session matched.
-*/
-const CompletionEvidenceSchema = strictObject({
-	outcome: CompletionOutcomeSchema,
-	state: LifecycleStateSchema,
-	basis: StateAssessmentSchema.shape.basis,
-	confidence: StateAssessmentSchema.shape.confidence,
-	/** The evidence of the deciding view, words rendered at the time of the answer. */
-	evidence: array(EvidenceItemSchema).max(8),
-	sessionId: SessionIdSchema.nullable(),
-	/** The lifecycle rule (`S-1` .. `S-10`) or `C-ATT-ENDED`, `C-ATT-OPEN`, `C-ATT-SUPERSEDED` for an attempt row alone. */
-	ruleId: string(),
-	resolvedBy: CompletionResolvedBySchema,
-	/** Sessions (by label) or attempt rows (by part) that matched the target; 1 for a session id. */
-	candidates: number$1().int().min(1).max(Number.MAX_SAFE_INTEGER)
-});
-/** The body of `GET /completion`: the evidence and the change-log head it was read at. */
-const CompletionResponseSchema = CompletionEvidenceSchema.extend({ asOfSeq: CountSchema$1 });
-/**
-* `GET /completion?session=` or `?label=` or `?attemptPart=`: exactly one. `attemptPart` may be present and empty; the
-* label is not trimmed because it is compared to stored labels for exact equality.
-*/
-const CompletionQuerySchema = strictObject({
-	session: SessionIdSchema.optional(),
-	label: string().min(1).refine((text) => withinCodePoints(text, 200), { error: `Expected at most ${String(200)} characters` }).meta({
-		minLength: 1,
-		maxLength: 200
-	}).optional(),
-	attemptPart: string().refine((text) => withinCodePoints(text, 512), { error: `Expected at most ${String(512)} characters` }).meta({ maxLength: 512 }).optional()
-}).refine((q) => [
-	q.session,
-	q.label,
-	q.attemptPart
-].filter((value) => value !== void 0).length === 1, {
-	message: "exactly one of session, label and attemptPart is required",
-	path: ["session"]
 });
 
 //#endregion
@@ -40744,7 +40789,9 @@ const EXPECTS = {
 	since: `one of ${PRESET_TEXT}, all, or an ISO-8601 time with Z or an offset`,
 	to: "an ISO-8601 time with Z or an offset",
 	session: "one or more session ids (full, as `sessions list --json` shows them)",
-	source: "a comma-separated list of server, spool, transcript, external, writer, handler, alerts, db"
+	source: "a comma-separated list of server, spool, transcript, external, writer, handler, alerts, db",
+	include: `a comma-separated list of ${EXPORT_INCLUDES.join(", ")}`,
+	redaction: "standard or strict"
 };
 
 //#endregion
