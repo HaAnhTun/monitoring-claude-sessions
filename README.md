@@ -5,9 +5,33 @@
 A local, read-only monitor of Claude Code sessions with a web page. Claude Code writes every session (interactive sessions,
 `claude -p` runs, subagents, workflows) to a transcript file while it runs. The monitor reads those files in place, keeps a small
 metadata database per task and serves a dashboard on `127.0.0.1`: which sessions run, what they are doing, token use, and which
-have finished when an external record (a finished daemon job) says so. It never starts, stops or changes a session.
+have finished when external evidence (a finished daemon job, or the attempts table of a chain log) says so. It never starts,
+stops or changes a session.
 
 It ships as a Claude Code skill (`monitoring-claude-sessions`), so an agent can set it up for you, and as a plain command line.
+
+## What it does
+
+- **Sessions.** Reads transcripts in place (interactive sessions, `claude -p`, subagents, workflows), groups them into sessions,
+  labels them with `session_rules` and shows the state of each one with its evidence (observed or inferred, and how sure). A quiet
+  session is never reported as finished: only external evidence completes a session.
+- **Tokens.** Deduplicated by message id, cache reads shown separately, with lower-bound and partial markers; by session, model, day
+  and tool, with a cost estimate.
+- **Web UI** (loopback, light and dark, English and Vietnamese): Overview (needs attention, running now, token figures and the
+  Git, machine and ingestion panels), Sessions (quick filters, search, sorting, columns), Session detail (transcript, errors, agents,
+  tokens and events tabs), Activity, Tasks (work item board), Analytics, Search over all transcripts, and Settings with health.
+  It follows live through a server-sent event stream and shows when its data is stale.
+- **Panels and completion evidence.** Git, machine (per OS), Docker, logs, ledger and chain log sources, and the attempts table of
+  a chain log (`chain_log` and `attempts` in the configuration) as external evidence that a run really finished.
+- **Search, analytics, alerts, export.** Transcript search, usage series, alert rules and their evaluation, and `export` to an
+  `.ndjson` file (metadata only unless asked), with retention through `cleanup`.
+- **Hooks (opt-in).** An installer for the Claude Code hook entries, per-task routing, a spool and `ingest replay`. Nothing is
+  installed unless you run `hooks install --yes`.
+- **MCP server (opt-in).** `mcs mcp` offers the same read-only data to Claude Code over stdio.
+- **Command line.** Setup and operation (`init`, `configure`, `start`, `stop`, `restart`, `status`, `verify`, `doctor`,
+  `instances`), data (`sessions list/show`, `usage`, `errors`, `export`, `verify-completion`) and maintenance (`backup`,
+  `upgrade`, `db migrate`, `db rebuild`, `cleanup`, `config migrate`, `migrate-workspace`, `diagnostics`). Run `$MCS help`.
+- **Isolation.** One process, one database and one identity per task; tasks never read or write each other's data.
 
 ## Requirements
 
@@ -27,7 +51,7 @@ In Claude Code:
 /plugin install session-monitor@session-monitor
 ```
 
-The plugin contains the skill only (no hooks, no MCP server).
+The plugin contains the skill only. It installs no hooks and registers no MCP server; both are opt-in (see below).
 
 ### B. Clone and run the install script
 
@@ -60,7 +84,7 @@ $MCS stop --task nightly-build
 ```
 
 `$MCS help` lists every command and `$MCS help <command>` its options. Other useful commands: `discover` (transcripts folder and
-recent sessions), `inspect` (effective configuration), `check` (validate the configuration), `restart`, `instances list`.
+recent sessions), `inspect` (effective configuration), `check` (validate the configuration), `restart`, `instances list`, `sessions list`, `usage`.
 Configuration keys and the regular expression syntax: [docs/configuration.md](docs/configuration.md).
 
 ## Upgrading from a workspace made before 4.0
@@ -73,6 +97,39 @@ $MCS stop --task <slug>
 $MCS migrate-workspace --task <slug>            # dry run: shows what would change, writes nothing
 $MCS migrate-workspace --task <slug> --apply    # backs up to data/backups/ first, then converts
 ```
+
+## Hooks (optional)
+
+Hooks give the monitor live events without waiting for the next transcript read. They change a Claude Code settings file, which
+affects every session that uses it, so nothing installs them by default:
+
+```bash
+$MCS hooks install                 # dry run: shows the settings file and the entries
+$MCS hooks install --yes           # writes them (asks first on a terminal)
+$MCS hooks enable --task <slug>    # route events to one task (writes the task's files, never a settings file)
+$MCS hooks verify                  # settings file, paths, handler version, route file and a synthetic probe
+$MCS hooks uninstall --yes
+```
+
+The monitor works without hooks; they add events, and `hooks status` shows where they are installed.
+
+## MCP server (optional)
+
+```bash
+$MCS mcp --task <slug> --print-config   # prints the `claude mcp add` command and the .mcp.json entry; changes nothing
+```
+
+`$MCS mcp --task <slug>` runs a read-only server over stdio. Tools that read transcript text are off unless you pass
+`--include-text`, because transcript text is untrusted data.
+
+## Status and known limits
+
+- Version 4.0.0 plus the work after it (see [CHANGELOG.md](CHANGELOG.md)). The automated contract suite for responsive layout,
+  keyboard and language, and the strict check that no literal text is left in the web sources, are not finished.
+- Linux is tested in Docker, Windows by hand; macOS is not verified automatically.
+- The Docker panel reports an error when the Docker daemon does not run; the other panels are unaffected.
+- With hooks off the top bar can show the ingestion as down although transcript import works; this is a known display issue.
+- The server has no authentication (see Privacy and security).
 
 ## Doctor
 

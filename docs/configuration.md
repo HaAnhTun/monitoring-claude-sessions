@@ -50,15 +50,16 @@ Slugs match `[a-z0-9][a-z0-9-]{0,47}`. `init` on an existing slug reuses it and 
 | `session_ids` | list | `[]` | session ids that are always listed (even outside the window) |
 | `panels` | dict of bool | machine, git, logs on | `machine git logs ledger chain_log attempts` |
 | `live_log_globs`, `chain_log`, `ledger`, `stop_file` | | empty | extra files, relative to `repo` |
-| `attempts` | dict or null | null | `{label_prefix, time_format, start, end}`: the attempts table of `chain_log` (validated; not read in 4.0) |
+| `attempts` | dict or null | null | `{label_prefix, time_format, start, end}`: the attempts table of `chain_log` (validated and read: a finished attempt is external evidence of completion) |
 | `watched_processes`, `docker` | | | contents of the machine panel |
 | `ui` | dict | | `theme` (`auto`, `light`, `dark`), `density` (`comfortable`, `compact`), `newest_first`, `show_tools`, `show_thinking`, `show_prompts` |
 | `poll` | dict (ms) | | `events_ms sessions_ms machine_ms logs_ms overview_ms attempts_ms stale_after_ms` |
 | `limits` | dict | | `event_window_mb max_events text_chars usage_scan_budget_ms usage_max_mb` |
 
-The panel keys (`panels`, `live_log_globs`, `ledger`, `stop_file`, `watched_processes`, `docker`) are accepted and validated,
-but the panels that show them are not part of 4.0. `chain_log` and `attempts` are validated too, but 4.0 has no reader for
-the attempts table yet: in 4.0 a finished daemon job is the only external evidence that completes a session.
+The panel keys (`panels`, `live_log_globs`, `ledger`, `stop_file`, `watched_processes`, `docker`) drive the panels of the
+Overview (git, machine, logs, ledger, chain log, attempts); a source that cannot be read is shown with its own status
+instead of failing the page. `chain_log` with `attempts` is read as the attempts table: a finished attempt is external
+evidence that completes a session, next to a finished daemon job.
 
 ## Runtime sections (`runtime.json`)
 

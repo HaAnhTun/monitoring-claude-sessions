@@ -2,11 +2,53 @@
 
 ## Unreleased
 
+Work after the 4.0.0 tag. The version number is still 4.0.0.
+
+### Added
+
+- **New web UI.** A shell with navigation, a session switcher, a top bar with a Live control, a user menu and a shortcuts dialog;
+  design tokens and shared primitives; the pages Overview, Sessions, Session detail (transcript, errors, agents, tokens and events
+  tabs), Activity, Tasks, Analytics, Search and Settings with health; state badges with an evidence line and a shared state
+  vocabulary; an attention strip and quick filters. English and Vietnamese catalogues (i18n).
+- **Panels.** Git, machine (per-OS process and memory samplers), Docker, logs, ledger and chain log, served by
+  `GET /api/v3/panels/:key` and shown on the Overview.
+- **Attempts and completion evidence.** The attempts table of a chain log is read (`chain_log` and `attempts` in the
+  configuration); `GET /api/v3/completion` and `mcs verify-completion` say from observed evidence whether a run finished.
+- **Search, analytics, alerts and export.** Transcript search (the Search page and the search routes), usage by model, session,
+  day and tool with a cost estimate, alert rules with an evaluator, and `mcs export` (`.ndjson`, metadata only unless
+  `--include-content`) with retention through `mcs cleanup`.
+- **Hooks installer and ingest CLI.** `hooks install`, `uninstall`, `verify`, `status`, `enable`, `disable` and `ingest replay`
+  (opt-in; nothing is installed by default).
+- **Read-only MCP server.** `mcs mcp --task <slug>`, with `--print-config` to print the registration command and
+  `--include-text` to also offer the tools that read transcript text.
+- **Data and maintenance commands.** `sessions list`, `sessions show`, `usage`, `errors`, `backup` (list, restore), `upgrade`,
+  `db migrate`, `db rebuild`, `cleanup`, `config migrate`, `diagnostics` (a redacted report safe to share) and
+  `migrate-workspace --all`.
+- **Benchmarks and isolation tests.** A benchmark harness (`runtime/bench`; results stay on the machine) and an isolation test
+  suite for tasks that run side by side.
+
+### Changed
+
+- A session shows why it is in its state (an evidence line), and the lifecycle uses more evidence (hook coverage, due children).
+- `analytics.usageTrend` defaults to `true`; the time format of `attempts` is a documented strftime subset; the regex translator
+  prints a readable dialect.
+- The launcher no longer reads `MCS_LAUNCHER_NO_BOOTSTRAP`; the error codes `BOOTSTRAP_FAILED` and `RUNTIME_IN_USE` are gone.
+- The total JavaScript budget of the web bundle is 340 kB gzip (initial JavaScript stays at 200 kB, CSS at 25 kB).
+- The committed bundle, the JSON schemas and the API reference were regenerated.
+
 ### Removed
 
 - **GitHub Actions workflow and the `ci-status` channel.** CI is local only: `npm run ci`, `npm run ci:full` and the Docker POSIX
   harness (`npm run docker:posix`) are the gates (ADR 0078). `ci-status.mjs`, `ci-lean.mjs`, `npm run ci -- --summary-json` and the
   `MCS_CI_*` environment names went with them. The `ci-status` branch on the remote is no longer written or read.
+
+### Known issues
+
+- Not finished: the contract suite for responsive layout, keyboard and language, the rewrite of the browser smoke test, and the
+  strict check that no literal text is left in the web sources.
+- With hooks off, the top bar can show the ingestion as down although transcript import works.
+- The Docker panel reports an error when the Docker daemon does not run.
+- macOS is not verified automatically.
 
 ## 4.0.0 (2026-10-19)
 
@@ -45,6 +87,8 @@ Node only. A user machine needs nothing but Node 22.22 or newer.
 - Token usage and file links are committed in the same transaction as the read cursor, so a crash can no longer lose usage.
 
 ### Not yet in 4.0
+
+All of these arrived after the tag; see Unreleased above.
 
 - Hooks installer (live hook events; the hook entry point exists, but nothing installs it).
 - Panels (machine, git, ledger, chain log, logs) and the attempts reader (`chain_log` and `attempts` are validated but not read).

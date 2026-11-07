@@ -66,7 +66,7 @@ Health and housekeeping:
 | only sessions about X | a `session_rules` entry (`match` = X; `"scope": "any"` if X is not in the first prompt) |
 | older sessions | `window_hours` (older ones are hidden) or `session_ids` |
 | another repository | `--repo PATH`, or `repo`; `transcripts_dir` if the transcripts folder is not found |
-| PASS or FAIL per run | `chain_log` and `attempts` can be configured and checked, but 4.0 does not read the attempts table yet: say so |
+| PASS or FAIL per run | `chain_log` and `attempts` (named groups `time part n model effort exit status`, see `reference/configuration.md`); a finished attempt is external evidence, like a finished daemon job |
 | another port | `port` (or `start --port N`) |
 
 ## Rules
@@ -92,7 +92,7 @@ Health and housekeeping:
 |---|---|
 | Wrapping future launches (`stream-json` tee) for visibility | Not needed; it changes the user's run. Read transcripts. |
 | Summing `usage` over every record | Deduplicate by `message.id`. |
-| Calling a quiet session finished | Only external evidence gives COMPLETED or FAILED; in 4.0 that is a finished daemon job. |
+| Calling a quiet session finished | Only external evidence gives COMPLETED or FAILED: a finished daemon job, or a finished attempt of the configured `chain_log`. |
 | `(?P<name>...)` or `(?i)` in a rule | JavaScript syntax: `(?<name>...)`, letter classes; old workspaces: `migrate-workspace`. |
 | `[a-z-]` in a pattern | Invalid under the `v` flag: write `[a-z\-]` (in JSON `[a-z\\-]`) or keep `-` outside the class. |
 | Starting a second monitor on a new port | `start` reports the running one; use `status` or `instances list`. |

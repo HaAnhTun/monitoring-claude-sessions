@@ -17,7 +17,7 @@ failed or warned check prints a `fix:` line. All commands below run through the 
 | `migrate-workspace` refuses | the monitor of that task runs, or a pattern cannot be translated exactly | `stop --task <slug>` first; a blocked pattern is named by position: rewrite it by hand with `configure` |
 | Empty session list | no rule matched, window too short, wrong repository, transcripts folder not found | `discover` shows recent sessions and their first prompt; adjust `session_rules`, `"scope": "any"`, `window_hours`, `repo` or `transcripts_dir` |
 | `transcripts.dir` warning in `doctor` | no Claude Code session ran in this repository yet, or another config folder is used | run a session in the repository, set `CLAUDE_CONFIG_DIR` the way Claude Code uses it, or set `transcripts_dir` |
-| A finished job shows `IDLE` | a transcript cannot prove completion | `IDLE` is the honest answer; in 4.0 only a finished daemon job completes a session (the attempts reader comes later) |
+| A finished job shows `IDLE` | a transcript cannot prove completion | `IDLE` is the honest answer; only external evidence completes a session: a finished daemon job, or a finished attempt when `chain_log` and `attempts` are configured |
 | A session shows `UNKNOWN` | no readable records, or a tool call pending longer than `pending_tool_grace_seconds` | look at its last events; raise the grace for known long tools |
 | Token numbers marked partial | the token scan of a large file has not reached the end | it converges on later reads; very large files stay unavailable (`limits.usage_max_mb`) |
 | `status` shows `outdated: true` | the skill was updated after the monitor started | `restart --task <slug>` |

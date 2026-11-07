@@ -23,7 +23,7 @@ schema and its errors) is [api/reference.md](api/reference.md), generated from t
 | Transcript | `/api/v3/sessions/:sessionId/transcript` (a window read from the file on request), `.../transcript/locate` |
 | Across sessions | `/api/v3/agents`, `/api/v3/events`, `/api/v3/events/:eventId`, `/api/v3/tool-calls` |
 | Work items | `/api/v3/work-items`, `/api/v3/work-items/:workItemId` |
-| Alerts | `/api/v3/alerts`, `/api/v3/alerts/rules` (read only; alert evaluation is not part of 4.0) |
+| Alerts | `/api/v3/alerts`, `/api/v3/alerts/rules` (read only; the rules are evaluated inside the monitor) |
 | Ingestion | `POST /api/v3/ingest/nudge`, `/api/v3/ingest/probes/:probeSessionId` |
 | Live updates | `/api/v3/stream` (server-sent events: hello, change, heartbeat and reset frames) |
 

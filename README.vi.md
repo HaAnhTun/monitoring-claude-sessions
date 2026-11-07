@@ -5,11 +5,34 @@
 Công cụ theo dõi các phiên Claude Code, chạy cục bộ, chỉ đọc, có trang web. Claude Code ghi mọi phiên (phiên tương tác, lệnh
 `claude -p`, subagent, workflow) vào một file transcript ngay trong lúc chạy. Monitor đọc trực tiếp các file đó, giữ một cơ sở dữ
 liệu metadata nhỏ cho từng task và phục vụ một dashboard trên `127.0.0.1`: phiên nào đang chạy, đang làm gì, dùng bao nhiêu token,
-phiên nào đã xong khi có bằng chứng bên ngoài (một daemon job đã kết thúc) xác nhận. Monitor không bao giờ khởi động,
-dừng hay thay đổi một phiên.
+phiên nào đã xong khi có bằng chứng bên ngoài (một daemon job đã kết thúc, hoặc bảng attempts của một chain log) xác nhận.
+Monitor không bao giờ khởi động, dừng hay thay đổi một phiên.
 
 Công cụ được đóng gói dưới dạng một skill của Claude Code (`monitoring-claude-sessions`), để agent có thể cài đặt giúp bạn, và
 cũng dùng được như một dòng lệnh bình thường.
+
+## Công cụ làm được gì
+
+- **Phiên.** Đọc transcript tại chỗ (phiên tương tác, `claude -p`, subagent, workflow), gom thành phiên, đặt nhãn bằng
+  `session_rules` và cho thấy trạng thái từng phiên kèm bằng chứng (quan sát trực tiếp hay suy ra, và độ chắc chắn). Một phiên im
+  lặng không bao giờ bị coi là đã xong: chỉ bằng chứng bên ngoài mới xác nhận một phiên đã hoàn thành.
+- **Token.** Khử trùng theo message id, cache đọc hiển thị riêng, có dấu "lower bound" và "partial"; theo phiên, model, ngày và
+  công cụ, kèm ước tính chi phí.
+- **Giao diện web** (loopback, sáng và tối, tiếng Anh và tiếng Việt): Overview (cần chú ý, đang chạy, các số token và các panel
+  Git, máy, ingestion), Sessions (lọc nhanh, tìm kiếm, sắp xếp, chọn cột), Chi tiết phiên (các tab transcript, lỗi, agent, token
+  và sự kiện), Activity, Tasks (bảng work item), Analytics, Search trên mọi transcript và Settings kèm trạng thái sức khỏe. Giao
+  diện cập nhật trực tiếp qua luồng server-sent events và báo khi dữ liệu đã cũ.
+- **Panel và bằng chứng hoàn thành.** Các nguồn Git, máy (theo hệ điều hành), Docker, log, ledger và chain log, cùng bảng attempts
+  của chain log (`chain_log` và `attempts` trong cấu hình) làm bằng chứng bên ngoài rằng một lần chạy đã thật sự xong.
+- **Tìm kiếm, phân tích, cảnh báo, xuất dữ liệu.** Tìm trong transcript, chuỗi thời gian sử dụng, luật cảnh báo kèm bộ đánh giá,
+  và `export` ra file `.ndjson` (mặc định chỉ metadata), dọn dữ liệu cũ bằng `cleanup`.
+- **Hook (tùy chọn).** Trình cài các mục hook của Claude Code, định tuyến theo task, spool và `ingest replay`. Không có gì được
+  cài nếu bạn không chạy `hooks install --yes`.
+- **MCP server (tùy chọn).** `mcs mcp` cung cấp cùng dữ liệu chỉ đọc cho Claude Code qua stdio.
+- **Dòng lệnh.** Cài đặt và vận hành (`init`, `configure`, `start`, `stop`, `restart`, `status`, `verify`, `doctor`, `instances`),
+  dữ liệu (`sessions list/show`, `usage`, `errors`, `export`, `verify-completion`) và bảo trì (`backup`, `upgrade`, `db migrate`,
+  `db rebuild`, `cleanup`, `config migrate`, `migrate-workspace`, `diagnostics`). Chạy `$MCS help`.
+- **Cô lập.** Mỗi task có một tiến trình, một cơ sở dữ liệu và một danh tính riêng; các task không đọc hay ghi dữ liệu của nhau.
 
 ## Yêu cầu
 
@@ -30,7 +53,7 @@ Trong Claude Code:
 /plugin install session-monitor@session-monitor
 ```
 
-Plugin chỉ chứa skill (không có hook, không có MCP server).
+Plugin chỉ chứa skill. Plugin không cài hook và không đăng ký MCP server; cả hai đều là tùy chọn (xem bên dưới).
 
 ### B. Clone và chạy script cài đặt
 
@@ -63,7 +86,7 @@ $MCS stop --task nightly-build
 
 `$MCS help` liệt kê mọi lệnh, `$MCS help <command>` cho biết tùy chọn của từng lệnh. Một số lệnh hữu ích khác: `discover` (thư mục
 transcript và các phiên gần đây), `inspect` (cấu hình đang có hiệu lực), `check` (kiểm tra cấu hình), `restart`,
-`instances list`. Các khóa cấu hình và cú pháp biểu thức chính quy: [docs/configuration.md](docs/configuration.md) (tiếng Anh).
+`instances list`, `sessions list`, `usage`. Các khóa cấu hình và cú pháp biểu thức chính quy: [docs/configuration.md](docs/configuration.md) (tiếng Anh).
 
 ## Nâng cấp workspace tạo trước bản 4.0
 
@@ -75,6 +98,39 @@ $MCS stop --task <slug>
 $MCS migrate-workspace --task <slug>            # chạy thử: cho thấy sẽ đổi gì, không ghi gì
 $MCS migrate-workspace --task <slug> --apply    # sao lưu vào data/backups/ trước, rồi chuyển đổi
 ```
+
+## Hook (tùy chọn)
+
+Hook cho monitor nhận sự kiện trực tiếp mà không phải chờ lần đọc transcript kế tiếp. Hook thay đổi một file settings của Claude
+Code, ảnh hưởng mọi phiên dùng file đó, nên mặc định không có gì tự cài:
+
+```bash
+$MCS hooks install                 # chạy thử: cho biết file settings và các mục sẽ thêm
+$MCS hooks install --yes           # ghi thật (trên terminal sẽ hỏi trước)
+$MCS hooks enable --task <slug>    # định tuyến sự kiện về một task (ghi file của task, không bao giờ ghi file settings)
+$MCS hooks verify                  # file settings, đường dẫn, phiên bản handler, route file và một phép thử tổng hợp
+$MCS hooks uninstall --yes
+```
+
+Monitor chạy được khi không có hook; hook chỉ thêm sự kiện, và `hooks status` cho biết hook được cài ở đâu.
+
+## MCP server (tùy chọn)
+
+```bash
+$MCS mcp --task <slug> --print-config   # in lệnh `claude mcp add` và mục .mcp.json; không thay đổi gì
+```
+
+`$MCS mcp --task <slug>` chạy một server chỉ đọc qua stdio. Các công cụ đọc nội dung transcript bị tắt trừ khi bạn truyền
+`--include-text`, vì nội dung transcript là dữ liệu không đáng tin.
+
+## Trạng thái và giới hạn đã biết
+
+- Bản 4.0.0 cộng phần làm sau đó (xem [CHANGELOG.md](CHANGELOG.md)). Bộ test hợp đồng tự động cho responsive, bàn phím và ngôn
+  ngữ, cùng việc kiểm tra nghiêm rằng không còn chữ cứng trong mã web, chưa hoàn thành.
+- Linux được kiểm thử trong Docker, Windows kiểm thử thủ công; macOS chưa được kiểm chứng tự động.
+- Panel Docker báo lỗi khi Docker daemon không chạy; các panel khác không bị ảnh hưởng.
+- Khi hook tắt, thanh trên có thể hiện ingestion là "down" dù việc nhập transcript vẫn chạy; đây là lỗi hiển thị đã biết.
+- Server không có xác thực (xem phần Quyền riêng tư và bảo mật).
 
 ## Doctor
 
