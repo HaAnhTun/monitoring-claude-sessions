@@ -6,6 +6,7 @@ import {
   ErrorCodeSchema,
   ErrorEnvelopeSchema,
   RESERVED_ERROR_CODES,
+  TERMINAL_ERROR_CODES,
   type ErrorCode,
 } from './errors.ts';
 
@@ -20,7 +21,9 @@ const TABLE: Record<number, string[]> = {
     'range_too_large',
     'filter_requires_scope',
     'query_too_short',
+    'folder_invalid',
   ],
+  401: ['access_required', 'access_code_invalid'],
   403: ['host_not_allowed', 'origin_not_allowed', 'cross_site_request', 'csrf_rejected'],
   404: [
     'route_not_found',
@@ -32,16 +35,18 @@ const TABLE: Record<number, string[]> = {
     'panel_disabled',
     'probe_not_found',
     'completion_target_not_found',
+    'terminal_not_found',
   ],
   405: ['method_not_allowed'],
-  409: ['instance_mismatch'],
+  409: ['instance_mismatch', 'resume_unavailable', 'picker_busy'],
   410: ['transcript_gone'],
   413: ['payload_too_large'],
   414: ['uri_too_long'],
   415: ['unsupported_media_type'],
-  429: ['search_busy', 'export_busy'],
+  426: ['upgrade_required'],
+  429: ['search_busy', 'export_busy', 'access_rate_limited', 'terminal_limit'],
   500: ['internal_error'],
-  503: ['db_busy', 'disk_full', 'stream_limit', 'shutting_down'],
+  503: ['db_busy', 'disk_full', 'stream_limit', 'shutting_down', 'terminal_unavailable', 'claude_not_found'],
 };
 
 describe('ErrorCode catalogue (03 5.2, registry 7.1)', () => {
@@ -58,8 +63,25 @@ describe('ErrorCode catalogue (03 5.2, registry 7.1)', () => {
     for (const code of ERROR_CODES) expect(code).toMatch(/^[a-z]+(_[a-z]+)*$/);
   });
 
-  it('reserves exactly csrf_rejected and alert_not_found (97 F-4)', () => {
-    expect([...RESERVED_ERROR_CODES].sort()).toEqual(['alert_not_found', 'csrf_rejected']);
+  it('reserves exactly alert_not_found: csrf_rejected is produced since the access chain (02 2.2)', () => {
+    expect([...RESERVED_ERROR_CODES]).toEqual(['alert_not_found']);
+    expect(ERROR_CODES).toContain('csrf_rejected');
+  });
+
+  it('TERMINAL_ERROR_CODES is the vocabulary of the terminal service, a subset of the catalogue (02 2.2)', () => {
+    expect([...TERMINAL_ERROR_CODES].sort()).toEqual(
+      [
+        'terminal_unavailable',
+        'claude_not_found',
+        'folder_invalid',
+        'terminal_limit',
+        'terminal_not_found',
+        'session_not_found',
+        'resume_unavailable',
+        'picker_busy',
+      ].sort(),
+    );
+    for (const code of TERMINAL_ERROR_CODES) expect(ERROR_CODES).toContain(code);
   });
 
   it('the schema accepts catalogue codes only', () => {

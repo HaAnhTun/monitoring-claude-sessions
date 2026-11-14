@@ -247,6 +247,23 @@ const GUARD_AND_ROUTER_CODES: readonly ErrorCode[] = [
   'shutting_down',
 ];
 
+/**
+ * TEMPORARY (CAW-07): codes of the catalogue that no route definition lists yet. TERM-ROUTES removes the entries of its routes
+ * (and adds the guard codes it produces to `GUARD_AND_ROUTER_CODES`); nothing is added here.
+ */
+const PENDING_ROUTE_CODES: readonly ErrorCode[] = [
+  'access_code_invalid',
+  'access_rate_limited',
+  'upgrade_required',
+  'terminal_unavailable',
+  'claude_not_found',
+  'terminal_not_found',
+  'terminal_limit',
+  'picker_busy',
+  'folder_invalid',
+  'resume_unavailable',
+];
+
 describe('DA-T-API-3: one crafted request per error code', () => {
   const produced = new Set<ErrorCode>();
 
@@ -356,15 +373,19 @@ describe('DA-T-API-3: one crafted request per error code', () => {
     }
   });
 
-  it('meta-test: every code except the two reserved ones is listed by a route definition and produced by a request', async () => {
+  it('meta-test: every code except the reserved one and the pending ones is listed by a route definition and produced by a request', async () => {
     const run = await startInstance();
     // the codes of the guard and router group were produced above (their own test); the others are produced here
     const reserved = new Set<ErrorCode>(RESERVED_ERROR_CODES);
-    expect([...reserved].sort()).toEqual(['alert_not_found', 'csrf_rejected']);
+    expect([...reserved]).toEqual(['alert_not_found']);
     const listed = new Set<ErrorCode>(Object.values(routes).flatMap((route) => routeErrors(route)));
     // `completion_target_not_found` is listed by the `explainCompletion` row, which WP-29 adds to the registry; until then it
     // is the one code without a route definition, and this exemption disappears by itself when the row exists
-    const staged = new Set<ErrorCode>('explainCompletion' in routes ? [] : ['completion_target_not_found']);
+    // TEMPORARY (CAW-07): the codes whose routes arrive with the access and terminal work packages; TERM-ROUTES removes this list
+    const staged = new Set<ErrorCode>([
+      ...('explainCompletion' in routes ? [] : (['completion_target_not_found'] as const)),
+      ...PENDING_ROUTE_CODES,
+    ]);
     for (const code of ERROR_CODES) {
       if (reserved.has(code) || staged.has(code)) continue;
       expect(listed.has(code), `${code} is listed by a route definition`).toBe(true);

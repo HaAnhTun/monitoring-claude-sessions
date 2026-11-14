@@ -139,6 +139,7 @@ const nothing = defineRoute({
   errors: [],
   summary: 'Test route that answers 204.',
   contentType: null,
+  access: 'session', // a write route is never open (defineRoute); the adapter does not read it yet
 });
 
 const stream = defineRoute({

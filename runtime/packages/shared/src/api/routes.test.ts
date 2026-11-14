@@ -8,6 +8,7 @@ import { ERROR_CODES, RESERVED_ERROR_CODES, type ErrorCode } from './errors.ts';
 import { PanelResponseSchema } from './panels.ts';
 import {
   COMMON_ERROR_CODES,
+  DEFAULT_MAX_BODY_BYTES,
   ROUTE_IDS,
   buildPath,
   defineRoute,
@@ -207,6 +208,36 @@ const TABLE: [RouteId, string, string, string, ErrorCode[]][] = [
   ['stream', 'GET', '/api/v3/stream', 'since epoch', ['stream_limit']],
 ];
 
+/**
+ * TEMPORARY (CAW-07): the codes whose routes arrive in later work packages (the access routes, the terminal routes, the
+ * projects routes). TERMCONTRACTS removes every entry its routes list; nothing is added here.
+ */
+const PENDING_ROUTE_CODES: readonly ErrorCode[] = [
+  'access_code_invalid',
+  'access_rate_limited',
+  'upgrade_required',
+  'terminal_unavailable',
+  'claude_not_found',
+  'terminal_not_found',
+  'terminal_limit',
+  'picker_busy',
+  'folder_invalid',
+  'resume_unavailable',
+];
+
+/** The routes whose content any local client could read before the access code existed (02 A1). */
+const READER_ROUTE_IDS: readonly string[] = [
+  'transcriptWindow',
+  'transcriptLocate',
+  'searchTranscript',
+  'searchTranscripts',
+  'export',
+  'getEvent',
+  'listToolCalls',
+  'sessionToolCalls',
+  'sessionTimeline',
+];
+
 function queryKeys(id: RouteId): string[] {
   const query = routes[id].query;
   if (!(query instanceof z.ZodObject)) return [];
@@ -294,16 +325,25 @@ describe('route registry (03 6.1, 13)', () => {
     expect(queryKeys('listSessions')).not.toContain('task');
   });
 
-  it('every error code except the reserved ones is listed by some route (DA-T-API-3 meta-test)', () => {
+  it('every error code except the reserved and the pending ones is listed by some route (DA-T-API-3 meta-test)', () => {
     const listed = new Set<ErrorCode>(COMMON_ERROR_CODES);
     for (const id of ROUTE_IDS) for (const code of routeErrors(routes[id])) listed.add(code);
     // completion_target_not_found belongs to the explainCompletion row that WP-29 adds
-    const pending: ErrorCode[] = 'explainCompletion' in routes ? [] : ['completion_target_not_found'];
+    const pending: ErrorCode[] = [
+      ...('explainCompletion' in routes ? [] : (['completion_target_not_found'] as const)),
+      ...PENDING_ROUTE_CODES,
+    ];
     const missing = ERROR_CODES.filter(
       (c) => !listed.has(c) && !RESERVED_ERROR_CODES.includes(c) && !pending.includes(c),
     );
     expect(missing).toEqual([]);
     for (const code of RESERVED_ERROR_CODES) expect(listed.has(code), code).toBe(false);
+  });
+
+  it('the pending list names catalogue codes only and shrinks as the routes arrive', () => {
+    for (const code of PENDING_ROUTE_CODES) expect(ERROR_CODES).toContain(code);
+    // csrf_rejected and access_required are derived from the metadata, so they are no longer pending
+    for (const code of ['csrf_rejected', 'access_required'] as const) expect(PENDING_ROUTE_CODES).not.toContain(code);
   });
 
   it('common errors are the ones of the registry header, and a route lists them once', () => {
@@ -329,12 +369,52 @@ describe('route registry (03 6.1, 13)', () => {
     expect(all).toContain('validation_failed');
   });
 
+  it('derives access_required, csrf_rejected, payload_too_large and body_invalid_json from the metadata', () => {
+    const bodyCodes: ErrorCode[] = ['csrf_rejected', 'payload_too_large', 'body_invalid_json'];
+    expect(routeErrors(routes.health)).not.toContain('access_required');
+    for (const code of bodyCodes) expect(routeErrors(routes.health)).not.toContain(code);
+    for (const id of READER_ROUTE_IDS) expect(routeErrors(routes[id as RouteId]), id).toContain('access_required');
+    for (const code of bodyCodes) expect(routeErrors(routes.ingestNudge)).toContain(code);
+    expect(routeErrors(routes.ingestNudge)).not.toContain('access_required');
+    const session = routeErrors({ errors: [], access: 'session', body: z.strictObject({}) });
+    expect(session).toEqual(expect.arrayContaining(['access_required', ...bodyCodes]));
+    expect(routeErrors({ errors: [], access: 'ticket', body: z.strictObject({}) })).not.toContain('access_required');
+    const all = routeErrors({ errors: ['csrf_rejected'], access: 'session', body: z.strictObject({}) });
+    expect(new Set(all).size).toBe(all.length);
+  });
+
   it('every q route lists query_too_short (5.2)', () => {
     for (const id of ROUTE_IDS) {
       const keys = queryKeys(id);
       if (keys.includes('q') && id !== 'searchTranscript' && id !== 'errors') {
         expect(routes[id].errors, id).toContain('query_too_short');
       }
+    }
+  });
+});
+
+describe('route metadata (02 2.1, A1)', () => {
+  it('is open except the nine content routes, which are reader routes', () => {
+    for (const id of ROUTE_IDS) {
+      expect(routes[id].access, id).toBe(READER_ROUTE_IDS.includes(id) ? 'reader' : 'open');
+    }
+    expect(ROUTE_IDS.filter((id) => routes[id].access === 'reader')).toHaveLength(9);
+  });
+
+  it('keeps the body limit of the nudge guard and no body limit for a route without a body', () => {
+    expect(routes.ingestNudge.maxBodyBytes).toBe(256);
+    for (const id of ROUTE_IDS) {
+      if (routes[id].body === null) expect(routes[id].maxBodyBytes, id).toBe(0);
+    }
+  });
+
+  it('every existing route answers 200 or 204, never 101', () => {
+    for (const id of ROUTE_IDS) expect([200, 204], id).toContain(routes[id].successStatus);
+  });
+
+  it('the only write route that is open is the nudge', () => {
+    for (const id of ROUTE_IDS) {
+      if (routes[id].method !== 'GET' && id !== 'ingestNudge') expect(routes[id].access, id).not.toBe('open');
     }
   });
 });
@@ -557,5 +637,108 @@ describe('defineRoute', () => {
         contentType: null,
       }),
     ).toThrow(/204/);
+  });
+
+  const base = {
+    params: null,
+    query: null,
+    body: null,
+    response: null,
+    summary: 'Test route.',
+    errors: [],
+  } as const;
+
+  it('fills the defaults: open access, 4096 bytes with a body and none without', () => {
+    const get = defineRoute({
+      ...base,
+      id: 'a',
+      method: 'GET',
+      path: '/api/v3/a',
+      response: z.strictObject({}),
+      successStatus: 200,
+      contentType: 'application/json',
+    });
+    expect(get.access).toBe('open');
+    expect(get.maxBodyBytes).toBe(0);
+    const post = defineRoute({
+      ...base,
+      id: 'b',
+      method: 'POST',
+      path: '/api/v3/b',
+      body: z.strictObject({}),
+      successStatus: 204,
+      contentType: null,
+      access: 'session',
+    });
+    expect(post.access).toBe('session');
+    expect(post.maxBodyBytes).toBe(DEFAULT_MAX_BODY_BYTES);
+    expect(DEFAULT_MAX_BODY_BYTES).toBe(4096);
+    expect(defineRoute({ ...post, id: 'c', path: '/api/v3/c', maxBodyBytes: 65536 }).maxBodyBytes).toBe(65536);
+  });
+
+  it('accepts a websocket route: a GET with no response and the status 101', () => {
+    const socket = defineRoute({
+      ...base,
+      id: 'ws',
+      method: 'GET',
+      path: '/api/v3/ws/:name',
+      params: z.strictObject({ name: z.string() }),
+      successStatus: 101,
+      contentType: 'websocket',
+      access: 'session',
+    });
+    expect(socket.successStatus).toBe(101);
+    expect(socket.contentType).toBe('websocket');
+  });
+
+  it('refuses a broken websocket route and a 101 anywhere else', () => {
+    const ws = { ...base, id: 'ws', path: '/api/v3/ws', contentType: 'websocket', access: 'session' } as const;
+    expect(() => defineRoute({ ...ws, method: 'POST', body: z.strictObject({}), successStatus: 101 })).toThrow(
+      /websocket/,
+    );
+    expect(() => defineRoute({ ...ws, method: 'GET', successStatus: 200 })).toThrow(/websocket/);
+    expect(() => defineRoute({ ...ws, method: 'GET', successStatus: 101, response: z.strictObject({}) })).toThrow(
+      /websocket/,
+    );
+    expect(() =>
+      defineRoute({
+        ...base,
+        id: 'j',
+        method: 'GET',
+        path: '/api/v3/j',
+        response: z.strictObject({}),
+        successStatus: 101,
+        contentType: 'application/json',
+      }),
+    ).toThrow(/101/);
+  });
+
+  it('refuses a ticket route without a body and an open write route other than the nudge', () => {
+    expect(() =>
+      defineRoute({
+        ...base,
+        id: 't',
+        method: 'GET',
+        path: '/api/v3/t',
+        successStatus: 204,
+        contentType: null,
+        access: 'ticket',
+      }),
+    ).toThrow(/ticket/);
+    const write = { ...base, method: 'POST', body: z.strictObject({}), successStatus: 204, contentType: null } as const;
+    expect(() => defineRoute({ ...write, id: 'w', path: '/api/v3/w' })).toThrow(/must not be open/);
+    expect(() => defineRoute({ ...write, id: 'w', path: '/api/v3/w', access: 'open' })).toThrow(/must not be open/);
+    expect(defineRoute({ ...write, id: 'ingestNudge', path: '/api/v3/n' }).access).toBe('open');
+    expect(defineRoute({ ...write, id: 'w', path: '/api/v3/w', access: 'ticket' }).access).toBe('ticket');
+  });
+
+  it('refuses maxBodyBytes without a body and a limit that is not a positive integer', () => {
+    const get = { ...base, id: 'g', method: 'GET', path: '/api/v3/g', successStatus: 204, contentType: null } as const;
+    expect(() => defineRoute({ ...get, maxBodyBytes: 10 })).toThrow(/maxBodyBytes/);
+    expect(defineRoute({ ...get, maxBodyBytes: 0 }).maxBodyBytes).toBe(0);
+    const post = { ...get, method: 'POST', body: z.strictObject({}), access: 'session' } as const;
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() => defineRoute({ ...post, maxBodyBytes: bad }), String(bad)).toThrow(/maxBodyBytes/);
+    }
   });
 });

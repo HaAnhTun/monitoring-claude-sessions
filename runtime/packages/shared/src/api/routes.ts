@@ -64,7 +64,20 @@ import { PanelKeySchema, PanelResponseSchema } from './panels.ts';
 // ---- definition ----------------------------------------------------------------------------------------------------
 
 export type RouteMethod = 'GET' | 'POST';
-export type RouteContentType = 'application/json' | 'application/x-ndjson' | 'text/event-stream';
+export type RouteContentType = 'application/json' | 'application/x-ndjson' | 'text/event-stream' | 'websocket';
+
+/**
+ * Who may call a route (02 2.1, A1). `open`: any local client that passes the guards. `reader`: a session cookie, or on a
+ * GET the control token as a Bearer header; served open when no access service is wired (a task instance). `session`: a
+ * valid session cookie. `ticket`: the one route that redeems an access code (it needs a body).
+ */
+export type RouteAccess = 'open' | 'reader' | 'session' | 'ticket';
+
+/** The body limit of a route with a body that names none (02 2.1). */
+export const DEFAULT_MAX_BODY_BYTES = 4096;
+
+/** The one write route that stays `open`: the hook nudge of the spool (03 5.1). */
+const OPEN_WRITE_ROUTE_ID = 'ingestNudge';
 
 export interface RouteDefinition<
   Id extends string = string,
@@ -82,14 +95,31 @@ export interface RouteDefinition<
   /** Query parameters (raw text in, typed out). */
   readonly query: Q;
   readonly body: B;
-  /** `null` for the streams and for `204`. */
+  /** `null` for the streams, for `204` and for a WebSocket upgrade. */
   readonly response: R;
-  readonly successStatus: 200 | 204;
+  /** `101` only with the content type `websocket` (the status after the upgrade). */
+  readonly successStatus: 101 | 200 | 204;
   /** The specific error codes of the route (the registry column "Specific errors"); see `routeErrors` for the full list. */
   readonly errors: readonly ErrorCode[];
   readonly summary: string;
   readonly contentType: RouteContentType | null;
+  /** Who may call the route; `open` unless the definition says otherwise. */
+  readonly access: RouteAccess;
+  /** The largest request body in bytes: `DEFAULT_MAX_BODY_BYTES` for a route with a body that names none, `0` without a body. */
+  readonly maxBodyBytes: number;
 }
+
+/** What a route definition spells out: `access` and `maxBodyBytes` are optional, so a route written before them stays valid. */
+export type RouteSpec<
+  Id extends string = string,
+  P extends z.ZodObject | null = z.ZodObject | null,
+  Q extends z.ZodType | null = z.ZodType | null,
+  B extends z.ZodType | null = z.ZodType | null,
+  R extends z.ZodType | null = z.ZodType | null,
+> = Omit<RouteDefinition<Id, P, Q, B, R>, 'access' | 'maxBodyBytes'> & {
+  readonly access?: RouteAccess;
+  readonly maxBodyBytes?: number;
+};
 
 /** Declares a route and checks the invariants that a typo would break silently. Throws an `Error` on a broken definition. */
 export function defineRoute<
@@ -98,7 +128,7 @@ export function defineRoute<
   Q extends z.ZodType | null,
   B extends z.ZodType | null,
   R extends z.ZodType | null,
->(spec: RouteDefinition<Id, P, Q, B, R>): RouteDefinition<Id, P, Q, B, R> {
+>(spec: RouteSpec<Id, P, Q, B, R>): RouteDefinition<Id, P, Q, B, R> {
   const names = [...spec.path.matchAll(/:(\w+)/g)].map((m) => m[1] ?? '').sort();
   const declared = spec.params === null ? [] : Object.keys(spec.params.shape).sort();
   if (names.join() !== declared.join()) {
@@ -114,7 +144,34 @@ export function defineRoute<
   if (spec.successStatus === 200 && spec.contentType === 'application/json' && spec.response === null) {
     throw new Error(`route ${spec.id}: a JSON route needs a response schema`);
   }
-  return spec;
+  const access = spec.access ?? 'open';
+  if (spec.contentType === 'websocket') {
+    if (spec.method !== 'GET' || spec.response !== null || spec.successStatus !== 101) {
+      throw new Error(`route ${spec.id}: a websocket route is a GET with no response schema and the status 101`);
+    }
+  } else if (spec.successStatus === 101) {
+    throw new Error(`route ${spec.id}: the status 101 belongs to a websocket route`);
+  }
+  if (access === 'ticket' && spec.body === null) throw new Error(`route ${spec.id}: a ticket route needs a body`);
+  if (spec.method !== 'GET' && access === 'open' && spec.id !== OPEN_WRITE_ROUTE_ID) {
+    throw new Error(`route ${spec.id}: a write route must not be open`);
+  }
+  // 0 is what a definition without a body reads back as, so that `defineRoute({ ...route })` stays valid
+  if (spec.body === null && spec.maxBodyBytes !== undefined && spec.maxBodyBytes !== 0) {
+    throw new Error(`route ${spec.id}: maxBodyBytes needs a body`);
+  }
+  if (
+    spec.body !== null &&
+    spec.maxBodyBytes !== undefined &&
+    !(Number.isInteger(spec.maxBodyBytes) && spec.maxBodyBytes > 0)
+  ) {
+    throw new Error(`route ${spec.id}: maxBodyBytes must be a positive integer`);
+  }
+  return {
+    ...spec,
+    access,
+    maxBodyBytes: spec.body === null ? 0 : (spec.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES),
+  };
 }
 
 /**
@@ -136,9 +193,20 @@ export const COMMON_ERROR_CODES: readonly ErrorCode[] = [
   'shutting_down',
 ];
 
-/** Every code the route can answer: the common ones, then its own. */
-export function routeErrors(route: Pick<RouteDefinition, 'errors'>): ErrorCode[] {
-  return [...new Set<ErrorCode>([...COMMON_ERROR_CODES, ...route.errors])];
+/**
+ * Every code the route can answer: the common ones, then the ones its metadata implies (a route behind a credential can
+ * answer `access_required`; a route with a body can answer `csrf_rejected`, `payload_too_large` and `body_invalid_json`),
+ * then its own. A route that omits `access` and `body` (as the partial route of a test may) implies nothing.
+ */
+export function routeErrors(
+  route: Pick<RouteDefinition, 'errors'> & Partial<Pick<RouteDefinition, 'access' | 'body'>>,
+): ErrorCode[] {
+  const derived: ErrorCode[] = [];
+  if (route.access === 'session' || route.access === 'reader') derived.push('access_required');
+  if (route.body !== undefined && route.body !== null) {
+    derived.push('csrf_rejected', 'payload_too_large', 'body_invalid_json');
+  }
+  return [...new Set<ErrorCode>([...COMMON_ERROR_CODES, ...derived, ...route.errors])];
 }
 
 // ---- parameter and response schemas that belong to no entity -------------------------------------------------------
@@ -310,6 +378,7 @@ export const routes = {
     errors: ['session_not_found', 'agent_not_found', 'query_too_short'],
     summary: 'The activity events of one session (the events route with the session fixed).',
     contentType: 'application/json',
+    access: 'reader',
   }),
   sessionToolCalls: defineRoute({
     id: 'sessionToolCalls',
@@ -323,6 +392,7 @@ export const routes = {
     errors: ['session_not_found', 'query_too_short'],
     summary: 'The tool calls of one session.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   sessionTransitions: defineRoute({
     id: 'sessionTransitions',
@@ -362,6 +432,7 @@ export const routes = {
     errors: ['session_not_found', 'agent_not_found', 'transcript_gone'],
     summary: 'A window of transcript entries read from the transcript file on request.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   transcriptLocate: defineRoute({
     id: 'transcriptLocate',
@@ -375,6 +446,7 @@ export const routes = {
     errors: ['session_not_found', 'agent_not_found', 'transcript_gone', 'event_not_found'],
     summary: 'The transcript entry at an index, a time or a byte offset.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   searchTranscript: defineRoute({
     id: 'searchTranscript',
@@ -388,6 +460,7 @@ export const routes = {
     errors: ['session_not_found', 'search_busy', 'transcript_gone'],
     summary: 'Content search inside one session transcript, with honest coverage.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   searchTranscripts: defineRoute({
     id: 'searchTranscripts',
@@ -401,6 +474,7 @@ export const routes = {
     errors: ['search_busy', 'cursor_invalid', 'query_too_short'],
     summary: 'Content search across the transcripts of the instance, with honest coverage.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   listAgents: defineRoute({
     id: 'listAgents',
@@ -440,6 +514,7 @@ export const routes = {
     errors: ['event_not_found'],
     summary: 'One activity event.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   listToolCalls: defineRoute({
     id: 'listToolCalls',
@@ -453,6 +528,7 @@ export const routes = {
     errors: ['filter_requires_scope', 'query_too_short'],
     summary: 'Tool calls across sessions, filtered, sorted and paged.',
     contentType: 'application/json',
+    access: 'reader',
   }),
   workItemBoard: defineRoute({
     id: 'workItemBoard',
@@ -571,6 +647,7 @@ export const routes = {
     errors: ['range_invalid', 'export_busy'],
     summary: 'Streams the instance data as JSON lines in the format mcs.export/1.',
     contentType: 'application/x-ndjson',
+    access: 'reader',
   }),
   ingestNudge: defineRoute({
     id: 'ingestNudge',
@@ -584,6 +661,7 @@ export const routes = {
     errors: ['instance_mismatch', 'payload_too_large', 'unsupported_media_type', 'body_invalid_json'],
     summary: 'Tells the server that the spool has new data; the body carries no event data.',
     contentType: null,
+    maxBodyBytes: 256, // the limit of the nudge guard (NUDGE_MAX_BODY_BYTES of the server)
   }),
   ingestProbe: defineRoute({
     id: 'ingestProbe',

@@ -1,7 +1,14 @@
 // The error mapper and the envelope sender (03 5.2 step 9, DA-T-API-3): one fixed message per code, the status and the
 // headers of each code, and the mapping of everything a handler or the engine can throw.
 import { DbError } from '@mcs/engine';
-import { ERROR_CODES, ERROR_HTTP_STATUS, ErrorEnvelopeSchema, REQUEST_ID_RE, type ErrorCode } from '@mcs/shared';
+import {
+  ERROR_CODES,
+  ERROR_HTTP_STATUS,
+  ErrorEnvelopeSchema,
+  REQUEST_ID_RE,
+  TERMINAL_ERROR_CODES,
+  type ErrorCode,
+} from '@mcs/shared';
 import type { Response } from 'express';
 import { describe, expect, it } from 'vitest';
 
@@ -54,7 +61,7 @@ describe('ERROR_MESSAGES', () => {
     for (const code of ERROR_CODES) {
       const message = ERROR_MESSAGES[code];
       expect(message.length, code).toBeGreaterThan(8);
-      expect(message, code).toMatch(/^[A-Z][A-Za-z0-9 ,;.'/-]+[.]$/);
+      expect(message, code).toMatch(/^[A-Z][A-Za-z0-9 ,:;.'/-]+[.]$/);
       expect(message, code).not.toContain('${');
     }
   });
@@ -87,6 +94,39 @@ describe('sendError', () => {
     expect(send('internal_error').getHeader('retry-after')).toBeUndefined();
     expect(send('method_not_allowed', { allow: ['GET', 'HEAD'] }).getHeader('allow')).toBe('GET, HEAD');
     expect(send('method_not_allowed').getHeader('allow')).toBeUndefined();
+  });
+
+  it('adds the headers of the access and upgrade codes (02 2.2)', () => {
+    for (const code of ['access_required', 'access_code_invalid'] as const) {
+      expect(send(code).getHeader('www-authenticate'), code).toBe('CAW-Access');
+      expect(send(code).getHeader('retry-after'), code).toBeUndefined();
+    }
+    const upgrade = send('upgrade_required');
+    expect(upgrade.statusCode).toBe(426);
+    expect(upgrade.getHeader('upgrade')).toBe('websocket');
+    expect(upgrade.getHeader('connection')).toBe('Upgrade');
+    for (const code of ERROR_CODES) {
+      if (code === 'access_required' || code === 'access_code_invalid') continue;
+      expect(send(code).getHeader('www-authenticate'), code).toBeUndefined();
+      if (code !== 'upgrade_required') expect(send(code).getHeader('upgrade'), code).toBeUndefined();
+    }
+  });
+
+  it('retryAfterSeconds sets Retry-After in whole seconds, at least 1, and replaces the static value', () => {
+    expect(send('access_rate_limited', { retryAfterSeconds: 17 }).getHeader('retry-after')).toBe('17');
+    expect(send('access_rate_limited', { retryAfterSeconds: 16.2 }).getHeader('retry-after')).toBe('17');
+    expect(send('access_rate_limited', { retryAfterSeconds: 0 }).getHeader('retry-after')).toBe('1');
+    expect(send('access_rate_limited').statusCode).toBe(429);
+    expect(send('access_rate_limited').getHeader('retry-after')).toBe('60');
+    expect(send('db_busy', { retryAfterSeconds: 5 }).getHeader('retry-after')).toBe('5');
+    expect(send('access_rate_limited', { retryAfterSeconds: Number.NaN }).getHeader('retry-after')).toBe('60');
+  });
+
+  it('closeConnection sets Connection: close, and only when asked', () => {
+    expect(send('payload_too_large', { closeConnection: true }).getHeader('connection')).toBe('close');
+    expect(send('payload_too_large').getHeader('connection')).toBeUndefined();
+    expect(send('payload_too_large', { closeConnection: false }).getHeader('connection')).toBeUndefined();
+    expect(send('upgrade_required', { closeConnection: true }).getHeader('connection')).toBe('close');
   });
 
   it('carries details only when there are some', () => {
@@ -150,6 +190,73 @@ describe('mapError', () => {
       readonly code = 'session_not_found';
     }
     expect(mapError(new OtherError('x'))).toEqual({ code: 'internal_error', internal: true });
+  });
+
+  describe('a TerminalError of the engine (name, code and optional details)', () => {
+    class TerminalError extends Error {
+      readonly code: string;
+      readonly details: unknown;
+      constructor(code: string, details?: unknown) {
+        super('a message that holds /home/someone/secret');
+        this.name = 'TerminalError';
+        this.code = code;
+        this.details = details;
+      }
+    }
+
+    it.each([
+      ['UNSUPPORTED_OS', 'terminal_unavailable', false],
+      ['NATIVE_MISSING', 'terminal_unavailable', false],
+      ['NATIVE_LOAD_FAILED', 'terminal_unavailable', false],
+      ['COMMAND_UNSUPPORTED', 'terminal_unavailable', false],
+      ['ARGS_UNSAFE', 'terminal_unavailable', false],
+      ['SPAWN_FAILED', 'terminal_unavailable', true],
+      ['START_TIMEOUT', 'terminal_unavailable', true],
+      ['CLAUDE_NOT_FOUND', 'claude_not_found', false],
+      ['FOLDER_INVALID', 'folder_invalid', false],
+      ['FOLDER_NOT_FOUND', 'folder_invalid', false],
+      ['SESSION_LIMIT', 'terminal_limit', false],
+      ['SESSION_NOT_FOUND', 'terminal_not_found', false],
+      ['SESSION_ENDED', 'terminal_not_found', false],
+      ['NAME_INVALID', 'terminal_not_found', false],
+      ['MESSAGE_TOO_LARGE', 'payload_too_large', false],
+      ['SHUTTING_DOWN', 'shutting_down', false],
+    ] as const)('maps %s to %s (internal: %s)', (engineCode, code, internal) => {
+      expect(mapError(new TerminalError(engineCode))).toEqual({ code, internal });
+    });
+
+    it('passes the codes of TERMINAL_ERROR_CODES through, with details of the shape { path, issue }', () => {
+      for (const code of TERMINAL_ERROR_CODES) {
+        expect(mapError(new TerminalError(code)), code).toEqual({ code, internal: false });
+      }
+      const details = [{ path: 'sessionId', issue: 'not_resumable' }];
+      expect(mapError(new TerminalError('resume_unavailable', details))).toEqual({
+        code: 'resume_unavailable',
+        details,
+        internal: false,
+      });
+      expect(mapError(new TerminalError('FOLDER_INVALID', details)).details).toEqual(details);
+    });
+
+    it('drops details of another shape and never forwards the message', () => {
+      for (const bad of [[{ path: 'a' }], [{ path: 'a', issue: 1 }], ['x'], [], 'text', { path: 'a', issue: 'b' }]) {
+        const mapped = mapError(new TerminalError('FOLDER_INVALID', bad));
+        expect(mapped, JSON.stringify(bad)).toEqual({ code: 'folder_invalid', internal: false });
+      }
+      expect(JSON.stringify(mapError(new TerminalError('SESSION_LIMIT')))).not.toContain('secret');
+    });
+
+    it('treats an unknown or missing code as an internal failure, and ignores a look-alike that is not a TerminalError', () => {
+      expect(mapError(new TerminalError('NOPE'))).toEqual({ code: 'internal_error', internal: true });
+      expect(mapError(new TerminalError('constructor'))).toEqual({ code: 'internal_error', internal: true });
+      const noCode = new Error('x');
+      noCode.name = 'TerminalError';
+      expect(mapError(noCode)).toEqual({ code: 'internal_error', internal: true });
+      class Other extends Error {
+        readonly code = 'SESSION_LIMIT';
+      }
+      expect(mapError(new Other('x'))).toEqual({ code: 'internal_error', internal: true });
+    });
   });
 
   it('maps a failed percent-decoding of the router to validation_failed', () => {
