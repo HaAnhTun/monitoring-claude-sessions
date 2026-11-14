@@ -1,8 +1,9 @@
 // The one list of documented environment variables (01 section 2.10, I-27, D-18) is a real grep, not a fixed list:
-// 1. every `MCS_*` name found in the sources is in `DOCUMENTED_ENV_VARS`;
-// 2. every documented name is read by at least one of its `readers` files that exists; a name whose reader files do not exist
-//    yet (or are still scaffold stubs) is printed as `pending` and does not fail (the Phase 6 gate requires zero `pending`);
-// 3. a `MCS_TEST_*` hook name never appears in production sources outside `test-hooks.ts`.
+// 1. every `MCS_*` and `CAW_*` name found in the sources is a `name` or a `legacyName` in `DOCUMENTED_ENV_VARS`;
+// 2. every documented name is read by at least one of its `readers` files that exists (a reader may mention either spelling
+//    and may be a `.bat` file); a name whose reader files do not exist yet (or are still scaffold stubs) is printed as `pending`
+//    and does not fail (the Phase 6 gate requires zero `pending`);
+// 3. a test hook name (`MCS_TEST_*` or `CAW_TEST_*`) never appears in production sources outside `test-hooks.ts`.
 // The scanner is a pure function over a skill-shaped folder, so its own rules are tested on throw-away trees first.
 import { type Dirent, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,8 +14,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const SKILL = join(import.meta.dirname, '..', '..', '..');
 
-/** `MCS_` followed by upper-case words. A trailing underscore (`MCS_TEST_` in a prefix test) is not a name. */
-const ENV_NAME = /\bMCS_[A-Z0-9_]*[A-Z0-9]\b/g;
+/** `MCS_` or `CAW_` followed by upper-case words. A trailing underscore (a prefix test) is not a name. */
+const ENV_NAME = /\b(?:MCS|CAW)_[A-Z0-9_]*[A-Z0-9]\b/g;
+/** The prefixes of a test hook name: it lives only in `test-hooks.ts` (07 section 3.5). */
+const TEST_HOOK_PREFIXES = ['MCS_TEST_', 'CAW_TEST_'] as const;
 const TEST_HOOK_HOME = 'runtime/packages/engine/src/runtime/test-hooks.ts';
 /** The declaration of the list itself names every variable; it is not a reader. */
 const DECLARATION = 'runtime/packages/shared/src/env.ts';
@@ -26,6 +29,7 @@ const STUB_MARKER = /scaffold stub|stub for the scaffold/i;
  * in full.
  */
 const mcs = (rest: string): string => `MCS_${rest}`;
+const caw = (rest: string): string => `CAW_${rest}`;
 
 /**
  * Names that a committed file mentions on purpose without documenting them, each with the reason. The test fails when a
@@ -49,6 +53,9 @@ function* walk(dir: string): Generator<string> {
     else yield full;
   }
 }
+
+/** The spellings under which a registry entry is known: its canonical name and its legacy name. */
+const spellings = (v: DocumentedEnvVar): string[] => (v.legacyName === undefined ? [v.name] : [v.name, v.legacyName]);
 
 const SOURCE_FILE = /\.(?:ts|tsx|mts|js|mjs|cjs)$/;
 const TEST_FILE = /(?:\.test\.|\.spec\.)[cm]?[jt]sx?$|\/(?:test|tests|e2e)\//;
@@ -111,11 +118,21 @@ function sourceFiles(skill: string): string[] {
       // a skill folder without scripts
     }
   }
+  // the compatibility scripts of a skill folder (`skills/<name>/compat/*.mjs`, 07 section 12.1)
+  for (const name of skills) {
+    try {
+      for (const file of readdirSync(join(skill, 'skills', name, 'compat'))) {
+        if (file.endsWith('.mjs')) found.push(`skills/${name}/compat/${file}`);
+      }
+    } catch {
+      // a skill folder without compatibility scripts
+    }
+  }
   return [...new Set(found)].sort();
 }
 
 /** `process.env.NAME` and `process.env['NAME']`: the forms in which code reads the environment of its own process. */
-const READ_FORM = /process\.env(?:\.|\[\s*['"`])(MCS_[A-Z0-9_]*[A-Z0-9])\b/g;
+const READ_FORM = /process\.env(?:\.|\[\s*['"`])((?:MCS|CAW)_[A-Z0-9_]*[A-Z0-9])\b/g;
 
 /** Test code: test files, test folders and the dev-only testkit package. */
 function isTestCode(file: string): boolean {
@@ -140,7 +157,7 @@ function allNamesIn(skill: string, file: string): string[] {
 }
 
 interface EnvReport {
-  /** `<file>: <name>` for every `MCS_*` name that is neither documented nor a known exception. */
+  /** `<file>: <name>` for every `MCS_*` or `CAW_*` name that is neither documented nor a known exception. */
   undocumented: string[];
   /** Known exceptions that no longer hold. */
   staleExceptions: string[];
@@ -148,7 +165,7 @@ interface EnvReport {
   pending: string[];
   /** Documented names whose existing reader files never mention them. */
   unread: string[];
-  /** `MCS_TEST_*` hook names in production sources outside `test-hooks.ts`. */
+  /** Test hook names (`MCS_TEST_*`, `CAW_TEST_*`) in production sources outside `test-hooks.ts`. */
   hookLeaks: string[];
 }
 
@@ -157,7 +174,7 @@ function scanEnvironment(
   documented: readonly DocumentedEnvVar[],
   known: readonly { file: string; name: string }[] = [],
 ): EnvReport {
-  const names = new Set(documented.map((v) => v.name));
+  const names = new Set(documented.flatMap(spellings));
   const files = sourceFiles(skill);
   const report: EnvReport = { undocumented: [], staleExceptions: [], pending: [], unread: [], hookLeaks: [] };
 
@@ -172,7 +189,7 @@ function scanEnvironment(
     }
     if (isProduction(file) && file !== TEST_HOOK_HOME) {
       for (const name of allNamesIn(skill, file)) {
-        if (name.startsWith('MCS_TEST_')) report.hookLeaks.push(`${file}: ${name}`);
+        if (TEST_HOOK_PREFIXES.some((prefix) => name.startsWith(prefix))) report.hookLeaks.push(`${file}: ${name}`);
       }
     }
   }
@@ -182,7 +199,7 @@ function scanEnvironment(
   }
 
   for (const variable of documented) {
-    const pattern = new RegExp(`\\b${variable.name}\\b`);
+    const pattern = new RegExp(`\\b(?:${spellings(variable).join('|')})\\b`);
     const existing: { reader: string; stub: boolean; mentions: boolean }[] = [];
     for (const reader of variable.readers) {
       let content: string;
@@ -343,6 +360,79 @@ describe('scanEnvironment on throw-away trees', () => {
     const documented: DocumentedEnvVar[] = [{ name: hookName, scope: 'test', readers: [TEST_HOOK_HOME] }];
     expect(scanEnvironment(skill, documented).hookLeaks).toEqual([
       `runtime/packages/engine/src/runtime/other.ts: ${hookName}`,
+    ]);
+  });
+
+  it('reports an undocumented CAW_ name as it does an MCS_ one', () => {
+    const cawBogus = caw('NOT_DOCUMENTED_X');
+    const skill = tree({
+      'runtime/packages/engine/src/a.ts': `export const a = process.env['${cawBogus}'];\n`,
+      'runtime/packages/engine/src/a.test.ts': `export const b = process.env['${cawBogus}'];\n`,
+      'runtime/packages/engine/src/c.test.ts': `vi.stubEnv('${cawBogus}', 'x');\n`,
+    });
+    expect(scanEnvironment(skill, []).undocumented).toEqual([
+      `runtime/packages/engine/src/a.test.ts: ${cawBogus}`,
+      `runtime/packages/engine/src/a.ts: ${cawBogus}`,
+    ]);
+  });
+
+  it('accepts a name and a legacyName of the registry, and nothing else of the same family', () => {
+    const flipped: readonly DocumentedEnvVar[] = [
+      {
+        name: caw('SAMPLE'),
+        legacyName: mcs('SAMPLE'),
+        scope: 'runtime',
+        readers: ['runtime/packages/engine/src/a.ts'],
+      },
+    ];
+    const skill = tree({
+      'runtime/packages/engine/src/a.ts': `export const a = [process.env.${caw('SAMPLE')}, process.env.${mcs('SAMPLE')}];\n`,
+      'runtime/packages/engine/src/b.ts': `export const b = [process.env.${caw('SAMPLE_OTHER')}, process.env.${mcs('SAMPL')}];\n`,
+    });
+    expect(scanEnvironment(skill, flipped).undocumented).toEqual([
+      `runtime/packages/engine/src/b.ts: ${caw('SAMPLE_OTHER')}`,
+      `runtime/packages/engine/src/b.ts: ${mcs('SAMPL')}`,
+    ]);
+  });
+
+  it('lets a reader satisfy an entry by mentioning either spelling, in a .bat file too', () => {
+    const entry = (readers: string[]): DocumentedEnvVar[] => [
+      { name: caw('SAMPLE'), legacyName: mcs('SAMPLE'), scope: 'runtime', readers },
+    ];
+    const canonicalOnly = tree({
+      'runtime/packages/engine/src/a.ts': `export const a = process.env.${caw('SAMPLE')};\n`,
+    });
+    expect(scanEnvironment(canonicalOnly, entry(['runtime/packages/engine/src/a.ts'])).unread).toEqual([]);
+    const legacyOnly = tree({ 'runtime/packages/engine/src/a.ts': `export const a = process.env.${mcs('SAMPLE')};\n` });
+    expect(scanEnvironment(legacyOnly, entry(['runtime/packages/engine/src/a.ts'])).unread).toEqual([]);
+    const bat = tree({ 'skills/x/scripts/start.bat': `if "%${caw('SAMPLE')}%"=="" exit /b 1\n` });
+    const report = scanEnvironment(bat, entry(['skills/x/scripts/start.bat']));
+    expect(report.unread).toEqual([]);
+    expect(report.pending).toEqual([]);
+    const silent = tree({ 'skills/x/scripts/start.bat': '@echo off\n' });
+    expect(scanEnvironment(silent, entry(['skills/x/scripts/start.bat'])).unread).toHaveLength(1);
+  });
+
+  it('reports a CAW_TEST_ hook name in production sources outside test-hooks.ts, but not in test files', () => {
+    const hook = caw('TEST_SOMETHING_NEW');
+    const skill = tree({
+      'runtime/packages/engine/src/runtime/other.ts': `export const t = process.env['${hook}'];\n`,
+      'runtime/packages/engine/src/runtime/other.test.ts': `export const t = process.env['${hook}'];\n`,
+      [TEST_HOOK_HOME]: `export const t = process.env['${hook}'];\n`,
+    });
+    const documented: DocumentedEnvVar[] = [{ name: hook, scope: 'test', readers: [TEST_HOOK_HOME] }];
+    expect(scanEnvironment(skill, documented).hookLeaks).toEqual([
+      `runtime/packages/engine/src/runtime/other.ts: ${hook}`,
+    ]);
+  });
+
+  it('scans the compatibility scripts of a skill folder', () => {
+    const skill = tree({
+      'skills/sample-skill/compat/old.mjs': `export const a = process.env.${caw('NOT_DOCUMENTED_X')};\n`,
+      'skills/sample-skill/compat/readme.md': `${caw('NOT_DOCUMENTED_X')}\n`,
+    });
+    expect(scanEnvironment(skill, []).undocumented).toEqual([
+      `skills/sample-skill/compat/old.mjs: ${caw('NOT_DOCUMENTED_X')}`,
     ]);
   });
 

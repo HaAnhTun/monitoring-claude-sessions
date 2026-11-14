@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { DOCUMENTED_ENV_VARS } from './env.ts';
+import { DOCUMENTED_ENV_VARS, type DocumentedEnvVar, legacyNamesInUse } from './env.ts';
+import { CLI_ALIAS, CLI_NAME, PRODUCT_NAME } from './product.ts';
 
 /** The complete list of 01 section 2.10, in the order of that section. */
 const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
@@ -35,6 +36,138 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_WEB_PREVIEW_PORT', 'dev'],
   ['MCS_BUILD_ID', 'dev'],
 ];
+
+/**
+ * Runtime variables that still carry their historical `MCS_*` name. The flip work package renames them to `CAW_*` with a
+ * `legacyName` and empties this list; until then no other runtime entry may keep the old prefix.
+ */
+const UNFLIPPED_RUNTIME: readonly string[] = [
+  'MCS_LOG_LEVEL',
+  'MCS_HOOK_DISABLE',
+  'MCS_HOME',
+  'MCS_FS_WATCH',
+  'MCS_LAUNCHER_MODE',
+  'MCS_DEBUG',
+];
+
+/** The registry rules of 07 section 4.1, as a function so that the rules themselves are tested on samples. */
+function registryProblems(vars: readonly DocumentedEnvVar[], unflipped: readonly string[] = []): string[] {
+  const problems: string[] = [];
+  for (const v of vars) {
+    if (v.scope === 'runtime') {
+      const canonical = v.name.startsWith('CAW_') || v.name === 'CLAUDE_CONFIG_DIR';
+      if (!canonical && !unflipped.includes(v.name)) problems.push(`${v.name}: a runtime name is CAW_*`);
+      if (v.legacyName !== undefined) {
+        if (!v.name.startsWith('CAW_')) problems.push(`${v.name}: only a CAW_* entry has a legacyName`);
+        else if (v.legacyName !== `MCS_${v.name.slice('CAW_'.length)}`) {
+          problems.push(`${v.name}: legacyName must be MCS_ plus the same suffix`);
+        }
+      }
+    } else if (v.legacyName !== undefined) {
+      problems.push(`${v.name}: a ${v.scope} entry has no legacyName`);
+    }
+  }
+  return problems;
+}
+
+describe('registry rules (07 section 4.1)', () => {
+  it('holds for the registry, with the runtime names that are not flipped yet', () => {
+    expect(registryProblems(DOCUMENTED_ENV_VARS, UNFLIPPED_RUNTIME)).toEqual([]);
+  });
+
+  it('keeps the unflipped list honest: each entry is a runtime name without a legacyName', () => {
+    for (const name of UNFLIPPED_RUNTIME) {
+      const entry = DOCUMENTED_ENV_VARS.find((v) => v.name === name);
+      expect(entry?.scope, name).toBe('runtime');
+      expect(entry?.legacyName, name).toBeUndefined();
+    }
+  });
+
+  it('pairs every legacyName with its canonical name', () => {
+    for (const v of DOCUMENTED_ENV_VARS.filter((e) => e.legacyName !== undefined)) {
+      expect(v.name, v.name).toMatch(/^CAW_[A-Z0-9_]*[A-Z0-9]$/);
+      expect(v.legacyName, v.name).toBe(`MCS_${v.name.slice(4)}`);
+    }
+  });
+
+  it('has no name that is also the legacyName of another entry', () => {
+    const names = new Set(DOCUMENTED_ENV_VARS.map((v) => v.name));
+    for (const v of DOCUMENTED_ENV_VARS)
+      if (v.legacyName !== undefined) expect(names.has(v.legacyName), v.name).toBe(false);
+  });
+
+  it('accepts a flipped runtime entry, an unchanged test or dev entry and a .bat reader', () => {
+    const ok: DocumentedEnvVar[] = [
+      { name: 'CAW_SAMPLE', legacyName: 'MCS_SAMPLE', scope: 'runtime', readers: ['a.ts'] },
+      { name: 'CAW_NODE_SAMPLE', scope: 'runtime', readers: ['skills/x/scripts/start.bat'] },
+      { name: 'CLAUDE_CONFIG_DIR', scope: 'runtime', readers: ['a.ts'] },
+      { name: 'MCS_TEST_SAMPLE', scope: 'test', readers: ['a.ts'] },
+      { name: 'CAW_REAL_SAMPLE', scope: 'test', readers: ['a.ts'] },
+      { name: 'MCS_WEB_SAMPLE', scope: 'dev', readers: ['a.ts'] },
+    ];
+    expect(registryProblems(ok)).toEqual([]);
+  });
+
+  it('rejects a new runtime entry named MCS_*, a wrong legacyName and a legacyName outside the runtime scope', () => {
+    const bad: DocumentedEnvVar[] = [
+      { name: 'MCS_NEW', scope: 'runtime', readers: ['a.ts'] },
+      { name: 'CAW_ONE', legacyName: 'MCS_TWO', scope: 'runtime', readers: ['a.ts'] },
+      { name: 'CLAUDE_CONFIG_DIR', legacyName: 'MCS_CONFIG', scope: 'runtime', readers: ['a.ts'] },
+      { name: 'MCS_TEST_X', legacyName: 'CAW_TEST_X', scope: 'test', readers: ['a.ts'] },
+      { name: 'MCS_DEV_X', legacyName: 'CAW_DEV_X', scope: 'dev', readers: ['a.ts'] },
+    ];
+    expect(registryProblems(bad)).toEqual([
+      'MCS_NEW: a runtime name is CAW_*',
+      'CAW_ONE: legacyName must be MCS_ plus the same suffix',
+      'CLAUDE_CONFIG_DIR: only a CAW_* entry has a legacyName',
+      'MCS_TEST_X: a test entry has no legacyName',
+      'MCS_DEV_X: a dev entry has no legacyName',
+    ]);
+  });
+});
+
+describe('legacyNamesInUse', () => {
+  const vars: readonly DocumentedEnvVar[] = [
+    { name: 'CAW_ONE', legacyName: 'MCS_ONE', scope: 'runtime', readers: ['a.ts'] },
+    { name: 'CAW_TWO', legacyName: 'MCS_TWO', scope: 'runtime', readers: ['a.ts'] },
+    { name: 'CAW_THREE', scope: 'runtime', readers: ['a.ts'] },
+    { name: 'MCS_TEST_FOUR', scope: 'test', readers: ['a.ts'] },
+  ];
+
+  it('is empty when no legacy name is set', () => {
+    expect(legacyNamesInUse({}, vars)).toEqual([]);
+    expect(legacyNamesInUse({ CAW_ONE: 'x', UNRELATED: 'y' }, vars)).toEqual([]);
+  });
+
+  it('lists a legacy name that is set while its canonical name is not, names only', () => {
+    expect(legacyNamesInUse({ MCS_ONE: 'secret-looking-value', MCS_TWO: '' }, vars)).toEqual(['MCS_ONE', 'MCS_TWO']);
+  });
+
+  it('does not list a legacy name that its canonical name overrides', () => {
+    expect(legacyNamesInUse({ MCS_ONE: 'a', CAW_ONE: 'b', MCS_TWO: 'c' }, vars)).toEqual(['MCS_TWO']);
+    expect(legacyNamesInUse({ MCS_ONE: 'a', CAW_ONE: '' }, vars)).toEqual([]);
+  });
+
+  it('ignores an undefined value, a variable without a legacyName and a test variable', () => {
+    expect(legacyNamesInUse({ MCS_ONE: undefined, MCS_THREE: 'x', MCS_TEST_FOUR: '1' }, vars)).toEqual([]);
+  });
+
+  it('answers for the real registry without arguments, in registry order', () => {
+    expect(legacyNamesInUse({})).toEqual([]);
+    const flipped = DOCUMENTED_ENV_VARS.filter((v) => v.legacyName !== undefined);
+    const env: Record<string, string> = {};
+    for (const v of flipped) env[v.legacyName ?? ''] = '1';
+    expect(legacyNamesInUse(env)).toEqual(flipped.map((v) => v.legacyName));
+  });
+});
+
+describe('product constants', () => {
+  it('names the product and the command line', () => {
+    expect(PRODUCT_NAME).toBe('Claude Agent Workspace');
+    expect(CLI_NAME).toBe('mcs');
+    expect(CLI_ALIAS).toBe('mcs');
+  });
+});
 
 describe('DOCUMENTED_ENV_VARS', () => {
   it('lists exactly the variables of 01 section 2.10 with their scope', () => {

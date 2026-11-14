@@ -6,10 +6,18 @@
 // Non-MCS names that the registry mentions (`VITEST`, `LOCALAPPDATA`, `NO_COLOR`, ...) are not configuration of this
 // product and are not part of this constant; `CLAUDE_CONFIG_DIR` is, as 01 2.10 lists it.
 
+import type { EnvLike } from './protocol/routes.ts';
+
 export type EnvScope = 'runtime' | 'test' | 'dev';
 
 export interface DocumentedEnvVar {
+  /** Canonical name: `CAW_*` for a runtime variable (once flipped), the existing `MCS_*` family for test and dev ones. */
   readonly name: string;
+  /**
+   * The `MCS_*` spelling that is still read next to the canonical one (runtime scope only, `MCS_` plus the same suffix).
+   * Readers go through `readEnv` of `protocol/env-names.ts`; the canonical name wins when both are defined.
+   */
+  readonly legacyName?: string;
   readonly scope: EnvScope;
   /** Files that read the variable, relative to the skill root, forward slashes. */
   readonly readers: readonly string[];
@@ -67,3 +75,16 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_WEB_PREVIEW_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_BUILD_ID', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
 ];
+
+/**
+ * The legacy names that are set in `env` while their canonical name is not: the ones a person should rename. Names only,
+ * never values; in registry order. A legacy name that its canonical name overrides is not in use.
+ */
+export function legacyNamesInUse(env: EnvLike, vars: readonly DocumentedEnvVar[] = DOCUMENTED_ENV_VARS): string[] {
+  const found: string[] = [];
+  for (const v of vars) {
+    if (v.legacyName === undefined) continue;
+    if (env[v.legacyName] !== undefined && env[v.name] === undefined) found.push(v.legacyName);
+  }
+  return found;
+}

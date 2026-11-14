@@ -1,4 +1,5 @@
 export * from './control.ts';
+export * from './env-names.ts';
 
 export * from './hook-envelope.ts';
 export * from './hook-events.ts';

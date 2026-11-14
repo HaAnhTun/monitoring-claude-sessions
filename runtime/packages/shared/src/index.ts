@@ -3,6 +3,8 @@ export * from './errors.ts';
 export * from './version.ts';
 export * from './time.ts';
 export * from './env.ts';
+export * from './product.ts';
+export * from './protocol/env-names.ts';
 export * from './files/instance.ts';
 export * from './files/state.ts';
 export * from './files/backup-manifest.ts';
