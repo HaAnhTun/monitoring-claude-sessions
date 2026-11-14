@@ -20,7 +20,10 @@ const NODE_BUILTIN_BASES = [
 const NODE_BUILTIN_REGEX = `^(?:node:|(?:${NODE_BUILTIN_BASES.join('|')})(?:/|$))`;
 const nodeBuiltins = (message) => ({ regex: NODE_BUILTIN_REGEX, message });
 
-/** Packages that must never be added (stack-versions.md section 9, ADR-0041). */
+/**
+ * Packages that must never be added (stack-versions.md section 9, ADR-0041). `ws` is on the list for every file except the
+ * terminal code of the server (ADR 0081): the block for `packages/server/src/terminal/**` lifts it with `allow: ['ws']`.
+ */
 const BANNED_PACKAGES = [
   'axios',
   'node-fetch',
@@ -42,7 +45,13 @@ const BANNED_PACKAGES = [
   'ts-node',
   'tsx',
   'pino',
-].map((name) => ({ name, message: 'Banned dependency (see ADR-0041 avoid list).' }));
+].map((name) => ({
+  name,
+  message:
+    name === 'ws'
+      ? 'Banned dependency (see ADR-0041 avoid list); only packages/server/src/terminal may use ws (ADR 0081).'
+      : 'Banned dependency (see ADR-0041 avoid list).',
+}));
 
 const DEEP_IMPORTS = [
   {
@@ -55,15 +64,46 @@ const DEEP_IMPORTS = [
   },
 ];
 
+const forbid = (names, message) => ({ group: names, message });
+
+/**
+ * The terminal addon (ADR 0080, 0082). Only `import type` of `@lydell/node-pty` can exist: the engine loads the package by
+ * path (`engine/src/terminal/node-pty-loader.ts`, `createRequire`), so no value import can pull it into a bundle. The Microsoft
+ * `node-pty`, the homebridge fork and the platform packages are never imported. Every block carries these through `restrictImports`.
+ */
+const TERMINAL_ADDON_PATHS = [
+  {
+    name: '@lydell/node-pty',
+    allowTypeImports: true,
+    message: 'Only `import type` of the terminal addon is allowed; the engine loads it by path (ADR 0080, 0082).',
+  },
+  { name: 'node-pty', message: 'The terminal addon is @lydell/node-pty, loaded by path (ADR 0080).' },
+  {
+    name: '@homebridge/node-pty-prebuilt-multiarch',
+    message: 'The terminal addon is @lydell/node-pty, loaded by path (ADR 0080).',
+  },
+];
+const TERMINAL_ADDON_PATTERNS = [
+  forbid(
+    ['@lydell/node-pty-*'],
+    'The platform packages are never imported: their files ship in bundle/native (ADR 0080, 0082).',
+  ),
+];
+
 /**
  * Builds one complete `no-restricted-imports` entry. Flat config replaces a rule per block, so every
- * block must carry the global bans plus its own.
+ * block must carry the global bans plus its own. `allow` names global bans that this block lifts.
  */
-function restrictImports({ paths = [], patterns = [] } = {}) {
-  return ['error', { paths: [...BANNED_PACKAGES, ...paths], patterns: [...DEEP_IMPORTS, ...patterns] }];
+function restrictImports({ paths = [], patterns = [], allow = [] } = {}) {
+  const banned = BANNED_PACKAGES.filter(({ name }) => !allow.includes(name));
+  return [
+    'error',
+    {
+      paths: [...banned, ...TERMINAL_ADDON_PATHS, ...paths],
+      patterns: [...DEEP_IMPORTS, ...TERMINAL_ADDON_PATTERNS, ...patterns],
+    },
+  ];
 }
-
-const forbid = (names, message) => ({ group: names, message });
 
 const UNSAFE_HTML_SYNTAX = [
   {
@@ -137,8 +177,13 @@ const WEB_SYNTAX = [
   { selector: "JSXAttribute[name.name='target'][value.value='_blank']", message: 'The UI renders no external links.' },
 ];
 
+const XTERM_MESSAGE = 'xterm.js is imported only by src/terminal/xterm-loader.ts (ADR 0097).';
+
+/** A lazy `import('@xterm/...')` is an import too: no-restricted-imports does not see it (esquery has no `/` in a regex, so `.`). */
+const XTERM_IMPORT_SYNTAX = [{ selector: 'ImportExpression[source.value=/^@xterm./]', message: XTERM_MESSAGE }];
+
 /** Web import rule; flags lift single exceptions owned by one file (04-ui.md section 8). */
-function webImports({ lucide = false, extra = [] } = {}) {
+function webImports({ lucide = false, xterm = false, extra = [] } = {}) {
   return restrictImports({
     paths: [{ name: 'react-router-dom', message: 'Use react-router (v8 single package).' }],
     patterns: [
@@ -152,6 +197,7 @@ function webImports({ lucide = false, extra = [] } = {}) {
         'Markdown is the ported legacy subset (04-ui.md section 8).',
       ),
       ...(lucide ? [] : [forbid(['lucide-react'], 'Icons come from src/components/icons.ts only.')]),
+      ...(xterm ? [] : [forbid(['@xterm/*'], XTERM_MESSAGE)]),
       forbid(['**/test/**', '**/fixtures/**'], 'Production code never imports test code or fixtures.'),
       ...extra,
     ],
@@ -160,7 +206,8 @@ function webImports({ lucide = false, extra = [] } = {}) {
 
 const WEB_GLOBALS = {
   fetch: 'Only src/data/api-client.ts calls fetch.',
-  EventSource: 'Only src/stream/stream-client.ts opens EventSource.',
+  EventSource: 'Only src/stream/stream-client.ts and src/terminal/events-client.ts open an EventSource.',
+  WebSocket: 'Only src/terminal/ws-client.ts opens a WebSocket (ADR 0098).',
   localStorage: 'Only src/lib/prefs.ts touches storage.',
   sessionStorage: 'Only src/lib/prefs.ts touches storage.',
 };
@@ -173,6 +220,19 @@ function webGlobals(...allowed) {
       .map(([name, message]) => ({ name, message })),
   ];
 }
+
+/** The import rules of the server package (kept as data: the terminal folder repeats them with `ws` lifted). */
+const SERVER_IMPORTS = {
+  paths: [
+    { name: 'node:sqlite', message: 'Use engine repositories.' },
+    { name: 'better-sqlite3', message: 'Use engine repositories.' },
+    { name: 'node:child_process', message: 'The server never starts processes.' },
+    { name: 'child_process', message: 'The server never starts processes.' },
+  ],
+  patterns: [
+    forbid(['@mcs/cli', '@mcs/web', '@mcs/testkit', 'react', 'react-*'], 'server depends on engine and shared only.'),
+  ],
+};
 
 const SRC = (pkg) => `packages/${pkg}/src/**/*.{ts,tsx}`;
 const TEST_FILES = [
@@ -321,20 +381,7 @@ export default defineConfig(
     files: [SRC('server')],
     languageOptions: { globals: globals.node },
     rules: {
-      'no-restricted-imports': restrictImports({
-        paths: [
-          { name: 'node:sqlite', message: 'Use engine repositories.' },
-          { name: 'better-sqlite3', message: 'Use engine repositories.' },
-          { name: 'node:child_process', message: 'The server never starts processes.' },
-          { name: 'child_process', message: 'The server never starts processes.' },
-        ],
-        patterns: [
-          forbid(
-            ['@mcs/cli', '@mcs/web', '@mcs/testkit', 'react', 'react-*'],
-            'server depends on engine and shared only.',
-          ),
-        ],
-      }),
+      'no-restricted-imports': restrictImports(SERVER_IMPORTS),
       'no-restricted-properties': ['error', ...NO_STDIO],
       'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...NO_SHELL_SYNTAX, ...WRITE_TX_SYNTAX],
     },
@@ -390,14 +437,24 @@ export default defineConfig(
       'no-script-url': 'error',
       'no-restricted-imports': webImports(),
       'no-restricted-globals': webGlobals(),
-      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...WEB_SYNTAX],
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...WEB_SYNTAX, ...XTERM_IMPORT_SYNTAX],
     },
   },
   { files: ['packages/web/src/components/icons.ts'], rules: { 'no-restricted-imports': webImports({ lucide: true }) } },
   { files: ['packages/web/src/data/api-client.ts'], rules: { 'no-restricted-globals': webGlobals('fetch') } },
   {
-    files: ['packages/web/src/stream/stream-client.ts'],
+    // the two modules that open an EventSource: the monitor stream and the terminal events stream (ADR 0098)
+    files: ['packages/web/src/stream/stream-client.ts', 'packages/web/src/terminal/events-client.ts'],
     rules: { 'no-restricted-globals': webGlobals('EventSource') },
+  },
+  { files: ['packages/web/src/terminal/ws-client.ts'], rules: { 'no-restricted-globals': webGlobals('WebSocket') } },
+  {
+    // the one module that loads xterm.js, statically or lazily (ADR 0097); every other web rule stays
+    files: ['packages/web/src/terminal/xterm-loader.ts'],
+    rules: {
+      'no-restricted-imports': webImports({ xterm: true }),
+      'no-restricted-syntax': ['error', ...UNSAFE_HTML_SYNTAX, ...WEB_SYNTAX],
+    },
   },
   {
     files: ['packages/web/src/lib/prefs.ts'],
@@ -436,6 +493,17 @@ export default defineConfig(
   {
     files: ['packages/web/src/**/*.test.tsx', 'packages/web/src/**/*.test.ts'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
+  // ---- the one place that may import ws (ADR 0081): the terminal code of the server and its tests. Only the import rule
+  // changes (it re-declares the rules of the block above it with `ws` lifted); a test file keeps the test rule set.
+  {
+    files: ['packages/server/src/terminal/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': restrictImports({ ...SERVER_IMPORTS, allow: ['ws'] }) },
+  },
+  {
+    files: ['packages/server/src/terminal/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': restrictImports({ allow: ['ws'] }) },
   },
   // ---- plain JS tooling (scripts/, config files)
   {

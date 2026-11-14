@@ -642,6 +642,28 @@ derived R key falls outside the owner's bounds. Flat configs are not loaded by N
 | `alerts.rules.hook_failing` | `{enabled, cooldownMinutes}` | `true, 10` | | 03 10.1 | |
 | `pricing.currency` | string | `USD` | | 03 8.3 | |
 | `pricing.models[]` | `{match, effectiveFrom, inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWrite5mPerMTok, cacheWrite1hPerMTok}` | `[]` (no prices ship, D15) | | 03 8.3 | `features.costEstimates` |
+| `terminal.command` | string | `claude` | 1..260 characters, no quote, no control character | 01 1.6 | program of every new terminal session: a name on PATH or an absolute path (CAW design 01 3.3) |
+| `terminal.args` | string[] | `[]` | at most 32 entries of at most 500 characters | 01 1.6 | extra arguments in front of `--resume`, never through a shell |
+| `terminal.envKeep` | string[] | `[]` | at most 32 variable names | 01 1.6 | names of the stripped child environment that are kept |
+| `terminal.maxSessions` | int | `8` | 1..64 | 01 1.6 | live and starting sessions at once (CAW design 06 1.6 bound, default of 06) |
+| `terminal.replayBytes` | int | `1048576` | 64 KiB..16 MiB | 01 1.6 | replay buffer of one session |
+| `terminal.maxInputBytes` | int | `262144` | 1 KiB..256 KiB | 01 1.6 | largest single write; default and maximum are the one shared input limit (256 KiB), also the payload limit of the terminal socket |
+| `terminal.startTimeoutMs` | int | `10000` | 1000..60000 | 01 1.6 | wait for the pseudo console to report the child started |
+| `terminal.killTimeoutMs` | int | `3000` | 500..30000 | 01 1.6 | wait for an exit after a kill before the process tree is killed |
+| `terminal.conptyDll` | boolean | `false` | - | 01 1.6 | use the shipped `conpty.dll` and `OpenConsole.exe` |
+| `app.name` | string | `Claude Agent Workspace` | 1..80 characters, no control character | 01 1.6 | page title and header; the section is `app`, never `ui` |
+| `app.openAppWindow` | boolean | `false` | - | 01 1.6 | an Edge or Chrome app window instead of a tab of the default browser |
+| `projects.scope` | enum | `auto` | auto, repo, all | 02 2.1 | `auto` is `all` on the user instance and `repo` on a task instance (CAW design 03 2.1; `PROJECT_SCOPES`) |
+| `projects.fullSweepIntervalMs` | int | `60000` | 5000..3600000 | 02 2.1 | full sweep of every project folder (scope `all`) |
+| `projects.coldStatIntervalMs` | int | `10000` | 1000..600000 | 02 2.1 | files without growth for five minutes are checked this often |
+| `projects.catalogIntervalMs` | int | `30000` | 5000..600000 | 03 2.1 | refresh of the folder catalogue |
+| `projects.daMemoryDir` | string or null | `null` | a non-empty string of at most 1024 characters, or null | 03 2.1 | null is `<home>/.claude/memory` |
+| `projects.daCacheMs` | int | `3000` | 500..60000 | 03 2.1 | reuse of one DA memory read |
+| `projects.userFoldersMax` | int | `200` | 1..1000 | 03 2.1 | limit of folders a person adds by hand |
+| `projects.linkPollMs` | int | `250` | 100..5000 | 06 2.1 | registry poll of the terminal link while a terminal is young |
+| `projects.linkSlowPollMs` | int | `2000` | 500..60000 | 06 2.1 | poll after the fast window and for linked terminals |
+| `projects.linkFastWindowMs` | int | `30000` | 5000..600000 | 06 2.1 | length of the fast poll window; the database fallback starts after it |
+| `projects.linkStartToleranceMs` | int | `2000` | 0..30000 | 06 2.1 | a registry entry may start this much before the spawn time |
 
 Derived defaults (`R_DERIVED_DEFAULTS`, 01 1.6): `lifecycle.activeSeconds`, `lifecycle.pendingToolGraceSeconds`, `import.lookbackHours`
 (identity), `import.tailWindowBytes`, `import.backfillMaxBytes` (`mib-to-bytes`, `Math.floor(v * 1048576)`). A derived value that the
@@ -653,7 +675,10 @@ Authority (C02 resolved, N-03, N-04): for every key owned by 02, 03 and 06 the o
 10.1, 06 3.5) is normative for semantics, type, range and default; 01 S1 transcribes it into `sh/config/runtime/<section>.ts` and
 registers it in `R_KEY_CATALOGUE`; the ranges of `lifecycle.*` are 01's because 02 7.8 states none. `runtime-sections.contract.test.ts`
 fails when a catalogue row differs from this table, so a change of a key is made in the owner's table, in the module and in this
-table in one commit. Totals: 9 `import`, 3 `spool`, 2 `health`, 1 `analytics` keys (15 new keys of revision 2 minus the removed one).
+table in one commit. Totals: 9 `import`, 3 `spool`, 2 `health`, 1 `analytics` keys (15 new keys of revision 2 minus the removed one). The CAW program adds
+the sections `terminal` (9 keys), `app` (2) and `projects` (11) in one change (CAW-06); their owner column follows the designs of
+the program: `01` for `terminal` and `app`, and for `projects` `02` for the ingestion keys, `03` for the folder keys and `06` for the
+link keys.
 
 ### 6.3 Environment variables (the closed list `DOCUMENTED_ENV_VARS`, 01 2.10)
 
@@ -674,6 +699,9 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_TEST_IGNORE_CONTROL` | test | control channel | ignore `shutdown` (T-LC-06) | 01 2.10 |
 | `MCS_TEST_BOOT_HANG` | test | server boot | stop before `ready` (T-LC-08) | 01 2.10 |
 | `MCS_TEST_INIT_CRASH` | test | `ops.workspace.init` | `before-rename` -> exit 70 (T-LC-10) | 01 2.10 |
+| `MCS_TEST_FAKE_TERMINALS` | test | `testHook` (`test-hooks.ts`) | `1` = the instance hosts scripted terminal sessions instead of real pseudo consoles | CAW-06 |
+| `MCS_TEST_OPEN_FILE` | test | `testHook` (`test-hooks.ts`) | a file path: the open-in-shell action records its target there instead of starting a program | CAW-06 |
+| `MCS_TEST_FOLDER_PICKER` | test | `testHook` (`test-hooks.ts`) | a folder path (or `cancel`): the folder picker answers it instead of showing the Windows dialog | CAW-06 |
 | `MCS_TEST_CASES` | test | lifecycle property tests (`engine/src/lifecycle/properties.test.ts`) | cases per scenario template, default 500; 1 replays one failing seed together with `MCS_TEST_SEED` | LF-3 |
 | `MCS_PERF_FACTOR` | test | performance tests | budget multiplier (default 1) | 01 2.10, 02 2.10 |
 | `MCS_E2E_CLAUDE` | test | optional real-provider E2E | `1` enables | 02 3.7 |

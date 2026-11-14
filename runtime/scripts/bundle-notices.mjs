@@ -314,18 +314,23 @@ export function productionClosure(lock, start) {
   return [...third].sort();
 }
 
+/** A licence text as the notices print it: LF only, no trailing white space on a line, no blank lines at the ends. */
+function normalizeLicenseText(raw) {
+  return raw
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+$/, ''))
+    .join('\n')
+    .trim();
+}
+
 function licenseText(dir) {
   if (!existsSync(dir)) return null;
   const file = readdirSync(dir)
     .filter((name) => LICENSE_FILE.test(name))
     .sort()[0];
   if (file === undefined) return null;
-  return readFileSync(join(dir, file), 'utf8')
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((line) => line.replace(/\s+$/, ''))
-    .join('\n')
-    .trim();
+  return normalizeLicenseText(readFileSync(join(dir, file), 'utf8'));
 }
 
 function spdxOf(entry, manifest) {
@@ -348,6 +353,35 @@ export function noticeOf(lock, key, root = RUNTIME_ROOT) {
     version: entry.version ?? manifest?.version ?? '0.0.0',
     license: spdxOf(entry, manifest),
     text: licenseText(dir),
+  };
+}
+
+/**
+ * The notice of a native platform package that the bundle ships under `native/<target>/` (ADR 0082), from its staged files
+ * (`Map<posix path, Buffer>` as `nativeFilesOf` returns it, so the text is already LF): name, version and SPDX id from
+ * `package.json`, the text from `LICENSE` (null when there is none).
+ */
+export function nativeNotice(files) {
+  let manifest;
+  try {
+    manifest = JSON.parse((files.get('package.json') ?? Buffer.alloc(0)).toString('utf8'));
+  } catch {
+    manifest = null;
+  }
+  if (
+    manifest === null ||
+    typeof manifest !== 'object' ||
+    typeof manifest.name !== 'string' ||
+    typeof manifest.version !== 'string'
+  ) {
+    throw new Error('notices: a native package has no readable package.json with a name and a version');
+  }
+  const license = files.get('LICENSE');
+  return {
+    name: manifest.name,
+    version: manifest.version,
+    license: spdxOf({}, manifest),
+    text: license === undefined ? null : normalizeLicenseText(license.toString('utf8')),
   };
 }
 
@@ -383,8 +417,9 @@ function compareNotices(a, b) {
 }
 
 /**
- * The notices of a bundle: the packages of `moduleIds`, the production closure of `@mcs/web` when `includeWeb`, and the
- * embedded notices found in `bundleText`. Deduplicated, sorted, licence-checked.
+ * The notices of a bundle: the packages of `moduleIds`, the production closure of `@mcs/web` when `includeWeb`, the embedded
+ * notices found in `bundleText`, and the native platform packages of `nativePackages` (see `nativeNotice`). Deduplicated,
+ * sorted, licence-checked.
  */
 export function collectNotices({
   moduleIds,
@@ -393,6 +428,7 @@ export function collectNotices({
   lock = readJson(join(RUNTIME_ROOT, 'package-lock.json')),
   root = RUNTIME_ROOT,
   table = EMBEDDED_NOTICES,
+  nativePackages = [],
 }) {
   const keys = new Set();
   for (const id of moduleIds) {
@@ -401,9 +437,12 @@ export function collectNotices({
   }
   if (includeWeb) for (const key of productionClosure(lock, 'packages/web')) keys.add(key);
   const byId = new Map();
-  for (const notice of [...[...keys].map((key) => noticeOf(lock, key, root)), ...embeddedNotices(bundleText, table)]) {
-    byId.set(`${notice.name}@${notice.version}`, notice);
-  }
+  const all = [
+    ...[...keys].map((key) => noticeOf(lock, key, root)),
+    ...embeddedNotices(bundleText, table),
+    ...nativePackages,
+  ];
+  for (const notice of all) byId.set(`${notice.name}@${notice.version}`, notice);
   const notices = [...byId.values()].sort(compareNotices);
   assertAllowed(notices);
   return notices;
@@ -415,7 +454,7 @@ export function renderNotices(notices) {
   const lines = [
     'THIRD-PARTY NOTICES',
     '',
-    'The bundled files of this folder (mcs-cli.mjs, mcs-server.mjs, mcs-hook.mjs and web/) contain code of the following',
+    'The bundled files of this folder (mcs-cli.mjs, mcs-server.mjs, mcs-hook.mjs, web/ and native/) contain code of the following',
     'third-party packages. Each package is listed with its version, its SPDX licence id and its licence text.',
   ];
   for (const n of notices) {

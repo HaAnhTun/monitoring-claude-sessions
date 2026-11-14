@@ -1,6 +1,7 @@
 // The third-party notices of the bundle (ADR 0063 item 6): the allow list, a deterministic LF-only text without dates, the
 // marker line for a package without a licence file, the production closure of a synthetic lockfile (dev packages excluded,
-// nested `node_modules` resolved) and the embedded-notice table for code a package vendors inside its own dist file.
+// nested `node_modules` resolved), the embedded-notice table for code a package vendors inside its own dist file, and the notices
+// of the native platform packages that the bundle ships under `native/` (ADR 0082).
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,6 +34,7 @@ const {
   assertAllowed,
   collectNotices,
   embeddedNotices,
+  nativeNotice,
   packageKeyOf,
   productionClosure,
   renderNotices,
@@ -48,8 +50,10 @@ const {
     lock?: Lock;
     root?: string;
     table?: readonly Embedded[];
+    nativePackages?: readonly Notice[];
   }) => Notice[];
   embeddedNotices: (text: string, table?: readonly Embedded[]) => Notice[];
+  nativeNotice: (files: ReadonlyMap<string, Buffer>) => Notice;
   packageKeyOf: (id: string, root?: string) => string | null;
   productionClosure: (lock: Lock, start: string) => string[];
   renderNotices: (notices: Notice[]) => string;
@@ -159,6 +163,11 @@ describe('collectNotices and renderNotices', () => {
     expect(a.endsWith('\n') && !a.endsWith('\n\n')).toBe(true);
   });
 
+  it('names every folder with third-party code in the header: the Node files, web/ and native/', () => {
+    const header = renderNotices(collect()).split('\n').slice(0, 4).join('\n');
+    expect(header).toContain('mcs-cli.mjs, mcs-server.mjs, mcs-hook.mjs, web/ and native/');
+  });
+
   it('adds the packages of the bundled modules and deduplicates', () => {
     const ids = [join(root, 'node_modules', 'zeta', 'index.js'), join(root, 'node_modules', 'zeta', 'other.js')];
     const notices = collectNotices({ moduleIds: ids, includeWeb: false, lock: LOCK, root, table: [] });
@@ -184,6 +193,64 @@ describe('collectNotices and renderNotices', () => {
       'CC0-1.0',
       'Unlicense',
     ]);
+  });
+});
+
+describe('the native platform packages (ADR 0082)', () => {
+  /** The staged files of a package as `nativeFilesOf` returns them: LF text, a `package.json` and a `LICENSE`. */
+  const staged = (manifest: Record<string, unknown>, license: string | null): Map<string, Buffer> => {
+    const files = new Map<string, Buffer>([['package.json', Buffer.from(`${JSON.stringify(manifest)}\n`)]]);
+    if (license !== null) files.set('LICENSE', Buffer.from(license));
+    return files;
+  };
+  const NATIVE = { name: '@native/pty-win32-x64', version: '1.0.0', license: 'MIT' };
+
+  it('takes the name, version and SPDX id from package.json and the text from LICENSE, trimmed like any other notice', () => {
+    expect(nativeNotice(staged(NATIVE, 'MIT License   \n\nnative text  \n\n'))).toEqual({
+      name: '@native/pty-win32-x64',
+      version: '1.0.0',
+      license: 'MIT',
+      text: 'MIT License\n\nnative text',
+    });
+  });
+
+  it('gives a package without a LICENSE file the marker line and a package without a licence field the id UNKNOWN', () => {
+    expect(nativeNotice(staged(NATIVE, null)).text).toBeNull();
+    expect(nativeNotice(staged({ name: 'n', version: '1.0.0' }, 'x')).license).toBe('UNKNOWN');
+    expect(() => nativeNotice(new Map())).toThrow(/package\.json/);
+    expect(() => nativeNotice(new Map([['package.json', Buffer.from('{ not json')]]))).toThrow(/package\.json/);
+  });
+
+  it('adds the native packages to the others, sorted by name, once each', () => {
+    const one = nativeNotice(staged(NATIVE, 'MIT License\n\nnative text'));
+    const other = nativeNotice(
+      staged({ name: '@native/pty-win32-arm64', version: '1.0.0', license: 'MIT' }, 'MIT arm'),
+    );
+    const notices = collectNotices({
+      moduleIds: [],
+      includeWeb: true,
+      lock: LOCK,
+      root,
+      table: [],
+      nativePackages: [one, other, one],
+    });
+    expect(notices.map((n) => `${n.name}@${n.version}`)).toEqual([
+      '@native/pty-win32-arm64@1.0.0',
+      '@native/pty-win32-x64@1.0.0',
+      '@scope/gamma@3.0.0',
+      'alpha@2.0.0',
+      'beta@2.1.0',
+      'zeta@1.0.0',
+    ]);
+    const text = renderNotices(notices);
+    expect(text).toContain('@native/pty-win32-x64 1.0.0\nLicense: MIT\n\nMIT License\n\nnative text');
+  });
+
+  it('applies the licence allow list to a native package too', () => {
+    const gpl = nativeNotice(staged({ name: '@native/pty', version: '1.0.0', license: 'GPL-3.0-only' }, 'GPL text'));
+    expect(() =>
+      collectNotices({ moduleIds: [], includeWeb: false, lock: LOCK, root, table: [], nativePackages: [gpl] }),
+    ).toThrow(/licence not in the allow list: @native\/pty@1\.0\.0 \(GPL-3\.0-only\)/);
   });
 });
 

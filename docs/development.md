@@ -45,6 +45,29 @@ npm run bundle:check   # fail when the committed bundle differs from a fresh bui
 
 `bundle/THIRD-PARTY-NOTICES.txt` is generated with the bundle. A dependency change needs an ADR (ADR 0041).
 
+### The native terminal files (ADR 0082)
+
+The bundle also holds `native/<target>/` for the two pinned Windows targets (`win32-x64`, `win32-arm64`): the files of the
+`@lydell/node-pty` platform package (the `.node` addons, `conpty.dll`, `OpenConsole.exe` and the JavaScript that loads them, without
+the `.pdb` files). They are checked against `runtime/scripts/native-pins.json` (sha512 of the package, size and sha256 of every
+binary), which is the only place to change a pin, in a reviewed commit with an update to ADR 0080. `npm run bundle` and
+`npm run bundle:check` stage them from the first source that has the package:
+
+1. the installed package in `node_modules` (`npm ci` installs only the one of the host platform);
+2. the cache `node_modules/.cache/mcs-native/` of an earlier run (`npm ci` clears it);
+3. the tarballs in the folder named by `MCS_NATIVE_TARBALLS`: a folder with the output of `npm pack
+   @lydell/node-pty-<target>@<version>`, named like `lydell-node-pty-win32-arm64-1.2.0-beta.18.tgz`. Use it for a build without network
+   access (the Docker harness mounts such a folder). A folder that lacks the tarball is an error; the network is not used instead;
+4. `npm pack` (network), when none of the above has it.
+
+So a machine on x64 Windows needs the network or `MCS_NATIVE_TARBALLS` only for the arm64 package, once. A build that must not touch
+the network says so: `node scripts/bundle.mjs --no-native` (no `native/` folder) or `--native-targets win32-x64` (only the named
+targets). The test builds do: `npm run test:tooling` needs no network. A programmatic `buildBundle` call without a `native` option
+stages the native files only when its entries include the server or the CLI entry, so a hook-only test bundle needs none.
+
+The arm64 files are staged and hashed but no test executes them: there is no ARM64 Windows machine in the gates, so run the real
+terminal suite (`npm run test:pty`) on one by hand when a machine is available.
+
 ## Running from a checkout
 
 The launcher `skills/monitoring-claude-sessions/scripts/mcs.mjs` runs the bundle when it exists. `MCS_LAUNCHER_MODE=dev` makes it

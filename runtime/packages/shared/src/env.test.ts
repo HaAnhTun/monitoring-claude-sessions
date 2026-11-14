@@ -21,6 +21,9 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_TEST_IGNORE_CONTROL', 'test'],
   ['MCS_TEST_BOOT_HANG', 'test'],
   ['MCS_TEST_INIT_CRASH', 'test'],
+  ['MCS_TEST_FAKE_TERMINALS', 'test'],
+  ['MCS_TEST_OPEN_FILE', 'test'],
+  ['MCS_TEST_FOLDER_PICKER', 'test'],
   ['MCS_TEST_CASES', 'test'],
   ['MCS_PERF_FACTOR', 'test'],
   ['MCS_E2E_CLAUDE', 'test'],
@@ -35,6 +38,7 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_WEB_DEV_PORT', 'dev'],
   ['MCS_WEB_PREVIEW_PORT', 'dev'],
   ['MCS_BUILD_ID', 'dev'],
+  ['MCS_NATIVE_TARBALLS', 'dev'],
 ];
 
 /**

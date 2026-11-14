@@ -589,8 +589,15 @@ const PROBES: readonly Probe[] = [
   },
   {
     file: 'packages/web/src/stream/stream-client.ts',
-    lines: ["export const a = fetch('/x');", "export const b = new EventSource('/x');"],
-    expect: [[1, GLOBALS]],
+    lines: [
+      "export const a = fetch('/x');",
+      "export const b = new EventSource('/x');",
+      "export const c = new WebSocket('ws://x');",
+    ],
+    expect: [
+      [1, GLOBALS],
+      [3, GLOBALS],
+    ],
   },
   {
     file: 'packages/web/src/lib/prefs.ts',
@@ -642,6 +649,269 @@ const PROBES: readonly Probe[] = [
     file: 'tests/probe/sleep.test.ts',
     lines: ['setTimeout(() => undefined, 1);'],
     expect: [[1, SYNTAX]],
+  },
+  // ---- the terminal addon (ADR 0080, 0082): only `import type` of @lydell/node-pty; node-pty, the homebridge fork and the
+  // platform packages never. The loader (`terminal/node-pty-loader.ts`) loads the package by path and needs no import.
+  {
+    file: 'packages/engine/src/probe/pty.ts',
+    lines: [
+      "import * as pty from '@lydell/node-pty';",
+      "import type * as PtyTypes from '@lydell/node-pty';",
+      "import type { IPty } from '@lydell/node-pty';",
+      "import { spawn } from 'node-pty';",
+      "import homebridge from '@homebridge/node-pty-prebuilt-multiarch';",
+      "import platform from '@lydell/node-pty-win32-x64';",
+      "export { spawn as again } from '@lydell/node-pty';",
+      "export type { IPty as Again } from '@lydell/node-pty';",
+      'export const all = [pty, spawn, homebridge, platform];',
+      'export type Types = [PtyTypes.IPty, IPty];',
+    ],
+    expect: [
+      [1, IMPORTS, 'import type'],
+      [4, IMPORTS, 'ADR 0080'],
+      [5, IMPORTS, 'ADR 0080'],
+      [6, IMPORTS, 'ADR 0080'],
+      [7, IMPORTS, 'import type'],
+    ],
+  },
+  {
+    file: 'packages/engine/src/terminal/node-pty-loader.ts',
+    lines: [
+      "import { createRequire } from 'node:module';",
+      "import type * as NodePty from '@lydell/node-pty';",
+      'export type NodePtyModule = Pick<typeof NodePty, "spawn">;',
+      'export const load = (url: string): unknown => createRequire(url)("x");',
+    ],
+    expect: [],
+  },
+  {
+    file: 'packages/server/src/probe/pty.ts',
+    lines: ["import { spawn } from '@lydell/node-pty';", 'export const s = spawn;'],
+    expect: [[1, IMPORTS, 'import type']],
+  },
+  {
+    file: 'packages/cli/src/probe/pty.ts',
+    lines: ["import { spawn } from 'node-pty';", 'export const s = spawn;'],
+    expect: [[1, IMPORTS, 'ADR 0080']],
+  },
+  {
+    file: 'packages/web/src/probe/pty.ts',
+    lines: ["import { spawn } from '@lydell/node-pty';", 'export const s = spawn;'],
+    expect: [[1, IMPORTS, 'import type']],
+  },
+  {
+    file: 'packages/shared/src/probe/pty.ts',
+    lines: ["import { spawn } from '@lydell/node-pty';", 'export const s = spawn;'],
+    expect: [[1, IMPORTS, 'import type']],
+  },
+  {
+    file: 'packages/engine/src/probe/pty.test.ts',
+    lines: [
+      "import { spawn } from '@lydell/node-pty';",
+      "import type { IPty } from '@lydell/node-pty';",
+      'export const s: [typeof spawn, IPty | null] = [spawn, null];',
+    ],
+    expect: [[1, IMPORTS, 'import type']],
+  },
+  // ---- ws (ADR 0081): the terminal code of the server only, tests of that folder included; banned everywhere else
+  {
+    file: 'packages/server/src/terminal/gateway.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [],
+  },
+  {
+    file: 'packages/server/src/terminal/sub/handler.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [],
+  },
+  {
+    file: 'packages/server/src/terminal/gateway.test.ts',
+    lines: [
+      "import { WebSocketServer } from 'ws';",
+      "import { RawWsClient } from '@mcs/testkit';",
+      'export const s = [WebSocketServer, RawWsClient];',
+    ],
+    expect: [],
+  },
+  // the other server rules still hold in the terminal folder: no process, no cli, no addon value import, no banned package
+  {
+    file: 'packages/server/src/terminal/spawn.ts',
+    lines: [
+      "import { WebSocketServer } from 'ws';",
+      "import { spawn } from 'node:child_process';",
+      "import { a } from '@mcs/cli';",
+      "import { b } from '@lydell/node-pty';",
+      "import axios from 'axios';",
+      "import { c } from '@mcs/engine';",
+      'export const all = [WebSocketServer, spawn, a, b, axios, c];',
+    ],
+    expect: [
+      [2, IMPORTS, 'never starts processes'],
+      [3, IMPORTS, 'server depends on engine and shared only'],
+      [4, IMPORTS, 'import type'],
+      [5, IMPORTS, 'Banned dependency'],
+    ],
+  },
+  {
+    file: 'packages/server/src/terminal/stdout.ts',
+    lines: ["process.stdout.write('x');"],
+    expect: [[1, PROPS]],
+  },
+  {
+    file: 'packages/server/src/routes/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/server/src/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/server/src/terminal-extras/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/server/test/probe/ws.test.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/engine/src/probe/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/engine/src/probe/ws.test.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/cli/src/probe/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/shared/src/probe/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'packages/web/src/probe/ws.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  {
+    file: 'tests/probe/ws.test.ts',
+    lines: ["import { WebSocketServer } from 'ws';", 'export const s = WebSocketServer;'],
+    expect: [[1, IMPORTS, 'Banned dependency']],
+  },
+  // ---- WebSocket in the browser: one file (terminal/ws-client.ts); EventSource: two (stream-client.ts, terminal/events-client.ts)
+  {
+    file: 'packages/web/src/probe/sockets.ts',
+    lines: ["export const a = new WebSocket('ws://x');", "export const b = new EventSource('/x');"],
+    expect: [
+      [1, GLOBALS],
+      [2, GLOBALS],
+    ],
+  },
+  {
+    file: 'packages/web/src/terminal/other.ts',
+    lines: ["export const a = new WebSocket('ws://x');", "export const b = new EventSource('/x');"],
+    expect: [
+      [1, GLOBALS],
+      [2, GLOBALS],
+    ],
+  },
+  {
+    file: 'packages/web/src/terminal/ws-client.ts',
+    lines: [
+      "export const a = new WebSocket('ws://x');",
+      "export const b = new EventSource('/x');",
+      "export const c = fetch('/x');",
+      "export const d = localStorage.getItem('k');",
+    ],
+    expect: [
+      [2, GLOBALS],
+      [3, GLOBALS],
+      [4, GLOBALS],
+    ],
+  },
+  {
+    file: 'packages/web/src/terminal/events-client.ts',
+    lines: [
+      "export const a = new WebSocket('ws://x');",
+      "export const b = new EventSource('/x');",
+      "export const c = fetch('/x');",
+    ],
+    expect: [
+      [1, GLOBALS],
+      [3, GLOBALS],
+    ],
+  },
+  {
+    file: 'packages/web/src/terminal/ws-client.test.ts',
+    lines: ["export const a = new WebSocket('ws://x');"],
+    expect: [[1, GLOBALS]],
+  },
+  // the Node side keeps its own globals: the server may name WebSocket (no browser globals there)
+  {
+    file: 'packages/server/src/probe/socket-name.ts',
+    lines: ['export const kind = typeof WebSocket;'],
+    expect: [],
+  },
+  // ---- xterm.js (ADR 0097, a later package adds the pins): only terminal/xterm-loader.ts may import @xterm/*, statically or lazily
+  {
+    file: 'packages/web/src/probe/xterm.ts',
+    lines: [
+      "import { Terminal } from '@xterm/xterm';",
+      "import { FitAddon } from '@xterm/addon-fit';",
+      "import { WebLinksAddon } from '@xterm/addon-web-links';",
+      "import '@xterm/xterm/css/xterm.css';",
+      "export const lazy = () => import('@xterm/xterm');",
+      "export const lazyAddon = () => import('@xterm/addon-fit');",
+      "export const fine = () => import('./other.ts');",
+      'export const all = [Terminal, FitAddon, WebLinksAddon];',
+    ],
+    expect: [
+      [1, IMPORTS, 'xterm-loader.ts'],
+      [2, IMPORTS, 'xterm-loader.ts'],
+      [3, IMPORTS, 'xterm-loader.ts'],
+      [4, IMPORTS, 'xterm-loader.ts'],
+      [5, SYNTAX, 'xterm-loader.ts'],
+      [6, SYNTAX, 'xterm-loader.ts'],
+    ],
+  },
+  {
+    file: 'packages/web/src/terminal/keys.ts',
+    lines: ["import { Terminal } from '@xterm/xterm';", 'export const t = Terminal;'],
+    expect: [[1, IMPORTS, 'xterm-loader.ts']],
+  },
+  {
+    file: 'packages/web/src/terminal/xterm-loader.ts',
+    lines: [
+      "import type { Terminal } from '@xterm/xterm';",
+      "import { FitAddon } from '@xterm/addon-fit';",
+      "import { readFileSync } from 'node:fs';",
+      "import { z } from 'zod';",
+      "export const lazy = () => import('@xterm/xterm');",
+      "export const lazyLinks = () => import('@xterm/addon-web-links');",
+      "export const unsafe = (el: { innerHTML: string }): void => void (el.innerHTML = 'x');",
+      'export const all = [FitAddon, readFileSync, z, {} as Terminal];',
+    ],
+    // only the xterm rules are lifted: the layering, the HTML rule and the type rules of the web package stay
+    expect: [
+      [3, IMPORTS, 'browser'],
+      [4, IMPORTS, 'only @mcs/shared'],
+      [7, SYNTAX],
+      [8, '@typescript-eslint/consistent-type-assertions'],
+    ],
+  },
+  {
+    file: 'packages/web/src/terminal/xterm-loader.test.ts',
+    lines: ["import { Terminal } from '@xterm/xterm';", 'export const t = Terminal;'],
+    expect: [],
   },
 ];
 

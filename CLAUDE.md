@@ -31,7 +31,7 @@ Single test (Vitest projects are `unit`, `web`, `integration`, `isolation`, `res
 ```bash
 npx vitest run --project unit packages/engine/src/lifecycle/some.test.ts
 npx vitest run --project integration packages/server/test/some.int.test.ts   # run `npm run build` first
-npx vitest run --project tooling tests/tooling/bundle.test.ts -t "bundles no native addon"
+npx vitest run --project tooling tests/tooling/bundle.test.ts -t "bundles no native addon outside the pinned terminal files"
 ```
 
 - Run the monitor from a checkout: `node skills/monitoring-claude-sessions/scripts/mcs.mjs <command> --repo <dir>` runs the committed bundle; `MCS_LAUNCHER_MODE=dev` runs the checkout build (`runtime/packages/cli/dist/main.js`). `npm run dev` runs the server and the Vite dev server.
@@ -40,7 +40,7 @@ npx vitest run --project tooling tests/tooling/bundle.test.ts -t "bundles no nat
 
 ## Things that must change together
 
-- **The committed bundle.** Users run `skills/monitoring-claude-sessions/bundle/`, not the sources. A change to runtime code ships a rebuilt bundle in the same commit (`npm run bundle`; `npm run bundle:check` fails when it differs from a fresh build). Never edit the bundle by hand.
+- **The committed bundle.** Users run `skills/monitoring-claude-sessions/bundle/`, not the sources. A change to runtime code ships a rebuilt bundle in the same commit (`npm run bundle`; `npm run bundle:check` fails when it differs from a fresh build). Never edit the bundle by hand. The bundle also carries the files of the terminal addon in `native/<target>/` (ADR 0082): `npm run bundle` stages them against `runtime/scripts/native-pins.json` and needs the network or `MCS_NATIVE_TARBALLS` (a folder of `npm pack` tarballs); builds that must not touch the network pass `--no-native` or `--native-targets <host>`.
 - **Generated contracts.** `schemas/**` and `docs/api/reference.md` come from the zod contracts in `packages/shared`: run `npm run schemas` after a contract change (`schemas:check` verifies).
 - **A new dependency needs an ADR** (`docs/decisions/0041`): exact pins, one shared version, and every import declared in the importing package (`npm run check:deps`). The terminal added `@lydell/node-pty` (engine, the one native addon, ADR 0080) and `ws` (server, terminal code only, ADR 0081).
 - **Config keys, API routes, commands, state rules:** the "Where to change what" table in `docs/architecture.md` lists the files; a command taught by `SKILL.md` also goes into `CLI_COMMANDS` of `tests/tooling/plugin-layout.test.ts`.
@@ -48,7 +48,7 @@ npx vitest run --project tooling tests/tooling/bundle.test.ts -t "bundles no nat
 
 ## Architecture (the parts that need several files to see)
 
-- **Package layering is enforced by ESLint** (`runtime/eslint.config.js`): `shared` is isomorphic (zod only, no Node built-ins); `engine` is the Node domain (no HTTP, UI or CLI); `server` sits on `engine` + `shared` and never touches the SQLite driver or child processes; `cli` writes output only through `io/terminal.ts`; `web` is browser-only, talks to the server over HTTP and imports only `shared`. Change the rule and `docs/design/05-tooling-testing-security.md` together.
+- **Package layering is enforced by ESLint** (`runtime/eslint.config.js`): `shared` is isomorphic (zod only, no Node built-ins); `engine` is the Node domain (no HTTP, UI or CLI); `server` sits on `engine` + `shared` and never touches the SQLite driver or child processes; `cli` writes output only through `io/terminal.ts`; `web` is browser-only, talks to the server over HTTP and imports only `shared`. Boundary rules of the terminal (ADR 0082): only `import type` of `@lydell/node-pty` (the engine loads it by path); `ws` only in `server/src/terminal/**`; the `WebSocket` global only in `web/src/terminal/ws-client.ts`, `EventSource` only in `stream/stream-client.ts` and `terminal/events-client.ts`, `@xterm/*` only in `terminal/xterm-loader.ts`. Change the rule and `docs/design/05-tooling-testing-security.md` together.
 - **One process per task** (a task workspace is `<monitored repo>/.claude/monitor/tasks/<slug>/`, not in this repo). The launcher imports `bundle/mcs-cli.mjs`; `start` spawns a detached `mcs-server.mjs` with its own SQLite file (`data/monitor.db`, built-in `node:sqlite` behind the single seam `engine/src/db/driver.ts`), a control channel (named pipe or Unix socket) and a `state.json`. `stop` verifies the process identity before killing; `status` compares the code stamp with the files on disk (`outdated`, fixed by `restart`).
 - **Data flow:** transcripts (`<claude home>/projects/**.jsonl`, subagents, workflows, plus job and registry files) are tailed incrementally into one ingest writer transaction (events, tool calls, token usage deduplicated by `message.id`, file links, cursor) → lifecycle facts → one query layer → HTTP `/api/v3/*` plus an SSE stream → the React UI. Hooks are an opt-in second source.
 - **The database holds metadata only.** Transcript text is read from the file on request and never copied into the database.

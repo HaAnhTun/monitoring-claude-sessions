@@ -56,6 +56,11 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_TEST_IGNORE_CONTROL', scope: 'test', readers: [TEST_HOOKS] },
   { name: 'MCS_TEST_BOOT_HANG', scope: 'test', readers: [TEST_HOOKS] },
   { name: 'MCS_TEST_INIT_CRASH', scope: 'test', readers: [TEST_HOOKS] },
+  // The terminal and user-instance hooks (CAW): a fake terminal host instead of the real pseudo console, a recorder instead
+  // of opening a file in the shell, and a fixed answer instead of the Windows folder dialog.
+  { name: 'MCS_TEST_FAKE_TERMINALS', scope: 'test', readers: [TEST_HOOKS] },
+  { name: 'MCS_TEST_OPEN_FILE', scope: 'test', readers: [TEST_HOOKS] },
+  { name: 'MCS_TEST_FOLDER_PICKER', scope: 'test', readers: [TEST_HOOKS] },
   // Not a production hook: the number of generated cases per scenario template (default 500) of the lifecycle property tests;
   // 1 replays one failing seed together with MCS_TEST_SEED. Only that test file reads it.
   { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },

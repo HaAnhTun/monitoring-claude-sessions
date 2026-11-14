@@ -1,10 +1,15 @@
 // Deterministic bundle of the runtime (ADR 0063, ADR 0062 items 1 and 5): one rolldown build per entry into a fixed file
-// list, the engine migrations, the prebuilt web assets, the third-party notices and a sorted `.mcs-build.json` manifest.
+// list, the engine migrations, the prebuilt web assets, the native terminal files (ADR 0082), the third-party notices and a
+// sorted `.mcs-build.json` manifest.
 // Usage:
 //   node scripts/bundle.mjs                          write the tracked bundle (`skills/monitoring-claude-sessions/bundle`)
 //   node scripts/bundle.mjs --out <dir> [--no-web]   write a complete bundle into another folder (never the tracked one)
 //   node scripts/bundle.mjs --check [--against <dir>] [--no-web]   build into a temp folder and compare, never write
-// `buildBundle({ outDir, entries?, web? })` is the programmatic form (tests of other areas build into temp folders with it).
+// Native files: `native/<target>/` for every pinned target (`scripts/native-pins.json`), staged by `native-stage.mjs` from the
+// installed package, a cache, a folder named by `$MCS_NATIVE_TARBALLS` or `npm pack` (network). Two flags change that for any form:
+//   --no-native                  stage nothing: no `native/` folder (builds that do not test it, and any run without network)
+//   --native-targets <a,b>       stage only these pinned targets (a test names the host target only)
+// `buildBundle({ outDir, entries?, web?, native? })` is the programmatic form (tests of other areas build into temp folders with it).
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
@@ -21,8 +26,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { collectNotices, renderNotices } from './bundle-notices.mjs';
+import { collectNotices, nativeNotice, renderNotices } from './bundle-notices.mjs';
 import { RUNTIME_ROOT, readJson } from './lib.mjs';
+import { nativeFilesOf, readNativePins, stageTarget } from './native-stage.mjs';
 
 /** The bundle entries: output name -> source entry (relative to the runtime root). The MCP area adds its entry here. */
 export const ENTRIES = Object.freeze({
@@ -30,6 +36,18 @@ export const ENTRIES = Object.freeze({
   'mcs-server': 'packages/server/src/main.ts',
   'mcs-hook': 'packages/cli/src/hook.ts',
 });
+
+/**
+ * The entries that load the terminal addon (the engine barrel pulls its loader into the CLI for `check`, the server hosts the
+ * terminals). A build without one of them, such as the hook-only bundles of the hook tests, has no use for `native/` and stages
+ * nothing unless `native` asks for it.
+ */
+export const NATIVE_ENTRIES = Object.freeze(['mcs-cli', 'mcs-server']);
+
+/** Whether a build of `entries` carries the native files when the `native` option is left out. */
+export function nativeWanted(entries) {
+  return Object.keys(entries).some((name) => NATIVE_ENTRIES.includes(name));
+}
 
 /**
  * Resolve conditions. Never `import` or `require`: rolldown adds them per import kind, and pinning `import` makes
@@ -56,7 +74,11 @@ export function rolldownOptions(name, input) {
     input: { [name]: input },
     platform: 'node',
     resolve: { conditionNames: [...CONDITION_NAMES] },
-    external: [/^node:/],
+    // Besides the Node built-ins (ADR 0063): the terminal addon and its platform packages, which are shipped as files under
+    // `native/` and loaded by path, so a stray static import stays a visible `import` that the bundle test rejects instead of
+    // being inlined (its `__dirname` lookups would break); and the two native optional peers of `ws`, which it requires inside a
+    // try/catch and does without (ADR 0081, 0082).
+    external: [/^node:/, /^@lydell\/node-pty/, /^(?:bufferutil|utf-8-validate)$/],
     treeshake: true,
     logLevel: 'warn',
     write: false,
@@ -148,14 +170,50 @@ function copyTree(from, to, skip) {
 }
 
 /**
- * Builds a complete bundle into `outDir` (created; it must be empty or missing). `web: false` skips the web assets and works
- * without `packages/web/dist`. Resolves to `{ files, packages }` (the sorted file list and the bundled third-party packages).
+ * The native files of a build: `Map<target, Map<posix path, Buffer>>` (text as LF, binaries verified against the pins), or
+ * `null` when this build has none. `native` is `false` (none), `undefined` (the files for every pinned target when `entries`
+ * has the server or CLI entry, else none), `true` (every pinned target) or `{ targets?, stage?, pins? }`: the targets to stage
+ * (default: every pinned one), `stage(target)` resolving to a folder that holds the package files (default: `stageTarget` of
+ * `native-stage.mjs`) and the pins (default: `native-pins.json`). Everything is read and checked here, before the output
+ * folder exists, so a changed byte or a missing file stops the build with nothing written.
  */
-export async function buildBundle({ outDir, entries = ENTRIES, web = true, webDir = WEB_DIST_DIR } = {}) {
+async function stageNative(native, entries) {
+  const wanted = native === undefined ? nativeWanted(entries) : native !== false;
+  if (!wanted) return null;
+  const settings = typeof native === 'object' && native !== null ? native : {};
+  const pins = settings.pins ?? readNativePins();
+  const known = Object.keys(pins.targets);
+  const targets = [...new Set(settings.targets ?? known)].sort();
+  if (targets.length === 0) throw new Error('bundle: native needs at least one native target');
+  for (const target of targets) {
+    if (!known.includes(target)) {
+      throw new Error(`bundle: unknown native target ${target} (pinned: ${known.join(', ')})`);
+    }
+  }
+  let lock;
+  const stage =
+    settings.stage ??
+    (async (target) => {
+      lock ??= readJson(join(RUNTIME_ROOT, 'package-lock.json'));
+      return (await stageTarget({ target, pins, lock })).dir;
+    });
+  const staged = new Map();
+  for (const target of targets) staged.set(target, nativeFilesOf({ dir: await stage(target), pins, target }));
+  return staged;
+}
+
+/**
+ * Builds a complete bundle into `outDir` (created; it must be empty or missing). `web: false` skips the web assets and works
+ * without `packages/web/dist`; `native` decides about `native/<target>/` (see `stageNative`; `false` for a build that does not
+ * need it and must not touch the network). Resolves to `{ files, packages }` (the sorted file list and the bundled third-party
+ * packages, the native platform packages included).
+ */
+export async function buildBundle({ outDir, entries = ENTRIES, web = true, webDir = WEB_DIST_DIR, native } = {}) {
   if (typeof outDir !== 'string' || outDir === '') throw new Error('buildBundle: outDir is required');
   if (web && !existsSync(join(webDir, 'index.html'))) {
     throw new Error('packages/web/dist is missing: run npm run build first (or pass --no-web)');
   }
+  const nativeFiles = await stageNative(native, entries);
   if (listFiles(outDir).length > 0) throw new Error(`bundle: the output folder is not empty: ${outDir}`);
   mkdirSync(outDir, { recursive: true });
   const { build } = await loadRolldown();
@@ -174,7 +232,12 @@ export async function buildBundle({ outDir, entries = ENTRIES, web = true, webDi
   }
   copyTree(MIGRATIONS_DIR, join(outDir, 'migrations'), /^(?!.*\.sql$)/);
   if (web) copyTree(webDir, join(outDir, 'web'), WEB_SKIP_FILE);
-  const notices = collectNotices({ moduleIds, bundleText: texts.join('\n'), includeWeb: web });
+  const nativePackages = [];
+  for (const [target, files] of nativeFiles ?? []) {
+    for (const [rel, bytes] of files) write(join(outDir, 'native', target, ...rel.split('/')), bytes);
+    nativePackages.push(nativeNotice(files));
+  }
+  const notices = collectNotices({ moduleIds, bundleText: texts.join('\n'), includeWeb: web, nativePackages });
   write(join(outDir, NOTICES_FILE), renderNotices(notices));
   const runtimeVersion = readJson(join(RUNTIME_ROOT, 'package.json')).version;
   write(join(outDir, MANIFEST_FILE), `${JSON.stringify(manifestOf(outDir, runtimeVersion), null, 2)}\n`);
@@ -205,11 +268,11 @@ function tempDir(label) {
 }
 
 /** Replaces the tracked bundle folder with a fresh build (built aside first, so a failed build leaves the folder as it was). */
-async function writeTracked(web) {
+async function writeTracked(web, native) {
   const staging = tempDir('write');
   try {
     const built = join(staging, 'bundle');
-    await buildBundle({ outDir: built, web });
+    await buildBundle({ outDir: built, web, native });
     rmSync(TRACKED_BUNDLE_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     mkdirSync(TRACKED_BUNDLE_DIR, { recursive: true });
     for (const rel of listFiles(built)) {
@@ -222,7 +285,7 @@ async function writeTracked(web) {
   }
 }
 
-async function writeOut(outDir, web) {
+async function writeOut(outDir, web, native) {
   const target = resolve(outDir);
   if (inside(TRACKED_BUNDLE_DIR, target) || inside(REPO_ROOT, target)) {
     throw new Error(
@@ -232,7 +295,7 @@ async function writeOut(outDir, web) {
   const staging = tempDir('out');
   try {
     const built = join(staging, 'bundle');
-    await buildBundle({ outDir: built, web });
+    await buildBundle({ outDir: built, web, native });
     if (listFiles(target).length > 0) throw new Error(`bundle: the output folder is not empty: ${outDir}`);
     mkdirSync(dirname(target), { recursive: true });
     rmSync(target, { recursive: true, force: true });
@@ -252,11 +315,11 @@ async function writeOut(outDir, web) {
 }
 
 /** `--check`: 0 when a fresh build equals `against` byte for byte, else 1 with every differing, missing and extra path. */
-async function check(against, web) {
+async function check(against, web, native) {
   const staging = tempDir('check');
   try {
     const fresh = join(staging, 'bundle');
-    await buildBundle({ outDir: fresh, web });
+    await buildBundle({ outDir: fresh, web, native });
     const { changed, missing, extra } = compareBundles(fresh, against);
     const lines = [
       ...changed.map((rel) => `bundle:check: differs: ${rel}`),
@@ -279,20 +342,35 @@ async function check(against, web) {
 }
 
 function parseArgs(argv) {
-  const opts = { check: false, web: true, out: null, against: null };
+  const opts = { check: false, web: true, out: null, against: null, native: undefined };
+  let noNative = false;
+  let nativeTargets = null;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--check') opts.check = true;
     else if (arg === '--no-web') opts.web = false;
+    else if (arg === '--no-native') noNative = true;
     else if (arg === '--out' || arg === '--against') {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) throw new Error(`bundle: ${arg} needs a folder`);
       opts[arg.slice(2)] = value;
       i += 1;
+    } else if (arg === '--native-targets') {
+      const value = argv[i + 1];
+      const names = (value ?? '').split(',').map((name) => name.trim());
+      if (value === undefined || value.startsWith('--') || names.some((name) => name === '')) {
+        throw new Error('bundle: --native-targets needs a list of targets, such as win32-x64,win32-arm64');
+      }
+      nativeTargets = names;
+      i += 1;
     } else throw new Error(`bundle: unknown argument ${arg}`);
   }
   if (opts.against !== null && !opts.check) throw new Error('bundle: --against needs --check');
   if (opts.out !== null && opts.check) throw new Error('bundle: --out and --check exclude each other');
+  if (noNative && nativeTargets !== null)
+    throw new Error('bundle: --no-native and --native-targets exclude each other');
+  if (noNative) opts.native = false;
+  else if (nativeTargets !== null) opts.native = { targets: nativeTargets };
   return opts;
 }
 
@@ -300,9 +378,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
     const opts = parseArgs(process.argv.slice(2));
     if (opts.check) {
-      process.exitCode = await check(opts.against ?? TRACKED_BUNDLE_DIR, opts.web);
+      process.exitCode = await check(opts.against ?? TRACKED_BUNDLE_DIR, opts.web, opts.native);
     } else {
-      const files = opts.out === null ? await writeTracked(opts.web) : await writeOut(opts.out, opts.web);
+      const files =
+        opts.out === null ? await writeTracked(opts.web, opts.native) : await writeOut(opts.out, opts.web, opts.native);
       const where = opts.out === null ? toPosix(relative(REPO_ROOT, TRACKED_BUNDLE_DIR)) : opts.out;
       console.log(`bundle: wrote ${files.length} files to ${where}`);
     }
