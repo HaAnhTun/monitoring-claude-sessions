@@ -9,6 +9,7 @@ import {
   LIFECYCLE_STATES,
   PRESETS,
   SESSION_SORTS as API_SESSION_SORTS,
+  TERMINAL_NAME_RE,
   type BoardState,
   type EntryKind,
   type EventCategory,
@@ -198,6 +199,19 @@ export function setOf<T extends string>(
       for (const member of v) if (rest.has(member)) out.push(member);
       return out.join(',');
     },
+  };
+}
+
+/** A terminal session name (`TERMINAL_NAME_RE`, the one pattern of the server): absent is '', anything else that does not match is invalid. */
+export function terminalName(key: string): ParamCodec<string> {
+  return {
+    key,
+    default: '',
+    parse: (raw) => {
+      if (raw === null) return '';
+      return TERMINAL_NAME_RE.test(raw) ? raw : INVALID;
+    },
+    format: (v) => v,
   };
 }
 
@@ -445,4 +459,13 @@ export interface SettingsUrlState {
 
 export const settingsSpec: Spec<SettingsUrlState> = {
   section: oneOf('section', SETTINGS_SECTIONS, 'health'),
+};
+
+export interface WorkspaceUrlState {
+  /** The selected terminal session; '' is none (design 04 section 2.2). */
+  session: string;
+}
+
+export const workspaceSpec: Spec<WorkspaceUrlState> = {
+  session: terminalName('session'),
 };

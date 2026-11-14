@@ -267,3 +267,90 @@ describe('language and table columns (ADR 0072, ADR 0073)', () => {
     });
   });
 });
+
+describe('the Workspace preferences (design 04 sections 2.2, 2.4, 6.2 and 6.5)', () => {
+  const hashed = (n: number): string => `f_${n.toString(16).padStart(13, '0')}`;
+
+  it('workspaceOpen keeps the open or closed choice per hashed folder key, at most 300 of them', () => {
+    const good = { [hashed(1)]: true, [hashed(2)]: false };
+    expect(sanitize({ workspaceOpen: good }).workspaceOpen).toEqual(good);
+    expect(sanitize({ workspaceOpen: {} }).workspaceOpen).toEqual({});
+    const entries = (count: number): Record<string, boolean> =>
+      Object.fromEntries(Array.from({ length: count }, (_, i) => [hashed(i), i % 2 === 0]));
+    expect(Object.keys(sanitize({ workspaceOpen: entries(300) }).workspaceOpen ?? {})).toHaveLength(300);
+    expect(sanitize({ workspaceOpen: entries(301) }).workspaceOpen).toBeUndefined();
+  });
+
+  it('workspaceOpen rejects a value of the wrong shape, a long or odd key and the names of the prototype', () => {
+    const bad: unknown[] = [
+      'open',
+      [true],
+      null,
+      7,
+      { [hashed(1)]: 1 },
+      { [hashed(1)]: 'yes' },
+      { [hashed(1)]: null },
+      { '': true },
+      { 'has space': true },
+      { 'a/b': true },
+      { ['f_'.padEnd(65, 'a')]: true },
+      { [`caf${String.fromCharCode(0xe9)}`]: true },
+    ];
+    for (const workspaceOpen of bad) expect(sanitize({ workspaceOpen }).workspaceOpen).toBeUndefined();
+    for (const name of ['__proto__', 'constructor', 'prototype']) {
+      const parsed: unknown = JSON.parse(`{"${name}": true}`);
+      expect(sanitize({ workspaceOpen: parsed }).workspaceOpen).toBeUndefined();
+    }
+  });
+
+  it('lastTerminal is a terminal name of the server pattern, or empty once it was cleared', () => {
+    for (const lastTerminal of ['repo-1', 'A_b-9', 'x'.repeat(64), '']) {
+      expect(sanitize({ lastTerminal }).lastTerminal, lastTerminal).toBe(lastTerminal);
+    }
+    const odd = [`a${String.fromCharCode(92)}b`, `caf${String.fromCharCode(0xe9)}`];
+    for (const lastTerminal of ['x'.repeat(65), 'a b', 'a.b', 'a/b', ...odd, '..', 5, null, ['a'], { a: 1 }]) {
+      expect(sanitize({ lastTerminal }).lastTerminal, JSON.stringify(lastTerminal)).toBeUndefined();
+    }
+  });
+
+  it('workspaceCollapsed and terminalScreenReader are booleans', () => {
+    expect(sanitize({ workspaceCollapsed: true, terminalScreenReader: false })).toEqual({
+      workspaceCollapsed: true,
+      terminalScreenReader: false,
+    });
+    for (const value of ['true', 1, 0, null, [], {}]) {
+      expect(sanitize({ workspaceCollapsed: value }).workspaceCollapsed).toBeUndefined();
+      expect(sanitize({ terminalScreenReader: value }).terminalScreenReader).toBeUndefined();
+    }
+  });
+
+  it('are stored and read back through set, and a rejected value changes nothing', () => {
+    const st = new MemStorage();
+    const p = createPrefs(st);
+    expect(p.set('workspaceOpen', { [hashed(3)]: true })).toBe(true);
+    expect(p.set('lastTerminal', 'repo-2')).toBe(true);
+    expect(p.set('workspaceCollapsed', true)).toBe(true);
+    expect(p.set('terminalScreenReader', true)).toBe(true);
+    expect(p.set('lastTerminal', 'not a name')).toBe(false);
+    expect(p.set('workspaceOpen', { '__proto__x y': true })).toBe(false);
+    const again = createPrefs(st);
+    expect(again.get('workspaceOpen')).toEqual({ [hashed(3)]: true });
+    expect(again.get('lastTerminal')).toBe('repo-2');
+    expect(again.get('workspaceCollapsed', false)).toBe(true);
+    expect(again.get('terminalScreenReader', false)).toBe(true);
+    expect(p.set('lastTerminal', '')).toBe(true);
+    expect(createPrefs(st).get('lastTerminal')).toBe('');
+  });
+
+  it('the legacy key never supplies a Workspace preference of a wrong shape', () => {
+    const st = new MemStorage({
+      [LEGACY_PREFS_KEY]: JSON.stringify({
+        theme: 'light',
+        lastTerminal: 'a b',
+        workspaceOpen: [1],
+        workspaceCollapsed: 'x',
+      }),
+    });
+    expect(createPrefs(st).all()).toEqual({ theme: 'light' });
+  });
+});

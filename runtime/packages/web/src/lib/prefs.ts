@@ -1,7 +1,7 @@
 // Display preferences in localStorage (04 section 9, ADR 0036). Every access is wrapped: storage may be missing, blocked,
 // full or corrupt and the page must still work without it. Only non-sensitive display state is stored (theme, density,
 // filters). This is the only module of the web package that touches web storage (ESLint no-restricted-globals).
-import type { EntryKind } from '@mcs/shared';
+import { TERMINAL_NAME_RE, type EntryKind } from '@mcs/shared';
 
 /** The v3 key. The legacy key is read once for the migration and never written (the legacy UI may share the origin). */
 export const PREFS_KEY = 'mcs.ui.v3';
@@ -25,6 +25,14 @@ export interface PrefsData {
   locale: 'auto' | 'en' | 'vi';
   /** The columns a user chose per table, by table id (ADR 0073). The ids are the column ids of the table. */
   tableColumns: Record<string, string[]>;
+  /** The Workspace folders a person opened or closed by hand, by hashed folder key (`folderPrefKey`); at most 300 (design 04 6.2). */
+  workspaceOpen: Record<string, boolean>;
+  /** The terminal session that was selected last (a terminal name), restored by a bare `/` while it still runs; '' once cleared. */
+  lastTerminal: string;
+  /** The project column of the Workspace is folded away from 1024 px (design 04 2.4). */
+  workspaceCollapsed: boolean;
+  /** Screen-reader mode of the terminal (design 04 6.5). */
+  terminalScreenReader: boolean;
 }
 
 export type PrefName = keyof PrefsData;
@@ -60,6 +68,21 @@ function isTableColumns(v: unknown): v is PrefsData['tableColumns'] {
   );
 }
 
+const WORKSPACE_OPEN_LIMIT = 300;
+/** A hashed folder key: letters, digits and underscore only, so a key can never name a path or reach the prototype. */
+const FOLDER_KEY = /^[A-Za-z0-9_]{1,64}$/;
+
+function isWorkspaceOpen(v: unknown): v is PrefsData['workspaceOpen'] {
+  if (!isRecord(v)) return false;
+  const entries = Object.entries(v);
+  return (
+    entries.length <= WORKSPACE_OPEN_LIMIT &&
+    entries.every(([key, open]) => FOLDER_KEY.test(key) && !UNSAFE_KEYS.has(key) && isBool(open))
+  );
+}
+
+const isTerminalName = (v: unknown): v is string => typeof v === 'string' && (v === '' || TERMINAL_NAME_RE.test(v));
+
 const VALIDATORS: Validators = {
   theme: (v): v is PrefsData['theme'] => v === 'auto' || v === 'light' || v === 'dark',
   density: (v): v is PrefsData['density'] => v === 'comfortable' || v === 'compact',
@@ -74,6 +97,10 @@ const VALIDATORS: Validators = {
   lastInstanceId: isStr(64),
   locale: (v): v is PrefsData['locale'] => v === 'auto' || v === 'en' || v === 'vi',
   tableColumns: isTableColumns,
+  workspaceOpen: isWorkspaceOpen,
+  lastTerminal: isTerminalName,
+  workspaceCollapsed: isBool,
+  terminalScreenReader: isBool,
 };
 
 const PREF_NAMES = Object.keys(VALIDATORS).filter((k): k is PrefName => Object.hasOwn(VALIDATORS, k));

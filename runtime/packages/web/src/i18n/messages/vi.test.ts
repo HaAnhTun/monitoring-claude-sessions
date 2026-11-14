@@ -24,6 +24,7 @@ const BLOCKS = [
   'WP-120',
   'WP-121',
   'WP-124',
+  'WP-136',
 ] as const;
 
 const BACKSLASH = String.fromCharCode(92);
@@ -83,5 +84,32 @@ describe('messages/vi.ts (the values)', () => {
   it('does not repeat the English text for a translated message', () => {
     expect(viMessages['common.close']).not.toBe('Close');
     expect(viMessages['common.loading']).not.toBe('Loading...');
+  });
+});
+
+describe('messages/vi.ts (the Workspace block, WP-136)', () => {
+  const keysOf = (text: string): string[] => {
+    const begin = text.indexOf('// @wp-begin WP-136');
+    const end = text.indexOf('// @wp-end WP-136');
+    return [...text.slice(begin, end).matchAll(/^\s*'([^']+)':/gm)].map((m) => m[1] ?? '');
+  };
+  const english = readFileSync(resolve(import.meta.dirname, 'en.ts'), 'utf8');
+
+  it('has the keys of the English block, in the same order, between its own markers', () => {
+    const keys = keysOf(source);
+    expect(keys.length).toBeGreaterThanOrEqual(115);
+    expect(keys).toEqual(keysOf(english));
+  });
+
+  it('writes the block in Vietnamese: marked letters, and the terms of the glossary', () => {
+    const marked = (text: string): boolean => text !== text.normalize('NFD').replace(/\p{M}/gu, '');
+    // Entries that are legitimately plain ASCII: the loanword on its own and the two counters of the DA memory.
+    const plain = new Set(['shortcuts.group.terminal', 'workspace.pane.label', 'workspace.folder.counts']);
+    const catalogue: Readonly<Record<string, string>> = viMessages;
+    const unmarked = keysOf(source).filter((key) => !plain.has(key) && !marked(catalogue[key] ?? ''));
+    expect(unmarked).toEqual([]);
+    expect(viMessages['workspace.recent.title']).toBe('Phiên gần đây');
+    expect(viMessages['workspace.sidebar.heading']).toBe('Dự án');
+    expect(viMessages['workspace.recent.resume']).toBe('Tiếp tục');
   });
 });

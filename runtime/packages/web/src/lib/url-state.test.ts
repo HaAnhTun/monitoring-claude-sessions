@@ -32,7 +32,9 @@ import {
   settingsSpec,
   tasksSpec,
   text,
+  terminalName,
   timeRange,
+  workspaceSpec,
   type Spec,
 } from './url-state.ts';
 
@@ -471,5 +473,46 @@ describe('the session sorts (R-34)', () => {
     const query = toQuery(toSessionFilter(state));
     expect(query['state']).toBe('running,working,waiting_tool,waiting_agent');
     expect(() => fromQuery(SessionListQuerySchema, query)).not.toThrow();
+  });
+});
+
+describe('the Workspace address (design 04 section 2.2)', () => {
+  it('reads ?session= as a terminal name and writes the bare path for none', () => {
+    expect(parseUrlState(workspaceSpec, sp('')).value).toEqual({ session: '' });
+    const parsed = parseUrlState(workspaceSpec, sp('session=repo-1'));
+    expect(parsed.value).toEqual({ session: 'repo-1' });
+    expect(parsed.ignored).toEqual([]);
+    expect(formatUrlState(workspaceSpec, parsed.value).toString()).toBe('session=repo-1');
+    expect(formatUrlState(workspaceSpec, { session: '' }).toString()).toBe('');
+  });
+
+  it('accepts exactly the names of the terminal pattern, 1 to 64 of letters, digits, underscore and dash', () => {
+    for (const ok of ['a', 'A_b-9', 'x'.repeat(64)]) {
+      expect(parseUrlState(workspaceSpec, sp(`session=${ok}`)).value.session, ok).toBe(ok);
+    }
+    for (const bad of ['x'.repeat(65), 'a b', 'a.b', 'a%2Fb', 'a%5Cb', '..', 'a%00', '%20', 'caf%C3%A9']) {
+      const parsed = parseUrlState(workspaceSpec, sp(`session=${bad}`));
+      expect(parsed.value, bad).toEqual({ session: '' });
+      expect(parsed.ignored, bad).toEqual(['session']);
+    }
+  });
+
+  it('reports an invalid, repeated or unknown parameter by key only, never by value', () => {
+    const secret = 'not a name; secret';
+    const invalid = parseUrlState(workspaceSpec, sp(`session=${encodeURIComponent(secret)}&utm=1`));
+    expect(invalid.ignored.sort()).toEqual(['session', 'utm']);
+    expect(JSON.stringify(invalid)).not.toContain('secret');
+    expect(parseUrlState(workspaceSpec, sp('session=a&session=b')).ignored).toEqual(['session']);
+    expect(parseUrlState(workspaceSpec, sp('session=')).ignored).toEqual(['session']);
+  });
+
+  it('terminalName is a codec of its own key with the empty default', () => {
+    const codec = terminalName('session');
+    expect(codec.key).toBe('session');
+    expect(codec.default).toBe('');
+    expect(codec.parse(null)).toBe('');
+    expect(codec.parse('ok_1')).toBe('ok_1');
+    expect(codec.parse('no way')).toBe(INVALID);
+    expect(codec.format('ok_1')).toBe('ok_1');
   });
 });

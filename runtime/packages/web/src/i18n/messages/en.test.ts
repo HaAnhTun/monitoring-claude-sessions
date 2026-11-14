@@ -24,6 +24,7 @@ const BLOCKS = [
   'WP-120',
   'WP-121',
   'WP-124',
+  'WP-136',
 ] as const;
 
 const bytes = readFileSync(resolve(import.meta.dirname, 'en.ts'));
@@ -80,6 +81,69 @@ describe('messages/en.ts', () => {
           /^\s*('[^']+':\s*('[^']*'|"[^"]*"|`[^`]*`|$)|('[^']*'|"[^"]*"|`[^`]*`),)/,
         );
       }
+    }
+  });
+});
+
+/** The keys written between the markers of one work package. */
+function keysOfBlock(text: string, wp: string): string[] {
+  const begin = text.indexOf(`// @wp-begin ${wp}`);
+  const end = text.indexOf(`// @wp-end ${wp}`);
+  return [...text.slice(begin, end).matchAll(/^\s*'([^']+)':/gm)].map((m) => m[1] ?? '');
+}
+
+describe('the Workspace block (WP-136, design 04 section 9)', () => {
+  const keys = keysOfBlock(source, 'WP-136');
+
+  it('holds every key of the section, about 115 plus the locked read of a reader route', () => {
+    expect(keys.length).toBeGreaterThanOrEqual(115);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const key of [
+      'route.workspace.title',
+      'shell.skip.terminal',
+      'shell.skip.projects',
+      'shell.outdated.body',
+      'shell.outdated.terminals',
+      'shell.outdated.copy',
+      'shell.userMenu.lock',
+      'shortcuts.group.terminal',
+      'workspace.sidebar.label',
+      'workspace.folder.live',
+      'workspace.recent.resume',
+      'workspace.pane.notFound.title',
+      'terminal.region',
+      'terminal.status.reconnecting',
+      'terminal.ended.exitCode',
+      'terminal.unavailable.os.title',
+      'terminal.unavailable.addon.title',
+      'terminal.unavailable.claude.title',
+      'access.locked.title',
+      'access.error.cookie',
+      'workspace.dialog.resume.fork',
+      'workspace.resume.reason.live_elsewhere',
+      'error.handling.accessRequired',
+      'error.handling.accessLocked',
+      'error.handling.folderLimit',
+      'detail.resume.action',
+      'settings.prefs.screenReader',
+    ]) {
+      expect(keys, key).toContain(key);
+    }
+  });
+
+  it('puts no key of the block outside its markers and names the product in no key', () => {
+    const outside = source.replace(/\/\/ @wp-begin WP-136[\s\S]*?\/\/ @wp-end WP-136/, '');
+    for (const key of keys) {
+      expect(outside.includes(`'${key}':`), key).toBe(false);
+      expect(key, key).not.toMatch(/caw|mcs|workspace-?app|agentworkspace/i);
+    }
+  });
+
+  it('keeps the plural forms free of nested braces and the product name out of the text', () => {
+    for (const key of keys) {
+      const text = enMessages[key as keyof typeof enMessages];
+      expect(text, key).not.toMatch(/\{[^{}]*\{[^{}]*\{/);
+      expect(text, key).not.toMatch(/claude agent workspace|\bcaw\b/i);
     }
   });
 });
