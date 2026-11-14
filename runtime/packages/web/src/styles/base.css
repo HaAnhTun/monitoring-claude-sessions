@@ -1,4 +1,4 @@
-/* Reset and element defaults. Headings follow ADR 0071 decision 4: page title 22 px / 600, section title 16 px / 600. */
+/* Reset and element defaults. Headings follow the type scale of ADR 0100: page title 18 px / 600, section title 15 px / 600, group title 13 px / 600. */
 
 *,
 *::before,
@@ -8,6 +8,13 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  /* native checkboxes, radios and ranges, the text caret and the scrollbars follow the theme (ADR 0100) */
+  accent-color: var(--accent);
+  caret-color: var(--accent);
+  scrollbar-color: var(--border-strong) transparent;
+}
+::selection {
+  background: var(--selection);
 }
 body {
   margin: 0;

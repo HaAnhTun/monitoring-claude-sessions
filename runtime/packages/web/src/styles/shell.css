@@ -291,7 +291,7 @@
   position: fixed;
   inset: 0;
   z-index: 24;
-  background: rgb(0 0 0 / 0.4);
+  background: var(--backdrop);
 }
 @media (max-width: 899px) {
   .shell__body {

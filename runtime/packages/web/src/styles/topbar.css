@@ -345,7 +345,7 @@
   box-shadow: var(--elev-2);
 }
 .shortcuts-dialog::backdrop {
-  background: rgb(0 0 0 / 0.4);
+  background: var(--backdrop);
 }
 .shortcuts-dialog__title {
   margin-bottom: var(--sp-4);
