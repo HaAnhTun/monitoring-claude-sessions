@@ -5,6 +5,7 @@
 //
 // The address of the control channel is `controlAddress` of `@mcs/shared`, the same function the server listens with
 // (CR-WP-19-1); `controlAddressOf` below only supplies the host this process runs on.
+import { stat } from 'node:fs/promises';
 import { request } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -23,6 +24,7 @@ import { hostPlatform } from '../platform/host.ts';
 import { listRuntimeProcesses, type RuntimeProcess } from '../platform/markers.ts';
 import { pidAlive } from '../platform/process.ts';
 import { readInstanceFile } from '../workspace/adopt.ts';
+import { assertNotLink } from '../workspace/fsio.ts';
 import { workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
 
 const LF = String.fromCharCode(10);
@@ -158,6 +160,27 @@ const BASE_RE = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})$/;
 const URL_RE = /^(http:\/\/127\.0\.0\.1:[0-9]{1,5})(\/[^\s]*)$/;
 const HTTP_BODY_MAX_BYTES = 4 * 1024 * 1024;
 
+/** The control token (`run/control.token`, 256 random bits): 64 lower-case hex digits. The only value sent as a Bearer header. */
+const CONTROL_TOKEN_RE = /^[0-9a-f]{64}$/;
+
+/** What a loopback GET takes: the time and size limits, and the control token for a `reader` route (CAW design 02 A1). */
+export interface HttpGetOptions {
+  readonly timeoutMs: number;
+  readonly maxBytes?: number;
+  /**
+   * The control token, sent as `Authorization: Bearer <token>`. It must be a token (64 lower-case hex digits): any other value is
+   * a programming error and nothing is sent, so a value cannot carry a second header. It goes only to `127.0.0.1:<port>`.
+   */
+  readonly bearer?: string;
+}
+
+/** The `Authorization` header for `bearer`, or none; a value that is not a control token is refused without repeating it. */
+export function bearerHeaderOf(bearer: string | undefined): Record<string, string> {
+  if (bearer === undefined) return {};
+  if (!CONTROL_TOKEN_RE.test(bearer)) throw new RangeError('httpGet: the bearer value is not a control token');
+  return { Authorization: `Bearer ${bearer}` };
+}
+
 /** True for `http://127.0.0.1:<port>` and nothing else: the only address this module ever connects to. */
 export function isLoopbackBase(url: string): boolean {
   const match = BASE_RE.exec(url);
@@ -171,26 +194,30 @@ export function isLoopbackBase(url: string): boolean {
  * `http://127.0.0.1:<port>/...` is a programming error: the state file and the control channel are untrusted, so every
  * caller checks with `isLoopbackBase` first, and this refuses anyway.
  */
-export function httpGet(
-  url: string,
-  o: { readonly timeoutMs: number; readonly maxBytes?: number },
-): Promise<HttpAttempt> {
+export function httpGet(url: string, o: HttpGetOptions): Promise<HttpAttempt> {
   return httpGetWithHeaders(url, o).then((attempt) =>
     attempt.ok ? { ok: true, reply: { status: attempt.reply.status, body: attempt.reply.body } } : attempt,
   );
 }
 
-/** `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`). Same limits and the same refusals. */
-export function httpGetWithHeaders(
-  url: string,
-  o: { readonly timeoutMs: number; readonly maxBytes?: number },
-): Promise<HttpFullAttempt> {
+/**
+ * `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`), and that can send the control token as a
+ * Bearer header (`o.bearer`). Same limits and the same refusals.
+ */
+export function httpGetWithHeaders(url: string, o: HttpGetOptions): Promise<HttpFullAttempt> {
   return new Promise((resolve, reject) => {
     const match = URL_RE.exec(url);
     const base = match?.[1];
     const pathPart = match?.[2];
     if (base === undefined || pathPart === undefined || !isLoopbackBase(base)) {
       reject(new RangeError('httpGet: only http://127.0.0.1:<port>/... is allowed'));
+      return;
+    }
+    let authorization: Record<string, string>;
+    try {
+      authorization = bearerHeaderOf(o.bearer);
+    } catch (error) {
+      reject(error instanceof Error ? error : new RangeError('httpGet: the bearer value is not a control token'));
       return;
     }
     const port = Number(BASE_RE.exec(base)?.[1] ?? '0');
@@ -213,7 +240,12 @@ export function httpGetWithHeaders(
         path: pathPart,
         method: 'GET',
         agent: false,
-        headers: { Host: `127.0.0.1:${String(port)}`, Accept: 'application/json', Connection: 'close' },
+        headers: {
+          Host: `127.0.0.1:${String(port)}`,
+          Accept: 'application/json',
+          Connection: 'close',
+          ...authorization,
+        },
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -255,6 +287,46 @@ export function jsonBodyOf(reply: HttpReply): unknown {
   } catch {
     return undefined;
   }
+}
+
+// ---- the control token as a Bearer value (CAW design 02 A1) ----------------------------------------------------------------
+
+/** The control token of an instance, or `null` while there is none; it never rejects and the value is never logged. */
+export type ControlTokenSource = () => Promise<string | null>;
+
+/** A token file is 64 hex digits and a line feed; a larger file is not one. */
+const TOKEN_FILE_MAX_BYTES = 4096;
+
+/** What `createControlTokenSource` reads with; tests count the reads. */
+export interface ControlTokenSourceDeps {
+  readonly read?: (file: string, maxBytes: number) => Promise<Buffer>;
+}
+
+/**
+ * The reader of `run/control.token`, for the clients that send it as `Authorization: Bearer` to a `reader` route of a user
+ * instance (the CLI, the skill and the MCP server read through `ApiReader`). The file is read again only when its size, times
+ * or file id change (a new boot writes a new token by an atomic replace), so a client that asks often costs one `stat`. A link, a
+ * missing, unreadable or oversized file, and content that is not 64 lower-case hex digits, are `null`: the request then goes
+ * without a token and the server decides.
+ */
+export function createControlTokenSource(file: string, deps: ControlTokenSourceDeps = {}): ControlTokenSource {
+  const read = deps.read ?? readSmallFile;
+  let cached: { readonly stamp: string; readonly token: string | null } | undefined;
+  return async () => {
+    try {
+      assertNotLink(file);
+      const info = await stat(file);
+      const stamp = `${String(info.size)}:${String(info.mtimeMs)}:${String(info.ctimeMs)}:${String(info.ino)}`;
+      if (cached?.stamp === stamp) return cached.token;
+      const text = (await read(file, TOKEN_FILE_MAX_BYTES)).toString('utf8').trim();
+      const token = CONTROL_TOKEN_RE.test(text) ? text : null;
+      cached = { stamp, token };
+      return token;
+    } catch {
+      cached = undefined;
+      return null;
+    }
+  };
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {

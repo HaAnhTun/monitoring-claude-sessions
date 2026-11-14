@@ -23,14 +23,21 @@ import {
 } from '@mcs/shared';
 import type { z } from 'zod';
 
-import { httpGetWithHeaders, isLoopbackBase, type HttpFullAttempt } from '../ops/probe.ts';
+import {
+  bearerHeaderOf,
+  httpGetWithHeaders,
+  isLoopbackBase,
+  type ControlTokenSource,
+  type HttpFullAttempt,
+  type HttpGetOptions,
+} from '../ops/probe.ts';
 import { parseBody, readerErrorOfCode, readerReasonOf, type InstanceReader, type ReaderOutput } from './open.ts';
 
-/** The GET of the probe, with the response headers; a test passes a scripted one. */
-export type ApiHttpGet = (
-  url: string,
-  o: { readonly timeoutMs: number; readonly maxBytes?: number },
-) => Promise<HttpFullAttempt>;
+/**
+ * The GET of the probe, with the response headers; a test passes a scripted one. `o.bearer` is the control token of a `reader`
+ * route (CAW design 02 A1); it is absent for every other route.
+ */
+export type ApiHttpGet = (url: string, o: HttpGetOptions) => Promise<HttpFullAttempt>;
 
 /** An open streaming answer: the status and headers are known, the body is read by the caller. */
 export interface StreamedReply {
@@ -45,8 +52,11 @@ export type StreamAttempt =
   | { readonly ok: true; readonly reply: StreamedReply }
   | { readonly ok: false; readonly reason: 'refused' | 'timeout' | 'error' };
 
-/** The streaming GET of `exportTo`; a test passes a scripted one. */
-export type ApiStreamOpen = (url: string, o: { readonly idleTimeoutMs: number }) => Promise<StreamAttempt>;
+/** The streaming GET of `exportTo`; a test passes a scripted one. `o.bearer` is the control token of the export route. */
+export type ApiStreamOpen = (
+  url: string,
+  o: { readonly idleTimeoutMs: number; readonly bearer?: string },
+) => Promise<StreamAttempt>;
 
 export interface ApiReaderOptions {
   /** `http://127.0.0.1:<port>`. */
@@ -55,6 +65,13 @@ export interface ApiReaderOptions {
   readonly instanceId: string;
   readonly httpGet?: ApiHttpGet;
   readonly openStream?: ApiStreamOpen;
+  /**
+   * Where the control token of the instance comes from (`createControlTokenSource` over `run/control.token`). The reader sends it
+   * as `Authorization: Bearer` to the routes whose access is `reader` and to no other, so that the CLI, the skill and the MCP
+   * server keep reading a user instance whose content routes need a session cookie otherwise (CAW design 02 A1). Asked again for
+   * every request; a source that has no token, or fails, means the request goes without one and the server decides.
+   */
+  readonly controlToken?: ControlTokenSource;
   /** Per request (default 15 s); a search adds its own budget. */
   readonly requestTimeoutMs?: number;
 }
@@ -103,6 +120,14 @@ export const loopbackStream: ApiStreamOpen = (url, o) =>
       resolve({ ok: false, reason: 'error' });
       return;
     }
+    let authorization: Record<string, string>;
+    try {
+      authorization = bearerHeaderOf(o.bearer);
+    } catch {
+      // a value that is not a control token is never put into a header
+      resolve({ ok: false, reason: 'error' });
+      return;
+    }
     const port = Number(new URL(base).port);
     const req = request(
       {
@@ -111,7 +136,12 @@ export const loopbackStream: ApiStreamOpen = (url, o) =>
         path: pathPart,
         method: 'GET',
         agent: false,
-        headers: { Host: `127.0.0.1:${String(port)}`, Accept: 'application/x-ndjson', Connection: 'close' },
+        headers: {
+          Host: `127.0.0.1:${String(port)}`,
+          Accept: 'application/x-ndjson',
+          Connection: 'close',
+          ...authorization,
+        },
       },
       (res) => {
         const headers: Record<string, string> = {};
@@ -215,6 +245,21 @@ export function createApiReader(options: ApiReaderOptions): InstanceReader {
   const openStream = options.openStream ?? loopbackStream;
   const timeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+  /**
+   * The control token for a request to `route`, as the option object of the call: `{ bearer }` only for a `reader` route and only
+   * when the source has a token, else nothing. The token goes to no other route, so that what an open route answers with never
+   * had it. A source that throws is no source.
+   */
+  async function bearerFor(route: Pick<RouteDefinition, 'access'>): Promise<{ readonly bearer?: string }> {
+    if (route.access !== 'reader' || options.controlToken === undefined) return {};
+    try {
+      const token = await options.controlToken();
+      return token === null ? {} : { bearer: token };
+    } catch {
+      return {};
+    }
+  }
+
   /** The failure of a request that got no answer. */
   function unreachable(reason: 'refused' | 'timeout' | 'too-large' | 'error'): McsError {
     if (reason === 'refused') {
@@ -285,7 +330,11 @@ export function createApiReader(options: ApiReaderOptions): InstanceReader {
     }
     let attempt: HttpFullAttempt;
     try {
-      attempt = await get(url, { timeoutMs: o.timeoutMs ?? timeoutMs, maxBytes: MAX_BODY_BYTES });
+      attempt = await get(url, {
+        timeoutMs: o.timeoutMs ?? timeoutMs,
+        maxBytes: MAX_BODY_BYTES,
+        ...(await bearerFor(route)),
+      });
     } catch (error) {
       throw new McsError('API_ERROR', 'the request to the instance was refused by the reader', {
         cause: error,
@@ -347,7 +396,7 @@ export function createApiReader(options: ApiReaderOptions): InstanceReader {
     }
     let attempt: StreamAttempt;
     try {
-      attempt = await openStream(url, { idleTimeoutMs: EXPORT_IDLE_TIMEOUT_MS });
+      attempt = await openStream(url, { idleTimeoutMs: EXPORT_IDLE_TIMEOUT_MS, ...(await bearerFor(routes.export)) });
     } catch (error) {
       throw new McsError('API_ERROR', 'the request to the instance was refused by the reader', {
         cause: error,

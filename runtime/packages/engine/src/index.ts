@@ -952,3 +952,17 @@ export type {
   Scrubber,
 } from './ops/diagnostics.ts';
 // @wp-end WP-141
+
+// @wp-begin CAW-18
+export { ACCESS_LIMITS, createAccessService } from './runtime/access-service.ts';
+export type {
+  AccessLimits,
+  AccessMint,
+  AccessService,
+  AccessServiceOptions,
+  AccessSession,
+  ExchangeOutcome,
+} from './runtime/access-service.ts';
+export { createControlTokenSource } from './ops/probe.ts';
+export type { ControlTokenSource } from './ops/probe.ts';
+// @wp-end CAW-18

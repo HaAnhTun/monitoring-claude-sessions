@@ -1,6 +1,8 @@
 // The ingest routes (03 6.1, 02 2.8, I-37): the data-free hook nudge and the probe lookup. The nudge guard (WP-08) answers
 // every refusal before the handler runs; the handler only schedules a drain, because the spool is the one input channel
-// (D8) and the nudge carries no event data.
+// (D8) and the nudge carries no event data. The nudge is the one POST that registers with `csrf: false` (the hook handler is not a
+// browser and sends no `X-MCS-Request`; its guard is stricter: no Origin at all, 256 bytes, the instance id) and with
+// `bodyConsumed` (the guard read the body, so the adapter must not read it again; CAW-18, ADR 0084).
 import { routes } from '@mcs/shared';
 
 import { ApiError } from '../errors.ts';
@@ -26,7 +28,7 @@ export const ingestRoutes: RouteModule = (app, { ctx, nudge }) => {
         ctx.logger.warn('nudge_failed', { route: routes.ingestNudge.id, code: 'INTERNAL' });
       }
     },
-    { before: [nudgeGuard({ instanceId: ctx.instanceId })] },
+    { before: [nudgeGuard({ instanceId: ctx.instanceId })], csrf: false, bodyConsumed: true },
   );
 
   // `404 probe_not_found` means "not committed yet": `hooks verify` V7 keeps polling (03 6.3)

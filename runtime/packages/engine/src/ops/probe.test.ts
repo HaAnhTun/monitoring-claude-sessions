@@ -1,7 +1,7 @@
 // `probeInstance` (01 4.8, registry 2.1) and the control and HTTP clients under it: every state of the classification with
 // scripted dependencies, and the two real clients against in-process servers on a real pipe (or socket) and a real port.
 import { randomBytes } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -12,12 +12,15 @@ import type { ControlRequest, ControlResponse } from '@mcs/shared/protocol';
 import { allocatePort, buildRepo, buildTaskWorkspace, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { readSmallFile } from '../platform/fsx.ts';
 import { hostPlatform } from '../platform/host.ts';
 import { resolveWorkspace, type WorkspaceRef } from '../workspace/paths.ts';
 import {
   controlAddressOf,
+  createControlTokenSource,
   createProbe,
   httpGet,
+  httpGetWithHeaders,
   isLiveState,
   isLoopbackBase,
   isRunningState,
@@ -36,6 +39,7 @@ const REAL_ID = '77777777-6666-4555-8444-333333333333';
 const OTHER_ID = '99999999-8888-4777-8666-555555555555';
 const BACKSLASH = String.fromCharCode(92);
 const LF = String.fromCharCode(10);
+const CRLF = `${String.fromCharCode(13)}${LF}`;
 const PORT = 18000;
 const URL_OF = (port: number): string => `http://127.0.0.1:${String(port)}`;
 
@@ -672,6 +676,153 @@ describe('httpGet', () => {
 
   it('refuses a base that is not loopback without connecting', async () => {
     await expect(httpGet('http://203.0.113.9:80/x', { timeoutMs: 100 })).rejects.toThrow(RangeError);
+  });
+});
+
+// FIXTURE: invented data for tests
+const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
+const OTHER_TOKEN = '0f0e0d0c0b0a09080706050403020100ffeeddccbbaa99887766554433221100';
+
+describe('httpGet and httpGetWithHeaders: the control token as a Bearer header (A1)', () => {
+  async function capturing(): Promise<{ port: number; seen: (string | undefined)[] }> {
+    const seen: (string | undefined)[] = [];
+    const port = await allocatePort();
+    const server = createHttpServer((req, res) => {
+      seen.push(req.headers.authorization);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
+    httpServers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen({ port, host: '127.0.0.1' }, resolve);
+    });
+    return { port, seen };
+  }
+
+  it('sends Authorization: Bearer <token> when it is given one, and no Authorization header otherwise', async () => {
+    const { port, seen } = await capturing();
+    await httpGetWithHeaders(`${URL_OF(port)}/api/v3/export`, { timeoutMs: 2000, bearer: TOKEN });
+    await httpGetWithHeaders(`${URL_OF(port)}/api/v3/export`, { timeoutMs: 2000 });
+    await httpGet(`${URL_OF(port)}/api/v3/health`, { timeoutMs: 2000, bearer: OTHER_TOKEN });
+    await httpGet(`${URL_OF(port)}/api/v3/health`, { timeoutMs: 2000 });
+    expect(seen).toEqual([`Bearer ${TOKEN}`, undefined, `Bearer ${OTHER_TOKEN}`, undefined]);
+  });
+
+  it('refuses a value that is not a control token before it connects, so that nothing can ride along in the header', async () => {
+    const { port, seen } = await capturing();
+    for (const bearer of [
+      '',
+      'x',
+      TOKEN.slice(1),
+      `${TOKEN}0`,
+      TOKEN.toUpperCase(),
+      `${TOKEN.slice(0, 62)}${CRLF}`,
+      `${TOKEN.slice(0, 40)}${CRLF}X-Injected: 1${TOKEN.slice(0, 20)}`,
+    ]) {
+      await expect(httpGetWithHeaders(`${URL_OF(port)}/x`, { timeoutMs: 2000, bearer }), bearer).rejects.toThrow(
+        RangeError,
+      );
+    }
+    expect(seen).toEqual([]);
+  });
+
+  it('never sends it anywhere but 127.0.0.1', async () => {
+    await expect(httpGetWithHeaders('http://203.0.113.9:80/x', { timeoutMs: 100, bearer: TOKEN })).rejects.toThrow(
+      RangeError,
+    );
+    await expect(httpGetWithHeaders('http://localhost:80/x', { timeoutMs: 100, bearer: TOKEN })).rejects.toThrow(
+      RangeError,
+    );
+  });
+
+  it('keeps the token out of the error it raises for a bad value', async () => {
+    const bad = `${TOKEN}0`;
+    try {
+      await httpGetWithHeaders(`${URL_OF(18001)}/x`, { timeoutMs: 100, bearer: bad });
+    } catch (error) {
+      expect(error instanceof Error ? error.message : '').not.toContain(TOKEN);
+    }
+    expect.assertions(1);
+  });
+});
+
+describe('createControlTokenSource (A1)', () => {
+  function tokenFile(content: string | Buffer): string {
+    const dir = path.join(makeTemp('token').path, 'run');
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'control.token');
+    writeFileSync(file, content);
+    return file;
+  }
+
+  it('reads the token of run/control.token (64 hex digits and a line feed)', async () => {
+    const source = createControlTokenSource(tokenFile(`${TOKEN}${LF}`));
+    expect(await source()).toBe(TOKEN);
+  });
+
+  it('reads the file once while its size and times stay the same, and again when it is replaced', async () => {
+    const file = tokenFile(`${TOKEN}${LF}`);
+    let reads = 0;
+    const source = createControlTokenSource(file, {
+      read: (target, maxBytes) => {
+        reads += 1;
+        return readSmallFile(target, maxBytes);
+      },
+    });
+    expect(await source()).toBe(TOKEN);
+    expect(await source()).toBe(TOKEN);
+    expect(await source()).toBe(TOKEN);
+    expect(reads).toBe(1);
+    // a new boot writes a new token: same size, another time
+    writeFileSync(file, `${OTHER_TOKEN}${LF}`);
+    const later = new Date(Date.now() + 5000);
+    utimesSync(file, later, later);
+    expect(await source()).toBe(OTHER_TOKEN);
+    expect(await source()).toBe(OTHER_TOKEN);
+    expect(reads).toBe(2);
+  });
+
+  it('answers null for a missing file, and the token once the file is there', async () => {
+    const file = tokenFile(`${TOKEN}${LF}`);
+    const missing = path.join(path.dirname(file), 'absent.token');
+    const source = createControlTokenSource(missing);
+    expect(await source()).toBeNull();
+    writeFileSync(missing, `${TOKEN}${LF}`);
+    expect(await source()).toBe(TOKEN);
+  });
+
+  it('answers null once the file is gone, and does not keep the old token', async () => {
+    const file = tokenFile(`${TOKEN}${LF}`);
+    const source = createControlTokenSource(file);
+    expect(await source()).toBe(TOKEN);
+    unlinkSync(file);
+    expect(await source()).toBeNull();
+  });
+
+  it('answers null for content that is not a control token', async () => {
+    for (const content of [
+      '',
+      LF,
+      'x',
+      TOKEN.slice(1),
+      `${TOKEN}0`,
+      TOKEN.toUpperCase(),
+      `${TOKEN} ${OTHER_TOKEN}`,
+      `token=${TOKEN}`,
+      Buffer.from([0xff, 0xfe, 0x00]),
+      'a'.repeat(5000),
+    ]) {
+      const source = createControlTokenSource(tokenFile(content));
+      expect(await source(), String(content).slice(0, 20)).toBeNull();
+    }
+  });
+
+  it('never rejects: a read that fails is a null', async () => {
+    const source = createControlTokenSource(tokenFile(`${TOKEN}${LF}`), {
+      read: () => Promise.reject(new Error('the file is locked')),
+    });
+    expect(await source()).toBeNull();
   });
 });
 

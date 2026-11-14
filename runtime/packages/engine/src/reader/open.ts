@@ -50,8 +50,14 @@ import type { MigrationsLocation } from '../db/migrations.ts';
 import type { CompletionTarget } from '../lifecycle/completion.ts';
 import type { Logger } from '../log/logger.ts';
 import { requireInstance } from '../ops/backup.ts';
-import { isLoopbackBase, probeInstance, type ProbeOptions, type ProbeResult } from '../ops/probe.ts';
-import type { WorkspaceRef } from '../workspace/paths.ts';
+import {
+  createControlTokenSource,
+  isLoopbackBase,
+  probeInstance,
+  type ProbeOptions,
+  type ProbeResult,
+} from '../ops/probe.ts';
+import { workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
 import { createApiReader, type ApiHttpGet, type ApiStreamOpen } from './api-reader.ts';
 import { openDbReader } from './db-reader.ts';
 
@@ -122,6 +128,8 @@ export async function openInstanceReader(ws: WorkspaceRef, deps: ReaderDeps): Pr
     return createApiReader({
       base: probe.url,
       instanceId: instance.instanceId,
+      // the content routes of a user instance need the control token as a Bearer value (CAW design 02 A1)
+      controlToken: createControlTokenSource(workspacePath(ws, 'run', 'control.token')),
       ...(deps.httpGet === undefined ? {} : { httpGet: deps.httpGet }),
       ...(deps.openStream === undefined ? {} : { openStream: deps.openStream }),
       ...(deps.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: deps.requestTimeoutMs }),

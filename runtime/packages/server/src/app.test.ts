@@ -6,6 +6,7 @@ import { connect } from 'node:net';
 
 import {
   DbError,
+  createAccessService,
   defaultSkillDir,
   resolveConfig,
   type AuditQueries,
@@ -17,6 +18,7 @@ import {
 import {
   ErrorEnvelopeSchema,
   RUNTIME_VERSION,
+  defineRoute,
   routes,
   type ErrorCode,
   type InstanceFile,
@@ -24,9 +26,12 @@ import {
 } from '@mcs/shared';
 import { FakeClock, allocatePort, assertPortClosed, httpRequest } from '@mcs/testkit';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { createApp, createHttpServer, HTML_CSP, type AppDeps } from './app.ts';
-import { mountedRoutes } from './route-adapter.ts';
+import { createAccessVerifier, type AccessVerifier } from './http/access-guard.ts';
+import { cookieName } from './http/cookie.ts';
+import { mountedRoutes, registerRoute } from './route-adapter.ts';
 import type { AppContext, RouteModule } from './route-adapter.ts';
 
 /** What the routes under test call: the meta part of the query layer (03 12.1), nothing else is built. */
@@ -552,5 +557,126 @@ describe('HTML_CSP (04 12.2, ADR 0039)', () => {
     expect(HTML_CSP).toBe(
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
     );
+  });
+});
+
+// ---- who may call a route: AppDeps.access (CAW-18, design 02 3, ADR 0084) ------------------------------------------------------------
+
+const sessionRead = defineRoute({
+  id: 'testSessionRead',
+  method: 'GET',
+  path: '/api/v3/test/session-read',
+  params: null,
+  query: null,
+  body: null,
+  response: z.strictObject({ ok: z.literal(true) }),
+  successStatus: 200,
+  errors: [],
+  summary: 'Test route behind the session cookie.',
+  contentType: 'application/json',
+  access: 'session',
+});
+
+const readerRead = defineRoute({
+  id: 'testReaderRead',
+  method: 'GET',
+  path: '/api/v3/test/reader-read',
+  params: null,
+  query: null,
+  body: null,
+  response: z.strictObject({ ok: z.literal(true) }),
+  successStatus: 200,
+  errors: [],
+  summary: 'Test route behind the session cookie or the control token.',
+  contentType: 'application/json',
+  access: 'reader',
+});
+
+const sessionWrite = defineRoute({
+  id: 'testSessionWrite',
+  method: 'POST',
+  path: '/api/v3/test/session-write',
+  params: null,
+  query: null,
+  body: z.strictObject({}),
+  response: z.strictObject({ ok: z.literal(true) }),
+  successStatus: 200,
+  errors: [],
+  summary: 'Test write route behind the session cookie.',
+  contentType: 'application/json',
+  access: 'session',
+});
+
+/** The routes of the three kinds, mounted the way a route module mounts them. */
+const accessModule: RouteModule = (app) => {
+  registerRoute(app, sessionRead, () => ({ ok: true }));
+  registerRoute(app, readerRead, () => ({ ok: true }));
+  registerRoute(app, sessionWrite, () => ({ ok: true }));
+};
+
+// FIXTURE: invented data for tests
+const CONTROL_TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+function userInstanceAccess(): { verifier: AccessVerifier; signIn: () => string } {
+  const service = createAccessService({ clock: new FakeClock(NOW), controlToken: CONTROL_TOKEN });
+  return {
+    verifier: createAccessVerifier(service, ID),
+    signIn: () => {
+      const outcome = service.exchange(service.mint().code);
+      if (!outcome.ok) throw new Error('sign-in failed');
+      return `${cookieName(ID)}=${outcome.credential}`;
+    },
+  };
+}
+
+describe('AppDeps.access: the access service of a user instance', () => {
+  it('guards the routes of every kind once a verifier is given, behind the guards of the app', async () => {
+    const { verifier, signIn } = userInstanceAccess();
+    const h = await start({ access: verifier, extraModules: [accessModule] });
+    const cookie = signIn();
+    const origin = `http://127.0.0.1:${String(h.port)}`;
+    const json = { 'Content-Type': 'application/json', 'X-MCS-Request': '1' };
+
+    expect(codeOf(await httpRequest(h.port, sessionRead.path))).toBe('access_required');
+    expect((await httpRequest(h.port, sessionRead.path, { headers: { Cookie: cookie } })).status).toBe(200);
+    expect(codeOf(await httpRequest(h.port, readerRead.path))).toBe('access_required');
+    expect((await httpRequest(h.port, readerRead.path, { headers: { Cookie: cookie } })).status).toBe(200);
+    const bearer = { Authorization: `Bearer ${CONTROL_TOKEN}` };
+    expect((await httpRequest(h.port, readerRead.path, { headers: bearer })).status).toBe(200);
+    expect(codeOf(await httpRequest(h.port, sessionRead.path, { headers: bearer }))).toBe('access_required');
+
+    const write = (headers: Record<string, string>, extra: { origin?: string } = {}) =>
+      httpRequest(h.port, sessionWrite.path, { method: 'POST', body: '{}', headers, ...extra });
+    expect(codeOf(await write({ Cookie: cookie }, { origin }))).toBe('csrf_rejected');
+    expect(codeOf(await write({ ...json, Cookie: cookie }))).toBe('origin_not_allowed');
+    expect(codeOf(await write({ ...json }, { origin }))).toBe('access_required');
+    expect(codeOf(await write({ ...json, ...bearer }, { origin }))).toBe('access_required');
+    expect((await write({ ...json, Cookie: cookie }, { origin })).status).toBe(200);
+  });
+
+  it('keeps the global guards in front: a foreign Host never reaches the access check', async () => {
+    const { verifier, signIn } = userInstanceAccess();
+    const h = await start({ access: verifier, extraModules: [accessModule] });
+    const reply = await httpRequest(h.port, sessionRead.path, { host: 'evil.invalid', headers: { Cookie: signIn() } });
+    expect(codeOf(reply)).toBe('host_not_allowed');
+  });
+
+  it('refuses to start an app that mounts a session route without an access service (fail closed)', async () => {
+    await expect(start({ extraModules: [accessModule] })).rejects.toThrow(/testSessionRead/);
+    await expect(start({ access: null, extraModules: [accessModule] })).rejects.toThrow(/testSessionRead/);
+  });
+
+  it('serves a reader route open on an app with no access service, as a task instance does', async () => {
+    const reader: RouteModule = (app) => {
+      registerRoute(app, readerRead, () => ({ ok: true }));
+    };
+    const h = await start({ extraModules: [reader] });
+    expect((await httpRequest(h.port, readerRead.path)).status).toBe(200);
+  });
+
+  it('leaves the routes of the registry that are open as they were: no credential, no change', async () => {
+    const { verifier } = userInstanceAccess();
+    const h = await start({ access: verifier });
+    expect((await httpRequest(h.port, routes.health.path)).status).toBe(200);
   });
 });

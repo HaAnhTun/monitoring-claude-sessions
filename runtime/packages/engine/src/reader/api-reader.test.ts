@@ -418,22 +418,32 @@ afterEach(async () => {
   }
 });
 
+interface WireRequest {
+  readonly method: string | undefined;
+  readonly url: string | undefined;
+  readonly bytes: number;
+  readonly host: string | undefined;
+  readonly authorization: string | undefined;
+}
+
 async function serve(
   handler: (req: IncomingMessage) => { status: number; headers?: Record<string, string>; body?: string },
-): Promise<{
-  base: string;
-  requests: { method: string | undefined; url: string | undefined; bytes: number; host: string | undefined }[];
-}> {
+): Promise<{ base: string; requests: WireRequest[] }> {
   const port = await allocatePort();
-  const requests: { method: string | undefined; url: string | undefined; bytes: number; host: string | undefined }[] =
-    [];
+  const requests: WireRequest[] = [];
   const server = createServer((req, res) => {
     let bytes = 0;
     req.on('data', (chunk: Buffer) => {
       bytes += chunk.length;
     });
     req.on('end', () => {
-      requests.push({ method: req.method, url: req.url, bytes, host: req.headers.host });
+      requests.push({
+        method: req.method,
+        url: req.url,
+        bytes,
+        host: req.headers.host,
+        authorization: req.headers.authorization,
+      });
       const answer = handler(req);
       res.writeHead(answer.status, { 'Content-Type': 'application/json', ...answer.headers });
       res.end(answer.body ?? '');
@@ -528,5 +538,164 @@ describe('ApiReader over a real loopback connection', () => {
     const started = performance.now();
     expect(reasonOf(await failure(reader.sessions({ limit: 50 } as never)))).toBe('timeout');
     expect(performance.now() - started).toBeLessThan(3000);
+  });
+});
+
+// ---- the control token on a reader route (CAW design 02 A1) ------------------------------------------------------------------------
+
+// FIXTURE: invented data for tests
+const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
+const NEXT_TOKEN = '0f0e0d0c0b0a09080706050403020100ffeeddccbbaa99887766554433221100';
+
+/** What the scripted client was given for each request: its URL and the options of the call. */
+function recording(...answers: HttpFullAttempt[]): {
+  get: ApiHttpGet;
+  calls: { url: string; options: Parameters<ApiHttpGet>[1] }[];
+} {
+  const calls: { url: string; options: Parameters<ApiHttpGet>[1] }[] = [];
+  let next = 0;
+  return {
+    calls,
+    get: (url, options) => {
+      calls.push({ url, options });
+      const answer = answers[Math.min(next, answers.length - 1)];
+      next += 1;
+      if (answer === undefined) throw new Error('no scripted answer');
+      return Promise.resolve(answer);
+    },
+  };
+}
+
+/** Waits for a call and ignores how it ended. */
+const settle = (promise: Promise<unknown>): Promise<void> =>
+  promise.then(
+    () => undefined,
+    () => undefined,
+  );
+
+const withToken = (token: string | null): { controlToken: () => Promise<string | null> } => ({
+  controlToken: () => Promise.resolve(token),
+});
+
+describe('ApiReader: the control token goes to the reader routes and nowhere else', () => {
+  it('sends the token with every request to a route whose access is reader', async () => {
+    const r = recording(reply(200, EMPTY_PAGE));
+    const reader = readerWith(r.get, withToken(TOKEN));
+    await failure(reader.transcriptWindow({ sessionId: SESSION, agent: 'main', after: -1, limit: 5 }));
+    await failure(reader.searchTranscripts({ q: 'ab', limit: 1, budgetMs: 5000 }));
+    await failure(reader.sessionEvents(SESSION, { limit: 5 }));
+    expect(r.calls.map((call) => call.url.replace(BASE, '').split('?')[0])).toEqual([
+      `/api/v3/sessions/${SESSION}/transcript`,
+      '/api/v3/search/transcripts',
+      `/api/v3/sessions/${SESSION}/timeline`,
+    ]);
+    for (const call of r.calls) expect(call.options.bearer, call.url).toBe(TOKEN);
+  });
+
+  it('keeps it out of every request to an open route, so that a page that is not ours never sees it', async () => {
+    const r = recording(reply(200, EMPTY_PAGE));
+    const reader = readerWith(r.get, withToken(TOKEN));
+    // the scripted page is the answer of some of these routes and a contract failure for others: only the request matters here
+    await settle(reader.sessions({ limit: 50 } as never));
+    await settle(reader.sessionAgents(SESSION, { limit: 5 }));
+    await settle(reader.overview({}));
+    await settle(reader.alerts({ limit: 5 } as never));
+    await settle(reader.errors({ limit: 5 }));
+    expect(r.calls).toHaveLength(5);
+    for (const call of r.calls) expect('bearer' in call.options, call.url).toBe(false);
+  });
+
+  it('follows the registry: a route that becomes a reader route, or stops being one, is noticed here', () => {
+    for (const route of [routes.transcriptWindow, routes.searchTranscripts, routes.sessionTimeline, routes.export]) {
+      expect(route.access, route.id).toBe('reader');
+    }
+    for (const route of [
+      routes.listSessions,
+      routes.sessionAgents,
+      routes.overview,
+      routes.listAlerts,
+      routes.errors,
+    ]) {
+      expect(route.access, route.id).toBe('open');
+    }
+  });
+
+  it('sends no token when there is none, and the request still goes out', async () => {
+    const none = recording(reply(200, EMPTY_PAGE));
+    await failure(readerWith(none.get, withToken(null)).transcriptWindow({ sessionId: SESSION } as never));
+    const missing = recording(reply(200, EMPTY_PAGE));
+    await failure(readerWith(missing.get).transcriptWindow({ sessionId: SESSION } as never));
+    for (const call of [...none.calls, ...missing.calls]) expect('bearer' in call.options).toBe(false);
+    expect(none.calls).toHaveLength(1);
+    expect(missing.calls).toHaveLength(1);
+  });
+
+  it('treats a token source that fails as no token', async () => {
+    const r = recording(reply(200, EMPTY_PAGE));
+    const reader = readerWith(r.get, { controlToken: () => Promise.reject(new Error('the file is locked')) });
+    await failure(reader.transcriptWindow({ sessionId: SESSION } as never));
+    expect(r.calls).toHaveLength(1);
+    expect('bearer' in (r.calls[0]?.options ?? {})).toBe(false);
+  });
+
+  it('asks the source again for every request: a restart that wrote a new token is followed', async () => {
+    const r = recording(reply(200, EMPTY_PAGE));
+    let current = TOKEN;
+    const reader = readerWith(r.get, { controlToken: () => Promise.resolve(current) });
+    await failure(reader.transcriptWindow({ sessionId: SESSION } as never));
+    current = NEXT_TOKEN;
+    await failure(reader.transcriptWindow({ sessionId: SESSION } as never));
+    expect(r.calls.map((call) => call.options.bearer)).toEqual([TOKEN, NEXT_TOKEN]);
+  });
+
+  it('maps a refused token to API_ERROR with the reason access_required, and never repeats the token', async () => {
+    const r = recording(envelope('access_required', 401));
+    const error = await failure(readerWith(r.get, withToken(TOKEN)).transcriptWindow({ sessionId: SESSION } as never));
+    expect(error.code).toBe('API_ERROR');
+    expect(reasonOf(error)).toBe('access_required');
+    expect(JSON.stringify({ message: error.message, details: error.details, hint: error.hint })).not.toContain(TOKEN);
+  });
+
+  it('gives the export stream the token too', async () => {
+    const seen: (string | undefined)[] = [];
+    const open = streamOf(exportBytes().text);
+    const reader = readerWith(scripted(reply(200, EMPTY_PAGE)).get, {
+      ...withToken(TOKEN),
+      openStream: (url, options) => {
+        seen.push(options.bearer);
+        return open(url, options);
+      },
+    });
+    await reader.exportTo({}, sink().out);
+    expect(seen).toEqual([TOKEN]);
+  });
+});
+
+describe('ApiReader over a real loopback connection: the Authorization header', () => {
+  it('puts Bearer <token> on the wire for a reader route, and no Authorization header on an open one', async () => {
+    const live = await serve(() => ({
+      status: 200,
+      headers: { 'X-MCS-Instance': ID },
+      body: JSON.stringify(EMPTY_PAGE),
+    }));
+    const reader = createApiReader({ base: live.base, instanceId: ID, ...withToken(TOKEN) });
+    await failure(reader.transcriptWindow({ sessionId: SESSION, agent: 'main', after: -1, limit: 5 }));
+    await reader.sessions({ limit: 50 } as never);
+    expect(live.requests.map((r) => r.authorization)).toEqual([`Bearer ${TOKEN}`, undefined]);
+  });
+
+  it('puts it on the wire for the export stream, and refuses a value that is not a token without sending anything', async () => {
+    const good = exportBytes();
+    const live = await serve(() => ({
+      status: 200,
+      headers: { 'X-MCS-Instance': ID, 'Content-Type': 'application/x-ndjson' },
+      body: good.text,
+    }));
+    const reader = createApiReader({ base: live.base, instanceId: ID, ...withToken(TOKEN) });
+    await reader.exportTo({}, sink().out);
+    expect(live.requests[0]?.authorization).toBe(`Bearer ${TOKEN}`);
+    const streamed = await loopbackStream(`${live.base}/api/v3/export`, { idleTimeoutMs: 2000, bearer: 'not a token' });
+    expect(streamed).toEqual({ ok: false, reason: 'error' });
+    expect(live.requests).toHaveLength(1);
   });
 });

@@ -23,6 +23,7 @@ import express, {
 } from 'express';
 
 import { mapError, sendError } from './errors.ts';
+import type { AccessVerifier } from './http/access-guard.ts';
 import { guardChain, methodNotAllowed, optionsGuard, type PortSource } from './http/guards.ts';
 import {
   bindRouteServices,
@@ -259,6 +260,12 @@ export interface AppDeps extends RouteDeps {
   readonly validateResponses?: boolean;
   /** Route modules mounted after the built-in ones, under the same guards and error mapper (tests and tooling). */
   readonly extraModules?: readonly RouteModule[];
+  /**
+   * Who may call a `session`, `reader` or `ticket` route (CAW design 02 3, ADR 0084): the verifier of the user instance over its
+   * access service. `null` or absent on a task instance: its `reader` routes are served open, as they always were, and a module
+   * that mounts a `session` or `ticket` route then throws (fail closed).
+   */
+  readonly access?: AccessVerifier | null;
 }
 
 /** The route modules `createApp` mounts, in this order; the blocks below add the modules of later work packages. */
@@ -397,6 +404,7 @@ export function createApp(deps: AppDeps): Express {
     errors: ctx.errors,
     logger: ctx.logger,
     validateResponses: deps.validateResponses ?? defaultValidateResponses(),
+    access: deps.access === undefined || deps.access === null ? null : { verifier: deps.access, port: deps.port },
   });
 
   app.use(securityHeaders);

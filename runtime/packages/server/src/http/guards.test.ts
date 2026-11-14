@@ -185,14 +185,17 @@ interface Recorded {
   status: number;
   body: unknown;
   headers: Map<string, string>;
+  /** `res.locals`: an Express response always has one, and the nudge guard now publishes the body it consumed there. */
+  locals: Record<string, unknown>;
   /** Called when the guard sends its JSON answer. */
   onJson?: () => void;
 }
 
 function mockRes(): { res: never; seen: Recorded } {
-  const seen: Recorded = { status: 0, body: undefined, headers: new Map() };
+  const seen: Recorded = { status: 0, body: undefined, headers: new Map(), locals: {} };
   const res = {
     headersSent: false,
+    locals: seen.locals,
     getHeader: (name: string) => seen.headers.get(name.toLowerCase()),
     setHeader: (name: string, value: string) => {
       seen.headers.set(name.toLowerCase(), value);
@@ -712,6 +715,19 @@ describe('mutation guard (SEC-05: reserved UI-mutation rule)', () => {
     }
   });
 
+  it('closes the connection of a refused write: its body is never read', () => {
+    const refused = run(csrfGuard(), mockReq({ method: 'POST', headers: {} }));
+    expect(refused.passed).toBe(false);
+    expect(refused.seen.status).toBe(403);
+    expect(refused.seen.headers.get('connection')).toBe('close');
+    const passed = run(
+      csrfGuard(),
+      mockReq({ method: 'POST', headers: { 'content-type': 'application/json', 'x-mcs-request': '1' } }),
+    );
+    expect(passed.passed).toBe(true);
+    expect(passed.seen.headers.get('connection')).toBeUndefined();
+  });
+
   it('does not apply to GET and HEAD', () => {
     const guard = csrfGuard();
     for (const method of ['GET', 'HEAD'])
@@ -866,6 +882,17 @@ describe('nudge guard on a fake request stream', () => {
     const result = await runAsync(guard, req);
     return { ...result, code: errorCodeOf(result.seen) };
   };
+
+  it('publishes the body it consumed for the route adapter, and only for a valid nudge', async () => {
+    const accepted = await answer(bodyRequest({}, [valid]));
+    expect(accepted.passed).toBe(true);
+    expect(accepted.seen.locals['body']).toEqual({ instanceId: INSTANCE_ID });
+    for (const body of ['{}', 'not json', JSON.stringify({ instanceId: OTHER_INSTANCE_ID })]) {
+      const refused = await answer(bodyRequest({}, [body]));
+      expect(refused.passed).toBe(false);
+      expect(refused.seen.locals['body']).toBeUndefined();
+    }
+  });
 
   it('passes a valid nudge, however the body is cut into chunks', async () => {
     expect((await answer(bodyRequest({}, [valid]))).passed).toBe(true);

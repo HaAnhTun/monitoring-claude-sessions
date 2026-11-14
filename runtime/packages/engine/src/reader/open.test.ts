@@ -1,7 +1,7 @@
 // `openInstanceReader` (01 6.1, T-CLI-05 unit part): the probe of 01 4.8 decides the mode on every call. Only `running` gives the
 // `ApiReader`; every other state, `unmanaged-running` included, gives the `DbReader`, and a monitor that this runtime did not
 // start is never asked over HTTP. A stopped or stale instance is read without leaving a file behind.
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { McsError } from '@mcs/shared';
@@ -12,10 +12,14 @@ import { defaultSkillDir } from '../config/defaults.ts';
 import { openInstanceDb } from '../db/open.ts';
 import type { ProbeResult, ProbeState } from '../ops/probe.ts';
 import { resolveWorkspace, type WorkspaceRef } from '../workspace/paths.ts';
+import type { ApiHttpGet } from './api-reader.ts';
 import { openInstanceReader, type InstanceReader, type ReaderDeps } from './open.ts';
 
 const makeTemp = useTempDirs();
 const ID = '11111111-1111-4111-8111-111111111111';
+const SESSION = 'aaaaaaaa-0000-4000-8000-000000000001';
+// FIXTURE: invented data for tests
+const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
 const NOW = Date.UTC(2026, 9, 20, 12, 0, 0);
 const URL = 'http://127.0.0.1:18001';
 
@@ -162,5 +166,33 @@ describe('openInstanceReader: failures and residue', () => {
     const reader = await open(f, { probe: () => Promise.resolve(probeResult('running')) });
     expect(reader.mode).toBe('api');
     expect(reader.instanceId).toBe(ID);
+  });
+
+  it('gives the API reader the control token of run/control.token, which it sends to the reader routes only (A1)', async () => {
+    const f = fixture();
+    mkdirSync(path.join(f.dir, 'run'), { recursive: true });
+    writeFileSync(path.join(f.dir, 'run', 'control.token'), `${TOKEN}${String.fromCharCode(10)}`);
+    const seen: { url: string; bearer: string | undefined }[] = [];
+    const httpGet: ApiHttpGet = (url, o) => {
+      seen.push({ url, bearer: o.bearer });
+      const body = JSON.stringify({ error: { code: 'transcript_gone', message: 'x', requestId: 'r-abcdefghijkl' } });
+      return Promise.resolve({ ok: true, reply: { status: 404, body, headers: { 'x-mcs-instance': ID } } });
+    };
+    const reader = await open(f, { probe: () => Promise.resolve(probeResult('running')), httpGet });
+    await reader.transcriptWindow({ sessionId: SESSION, agent: 'main', after: -1, limit: 5 }).catch(() => undefined);
+    await reader.sessions({ limit: 10 } as never).catch(() => undefined);
+    expect(seen.map((call) => call.bearer)).toEqual([TOKEN, undefined]);
+  });
+
+  it('sends no token when the workspace has none, and the request still goes out', async () => {
+    const f = fixture();
+    const seen: (string | undefined)[] = [];
+    const httpGet: ApiHttpGet = (_url, o) => {
+      seen.push(o.bearer);
+      return Promise.resolve({ ok: false, reason: 'refused' });
+    };
+    const reader = await open(f, { probe: () => Promise.resolve(probeResult('running')), httpGet });
+    await reader.transcriptWindow({ sessionId: SESSION, agent: 'main', after: -1, limit: 5 }).catch(() => undefined);
+    expect(seen).toEqual([undefined]);
   });
 });

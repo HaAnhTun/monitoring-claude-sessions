@@ -8,7 +8,8 @@
 //   - `Sec-Fetch-Site: cross-site` is refused on every method, `same-site` on every method but GET (another localhost
 //     port is same-site);
 //   - the URL is at most 8192 characters;
-//   - a mutation (any method but GET and HEAD) needs `Content-Type: application/json` and `X-MCS-Request: 1`;
+//   - a mutation (any method but GET and HEAD) needs `Content-Type: application/json` and `X-MCS-Request: 1`; the route adapter
+//     mounts `csrfGuard` on every POST except the hook nudge, so a new write route cannot skip it (ADR 0084);
 //   - the hook nudge is the one data-free POST: JSON, no `Origin` header at all, at most 256 bytes, `{"instanceId"}` of
 //     this server and nothing else;
 //   - no response ever carries an `Access-Control-*` header: nothing here sets one.
@@ -164,7 +165,8 @@ export function requestContext(opts: RequestContextOptions): RequestHandler {
 /** The bound port, or a function that reads it when a request arrives (the server may scan for a free port first). */
 export type PortSource = number | (() => number);
 
-function portOf(source: PortSource): number {
+/** The port a `PortSource` names right now. */
+export function portOf(source: PortSource): number {
   return typeof source === 'function' ? source() : source;
 }
 
@@ -222,7 +224,7 @@ export function hostGuard(source: PortSource): RequestHandler {
 }
 
 /** The first value of a header that Node may have joined (`a, b`); here any join is already a mismatch. */
-function headerText(value: string | string[] | undefined): string | undefined {
+export function headerText(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value.join(', ') : value;
 }
 
@@ -307,8 +309,8 @@ const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
 
 /**
  * S-NET-5: a request from the UI that changes anything needs `Content-Type: application/json` and `X-MCS-Request: 1`;
- * a plain HTML form or a simple cross-origin request can send neither. v3 has no mutating UI route (the code is
- * reserved), the guard exists so that a future route cannot skip it.
+ * a plain HTML form or a simple cross-origin request can send neither. `registerRoute` mounts it on every POST route except
+ * the hook nudge (which has its own guard). A refusal closes the connection: the body of a refused write is never read.
  */
 export function csrfGuard(): RequestHandler {
   return (req, res, next) => {
@@ -318,7 +320,7 @@ export function csrfGuard(): RequestHandler {
     }
     const marker = headerText(req.headers[MUTATION_HEADER]);
     if (!isJsonContentType(req.headers['content-type']) || marker !== '1') {
-      sendGuardError(res, 'csrf_rejected');
+      sendGuardError(res, 'csrf_rejected', { closeConnection: true });
       return;
     }
     next();
@@ -327,10 +329,14 @@ export function csrfGuard(): RequestHandler {
 
 // ---- the hook nudge ---------------------------------------------------------------------------------------------------
 
-type BodyRead = { kind: 'ok'; bytes: Buffer } | { kind: 'too_large' } | { kind: 'aborted' };
+export type BodyRead = { kind: 'ok'; bytes: Buffer } | { kind: 'too_large' } | { kind: 'aborted' };
 
-/** Reads at most `maxBytes` of the request body, deciding from `Content-Length` first and from the bytes after. */
-function readCapped(req: Request, maxBytes: number): Promise<BodyRead> {
+/**
+ * Reads at most `maxBytes` of the request body, deciding from `Content-Length` first and from the bytes after. A body that
+ * is too large or a connection that ends first stops the reading at once: nothing past the limit is buffered. The caller
+ * answers `too_large` with the connection closed and says nothing for `aborted` (nobody is listening).
+ */
+export function readCapped(req: Request, maxBytes: number): Promise<BodyRead> {
   const declared = req.headers['content-length'];
   if (declared !== undefined && Number(declared) > maxBytes) return Promise.resolve({ kind: 'too_large' });
   return new Promise((resolve) => {
@@ -368,7 +374,8 @@ function readCapped(req: Request, maxBytes: number): Promise<BodyRead> {
 
 const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-function parseJson(bytes: Buffer): { ok: true; value: unknown } | { ok: false } {
+/** Strict UTF-8 JSON: invalid bytes, a byte order mark, an empty body and trailing text are all "not JSON". */
+export function parseJson(bytes: Buffer): { ok: true; value: unknown } | { ok: false } {
   try {
     // Strict UTF-8 and no BOM: anything else is "not JSON". The parser's own message is never kept (E12: it echoes input).
     return { ok: true, value: JSON.parse(UTF8.decode(bytes)) };
@@ -409,6 +416,8 @@ async function checkNudge(req: Request, res: Response, instanceId: string, next:
     sendGuardError(res, 'instance_mismatch');
     return;
   }
+  // the body is consumed: the route adapter (`bodyConsumed`) takes the validated value from here instead of reading it again
+  res.locals['body'] = shape.data;
   next();
 }
 
