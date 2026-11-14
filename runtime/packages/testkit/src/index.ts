@@ -12,6 +12,75 @@ export { hookPayload, runHookHandler, type HookEventName, type RunHookOptions } 
 export { buildRepo, buildTaskWorkspace, snapshotTree } from './workspace.ts';
 export { buildDemo, type DemoLetter, type DemoOptions, type DemoResult, type DemoSession } from './demo.ts';
 export { FILE_HOLDER_SKIP_REASON, holdFileOpen, type FileHolder } from './file-holder.ts';
+export {
+  BRACKETED_PASTE_ON,
+  BURST_DEFAULT_LINE_BYTES,
+  BURST_MAX_KIB,
+  BURST_MIN_LINE_BYTES,
+  ENVSCAN_MIN_NEEDLE,
+  FAKE_BANNER,
+  FAKE_CRASH_CODE,
+  FAKE_DEFAULT_SEED,
+  FAKE_PROMPT,
+  HOSTILE_LONG_LINE_BYTES,
+  SAFE_ENV_NAMES,
+  TAG,
+  UTF8_UNIT,
+  burstExpected,
+  burstLine,
+  coalesceStdin,
+  fakeSessionId,
+  fnv1a32,
+  fnv1a32Hex,
+  parseFakeLog,
+  parseReady,
+  type BurstExpectation,
+  type FakeLogEntry,
+  type FakeLogEvent,
+  type FakeReady,
+  type FakeTag,
+} from './fake-claude/protocol.ts';
+export {
+  FAKE_CLAUDE_FILE,
+  assertClaudeFree,
+  claudeFreePath,
+  fakeClaudeInvocation,
+  fakeClaudeLauncher,
+  fakeClaudeScriptPath,
+  installFakeClaude,
+  terminalEnv,
+  writeFakeClaudeShim,
+  type FakeClaudeFlavour,
+  type FakeClaudeInstall,
+  type InstallFakeClaudeOptions,
+} from './fake-claude/install.ts';
+export {
+  registryDir,
+  registryEntryJson,
+  registryFile,
+  removeRegistryEntry,
+  rewriteRegistryEntry,
+  writeRegistryEntry,
+  writeRegistryFile,
+  type RegistryEntryFixture,
+  type RegistryPatch,
+  type WriteRegistryOptions,
+} from './registry.ts';
+export {
+  DA_INDEX_MAX_BYTES,
+  DA_META_MAX_BYTES,
+  DA_VARIANTS,
+  daMemoryDir,
+  daSlug,
+  daTimestamp,
+  daVariantFolders,
+  writeDaMemory,
+  type DaFolderSpec,
+  type DaMemoryFixture,
+  type DaMemorySpec,
+  type DaMetaMode,
+  type DaVariant,
+} from './da-memory.ts';
 
 // @wp-begin WP-55
 // @wp-end WP-55
