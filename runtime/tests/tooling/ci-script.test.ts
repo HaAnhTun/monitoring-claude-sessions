@@ -60,6 +60,7 @@ function makeRoot(): string {
   writeFileSync(join(root, 'scripts', 'check-deps.mjs'), stubSource('check-deps'));
   writeFileSync(join(root, 'scripts', 'smoke.mjs'), stubSource('smoke'));
   writeFileSync(join(root, 'scripts', 'bundle.mjs'), stubSource('bundle'));
+  writeFileSync(join(root, 'scripts', 'test-pty.mjs'), stubSource('test-pty:@ARGS'));
   mkdirSync(join(root, 'npm'));
   writeFileSync(join(root, 'npm', 'npm-cli.mjs'), stubSource('npm:@ARGS'));
   return root;
@@ -111,7 +112,7 @@ afterEach(() => {
 });
 
 // `build` runs before `test`: about 150 tests spawn `dist/main.js`, `dist/hook.js` or `dist/boot.js` and read `.mcs-build.json`.
-const GATES = ['format:check', 'lint', 'typecheck', 'check:deps', 'build', 'test', 'smoke', 'audit'];
+const GATES = ['format:check', 'lint', 'typecheck', 'check:deps', 'build', 'test', 'test:pty', 'smoke', 'audit'];
 
 describe('scripts/ci.mjs', () => {
   it('runs the gates of 05 section 8.1 in order and exits 0 when all pass', () => {
@@ -131,6 +132,7 @@ describe('scripts/ci.mjs', () => {
       'check-deps ',
       'npm run build',
       'vitest run --project unit --project web --project integration --project isolation --project resilience',
+      'test-pty ',
       'smoke ',
       'npm audit --audit-level=low',
     ]);
@@ -142,13 +144,19 @@ describe('scripts/ci.mjs', () => {
     expect(run.status).toBe(0);
   });
 
-  it('--full adds the slow and e2e gates after the others, ending test:slow, test:e2e', () => {
+  it('--full adds the slow, e2e and terminal e2e gates after the others, ending test:slow, test:e2e, test:e2e:terminal', () => {
     const run = runCi(['--full', '--offline']);
-    expect(run.order).toEqual([...GATES.filter((gate) => gate !== 'audit'), 'test:slow', 'test:e2e']);
+    expect(run.order).toEqual([
+      ...GATES.filter((gate) => gate !== 'audit'),
+      'test:slow',
+      'test:e2e',
+      'test:e2e:terminal',
+    ]);
     expect(run.order).not.toContain('test:parity');
-    expect(run.calls.slice(-2)).toEqual([
+    expect(run.calls.slice(-3)).toEqual([
       'vitest run --project slow',
       'playwright test -c packages/web/e2e/playwright.config.ts',
+      'test-pty --e2e',
     ]);
     expect(run.status).toBe(0);
   });
@@ -164,7 +172,7 @@ describe('scripts/ci.mjs', () => {
     const run = runCi([], { eslint: 1 });
     expect(run.order).toEqual(['format:check', 'lint']);
     expect(run.rows.get('lint')).toBe('FAIL (exit 1)');
-    expect(run.notRun).toBe('typecheck, check:deps, build, test, smoke, audit');
+    expect(run.notRun).toBe('typecheck, check:deps, build, test, test:pty, smoke, audit');
     expect(run.status).toBe(1);
     expect(run.calls).toHaveLength(2);
   });
@@ -186,6 +194,31 @@ describe('scripts/ci.mjs', () => {
     expect(run.status).toBe(0);
   });
 
+  // TC-GATE-02: the pty gate (design 08 section 4.1). Exit 77 is the platform decision of test-pty.mjs, never a PASS.
+  it('TC-GATE-02 shows exit 77 of test:pty as SKIPPED, never as PASS, and still exits 0', () => {
+    const run = runCi(['--offline'], { 'test-pty:': 77 });
+    expect(run.rows.get('test:pty')).toBe('SKIPPED (exit 77)');
+    expect(run.rows.get('smoke')).toBe('PASS');
+    expect(run.status).toBe(0);
+  });
+
+  it('TC-GATE-02 --strict fails a skipped test:pty, and a failing test:pty is FAIL with its exit code', () => {
+    const strict = runCi(['--strict', '--offline'], { 'test-pty:': 77 });
+    expect(strict.rows.get('test:pty')).toBe('SKIPPED (exit 77)');
+    expect(strict.status).toBe(1);
+    const failing = runCi(['--offline'], { 'test-pty:': 1 });
+    expect(failing.rows.get('test:pty')).toBe('FAIL (exit 1)');
+    expect(failing.notRun).toBe('smoke');
+    expect(failing.status).toBe(1);
+  });
+
+  it('TC-GATE-02 runs the terminal e2e gate through the same script with --e2e, and shows its exit 77 as SKIPPED', () => {
+    const run = runCi(['--full', '--offline'], { 'test-pty:--e2e': 77 });
+    expect(run.rows.get('test:e2e:terminal')).toBe('SKIPPED (exit 77)');
+    expect(run.rows.get('test:pty')).toBe('PASS');
+    expect(run.status).toBe(0);
+  });
+
   it('--strict counts a skipped gate as a failure', () => {
     const run = runCi(['--strict'], { smoke: 77 });
     expect(run.rows.get('smoke')).toBe('SKIPPED (exit 77)');
@@ -202,7 +235,7 @@ describe('scripts/ci.mjs', () => {
     expect(audit.status).toBe(1);
     const build = runCi([], { 'npm:run': 2 });
     expect(build.rows.get('build')).toBe('FAIL (exit 2)');
-    expect(build.notRun).toBe('test, smoke, audit');
+    expect(build.notRun).toBe('test, test:pty, smoke, audit');
     expect(build.status).toBe(1);
   });
 
@@ -210,7 +243,8 @@ describe('scripts/ci.mjs', () => {
     const run = runCi(['--offline']);
     expect(run.order.indexOf('build')).toBeGreaterThan(-1);
     expect(run.order.indexOf('build')).toBeLessThan(run.order.indexOf('test'));
-    expect(run.order.indexOf('test')).toBeLessThan(run.order.indexOf('smoke'));
+    expect(run.order.indexOf('test')).toBeLessThan(run.order.indexOf('test:pty'));
+    expect(run.order.indexOf('test:pty')).toBeLessThan(run.order.indexOf('smoke'));
     const vitestCall = run.calls.findIndex((call) => call.startsWith('vitest run --project unit'));
     expect(run.calls.indexOf('npm run build')).toBeLessThan(vitestCall);
   });

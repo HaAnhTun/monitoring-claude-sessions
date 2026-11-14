@@ -31,8 +31,11 @@
     "test:isolation": "vitest run --project isolation",
     "test:resilience": "vitest run --project resilience",
     "test:tooling": "vitest run --project tooling",
+    "test:pty": "node scripts/test-pty.mjs",
+    "test:pty:soak": "node scripts/pty-soak.mjs --runs 3",
     "test:coverage": "vitest run --coverage --project unit --project web --project integration",
     "test:e2e": "playwright test -c packages/web/e2e/playwright.config.ts",
+    "test:e2e:terminal": "node scripts/test-pty.mjs --e2e",
     "dev": "node scripts/dev.mjs",
     "start": "node packages/cli/dist/main.js start",
     "migrate": "node packages/cli/dist/main.js db migrate",
@@ -51,7 +54,9 @@
     "test:slow": "vitest run --project slow",
     "bundle": "node scripts/bundle.mjs",
     "bundle:check": "node scripts/bundle.mjs --check",
-    "bench": "node bench/run-all.mjs"
+    "bench": "node bench/run-all.mjs",
+    "bench:terminal": "node bench/bench-terminal.mjs",
+    "gate:clean": "node scripts/gate-clean.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

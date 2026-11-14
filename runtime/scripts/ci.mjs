@@ -54,6 +54,8 @@ const steps = [
       // @wp-end WP-72
     ],
   ],
+  // Real terminals: SKIPPED (exit 77) off Windows, required on Windows (design 08 section 4.1).
+  ['test:pty', 'scripts/test-pty.mjs', []],
   ['smoke', 'scripts/smoke.mjs', []],
 ];
 // @wp-begin WP-84
@@ -70,6 +72,7 @@ if (full) {
     binPath('@playwright/test', 'playwright'),
     ['test', '-c', 'packages/web/e2e/playwright.config.ts'],
   ]);
+  steps.push(['test:e2e:terminal', 'scripts/test-pty.mjs', ['--e2e']]);
 }
 
 const results = [];

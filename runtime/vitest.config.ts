@@ -55,6 +55,20 @@ export default defineConfig({
         extends: true,
         test: { name: 'tooling', environment: 'node', pool: 'forks', include: ['tests/tooling/**/*.test.ts'] },
       },
+      {
+        extends: true,
+        // Real terminals (design 08 section 4.1): one file at a time, because each file starts consoles and child processes on a
+        // shared machine. It has its own gate (`npm run test:pty`, scripts/test-pty.mjs) and is NOT part of `npm test`.
+        test: {
+          name: 'pty',
+          environment: 'node',
+          pool: 'forks',
+          fileParallelism: false,
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
+          include: ['packages/*/test/**/*.pty.test.ts'],
+        },
+      },
       './packages/web/vitest.config.ts',
       // @wp-begin WP-72
       // @wp-end WP-72
