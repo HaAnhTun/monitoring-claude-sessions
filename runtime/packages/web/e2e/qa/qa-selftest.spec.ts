@@ -11,10 +11,13 @@ import { expect, test as base } from '@playwright/test';
 import { routes } from '@mcs/shared';
 import { assertPortClosed, httpRequest, makeJunction, makeTempDir } from '@mcs/testkit';
 
+import { enMessages } from '../../src/i18n/messages/en.ts';
+import { viMessages } from '../../src/i18n/messages/vi.ts';
 import { FIXTURE_STATES, fixtureApi, fixtureStates } from './fixture-api.ts';
 import { DEFAULT_VIEWPORTS, readShotsConfig, repositoryRootOf, resolveShotsDir } from './global-setup.ts';
 import { countRows, measure, readIndex, scrubPaths, writeIndex, type ShotRecord } from './measure.ts';
 import { QA_PORT_RANGE, startQaInstance, type QaInstance } from './qa-instance.ts';
+import { buildStyleguideHtml, vietnameseStressLine } from './styleguide.ts';
 import {
   PLANNED_ROUTE_PATHS,
   PREFS_STORAGE_KEY,
@@ -183,7 +186,7 @@ test.describe('the view list', () => {
   test('a negative probe: a block that reuses an id is caught', () => {
     const copy: ViewSpec = { id: 'sessions', path: '/sessions', mode: 'fixture', state: 'error', wait: 'main' };
     expect(duplicateViewIds([...VIEWS, copy])).toEqual(['sessions']);
-    expect(duplicateViewIds([...VIEWS, { ...copy, id: 'sessions-error' }])).toEqual([]);
+    expect(duplicateViewIds([...VIEWS, { ...copy, id: 'sessions-probe-copy' }])).toEqual([]);
   });
 
   test('every path is a route of ROUTES, a planned route of ADR 0073, or the catch-all', () => {
@@ -288,6 +291,219 @@ test.describe('measure', () => {
     const text = await page.locator('#p').innerText();
     expect(text).not.toContain('/some/temp');
     expect(text.length).toBe('cwd: /some/temp/folder/repo done'.length);
+  });
+});
+
+// ---- the text measurements (CAW-35): contrast, monospace, tiny and clipped text, the terminal --------------------------------------
+
+/** A page with its own `--mono` stack: the measurements compare the font of every text with the first family of that variable. */
+const probePage = (body: string): string =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+    html { --mono: 'Courier New', monospace; }
+    body { margin: 0; background: #ffffff; color: #111111; font: 16px/1.5 var(--mono); }
+    button, input { font: inherit; }
+  </style></head><body><main>${body}</main></body></html>`;
+
+test.describe('the text measurements', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 600 });
+  });
+
+  test('a clean page reports zeros, a high worst contrast and no terminal', async ({ page }) => {
+    await page.setContent(probePage('<h1>Clean</h1><p>Plain readable text on white.</p><button disabled>Off</button>'));
+    const clean = await measure(page);
+    expect(clean.lowContrastTexts).toBe(0);
+    expect(clean.nonMonoText).toBe(0);
+    expect(clean.tinyText).toBe(0);
+    expect(clean.clippedText).toBe(0);
+    expect(clean.worstContrast, 'the worst ratio of dark text on white').toBeGreaterThan(15);
+    expect(clean.terminal).toBeNull();
+  });
+
+  test('flags #ccc on #fff, names the node, and the ratio is the WCAG one', async ({ page }) => {
+    await page.setContent(probePage('<p id="faint" style="color:#cccccc">Faint words</p><p>Fine</p>'));
+    const found = await measure(page);
+    expect(found.lowContrastTexts).toBe(1);
+    expect(found.worstContrast ?? 0).toBeGreaterThan(1.5);
+    expect(found.worstContrast ?? 99).toBeLessThan(1.7);
+    expect(found.worstContrastNode ?? '').toContain('p#faint');
+  });
+
+  test('composites a translucent layer and walks up to the nearest opaque background', async ({ page }) => {
+    await page.setContent(
+      probePage(
+        '<div style="background:#202020"><p id="light" style="color:#e0e0e0">Light on dark</p></div>' +
+          '<div style="background:#202020"><div style="background:rgba(255,255,255,0.04)"><p id="mid" style="color:#777777">Gray on dark</p></div></div>',
+      ),
+    );
+    const found = await measure(page);
+    // #e0e0e0 on #202020 passes; #777777 on about #292929 is about 3.2, below 4.5
+    expect(found.lowContrastTexts).toBe(1);
+    expect(found.worstContrastNode ?? '').toContain('p#mid');
+  });
+
+  test('holds large text to 3:1 and skips disabled controls, the screen-reader class, svg and the terminal', async ({
+    page,
+  }) => {
+    await page.setContent(
+      probePage(
+        '<p style="color:#8a8a8a;font-size:24px">Large gray text</p>' +
+          '<button disabled style="color:#cccccc">Disabled</button>' +
+          '<span aria-disabled="true" style="color:#cccccc">Also off</span>' +
+          '<span class="sr-only" style="color:#cccccc">Hidden for sight</span>' +
+          '<svg width="200" height="40"><text x="0" y="20" fill="#cccccc" style="font-family:Arial">Chart</text></svg>' +
+          '<div class="xterm" style="color:#cccccc;font-family:Arial">Terminal text</div>',
+      ),
+    );
+    const found = await measure(page);
+    expect(found.lowContrastTexts).toBe(0);
+    expect(found.nonMonoText).toBe(0);
+    await page.setContent(probePage('<p style="color:#8a8a8a;font-size:16px">Small gray text</p>'));
+    expect((await measure(page)).lowContrastTexts).toBe(1);
+  });
+
+  test('does not judge text that is not on the screen: clipped away by its box or fully transparent', async ({
+    page,
+  }) => {
+    await page.setContent(
+      probePage(
+        '<div style="width:20px;overflow:hidden;white-space:nowrap"><span style="margin-left:40px;color:#cccccc">Pushed out of its rail</span></div>' +
+          '<p style="opacity:0;color:#cccccc">Invisible</p>',
+      ),
+    );
+    const found = await measure(page);
+    expect(found.lowContrastTexts).toBe(0);
+    expect(found.worstContrast, 'only the visible text is judged').toBeNull();
+  });
+
+  test('flags text that is not in the monospace stack', async ({ page }) => {
+    await page.setContent(probePage('<p>Fine</p><p id="sans" style="font-family: Arial, sans-serif">Arial text</p>'));
+    const found = await measure(page);
+    expect(found.nonMonoText).toBe(1);
+    expect(found.lowContrastTexts).toBe(0);
+  });
+
+  test('flags 10 px text and not 11 px text', async ({ page }) => {
+    await page.setContent(
+      probePage('<p style="font-size:10px">Tiny</p><p style="font-size:11px">Small but allowed</p>'),
+    );
+    expect((await measure(page)).tinyText).toBe(1);
+  });
+
+  test('flags a line that is cut off at the bottom, and not an ellipsis or a line clamp', async ({ page }) => {
+    await page.setContent(
+      probePage(
+        '<div id="cut" style="height:10px;overflow:hidden;line-height:24px">Diacritics need room</div>' +
+          '<div style="width:60px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">One long line cut by its width</div>' +
+          '<div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;width:90px">' +
+          'A clamped paragraph that wraps over several lines on purpose and is cut after two lines of it</div>',
+      ),
+    );
+    expect((await measure(page)).clippedText).toBe(1);
+  });
+
+  test('reads the terminal size, top and height ratio, and null without a size', async ({ page }) => {
+    await page.setContent(
+      probePage('<h1>Terminal</h1><div data-terminal data-cols="97" data-rows="31" style="height:300px">x</div>'),
+    );
+    const found = await measure(page);
+    expect(found.terminal?.cols).toBe(97);
+    expect(found.terminal?.rows).toBe(31);
+    expect(found.terminal?.top ?? 0).toBeGreaterThan(20);
+    expect(found.terminal?.heightRatio ?? 0).toBeCloseTo(0.5, 1);
+    await page.setContent(probePage('<div data-terminal>no size yet</div>'));
+    expect((await measure(page)).terminal, 'a host without cols and rows is no terminal').toBeNull();
+  });
+
+  test('keeps the five older measurements next to the new ones', async ({ page }) => {
+    await page.setContent(
+      probePage('<table><thead><tr><th>A</th></tr></thead><tbody><tr><td>one</td></tr></tbody></table>'),
+    );
+    const found = await measure(page);
+    expect(found.pageOverflowX).toBe(0);
+    expect(found.clippedColumns).toBe(0);
+    expect(found.maxRowHeight).toBeGreaterThan(0);
+    expect(found.firstRowTop).not.toBeNull();
+  });
+});
+
+// ---- the style guide (CAW-35) ---------------------------------------------------------------------------------------------------
+
+test.describe('the style guide', () => {
+  test('builds one page per language from the catalogues, without a style attribute or a script', () => {
+    const en = buildStyleguideHtml('en');
+    const vi = buildStyleguideHtml('vi');
+    for (const html of [en, vi]) {
+      expect(html).not.toMatch(/\sstyle\s*=/i);
+      expect(html).not.toMatch(/<script|<style|\son[a-z]+\s*=/i);
+      expect(html.length).toBeGreaterThan(3000);
+    }
+    expect(en).toContain(enMessages['state.waiting_input.label']);
+    expect(vi).toContain(viMessages['state.waiting_input.label']);
+    expect(vi).not.toContain(enMessages['state.waiting_input.label']);
+  });
+
+  test('has every primitive of the design: buttons, states, popover, menu, dialog, badges, rows, cards, toast, kbd', () => {
+    const html = buildStyleguideHtml('en');
+    for (const needle of [
+      'class="btn btn-primary"',
+      'class="btn btn-quiet"',
+      'class="btn btn-icon"',
+      'aria-pressed="true"',
+      'disabled',
+      'class="input"',
+      'class="chip',
+      'class="card',
+      'class="popover',
+      'class="menu',
+      'class="dialog',
+      'class="kbd',
+      'class="toast',
+      'aria-current="true"',
+      'class="evidence-line"',
+      'badge--inferred',
+      'tr--prompt',
+      'tr--say',
+      'tr--think',
+      'tr--tool',
+      'tr--result',
+      'state--empty',
+      'state--error',
+      'stale-indicator',
+      'badge--tag',
+    ])
+      expect(html, needle).toContain(needle);
+    for (const state of ['working', 'waiting_input', 'turn_ended', 'completed', 'failed', 'stale', 'unknown'])
+      expect(html, state).toContain(`data-state="${state}"`);
+    expect(html.match(/data-basis="inferred"/g)?.length ?? 0).toBeGreaterThanOrEqual(7);
+  });
+
+  test('the Vietnamese stress line is built from base letters and combining marks in NFC, in both pages', () => {
+    const line = vietnameseStressLine();
+    expect(line).toBe(line.normalize('NFC'));
+    // stacked marks (circumflex plus dot below, horn plus grave, breve plus dot below), the stroked d and a capital are in it
+    for (const code of [0x1ec7, 0x1eeb, 0x1eb7, 0x1ea5, 0x1ec3, 0x111, 0x1ee2])
+      expect(line, code.toString(16)).toContain(String.fromCodePoint(code));
+    expect(line).not.toMatch(/[̀-ͯ]/);
+    for (const locale of ['en', 'vi'] as const) expect(buildStyleguideHtml(locale)).toContain(line);
+  });
+
+  test('is drawn without a clipped or tiny line, and names one focus target', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setContent(probePage(buildStyleguideHtml('vi')));
+    const found = await measure(page);
+    expect(found.clippedText).toBe(0);
+    expect(found.tinyText).toBe(0);
+    expect(await page.locator('[data-qa-focus-target]').count()).toBe(1);
+  });
+
+  test('is registered as two views of one marked block, in live mode, with unique ids', () => {
+    for (const id of ['styleguide', 'styleguide-focus']) {
+      const view = VIEWS.find((candidate) => candidate.id === id);
+      expect(view?.mode, id).toBe('live');
+      expect(view?.setup, id).toBeDefined();
+    }
+    expect(duplicateViewIds(VIEWS)).toEqual([]);
   });
 });
 

@@ -1,11 +1,13 @@
 // Layout facts of one drawn page (WP-122): what a verifier needs to judge a screenshot with numbers instead of by eye.
-// The measuring code runs in the browser as a string (the e2e project has no DOM types) and the answer is checked here.
-// Rows are `tbody tr`, `[role="row"]` outside a header, and any element a page marks with `data-row` (a card list at a
-// narrow width marks its cards that way). Hidden elements are ignored.
+// The measuring code (`measure-script.ts`) runs in the browser as a string (the e2e project has no DOM types) and the answer is
+// checked here. Rows are `tbody tr`, `[role="row"]` outside a header, and any element a page marks with `data-row` (a card list at
+// a narrow width marks its cards that way). Hidden elements are ignored.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { Page } from '@playwright/test';
+
+import { MEASURE_SCRIPT, ROW_SELECTOR } from './measure-script.ts';
 
 /** One line of `index.json`: a picture and the facts measured on the page it shows. */
 export interface ShotRecord {
@@ -42,75 +44,60 @@ export interface Measure {
   firstRowTop: number | null;
   /** Table columns whose header is cut off by the window or its scroll box, or whose text is clipped. */
   clippedColumns: number;
+  /** Visible text nodes below the contrast minimum (4.5:1, 3:1 for large text; design 05 section 7.3). */
+  lowContrastTexts: number;
+  /** The lowest contrast ratio of any text on the page (null when the page has no text to judge). */
+  worstContrast: number | null;
+  /** The element and the start of the text that has `worstContrast`, for example `p.muted "Last activity"`. */
+  worstContrastNode: string | null;
+  /** Text elements whose first font family is not the first family of `--mono`. */
+  nonMonoText: number;
+  /** Visible text elements with a computed size below 11 px. */
+  tinyText: number;
+  /** Elements with text cut off at the bottom (a clipped diacritic). */
+  clippedText: number;
+  /** The terminal host (`[data-terminal][data-cols][data-rows]`); null when the page has none. */
+  terminal: TerminalMeasure | null;
 }
 
-/** The elements that count as rows of a page (see the header of this file). */
-const ROW_SELECTOR = 'main tbody tr, main [role="row"]:not(thead *), main [data-row]';
-
-const MEASURE_SCRIPT = `(() => {
-  const doc = document.scrollingElement || document.documentElement;
-  const visible = (el) => {
-    const r = el.getBoundingClientRect();
-    const s = getComputedStyle(el);
-    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
-  };
-  const round = (n) => Math.round(n * 10) / 10;
-  const main = document.querySelector('main');
-
-  const rows = Array.from(document.querySelectorAll(${JSON.stringify(ROW_SELECTOR)})).filter(visible);
-  let maxRowHeight = 0;
-  for (const row of rows) maxRowHeight = Math.max(maxRowHeight, row.getBoundingClientRect().height);
-  const firstRowTop = rows.length === 0 ? null : round(rows[0].getBoundingClientRect().top + window.scrollY);
-
-  const tabbable = Array.from(
-    document.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex]'),
-  ).filter((el) => {
-    if (el.hasAttribute('disabled') || el.getAttribute('tabindex') === '-1') return false;
-    if (el.tagName === 'INPUT' && el.getAttribute('type') === 'hidden') return false;
-    if (el.closest('[inert], [hidden]')) return false;
-    return visible(el) || el.matches('a, button, input, select, textarea');
-  });
-  let tabStopsBeforeMain = 0;
-  if (main) {
-    for (const el of tabbable) {
-      if (main.contains(el)) continue;
-      if (el.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING && visible(el)) tabStopsBeforeMain += 1;
-    }
-  }
-
-  let clippedColumns = 0;
-  for (const table of document.querySelectorAll('main table')) {
-    if (!visible(table)) continue;
-    let box = table.parentElement;
-    while (box && box !== document.body) {
-      const overflowX = getComputedStyle(box).overflowX;
-      if (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'hidden') break;
-      box = box.parentElement;
-    }
-    const limit = Math.min(window.innerWidth, box && box !== document.body ? box.getBoundingClientRect().right : window.innerWidth);
-    for (const cell of table.querySelectorAll('thead th')) {
-      if (!visible(cell)) continue;
-      const r = cell.getBoundingClientRect();
-      const s = getComputedStyle(cell);
-      const cutByBox = r.right > limit + 1;
-      const textCut = s.overflow !== 'visible' && cell.scrollWidth > cell.clientWidth + 1;
-      if (cutByBox || textCut) clippedColumns += 1;
-    }
-  }
-
-  return {
-    pageOverflowX: Math.max(0, doc.scrollWidth - doc.clientWidth),
-    maxRowHeight: round(maxRowHeight),
-    tabStopsBeforeMain,
-    firstRowTop,
-    clippedColumns,
-  };
-})()`;
+export interface TerminalMeasure {
+  cols: number;
+  rows: number;
+  /** Distance from the top of the page to the terminal host. */
+  top: number;
+  /** Height of the terminal host divided by the height of the window. */
+  heightRatio: number;
+}
 
 function numberAt(object: Record<string, unknown>, key: string): number {
   const value = object[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`measure: ${key} is not a finite number`);
   return value;
+}
+
+function nullableNumberAt(object: Record<string, unknown>, key: string): number | null {
+  return object[key] === null ? null : numberAt(object, key);
+}
+
+function nullableStringAt(object: Record<string, unknown>, key: string): string | null {
+  const value = object[key];
+  if (value === null) return null;
+  if (typeof value !== 'string') throw new Error(`measure: ${key} is neither null nor a string`);
+  return value;
+}
+
+function terminalAt(object: Record<string, unknown>): TerminalMeasure | null {
+  const value = object['terminal'];
+  if (value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw new Error('measure: terminal is neither null nor an object');
+  const record = value as Record<string, unknown>;
+  return {
+    cols: numberAt(record, 'cols'),
+    rows: numberAt(record, 'rows'),
+    top: numberAt(record, 'top'),
+    heightRatio: numberAt(record, 'heightRatio'),
+  };
 }
 
 /** The number of visible rows (see the header of this file). */
@@ -141,6 +128,13 @@ export async function measure(page: Page): Promise<Measure> {
     tabStopsBeforeMain: numberAt(object, 'tabStopsBeforeMain'),
     firstRowTop: first,
     clippedColumns: numberAt(object, 'clippedColumns'),
+    lowContrastTexts: numberAt(object, 'lowContrastTexts'),
+    worstContrast: nullableNumberAt(object, 'worstContrast'),
+    worstContrastNode: nullableStringAt(object, 'worstContrastNode'),
+    nonMonoText: numberAt(object, 'nonMonoText'),
+    tinyText: numberAt(object, 'tinyText'),
+    clippedText: numberAt(object, 'clippedText'),
+    terminal: terminalAt(object),
   };
 }
 

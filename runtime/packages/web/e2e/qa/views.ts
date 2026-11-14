@@ -30,6 +30,7 @@ import {
 } from '../../src/test/fixtures/index.ts';
 import { fixtureId, type FixtureApi, type FixtureState } from './fixture-api.ts';
 import type { QaInstance } from './qa-instance.ts';
+import { focusStyleguideTarget, injectStyleguide } from './styleguide.ts';
 
 /** `live` shoots a real instance on synthetic data; `fixture` answers the API from the fake server (states a real instance cannot show quickly). */
 export type ViewMode = 'live' | 'fixture';
@@ -1641,6 +1642,32 @@ export const VIEWS: readonly ViewSpec[] = [
     },
   },
   // @wp-end WP-121
+  // @wp-begin CAW-35
+  // The style guide (design 05 section 7.2): a static page of every primitive and state, injected into the loaded app so that the
+  // real stylesheets draw it. It rides on the catch-all route (the lightest page with the full shell). The focus view puts the focus
+  // on the guide's focus target with Tab presses. Both are shot at the matrix sizes; the page grows to the height of the guide.
+  {
+    id: 'styleguide',
+    path: '*',
+    mode: 'live',
+    wait: HEADING,
+    params: () => ({ '*': 'qa-style-guide' }),
+    setup: async ({ page, locale }) => {
+      await injectStyleguide(page, locale);
+    },
+  },
+  {
+    id: 'styleguide-focus',
+    path: '*',
+    mode: 'live',
+    wait: HEADING,
+    params: () => ({ '*': 'qa-style-guide' }),
+    setup: async ({ page, locale }) => {
+      await injectStyleguide(page, locale);
+      await focusStyleguideTarget(page);
+    },
+  },
+  // @wp-end CAW-35
 ];
 
 /** `/sessions/:sessionId` and `{ sessionId }` give `/sessions/<id>`; the id is encoded; a missing value is an error. */
