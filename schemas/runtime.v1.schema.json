@@ -684,6 +684,150 @@
         }
       },
       "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 260,
+          "pattern": "^[\\u0020\\u0021\\u0023-\\u007e\\u00a1-\\uffff]+$"
+        },
+        "args": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "envKeep": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "maxSessions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "replayBytes": {
+          "type": "integer",
+          "minimum": 65536,
+          "maximum": 16777216
+        },
+        "maxInputBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 262144
+        },
+        "startTimeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 60000
+        },
+        "killTimeoutMs": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 30000
+        },
+        "conptyDll": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "app": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[\\u0020-\\u007e\\u00a1-\\uffff]+$"
+        },
+        "openAppWindow": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "projects": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "repo",
+            "all"
+          ]
+        },
+        "fullSweepIntervalMs": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 3600000
+        },
+        "coldStatIntervalMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 600000
+        },
+        "catalogIntervalMs": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 600000
+        },
+        "daMemoryDir": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[\\u0020-\\u007e\\u00a1-\\uffff]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "daCacheMs": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 60000
+        },
+        "userFoldersMax": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "linkPollMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "linkSlowPollMs": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 60000
+        },
+        "linkFastWindowMs": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 600000
+        },
+        "linkStartToleranceMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30000
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

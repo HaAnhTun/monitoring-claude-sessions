@@ -10,13 +10,18 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 const FOLDERS = ['ingest', 'lifecycle', 'health', 'external'];
-/** The sections of 02 1.2. */
-const SECTIONS = ['spool', 'import', 'ingest', 'health', 'hooks', 'lifecycle', 'board'] as const;
+/** The sections of 02 1.2, and `projects` (CAW design 03 2.1: the ingestion keys of its scope switch are read by discovery). */
+const SECTIONS = ['spool', 'import', 'ingest', 'health', 'hooks', 'lifecycle', 'board', 'projects'] as const;
 const SECTION_ALT = SECTIONS.join('|');
 
-/** The 02 table: `section.key` of every catalogue entry of owner 02. */
+/**
+ * The 02 table: `section.key` of every catalogue entry of owner 02, and every key of the `projects` section (its keys are
+ * owned by 02 for ingestion, 03 for folders and 06 for the terminal link, but one table lists them).
+ */
 const TABLE: ReadonlySet<string> = new Set(
-  R_KEY_CATALOGUE.filter((entry) => entry.owner === '02').map((entry) => entry.key),
+  R_KEY_CATALOGUE.filter((entry) => entry.owner === '02' || entry.key.startsWith('projects.')).map(
+    (entry) => entry.key,
+  ),
 );
 
 /** `section.key` of every read in `text`: the full path, or a section that is taken out of `config.runtime` first. */
@@ -67,6 +72,12 @@ describe('configReadsIn', () => {
     ]);
   });
 
+  it('finds a read of the projects section and flags a key of it that is not in the table', () => {
+    const reads = configReadsIn('const a = config.runtime.projects.scope; const b = cfg.projects.bogusKey;');
+    expect(reads).toEqual(['projects.bogusKey', 'projects.scope']);
+    expect(reads.filter((key) => !TABLE.has(key))).toEqual(['projects.bogusKey']);
+  });
+
   it('flags a key that is not in the table', () => {
     const reads = configReadsIn('const x = config.runtime.spool.bogusKey;');
     expect(reads.filter((key) => !TABLE.has(key))).toEqual(['spool.bogusKey']);
@@ -83,10 +94,18 @@ describe('the keys read by the ingestion and lifecycle code', () => {
   }
 
   it('the table of 02 1.2 is the shared catalogue of owner 02', () => {
-    for (const key of ['spool.pollMs', 'import.sliceMs', 'ingest.queueMaxItems', 'health.backlogWarnMs']) {
+    for (const key of [
+      'spool.pollMs',
+      'import.sliceMs',
+      'ingest.queueMaxItems',
+      'health.backlogWarnMs',
+      'projects.scope',
+      'projects.fullSweepIntervalMs',
+    ]) {
       expect(TABLE.has(key), key).toBe(true);
     }
     expect([...TABLE].some((key) => key.startsWith('lifecycle.'))).toBe(true);
+    expect([...TABLE].filter((key) => key.startsWith('projects.'))).toHaveLength(11);
   });
 
   it('finds the reads of the service, the sweeper and the health code (the scan is not vacuous)', () => {

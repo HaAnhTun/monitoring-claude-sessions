@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { AlertsSectionKeys, AlertsSectionSchema } from './alerts.ts';
 import { AnalyticsSectionKeys, AnalyticsSectionSchema } from './analytics.ts';
+import { AppSectionKeys, AppSectionSchema } from './app.ts';
 import { BackupSectionKeys, BackupSectionSchema } from './backup.ts';
 import { BoardSectionKeys, BoardSectionSchema } from './board.ts';
 import { HealthSectionKeys, HealthSectionSchema } from './health.ts';
@@ -15,13 +16,16 @@ import { LogLevelSchema } from './logging.ts';
 import { PanelOptionsSectionKeys, PanelOptionsSectionSchema } from './panelOptions.ts';
 import { PricingSectionKeys, PricingSectionSchema } from './pricing.ts';
 import { ProcessSectionKeys, ProcessSectionSchema } from './process.ts';
+import { ProjectsSectionKeys, ProjectsSectionSchema } from './projects.ts';
 import { RetentionSectionKeys, RetentionSectionSchema } from './retention.ts';
 import { MIB, type KeySpec, cloneDefault, sectionOverridesSchema } from './section.ts';
 import { ServerSectionKeys, ServerSectionSchema } from './server.ts';
 import { SpoolSectionKeys, SpoolSectionSchema } from './spool.ts';
+import { TerminalSectionKeys, TerminalSectionSchema } from './terminal.ts';
 
 export * from './alerts.ts';
 export * from './analytics.ts';
+export * from './app.ts';
 export * from './backup.ts';
 export * from './board.ts';
 export * from './health.ts';
@@ -33,10 +37,12 @@ export * from './logging.ts';
 export * from './panelOptions.ts';
 export * from './pricing.ts';
 export * from './process.ts';
+export * from './projects.ts';
 export * from './retention.ts';
 export { type KeySpec, type SectionKeys, sectionOverridesSchema, sectionSchema } from './section.ts';
 export * from './server.ts';
 export * from './spool.ts';
+export * from './terminal.ts';
 
 /** The merged configuration: every key present, every default filled. `schema_version` is the file marker. */
 export const RuntimeFileSchema = z.strictObject({
@@ -57,6 +63,9 @@ export const RuntimeFileSchema = z.strictObject({
   retention: RetentionSectionSchema,
   alerts: AlertsSectionSchema,
   pricing: PricingSectionSchema,
+  terminal: TerminalSectionSchema,
+  app: AppSectionSchema,
+  projects: ProjectsSectionSchema,
 });
 
 /** The file on disk: partial sections only, unknown keys rejected, no defaults injected. */
@@ -78,6 +87,9 @@ export const RuntimeOverridesSchema = z.strictObject({
   retention: sectionOverridesSchema(RetentionSectionKeys),
   alerts: sectionOverridesSchema(AlertsSectionKeys),
   pricing: sectionOverridesSchema(PricingSectionKeys),
+  terminal: sectionOverridesSchema(TerminalSectionKeys),
+  app: sectionOverridesSchema(AppSectionKeys),
+  projects: sectionOverridesSchema(ProjectsSectionKeys),
 });
 
 export type RuntimeConfig = Omit<z.output<typeof RuntimeFileSchema>, 'schema_version'>;
@@ -100,6 +112,9 @@ export const R_TOP_KEYS = [
   'retention',
   'alerts',
   'pricing',
+  'terminal',
+  'app',
+  'projects',
 ] as const;
 
 /** Every object section merges per sub-key (01 2.2); only `logLevel` is a plain scalar. */
@@ -289,4 +304,29 @@ export const R_KEY_CATALOGUE: readonly RKeyCatalogueEntry[] = [
   // pricing (03 8.3)
   entry('pricing.currency', PricingSectionKeys.currency, 'EUR', '03', '03 8.3'),
   entry('pricing.models', PricingSectionKeys.models, [priceSample], '03', '03 8.3'),
+  // terminal (CAW design 01 3.3 with the bounds of 06 1.6); the samples differ from the defaults
+  entry('terminal.command', TerminalSectionKeys.command, 'claude-beta', '01', '01 1.6'),
+  entry('terminal.args', TerminalSectionKeys.args, ['--verbose'], '01', '01 1.6'),
+  entry('terminal.envKeep', TerminalSectionKeys.envKeep, ['CLAUDE_CODE_USE_BEDROCK'], '01', '01 1.6'),
+  entry('terminal.maxSessions', TerminalSectionKeys.maxSessions, 4, '01', '01 1.6'),
+  entry('terminal.replayBytes', TerminalSectionKeys.replayBytes, 2 * MIB, '01', '01 1.6'),
+  entry('terminal.maxInputBytes', TerminalSectionKeys.maxInputBytes, 65_536, '01', '01 1.6'),
+  entry('terminal.startTimeoutMs', TerminalSectionKeys.startTimeoutMs, 20_000, '01', '01 1.6'),
+  entry('terminal.killTimeoutMs', TerminalSectionKeys.killTimeoutMs, 5000, '01', '01 1.6'),
+  entry('terminal.conptyDll', TerminalSectionKeys.conptyDll, true, '01', '01 1.6'),
+  // app (CAW design 06 1.6)
+  entry('app.name', AppSectionKeys.name, 'Team Workspace', '01', '01 1.6'),
+  entry('app.openAppWindow', AppSectionKeys.openAppWindow, true, '01', '01 1.6'),
+  // projects (CAW design 03 2.1): the ingestion keys are owned by 02, the folder keys by 03, the link keys by 06
+  entry('projects.scope', ProjectsSectionKeys.scope, 'all', '02', '02 2.1'),
+  entry('projects.fullSweepIntervalMs', ProjectsSectionKeys.fullSweepIntervalMs, 120_000, '02', '02 2.1'),
+  entry('projects.coldStatIntervalMs', ProjectsSectionKeys.coldStatIntervalMs, 20_000, '02', '02 2.1'),
+  entry('projects.catalogIntervalMs', ProjectsSectionKeys.catalogIntervalMs, 60_000, '03', '03 2.1'),
+  entry('projects.daMemoryDir', ProjectsSectionKeys.daMemoryDir, 'memory-copy', '03', '03 2.1'),
+  entry('projects.daCacheMs', ProjectsSectionKeys.daCacheMs, 5000, '03', '03 2.1'),
+  entry('projects.userFoldersMax', ProjectsSectionKeys.userFoldersMax, 50, '03', '03 2.1'),
+  entry('projects.linkPollMs', ProjectsSectionKeys.linkPollMs, 500, '06', '06 2.1'),
+  entry('projects.linkSlowPollMs', ProjectsSectionKeys.linkSlowPollMs, 4000, '06', '06 2.1'),
+  entry('projects.linkFastWindowMs', ProjectsSectionKeys.linkFastWindowMs, 60_000, '06', '06 2.1'),
+  entry('projects.linkStartToleranceMs', ProjectsSectionKeys.linkStartToleranceMs, 1000, '06', '06 2.1'),
 ];

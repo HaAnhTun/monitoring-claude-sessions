@@ -75,8 +75,32 @@ evidence that completes a session, next to a finished daemon job.
 | `lifecycle.subagentActiveSeconds` | 60 | a subagent written within this counts as active |
 | `lifecycle.staleAfterSeconds` | 1800 | quiet longer than this: stale |
 | `lifecycle.jobsPollMs` | 15000 | how often daemon job files are read |
+| `terminal.command` | `claude` | program of every terminal session: a name on PATH or an absolute path (no quotes, 1 to 260 characters) |
+| `terminal.args` | `[]` | extra arguments in front of `--resume` (at most 32), passed one by one and never through a shell |
+| `terminal.envKeep` | `[]` | names of the stripped child environment that are kept, for example `CLAUDE_CODE_USE_BEDROCK` (at most 32) |
+| `terminal.maxSessions` | 8 | terminal sessions at once (1 to 64); a new one over the limit is refused |
+| `terminal.replayBytes` | 1048576 | replay buffer of one session, 64 KiB to 16 MiB |
+| `terminal.maxInputBytes` | 262144 | largest single input to a terminal, 1 KiB to 256 KiB (the maximum is also the limit of the terminal socket) |
+| `terminal.startTimeoutMs` | 10000 | how long to wait for a terminal child to start (1000 to 60000) |
+| `terminal.killTimeoutMs` | 3000 | how long to wait for an exit after a kill before the whole process tree is killed (500 to 30000) |
+| `terminal.conptyDll` | `false` | use the `conpty.dll` and `OpenConsole.exe` that ship with the terminal package |
+| `app.name` | `Claude Agent Workspace` | name in the page header and title (1 to 80 characters) |
+| `app.openAppWindow` | `false` | open an Edge or Chrome app window instead of a tab of the default browser |
+| `projects.scope` | `auto` | `repo` reads one repository, `all` every project folder of the Claude home, `auto` is `all` on the user instance and `repo` on a task instance |
+| `projects.fullSweepIntervalMs` | 60000 | full sweep of every project folder, scope `all` (5000 to 3600000) |
+| `projects.coldStatIntervalMs` | 10000 | how often files without growth for five minutes are checked, scope `all` |
+| `projects.catalogIntervalMs` | 30000 | refresh of the folder catalogue |
+| `projects.daMemoryDir` | `null` | folder of the DA memory files; `null` is `.claude/memory` under the home folder |
+| `projects.daCacheMs` | 3000 | how long one read of the DA memory is reused |
+| `projects.userFoldersMax` | 200 | most folders a person may add by hand (1 to 1000) |
+| `projects.linkPollMs` | 250 | registry poll of the terminal-to-session link while a terminal is young |
+| `projects.linkSlowPollMs` | 2000 | poll after the fast window and for linked terminals |
+| `projects.linkFastWindowMs` | 30000 | length of the fast poll window; the database fallback starts after it |
+| `projects.linkStartToleranceMs` | 2000 | a registry entry may start this much before the spawn time and still count as the new session |
 
 Unknown keys and values out of range are refused, and nothing is written.
+
+The `terminal`, `app` and `projects` sections belong to the user-wide workspace instance; a task instance never reads them. A change needs a restart of the instance.
 
 ## Regular expressions
 

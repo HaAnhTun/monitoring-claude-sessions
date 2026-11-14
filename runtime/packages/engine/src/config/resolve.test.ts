@@ -629,6 +629,9 @@ describe('purity, files and the inspection projection', () => {
           'retention',
           'alerts',
           'pricing',
+          'terminal',
+          'app',
+          'projects',
         ].includes(root ?? '')
           ? r.runtime
           : r.monitor,

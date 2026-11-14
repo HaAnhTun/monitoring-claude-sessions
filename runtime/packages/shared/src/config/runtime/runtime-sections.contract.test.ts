@@ -100,6 +100,9 @@ describe('runtime.json sections: composition', () => {
       'retention',
       'alerts',
       'pricing',
+      'terminal',
+      'app',
+      'projects',
     ]);
     expect([...R_MERGED].sort()).toEqual([...SECTION_NAMES].sort());
   });
@@ -142,6 +145,13 @@ describe('runtime.json sections: composition', () => {
     expect(count('analytics')).toBe(1);
   });
 
+  it('counts the keys of the sections of the user instance (terminal 9, app 2, projects 11)', () => {
+    const count = (section: string) => R_KEY_CATALOGUE.filter((e) => e.key.startsWith(`${section}.`)).length;
+    expect(count('terminal')).toBe(9);
+    expect(count('app')).toBe(2);
+    expect(count('projects')).toBe(11);
+  });
+
   it('records a valid owner and reference for every key', () => {
     for (const e of R_KEY_CATALOGUE) {
       expect(['01', '02', '03', '06'], e.key).toContain(e.owner);
@@ -155,6 +165,11 @@ describe('runtime.json sections: composition', () => {
     expect(R_KEY_CATALOGUE.find((e) => e.key === 'spool.pollMs')?.owner).toBe('02');
     expect(R_KEY_CATALOGUE.find((e) => e.key === 'retention.changesMaxRows')?.owner).toBe('03');
     expect(R_KEY_CATALOGUE.find((e) => e.key === 'server.port')?.owner).toBe('01');
+    expect(R_KEY_CATALOGUE.find((e) => e.key === 'terminal.maxSessions')?.owner).toBe('01');
+    expect(R_KEY_CATALOGUE.find((e) => e.key === 'app.name')?.owner).toBe('01');
+    expect(R_KEY_CATALOGUE.find((e) => e.key === 'projects.scope')?.owner).toBe('02');
+    expect(R_KEY_CATALOGUE.find((e) => e.key === 'projects.catalogIntervalMs')?.owner).toBe('03');
+    expect(R_KEY_CATALOGUE.find((e) => e.key === 'projects.linkPollMs')?.owner).toBe('06');
   });
 });
 

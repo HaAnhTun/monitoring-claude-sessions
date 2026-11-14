@@ -78,7 +78,13 @@ describe('R_DERIVED_DEFAULTS (data)', () => {
 
   it('no other key has a null default except the documented nullable ones', () => {
     const nullDefaults = R_KEY_CATALOGUE.filter((e) => e.default === null).map((e) => e.key);
-    expect(nullDefaults.sort()).toEqual(['retention.eventsDays', 'retention.sessionsDays', 'server.port']);
+    // `projects.daMemoryDir` (CAW-06) is null on purpose: null means the folder under the home directory
+    expect(nullDefaults.sort()).toEqual([
+      'projects.daMemoryDir',
+      'retention.eventsDays',
+      'retention.sessionsDays',
+      'server.port',
+    ]);
   });
 
   it('the catalogue default of a derived key is the value derived from the shipped defaults', () => {
