@@ -63,6 +63,8 @@ export const ERROR_MESSAGES: Readonly<Record<ErrorCode, string>> = {
   terminal_unavailable: 'Terminals are not available on this system.',
   claude_not_found: 'The claude command could not be found.',
   folder_invalid: 'The folder does not exist or is not allowed.',
+  folder_not_found: 'There is no such folder in the list.',
+  folder_limit: 'The list already holds the most folders a person may add.',
   terminal_not_found: 'There is no such terminal session.',
   terminal_limit: 'Too many terminal sessions are running.',
   resume_unavailable: 'This session cannot be resumed in a terminal.',

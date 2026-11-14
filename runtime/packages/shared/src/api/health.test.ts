@@ -204,6 +204,17 @@ describe('InstanceInfo (03 6.2, registry C26)', () => {
     ).toBe(false);
   });
 
+  it('scope is optional and names the effective scope only: repo or all, never auto', () => {
+    expect(InstanceInfoSchema.safeParse(info).success).toBe(true);
+    expect(InstanceInfoSchema.parse(info)).not.toHaveProperty('scope');
+    for (const scope of ['repo', 'all']) {
+      expect(InstanceInfoSchema.parse({ ...info, scope }).scope).toBe(scope);
+    }
+    for (const scope of ['auto', 'user', '', null, 1]) {
+      expect(InstanceInfoSchema.safeParse({ ...info, scope }).success, String(scope)).toBe(false);
+    }
+  });
+
   it('panels flags cover the six panel keys', () => {
     expect(InstanceInfoSchema.safeParse({ ...info, panels: without(info.panels, 'logs') }).success).toBe(false);
   });

@@ -18,6 +18,9 @@
     "project": {
       "type": "string"
     },
+    "session": {
+      "type": "string"
+    },
     "workItem": {
       "type": "integer",
       "minimum": 1,

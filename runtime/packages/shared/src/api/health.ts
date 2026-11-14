@@ -126,6 +126,12 @@ export const InstanceInfoSchema = z.strictObject({
   dbSchemaVersion: CountSchema,
   headSeq: CountSchema,
   epoch: EpochSchema,
+  /**
+   * What the instance reads: `repo` is the one repository, `all` every project folder under the Claude home. The effective
+   * value (the config key `projects.scope` may say `auto`, which is resolved by the kind of the instance); absent from an
+   * instance that predates the key.
+   */
+  scope: z.enum(['repo', 'all']).optional(),
   /** Config `poll.stale_after_ms`. */
   staleAfterMs: CountSchema,
   heartbeatMs: CountSchema,

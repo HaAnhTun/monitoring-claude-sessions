@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { filterHash } from './cursor.ts';
 import type { ActivityEvent } from './entities.ts';
 import {
   AgentListQuerySchema,
@@ -55,6 +56,7 @@ describe('field validation of the list routes (03 5.4)', () => {
       state: 'active,failed',
       presence: 'open,ended',
       project: 'alpha,beta-2',
+      session: `${SID_A},${SID_B}`,
       workItem: '7',
       model: 'm-1,m-2',
       hasErrors: '1',
@@ -73,6 +75,7 @@ describe('field validation of the list routes (03 5.4)', () => {
       state: ['active', 'failed'],
       presence: ['open', 'ended'],
       project: ['alpha', 'beta-2'],
+      session: [SID_A, SID_B],
       workItem: 7,
       model: ['m-1', 'm-2'],
       hasErrors: true,
@@ -110,6 +113,11 @@ describe('field validation of the list routes (03 5.4)', () => {
       { presence: 'maybe' },
       { project: 'UPPER' },
       { project: Array.from({ length: 21 }, (_, i) => `p${i}`).join(',') },
+      { session: '' },
+      { session: 'not-a-session' },
+      { session: `${SID_A},` },
+      { session: '0B9F3F3E-6F0E-4C1E-9A53-0F4F2F1C9D11' },
+      { session: Array.from({ length: 51 }, (_, i) => `${i}`.padStart(8, '0') + SID_A.slice(8)).join(',') },
       { workItem: '0' },
       { workItem: '-3' },
       { hasErrors: '0' },
@@ -124,6 +132,20 @@ describe('field validation of the list routes (03 5.4)', () => {
       { model: 'a b' },
     ];
     for (const params of cases) expect(bad(SessionListQuerySchema, params), JSON.stringify(params)).toBe(true);
+  });
+
+  it('sessions: the session filter takes up to 50 ids, in the order given', () => {
+    const ids = Array.from({ length: 50 }, (_, i) => `${i}`.padStart(8, '0') + SID_A.slice(8));
+    expect(ok(SessionListQuerySchema, { session: ids.join(',') }).session).toEqual(ids);
+    expect(ok(SessionListQuerySchema, { session: SID_B }).session).toEqual([SID_B]);
+  });
+
+  it('sessions: the session filter is part of the result set, so it changes the cursor filter hash', () => {
+    const withSession = ok(SessionListQuerySchema, { session: SID_A });
+    const without = ok(SessionListQuerySchema, {});
+    expect(filterHash(withSession)).not.toBe(filterHash(without));
+    expect(filterHash(withSession)).not.toBe(filterHash(ok(SessionListQuerySchema, { session: SID_B })));
+    expect(filterHash(withSession)).toBe(filterHash(ok(SessionListQuerySchema, { session: SID_A, limit: '10' })));
   });
 
   it('accepts at most 10 states and keeps the alias active unexpanded', () => {
@@ -389,7 +411,8 @@ describe('toQuery / fromQuery round trip (DA-T-API-7, unit part)', () => {
             q: maybe(() => `${text()}!`),
             state: maybe(() => some(['active', 'failed', 'stale', 'unknown'], 4)),
             presence: maybe(() => some(['open', 'ended', 'unknown'], 3)),
-            project: maybe(() => some(['alpha', 'beta', 'g-1'], 3)),
+            project: maybe(() => some(['alpha', 'beta', 'g-1', '-home-x'], 3)),
+            session: maybe(() => some([SID_A, SID_B], 2)),
             workItem: maybe(() => 1 + Math.floor(rnd() * 99)),
             hasErrors: maybe(() => true),
             range: maybe(() => pick(['1h', '6h', '24h', '7d', '30d', 'all'])),

@@ -42,6 +42,13 @@
       "type": "string",
       "pattern": "^[0-9a-f]{8}$"
     },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "repo",
+        "all"
+      ]
+    },
     "staleAfterMs": {
       "type": "integer",
       "minimum": 0,

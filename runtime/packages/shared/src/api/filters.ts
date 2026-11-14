@@ -155,6 +155,8 @@ export const SessionListQuerySchema = z
     state: opt(f.state),
     presence: opt(f.presence),
     project: opt(f.project),
+    /** Only these sessions (at most 50 ids): the terminal sidebar asks for the sessions of its live terminals. */
+    session: opt(f.session),
     workItem: opt(f.workItem),
     model: opt(f.model),
     hasErrors: opt(f.hasErrors),

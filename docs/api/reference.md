@@ -44,6 +44,10 @@ sent. The contract rules (versioning, ids, times, pagination, errors) are in `do
 | [`ingestNudge`](#ingestnudge) | POST | `/api/v3/ingest/nudge` | Tells the server that the spool has new data; the body carries no event data. |
 | [`ingestProbe`](#ingestprobe) | GET | `/api/v3/ingest/probes/:probeSessionId` | Whether a hook probe envelope has been committed (the hook verification check V7). |
 | [`stream`](#stream) | GET | `/api/v3/stream` | Server-sent events: hello, change, heartbeat and reset frames. |
+| [`listFolders`](#listfolders) | GET | `/api/v3/folders` | The project folders with their DA memory and Claude home details, and what each source said. |
+| [`addFolder`](#addfolder) | POST | `/api/v3/folders` | Adds a folder by hand to the folder list; the answer is its row. |
+| [`removeFolder`](#removefolder) | POST | `/api/v3/folders/:key/remove` | Removes a folder that was added by hand from the folder list; the folder on disk is not touched. |
+| [`sessionResume`](#sessionresume) | GET | `/api/v3/sessions/:sessionId/resume` | Whether the session can be resumed in a terminal, whether a copy can, and why not. |
 | [`explainCompletion`](#explaincompletion) | GET | `/api/v3/completion` | Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only. |
 
 ## Errors every route can answer
@@ -129,7 +133,7 @@ Metrics with their source and rule, recent activity, recent errors and open aler
 Sessions, filtered, sorted and paged with a keyset cursor.
 
 - Success: 200 `application/json`
-- Query parameters: `q`, `state`, `presence`, `project`, `workItem`, `model`, `hasErrors`, `range`, `from`, `to`, `window`, `tokensMin`, `tokensMax`, `includeUnmatched`, `sort`, `dir`, `cursor`, `limit`, `includeTotal` ([`api/listSessions.query.schema.json`](../../schemas/api/listSessions.query.schema.json))
+- Query parameters: `q`, `state`, `presence`, `project`, `session`, `workItem`, `model`, `hasErrors`, `range`, `from`, `to`, `window`, `tokensMin`, `tokensMax`, `includeUnmatched`, `sort`, `dir`, `cursor`, `limit`, `includeTotal` ([`api/listSessions.query.schema.json`](../../schemas/api/listSessions.query.schema.json))
 - Response: [`api/listSessions.response.schema.json`](../../schemas/api/listSessions.response.schema.json)
 - Specific errors: `cursor_invalid`, `range_invalid`, `range_too_large`, `query_too_short`
 
@@ -422,6 +426,49 @@ Server-sent events: hello, change, heartbeat and reset frames.
 - Success: 200 `text/event-stream`
 - Query parameters: `since`, `epoch` ([`api/stream.query.schema.json`](../../schemas/api/stream.query.schema.json))
 - Specific errors: `stream_limit`
+
+## listFolders
+
+`GET /api/v3/folders`
+
+The project folders with their DA memory and Claude home details, and what each source said.
+
+- Success: 200 `application/json`
+- Response: [`api/listFolders.response.schema.json`](../../schemas/api/listFolders.response.schema.json)
+- Specific errors: none
+
+## addFolder
+
+`POST /api/v3/folders`
+
+Adds a folder by hand to the folder list; the answer is its row.
+
+- Success: 200 `application/json`
+- Body: `path` (required) ([`api/addFolder.body.schema.json`](../../schemas/api/addFolder.body.schema.json))
+- Response: [`api/addFolder.response.schema.json`](../../schemas/api/addFolder.response.schema.json)
+- Specific errors: `folder_invalid`, `folder_limit`
+
+## removeFolder
+
+`POST /api/v3/folders/:key/remove`
+
+Removes a folder that was added by hand from the folder list; the folder on disk is not touched.
+
+- Success: 204
+- Path parameters: `key` (required) ([`api/removeFolder.params.schema.json`](../../schemas/api/removeFolder.params.schema.json))
+- Body ([`api/removeFolder.body.schema.json`](../../schemas/api/removeFolder.body.schema.json))
+- Specific errors: `folder_not_found`
+
+## sessionResume
+
+`GET /api/v3/sessions/:sessionId/resume`
+
+Whether the session can be resumed in a terminal, whether a copy can, and why not.
+
+- Success: 200 `application/json`
+- Path parameters: `sessionId` (required) ([`api/sessionResume.params.schema.json`](../../schemas/api/sessionResume.params.schema.json))
+- Response: [`api/sessionResume.response.schema.json`](../../schemas/api/sessionResume.response.schema.json)
+- Specific errors: `session_not_found`
 
 ## explainCompletion
 

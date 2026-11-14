@@ -56,8 +56,9 @@ import {
   queryString,
   toQuery,
 } from './filters.ts';
+import { AddFolderBodySchema, FolderListResponseSchema, FolderSchema, ResumeEligibilitySchema } from './folders.ts';
 import { ErrorItemSchema, HealthReportSchema, HookProbeResultSchema, InstanceInfoSchema } from './health.ts';
-import { CountSchema, ProbeSessionIdSchema, SessionIdSchema, intString } from './ids.ts';
+import { CountSchema, ProbeSessionIdSchema, ProjectIdSchema, SessionIdSchema, intString } from './ids.ts';
 import { LegacyHealthSchema } from './legacy-health.ts';
 import { PanelKeySchema, PanelResponseSchema } from './panels.ts';
 
@@ -212,6 +213,9 @@ export function routeErrors(
 // ---- parameter and response schemas that belong to no entity -------------------------------------------------------
 
 const SessionPath = z.strictObject({ sessionId: SessionIdSchema });
+
+/** The body of a POST that carries no data: `{}` and nothing else (an extra key is refused). */
+const NoBodySchema = z.strictObject({});
 
 /** `GET /work-items`: every item (cap 500) and the text that explains how the board is derived (02 7.11). */
 export const WorkItemBoardSchema = z.strictObject({
@@ -688,6 +692,64 @@ export const routes = {
     errors: ['stream_limit'],
     summary: 'Server-sent events: hello, change, heartbeat and reset frames.',
     contentType: 'text/event-stream',
+  }),
+  // the projects routes (CAW-08, design 03 7.2, Option A): every one needs the session cookie, because folder paths and
+  // DA summaries are private; they are mounted on the user instance only
+  listFolders: defineRoute({
+    id: 'listFolders',
+    method: 'GET',
+    path: '/api/v3/folders',
+    params: null,
+    query: null,
+    body: null,
+    response: FolderListResponseSchema,
+    successStatus: 200,
+    errors: [],
+    summary: 'The project folders with their DA memory and Claude home details, and what each source said.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  addFolder: defineRoute({
+    id: 'addFolder',
+    method: 'POST',
+    path: '/api/v3/folders',
+    params: null,
+    query: null,
+    body: AddFolderBodySchema,
+    response: FolderSchema,
+    successStatus: 200,
+    errors: ['folder_invalid', 'folder_limit'],
+    summary: 'Adds a folder by hand to the folder list; the answer is its row.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  removeFolder: defineRoute({
+    id: 'removeFolder',
+    method: 'POST',
+    path: '/api/v3/folders/:key/remove',
+    params: z.strictObject({ key: ProjectIdSchema }),
+    query: null,
+    body: NoBodySchema,
+    response: null,
+    successStatus: 204,
+    errors: ['folder_not_found'],
+    summary: 'Removes a folder that was added by hand from the folder list; the folder on disk is not touched.',
+    contentType: null,
+    access: 'session',
+  }),
+  sessionResume: defineRoute({
+    id: 'sessionResume',
+    method: 'GET',
+    path: '/api/v3/sessions/:sessionId/resume',
+    params: SessionPath,
+    query: null,
+    body: null,
+    response: ResumeEligibilitySchema,
+    successStatus: 200,
+    errors: ['session_not_found'],
+    summary: 'Whether the session can be resumed in a terminal, whether a copy can, and why not.',
+    contentType: 'application/json',
+    access: 'session',
   }),
   // @wp-begin WP-29
   explainCompletion: defineRoute({

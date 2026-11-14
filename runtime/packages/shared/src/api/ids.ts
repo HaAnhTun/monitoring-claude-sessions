@@ -17,8 +17,11 @@ export const RunIdSchema = z.string().regex(RUN_ID_RE);
 /** `toolUseId`: the provider's tool-use id. */
 export const ToolUseIdSchema = z.string().regex(TOOL_ID_RE);
 
-/** `projectId`: the lowercase sanitized project folder name. */
-export const PROJECT_ID_RE = /^[a-z0-9][a-z0-9-]{0,254}$/;
+/**
+ * `projectId`: the lowercase sanitized project folder name, also the key of a folder row. Claude's sanitizer writes
+ * letters, digits and dashes only, and a POSIX folder name starts with a dash, so the first character is not special.
+ */
+export const PROJECT_ID_RE = /^[a-z0-9-]{1,255}$/;
 export const ProjectIdSchema = z.string().regex(PROJECT_ID_RE);
 
 /** `instanceId`: uuid v4 (the workspace identity of 01). */

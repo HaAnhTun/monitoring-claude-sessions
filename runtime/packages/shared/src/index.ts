@@ -12,12 +12,15 @@ export * from './config/runtime/index.ts';
 export * from './cli/envelope.ts';
 export * from './cli/results.ts';
 
+export * from './folders/index.ts';
+
 export * from './api/ids.ts';
 export * from './api/time.ts';
 export * from './api/errors.ts';
 export * from './api/cursor.ts';
 export * from './api/entities.ts';
 export * from './api/filters.ts';
+export * from './api/folders.ts';
 export * from './api/health.ts';
 export * from './api/legacy-health.ts';
 export * from './api/panels.ts';

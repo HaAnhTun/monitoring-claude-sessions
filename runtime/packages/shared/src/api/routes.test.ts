@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { ConfigInspectionSchema } from '../cli/results.ts';
 import { IngestHealthSchema, type IngestHealth } from '../schemas/ingest.ts';
 import { ERROR_CODES, RESERVED_ERROR_CODES, type ErrorCode } from './errors.ts';
+import { FolderListResponseSchema, FolderSchema, ResumeEligibilitySchema } from './folders.ts';
 import { PanelResponseSchema } from './panels.ts';
 import {
   COMMON_ERROR_CODES,
@@ -93,7 +94,7 @@ const TABLE: [RouteId, string, string, string, ErrorCode[]][] = [
     'listSessions',
     'GET',
     '/api/v3/sessions',
-    'q state presence project workItem model hasErrors range from to window tokensMin tokensMax includeUnmatched sort dir cursor limit includeTotal',
+    'q state presence project session workItem model hasErrors range from to window tokensMin tokensMax includeUnmatched sort dir cursor limit includeTotal',
     ['cursor_invalid', 'range_invalid', 'range_too_large', 'query_too_short'],
   ],
   ['getSession', 'GET', '/api/v3/sessions/:sessionId', '', ['session_not_found']],
@@ -206,7 +207,18 @@ const TABLE: [RouteId, string, string, string, ErrorCode[]][] = [
   ],
   ['ingestProbe', 'GET', '/api/v3/ingest/probes/:probeSessionId', '', ['probe_not_found']],
   ['stream', 'GET', '/api/v3/stream', 'since epoch', ['stream_limit']],
+  // the projects routes of CAW-08 (design 03 7.2, Option A)
+  ['listFolders', 'GET', '/api/v3/folders', '', []],
+  ['addFolder', 'POST', '/api/v3/folders', '', ['folder_invalid', 'folder_limit']],
+  ['removeFolder', 'POST', '/api/v3/folders/:key/remove', '', ['folder_not_found']],
+  ['sessionResume', 'GET', '/api/v3/sessions/:sessionId/resume', '', ['session_not_found']],
 ];
+
+/** The routes of the projects area: every one of them needs the session cookie (design 03 7.2). */
+const PROJECT_ROUTE_IDS: readonly RouteId[] = ['listFolders', 'addFolder', 'removeFolder', 'sessionResume'];
+
+/** The write routes: the open nudge of the spool and the two folder routes behind the session cookie. */
+const WRITE_ROUTE_IDS: readonly string[] = ['ingestNudge', 'addFolder', 'removeFolder'];
 
 /**
  * TEMPORARY (CAW-07): the codes whose routes arrive in later work packages (the access routes, the terminal routes, the
@@ -221,7 +233,6 @@ const PENDING_ROUTE_CODES: readonly ErrorCode[] = [
   'terminal_not_found',
   'terminal_limit',
   'picker_busy',
-  'folder_invalid',
   'resume_unavailable',
 ];
 
@@ -250,8 +261,8 @@ describe('route registry (03 6.1, 13)', () => {
     const all: readonly string[] = ROUTE_IDS;
     const own = all.filter((id) => id !== 'explainCompletion');
     expect([...own].sort()).toEqual(TABLE.map(([id]) => id).sort());
-    expect(own).toHaveLength(34);
-    expect(all).toHaveLength(all.includes('explainCompletion') ? 35 : 34);
+    expect(own).toHaveLength(38);
+    expect(all).toHaveLength(all.includes('explainCompletion') ? 39 : 38);
     expect(Object.keys(routes).sort()).toEqual([...ROUTE_IDS].sort());
   });
 
@@ -265,15 +276,16 @@ describe('route registry (03 6.1, 13)', () => {
     expect(route.summary.length).toBeGreaterThan(5);
   });
 
-  it('is read-only except the nudge (03 5.1)', () => {
+  it('is read-only except the nudge (03 5.1) and the two folder writes (CAW-08)', () => {
     for (const id of ROUTE_IDS) {
-      expect(routes[id].method).toBe(id === 'ingestNudge' ? 'POST' : 'GET');
+      expect(routes[id].method).toBe(WRITE_ROUTE_IDS.includes(id) ? 'POST' : 'GET');
     }
     expect(routes.ingestNudge.successStatus).toBe(204);
     expect(routes.ingestNudge.response).toBeNull();
     expect(routes.ingestNudge.body).not.toBeNull();
     for (const id of ROUTE_IDS) {
-      if (id !== 'ingestNudge') expect(routes[id].body, id).toBeNull();
+      if (WRITE_ROUTE_IDS.includes(id)) expect(routes[id].body, id).not.toBeNull();
+      else expect(routes[id].body, id).toBeNull();
     }
   });
 
@@ -284,7 +296,7 @@ describe('route registry (03 6.1, 13)', () => {
           ? 'application/x-ndjson'
           : id === 'stream'
             ? 'text/event-stream'
-            : id === 'ingestNudge'
+            : id === 'ingestNudge' || id === 'removeFolder'
               ? null
               : 'application/json';
       expect(routes[id].contentType, id).toBe(expected);
@@ -292,6 +304,8 @@ describe('route registry (03 6.1, 13)', () => {
     }
     expect(routes.export.response).toBeNull();
     expect(routes.stream.response).toBeNull();
+    expect(routes.removeFolder.successStatus).toBe(204);
+    expect(routes.addFolder.successStatus).toBe(200);
   });
 
   it('path parameters and param schemas agree both ways', () => {
@@ -394,11 +408,13 @@ describe('route registry (03 6.1, 13)', () => {
 });
 
 describe('route metadata (02 2.1, A1)', () => {
-  it('is open except the nine content routes, which are reader routes', () => {
+  it('is open except the nine content routes (reader) and the four projects routes (session)', () => {
     for (const id of ROUTE_IDS) {
-      expect(routes[id].access, id).toBe(READER_ROUTE_IDS.includes(id) ? 'reader' : 'open');
+      const expected = READER_ROUTE_IDS.includes(id) ? 'reader' : PROJECT_ROUTE_IDS.includes(id) ? 'session' : 'open';
+      expect(routes[id].access, id).toBe(expected);
     }
     expect(ROUTE_IDS.filter((id) => routes[id].access === 'reader')).toHaveLength(9);
+    expect(ROUTE_IDS.filter((id) => routes[id].access === 'session')).toHaveLength(4);
   });
 
   it('keeps the body limit of the nudge guard and no body limit for a route without a body', () => {
@@ -415,6 +431,66 @@ describe('route metadata (02 2.1, A1)', () => {
   it('the only write route that is open is the nudge', () => {
     for (const id of ROUTE_IDS) {
       if (routes[id].method !== 'GET' && id !== 'ingestNudge') expect(routes[id].access, id).not.toBe('open');
+    }
+  });
+});
+
+describe('projects routes (CAW-08, design 03 7.2)', () => {
+  it('every one needs the session cookie, even the two GETs: folder paths and DA summaries are private', () => {
+    for (const id of PROJECT_ROUTE_IDS) expect(routes[id].access, id).toBe('session');
+    for (const id of PROJECT_ROUTE_IDS) expect(routeErrors(routes[id]), id).toContain('access_required');
+  });
+
+  it('the two writes derive the body errors and keep the default body limit; the GETs have no body', () => {
+    for (const id of ['addFolder', 'removeFolder'] as const) {
+      expect(routeErrors(routes[id]), id).toEqual(
+        expect.arrayContaining(['csrf_rejected', 'payload_too_large', 'body_invalid_json']),
+      );
+      expect(routes[id].maxBodyBytes, id).toBe(DEFAULT_MAX_BODY_BYTES);
+    }
+    for (const id of ['listFolders', 'sessionResume'] as const) {
+      expect(routes[id].body, id).toBeNull();
+      expect(routes[id].maxBodyBytes, id).toBe(0);
+    }
+  });
+
+  it('addFolder takes { path } and answers the Folder row; removeFolder takes an empty object and answers 204', () => {
+    expect(routes.addFolder.body.safeParse({ path: 'D:/x' }).success).toBe(true);
+    expect(routes.addFolder.body.safeParse({}).success).toBe(false);
+    expect(routes.addFolder.response).toBe(FolderSchema);
+    expect(routes.removeFolder.body.safeParse({}).success).toBe(true);
+    expect(routes.removeFolder.body.safeParse({ key: 'a' }).success).toBe(false);
+    expect(routes.removeFolder.response).toBeNull();
+    expect(routes.listFolders.response).toBe(FolderListResponseSchema);
+    expect(routes.sessionResume.response).toBe(ResumeEligibilitySchema);
+  });
+
+  it('removeFolder names the folder by its project key, and the resume route by a session id', () => {
+    const key = routes.removeFolder.params;
+    expect(key.safeParse({ key: 'd--work-app' }).success).toBe(true);
+    expect(key.safeParse({ key: '-home-x' }).success).toBe(true);
+    for (const bad of ['', 'Upper', 'a/b', 'a b', '..', 'D:' + String.fromCharCode(92) + 'x']) {
+      expect(key.safeParse({ key: bad }).success, bad).toBe(false);
+    }
+    expect(routes.sessionResume.params.safeParse({ sessionId: SID }).success).toBe(true);
+    expect(routes.sessionResume.params.safeParse({ sessionId: 'abc' }).success).toBe(false);
+    expect(buildPath(routes.removeFolder, { key: 'd--work-app' })).toBe('/api/v3/folders/d--work-app/remove');
+    expect(buildPath(routes.sessionResume, { sessionId: SID })).toBe('/api/v3/sessions/' + SID + '/resume');
+    expect(() => buildPath(routes.removeFolder, { key: 'a/b' })).toThrow(TypeError);
+  });
+
+  it('lists the codes the registry promises: folder_invalid and folder_limit on add, folder_not_found on remove', () => {
+    expect(routeErrors(routes.addFolder)).toEqual(expect.arrayContaining(['folder_invalid', 'folder_limit']));
+    expect(routeErrors(routes.removeFolder)).toContain('folder_not_found');
+    expect(routeErrors(routes.sessionResume)).toContain('session_not_found');
+    expect(routes.addFolder.errors).toEqual(['folder_invalid', 'folder_limit']);
+  });
+
+  it('the new codes are not pending: a route lists each of them', () => {
+    const listed = new Set<ErrorCode>(ROUTE_IDS.flatMap((id) => routeErrors(routes[id])));
+    for (const code of ['folder_invalid', 'folder_limit', 'folder_not_found'] as const) {
+      expect(listed.has(code), code).toBe(true);
+      expect(PENDING_ROUTE_CODES).not.toContain(code);
     }
   });
 });
