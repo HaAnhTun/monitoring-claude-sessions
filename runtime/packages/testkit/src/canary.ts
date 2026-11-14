@@ -17,15 +17,52 @@ export type CanaryKind = keyof typeof CANARY;
 
 const KINDS: readonly CanaryKind[] = ['prompt', 'toolResult', 'thinking', 'key', 'envToken', 'attachment', 'query'];
 
-function* filesUnder(path: string): Generator<string> {
+function* filesUnder(path: string, who: string): Generator<string> {
   const stat = lstatSync(path, { throwIfNoEntry: false });
-  if (stat === undefined) throw new Error(`scanForCanaries: ${path} does not exist`);
+  if (stat === undefined) throw new Error(`${who}: ${path} does not exist`);
   if (stat.isSymbolicLink()) return;
   if (stat.isDirectory()) {
-    for (const name of readdirSync(path).sort()) yield* filesUnder(join(path, name));
+    for (const name of readdirSync(path).sort()) yield* filesUnder(join(path, name), who);
   } else if (stat.isFile()) {
     yield path;
   }
+}
+
+interface Wanted {
+  name: string;
+  bytes: Buffer;
+}
+
+function scan(paths: readonly string[], wanted: readonly Wanted[], who: string): { file: string; name: string }[] {
+  const hits: { file: string; name: string }[] = [];
+  for (const root of paths) {
+    for (const file of filesUnder(root, who)) {
+      const content = readFileSync(file);
+      for (const { name, bytes } of wanted) {
+        if (content.includes(bytes)) hits.push({ file, name });
+      }
+    }
+  }
+  return hits;
+}
+
+/**
+ * Reads every file under `paths` (folders are walked, links are not followed) as bytes and reports each needle found, in the
+ * order of the files and then of the needles. A needle is text (UTF-8) or bytes; a hit of bytes names the needle in hex
+ * (`0x0203`). A path that does not exist, an empty needle and an empty list of needles throw: a scan of nothing must not pass
+ * silently. The terminal tests use it for the strings that must never reach a log, a file or the database.
+ */
+export function scanFilesFor(
+  paths: readonly string[],
+  needles: readonly (string | Uint8Array)[],
+): { file: string; needle: string }[] {
+  if (needles.length === 0) throw new RangeError('scanFilesFor: no needles: a scan for nothing proves nothing');
+  const wanted = needles.map((needle): Wanted => {
+    const bytes = typeof needle === 'string' ? Buffer.from(needle, 'utf8') : Buffer.from(needle);
+    if (bytes.length === 0) throw new RangeError('scanFilesFor: a needle must not be empty');
+    return { name: typeof needle === 'string' ? needle : `0x${bytes.toString('hex')}`, bytes };
+  });
+  return scan(paths, wanted, 'scanFilesFor').map(({ file, name }) => ({ file, needle: name }));
 }
 
 /**
@@ -36,18 +73,9 @@ export function scanForCanaries(
   paths: readonly string[],
   allowed: readonly CanaryKind[],
 ): { file: string; canary: string }[] {
-  const needles = KINDS.filter((kind) => !allowed.includes(kind)).map((kind) => ({
-    kind,
+  const wanted = KINDS.filter((kind) => !allowed.includes(kind)).map((kind) => ({
+    name: kind,
     bytes: Buffer.from(CANARY[kind]),
   }));
-  const hits: { file: string; canary: string }[] = [];
-  for (const root of paths) {
-    for (const file of filesUnder(root)) {
-      const content = readFileSync(file);
-      for (const { kind, bytes } of needles) {
-        if (content.includes(bytes)) hits.push({ file, canary: kind });
-      }
-    }
-  }
-  return hits;
+  return scan(paths, wanted, 'scanForCanaries').map(({ file, name }) => ({ file, canary: name }));
 }

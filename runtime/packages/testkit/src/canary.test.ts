@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { CANARY, scanForCanaries } from './canary.ts';
+import { CANARY, scanFilesFor, scanForCanaries } from './canary.ts';
 import { useTempDirs } from './temp.ts';
 
 const tempDir = useTempDirs();
@@ -66,6 +66,64 @@ describe('scanForCanaries', () => {
     writeFileSync(join(dir, 'a'), 'clean');
     expect(scanForCanaries([dir], [])).toEqual([]);
     expect(() => scanForCanaries([join(dir, 'missing')], [])).toThrow(/missing/);
+  });
+});
+
+describe('scanFilesFor', () => {
+  it('reports each file and needle that is present, in the order of the paths and then the needles', () => {
+    const dir = tempDir('scan1').path;
+    writeFileSync(join(dir, 'a.log'), 'one needle-b and needle-a here');
+    writeFileSync(join(dir, 'b.log'), 'clean');
+    writeFileSync(join(dir, 'c.log'), 'needle-a');
+    const hits = scanFilesFor([join(dir, 'a.log'), join(dir, 'b.log'), join(dir, 'c.log')], ['needle-a', 'needle-b']);
+    expect(hits).toEqual([
+      { file: join(dir, 'a.log'), needle: 'needle-a' },
+      { file: join(dir, 'a.log'), needle: 'needle-b' },
+      { file: join(dir, 'c.log'), needle: 'needle-a' },
+    ]);
+  });
+
+  it('walks folders, reads bytes, finds a UTF-8 needle in a binary file', () => {
+    const dir = tempDir('scan2').path;
+    mkdirSync(join(dir, 'x', 'y'), { recursive: true });
+    writeFileSync(
+      join(dir, 'x', 'y', 'blob.bin'),
+      Buffer.concat([Buffer.from([0, 255, 0]), Buffer.from('caf\u00e9-needle')]),
+    );
+    expect(scanFilesFor([dir], ['caf\u00e9-needle'])).toEqual([
+      { file: join(dir, 'x', 'y', 'blob.bin'), needle: 'caf\u00e9-needle' },
+    ]);
+  });
+
+  it('accepts a needle as bytes and names it in hex', () => {
+    const dir = tempDir('scan3').path;
+    writeFileSync(join(dir, 'a.bin'), Buffer.from([1, 2, 3, 4]));
+    expect(scanFilesFor([join(dir, 'a.bin')], [Uint8Array.from([2, 3])])).toEqual([
+      { file: join(dir, 'a.bin'), needle: '0x0203' },
+    ]);
+  });
+
+  it('returns nothing for clean input', () => {
+    const dir = tempDir('scan4').path;
+    writeFileSync(join(dir, 'a'), 'clean');
+    expect(scanFilesFor([dir], ['dirty-needle'])).toEqual([]);
+  });
+
+  it('fails loudly for a missing path, an empty needle and an empty needle list', () => {
+    const dir = tempDir('scan5').path;
+    writeFileSync(join(dir, 'a'), 'x');
+    expect(() => scanFilesFor([join(dir, 'missing')], ['x'])).toThrow(/missing/);
+    expect(() => scanFilesFor([join(dir, 'a')], [''])).toThrow(RangeError);
+    expect(() => scanFilesFor([join(dir, 'a')], [])).toThrow(RangeError);
+  });
+
+  it('is what scanForCanaries uses: the canary of a file is found through both', () => {
+    const dir = tempDir('scan6').path;
+    writeFileSync(join(dir, 'a.log'), CANARY.toolResult);
+    expect(scanFilesFor([join(dir, 'a.log')], [CANARY.toolResult])).toEqual([
+      { file: join(dir, 'a.log'), needle: CANARY.toolResult },
+    ]);
+    expect(scanForCanaries([join(dir, 'a.log')], [])).toEqual([{ file: join(dir, 'a.log'), canary: 'toolResult' }]);
   });
 });
 

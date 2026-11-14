@@ -117,6 +117,15 @@ describe('allocatePort', () => {
   });
 });
 
+describe('the product default port', () => {
+  it('7690 is never handed out and no range that includes it is accepted (CAW 4.4)', async () => {
+    await expect(allocatePort([7690, 7690])).rejects.toThrow(/forbidden ports 7690-7690/);
+    await expect(allocatePort([7000, 8000])).rejects.toThrow(RangeError);
+    await expect(allocatePort([7690, 18000])).rejects.toThrow(RangeError);
+    await expect(allocatePort([7500, 7690])).rejects.toThrow(RangeError);
+  });
+});
+
 describe('assertPortClosed', () => {
   it('resolves for a closed port', async () => {
     const port = await allocatePort([18560, 18569]);

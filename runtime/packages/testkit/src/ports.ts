@@ -8,8 +8,9 @@ export const VITEST_PORTS: PortRange = [18000, 18499];
 
 const BLOCK_SIZE = 50;
 
-/** Never touched by any test: the live monitor scan, the blog dev servers and the owner's ports (plan 3.2). */
+/** Never touched by any test: the live monitor scan, the blog dev servers, the owner's ports (plan 3.2) and 7690, the product default (the owner's MTOP may hold it; CAW design 08, principle 9). */
 const FORBIDDEN: readonly PortRange[] = [
+  [7690, 7690],
   [8765, 8784],
   [3000, 3000],
   [3100, 3100],

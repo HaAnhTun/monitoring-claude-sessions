@@ -5,7 +5,7 @@ export { FIXTURE_EPOCH_MS, FakeClock } from './clock.ts';
 export { killAllTracked, runCli, spawnTracked, type TrackedProcess } from './processes.ts';
 export { hermeticEnv, makeJunction, spawnImpostor, startInstance, type StartedInstance } from './isolation.ts';
 export { httpRequest, readSse } from './http.ts';
-export { CANARY, scanForCanaries } from './canary.ts';
+export { CANARY, scanFilesFor, scanForCanaries } from './canary.ts';
 export { TranscriptBuilder, bigTranscript, type UsageFixture } from './transcript.ts';
 export { buildClaudeHome, type ClaudeHome, type SessionSpec } from './claude-home.ts';
 export { hookPayload, runHookHandler, type HookEventName, type RunHookOptions } from './hooks.ts';
@@ -81,6 +81,28 @@ export {
   type DaMetaMode,
   type DaVariant,
 } from './da-memory.ts';
+export {
+  RawWsClient,
+  TERMINAL_SUBPROTOCOL_V1,
+  WS_GUID,
+  acceptKeyFor,
+  openTerminalSocket,
+  type ConnectOptions,
+  type FrameSpec,
+  type OpenedTerminalSocket,
+  type WsMessage,
+} from './terminal/ws-client.ts';
+export { TerminalOutput, stripAnsi } from './terminal/output.ts';
+export {
+  PTY_SKIP_REASON_OFF_WINDOWS,
+  describePtyTests,
+  ptySupport,
+  scaled,
+  type DescribePtyDeps,
+  type PtySupportDeps,
+  type PtySupportResult,
+} from './terminal/pty-support.ts';
+export { MIN_MARKER_LENGTH, findProcesses, type FoundProcess } from './terminal/process-scan.ts';
 
 // @wp-begin WP-55
 // @wp-end WP-55
