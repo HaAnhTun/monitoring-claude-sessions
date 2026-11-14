@@ -1,7 +1,7 @@
 # Architecture (4.0)
 
-A read-only monitor of Claude Code sessions. It never writes to transcripts, never starts, stops or signals a session, binds
-`127.0.0.1` only and has one engine: the Node runtime. Transcripts contain private data (prompts, file contents, possibly
+A monitor of Claude Code sessions with a terminal for them. The monitoring never writes to transcripts and never starts, stops or signals a session; only the terminal part
+starts, writes to and kills the `claude` processes the application itself started (ADR 0079). It binds `127.0.0.1` only and has one engine: the Node runtime. Transcripts contain private data (prompts, file contents, possibly
 secrets): the page shows them, so the port must never be exposed. Decisions are recorded in [decisions/](decisions/).
 
 ## Repository layout
@@ -81,16 +81,17 @@ Execution state, monitor health and data freshness are three separate things.
 
 ## Security posture
 
-Loopback bind; `Host` and `Origin` validation against DNS rebinding and cross-site requests (not authentication); every route is
-read-only `GET` apart from a body-less ingest nudge; ids are validated and resolved through directory listings, never joined from
+Loopback bind; `Host` and `Origin` validation against DNS rebinding and cross-site requests (not authentication); every monitoring route is
+read-only `GET` apart from a body-less ingest nudge. The terminal is the one active part (ADR 0079): it acts only on processes it started, its write routes and its
+WebSocket need the per-start access code, and the MCP server and the skill never touch a terminal; ids are validated and resolved through directory listings, never joined from
 client input; the web UI is served with a strict Content Security Policy and loads nothing from the network; transcript text is
 rendered as text, never as HTML. No outbound network code. See ADR 0045.
 
 ## Shipping
 
 Users run the committed bundle; they never run npm or a build. The bundle is built with rolldown from the sources and is
-deterministic: `npm run bundle:check` rebuilds it and compares (ADR 0063). There is no native dependency: SQLite is Node's built-in
-`node:sqlite` behind the single driver seam `engine/src/db/driver.ts` (ADR 0064).
+deterministic: `npm run bundle:check` rebuilds it and compares (ADR 0063). There is one native dependency, the terminal's `@lydell/node-pty` (ADR 0080; Windows x64 and arm64 prebuilds, loaded by path, not part of the bundled code): SQLite is Node's
+built-in `node:sqlite` behind the single driver seam `engine/src/db/driver.ts` (ADR 0064), and the terminal WebSocket uses `ws` (ADR 0081).
 
 ## Where to change what
 
