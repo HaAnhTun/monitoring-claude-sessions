@@ -12,7 +12,7 @@ install.mjs                     install path B: copies the skill folder into a s
 skills/monitoring-claude-sessions/   the self-contained skill folder that both install paths ship (ADR 0062)
   SKILL.md                      how an agent operates the monitor
   scripts/mcs.mjs               the launcher (Node floor check, then the bundle or a checkout build)
-  scripts/mcs-hook.mjs          stable hook entry point (no installer in 4.0)
+  scripts/mcs-hook.mjs          stable hook entry point (`mcs hooks install` is opt-in)
   bundle/                       committed build: mcs-cli.mjs, mcs-server.mjs, mcs-hook.mjs, web/, migrations/, notices
   config/defaults.json          shared monitor defaults; runtime/defaults.json: runtime section defaults
   reference/                    agent reference: configuration, troubleshooting, transcript format
@@ -74,8 +74,8 @@ Execution state, monitor health and data freshness are three separate things.
 - **Execution state** per session and agent: `running`, `working`, `waiting_input`, `waiting_tool`, `waiting_agent`, `turn_ended`,
   `completed`, `failed`, `stale`, `unknown`, each with evidence, a basis (observed or inferred) and a confidence. The CLI and the
   compatibility health route map them to `RUNNING`, `IDLE`, `COMPLETED`, `FAILED`, `UNKNOWN`. A transcript alone never proves
-  completion: a finished turn is `turn_ended` (`IDLE`). `completed` and `failed` need external evidence (in 4.0 a finished daemon
-  job; the attempts reader of `chain_log` is not built yet). External evidence keeps the time its source recorded (ADR 0069).
+  completion: a finished turn is `turn_ended` (`IDLE`). `completed` and `failed` need external evidence (a finished daemon
+  job, or a finished attempt read from `chain_log` and `attempts`). External evidence keeps the time its source recorded (ADR 0069).
 - **Monitor health**: `/api/v3/health` (runtime, database, ingestion, recent errors).
 - **Data freshness**: measured by the page per data source.
 
