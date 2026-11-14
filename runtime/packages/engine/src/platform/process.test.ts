@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { McsError } from '@mcs/shared';
-import { killAllTracked, spawnTracked } from '@mcs/testkit';
+import { killAllTracked, makeTempDir, spawnTracked, waitFor } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { childStats, type ChildResult, type ChildSpec } from './exec.ts';
@@ -8,8 +11,11 @@ import {
   commandLineOf,
   createProcessHelpers,
   forceKill,
+  forceKillTree,
   isValidPid,
+  listDescendantPids,
   pidAlive,
+  processStartTimes,
   waitForExit,
   type ProcessDeps,
 } from './process.ts';
@@ -380,6 +386,288 @@ describe('waitForExit (scripted)', () => {
   });
 });
 
+describe('forceKillTree (scripted)', () => {
+  it('on Windows runs taskkill.exe /PID <pid> /T /F through kind taskkill (10 s, 64 KiB)', async () => {
+    const r = rig('win32');
+    await createProcessHelpers(r.deps).forceKillTree(4242);
+    expect(r.specs).toHaveLength(1);
+    expect(r.specs[0]).toMatchObject({
+      kind: 'taskkill',
+      file: 'C:\\Windows\\System32\\taskkill.exe',
+      args: ['/PID', '4242', '/T', '/F'],
+      timeoutMs: 10_000,
+      maxOutputBytes: 65_536,
+      encoding: 'utf8',
+    });
+    expect(r.kills).toEqual([]);
+  });
+
+  it('counts exit code 128 (process not found) as success', async () => {
+    const r = rig('win32');
+    r.replies = [
+      result('', { ok: false, code: 128, error: 'NONZERO_EXIT', stderr: 'ERROR: The process "5" not found.' }),
+    ];
+    await expect(createProcessHelpers(r.deps).forceKillTree(5)).resolves.toBeUndefined();
+  });
+
+  it('rejects with an McsError STOP_FAILED for any other failure, naming only the first stderr line', async () => {
+    const r = rig('win32');
+    r.replies = [
+      result('', { ok: false, code: 1, error: 'NONZERO_EXIT', stderr: 'ERROR: Access is denied.\r\nsecond line' }),
+    ];
+    const error = await createProcessHelpers(r.deps)
+      .forceKillTree(5)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(McsError);
+    expect(error).toMatchObject({ code: 'STOP_FAILED' });
+    expect((error as McsError).message).toContain('Access is denied');
+    expect((error as McsError).message).not.toContain('second line');
+
+    r.replies = [result('', { ok: false, code: null, error: 'TIMEOUT' })];
+    await expect(createProcessHelpers(r.deps).forceKillTree(5)).rejects.toMatchObject({ code: 'STOP_FAILED' });
+
+    const none = createProcessHelpers({ ...r.deps, resolve: () => Promise.resolve(null) });
+    await expect(none.forceKillTree(5)).rejects.toMatchObject({ code: 'STOP_FAILED' });
+  });
+
+  it('on POSIX sends SIGKILL to the pid, ignores ESRCH and reports EPERM', async () => {
+    const r = rig('linux');
+    r.alive.add(300);
+    const helpers = createProcessHelpers(r.deps);
+    await helpers.forceKillTree(300);
+    expect(r.kills).toEqual([{ pid: 300, signal: 'SIGKILL' }]);
+    r.killErrors.set(301, errno('ESRCH'));
+    await expect(helpers.forceKillTree(301)).resolves.toBeUndefined();
+    r.killErrors.set(302, errno('EPERM'));
+    await expect(helpers.forceKillTree(302)).rejects.toMatchObject({ code: 'STOP_FAILED' });
+    expect(r.specs).toEqual([]);
+  });
+
+  it('refuses an invalid pid with a RangeError and does nothing', async () => {
+    const r = rig('win32');
+    const helpers = createProcessHelpers(r.deps);
+    for (const pid of [0, -1, 1.5, Number.NaN, 12345678901]) {
+      await expect(helpers.forceKillTree(pid)).rejects.toBeInstanceOf(RangeError);
+    }
+    expect(r.specs).toEqual([]);
+    expect(r.kills).toEqual([]);
+  });
+
+  it('forgets the cached command line of the killed pid', async () => {
+    const r = rig('win32');
+    r.replies = [result('before\r\n')];
+    const helpers = createProcessHelpers(r.deps);
+    expect(await helpers.commandLineOf(40)).toBe('before');
+    r.replies = [result('', { code: 0 }), result('after\r\n')];
+    await helpers.forceKillTree(40);
+    expect(await helpers.commandLineOf(40)).toBe('after');
+  });
+
+  it('leaves forceKill as it was: no /T', async () => {
+    const r = rig('win32');
+    await createProcessHelpers(r.deps).forceKill(9);
+    expect(r.specs[0]?.args).toEqual(['/PID', '9', '/F']);
+  });
+});
+
+const START_SCRIPT = (pids: string): string =>
+  `$ErrorActionPreference='SilentlyContinue'; Get-Process -Id ${pids} | ForEach-Object { '' + $_.Id + [char]9 + $_.StartTime.ToUniversalTime().ToString('o') }; 'MCS-START-END'`;
+
+const TREE_SCRIPT =
+  "$ErrorActionPreference='Stop'; Get-CimInstance Win32_Process | ForEach-Object { '' + $_.ProcessId + [char]9 + $_.ParentProcessId }; 'MCS-TREE-END'";
+
+describe('processStartTimes (scripted)', () => {
+  it('runs one constant -EncodedCommand script of kind powershell.processes over the validated pids', async () => {
+    const r = rig('win32');
+    r.replies = [result('MCS-START-END\r\n')];
+    await createProcessHelpers(r.deps).processStartTimes([10, 20]);
+    expect(r.specs).toHaveLength(1);
+    const [spec] = r.specs;
+    expect(spec).toMatchObject({
+      kind: 'powershell.processes',
+      file: 'C:\\ps\\powershell.exe',
+      timeoutMs: 20_000,
+      maxOutputBytes: 65_536,
+      encoding: 'utf8',
+    });
+    expect(spec?.args.slice(0, 4)).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass']);
+    expect(decodedScript(spec)).toBe(START_SCRIPT('10,20'));
+  });
+
+  it('maps each pid to the epoch milliseconds of its ISO UTC start time; a pid that is gone has no entry', async () => {
+    const r = rig('win32');
+    r.replies = [
+      result(
+        [
+          '10\t2026-11-14T10:20:30.1234567Z',
+          '20\t2026-01-01T00:00:00.5Z',
+          '30\t2026-01-01T00:00:01Z',
+          'MCS-START-END',
+        ].join('\r\n'),
+      ),
+    ];
+    const times = await createProcessHelpers(r.deps).processStartTimes([10, 20, 30, 40]);
+    expect(times).toEqual(
+      new Map([
+        [10, Date.UTC(2026, 10, 14, 10, 20, 30, 123)],
+        [20, Date.UTC(2026, 0, 1, 0, 0, 0, 500)],
+        [30, Date.UTC(2026, 0, 1, 0, 0, 1, 0)],
+      ]),
+    );
+  });
+
+  it('needs the end marker: a listing that did not reach it is null', async () => {
+    const r = rig('win32');
+    r.replies = [result('10\t2026-11-14T10:20:30.1234567Z\r\n')];
+    expect(await createProcessHelpers(r.deps).processStartTimes([10])).toBeNull();
+    r.replies = [result('')];
+    expect(await createProcessHelpers(r.deps).processStartTimes([10])).toBeNull();
+  });
+
+  it('is null for truncated output, a failed query, an unresolved PowerShell and an exec that throws', async () => {
+    const r = rig('win32');
+    r.replies = [result('10\t2026-11-14T10:20:30Z\r\nMCS-START-END\r\n', { truncated: true })];
+    expect(await createProcessHelpers(r.deps).processStartTimes([10])).toBeNull();
+    r.replies = [result('', { ok: false, code: null, error: 'TIMEOUT' })];
+    expect(await createProcessHelpers(r.deps).processStartTimes([10])).toBeNull();
+    const none = createProcessHelpers({ ...r.deps, resolve: () => Promise.resolve(null) });
+    expect(await none.processStartTimes([10])).toBeNull();
+    const throwing = createProcessHelpers({
+      ...r.deps,
+      exec: () => Promise.reject(new Error('boom')),
+    });
+    expect(await throwing.processStartTimes([10])).toBeNull();
+    const throwingSync = createProcessHelpers({
+      ...r.deps,
+      resolve: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(await throwingSync.processStartTimes([10])).toBeNull();
+  });
+
+  it('ignores stray, malformed and unrequested rows and everything after the marker', async () => {
+    const r = rig('win32');
+    r.replies = [
+      result(
+        [
+          'WARNING: something',
+          '10\tnot a time',
+          '10\t2026-11-14T10:20:30Z extra',
+          '99\t2026-11-14T10:20:30Z',
+          '10\t2026-11-14T10:20:30Z',
+          'MCS-START-END',
+          '20\t2026-11-14T10:20:30Z',
+        ].join('\n'),
+      ),
+    ];
+    const times = await createProcessHelpers(r.deps).processStartTimes([10, 20]);
+    expect(times).toEqual(new Map([[10, Date.UTC(2026, 10, 14, 10, 20, 30)]]));
+  });
+
+  it('never puts an invalid pid into the script, removes duplicates, and does not spawn when none is left', async () => {
+    const r = rig('win32');
+    r.replies = [result('MCS-START-END\r\n')];
+    const helpers = createProcessHelpers(r.deps);
+    expect(await helpers.processStartTimes([7, 0, -1, 1.5, Number.NaN, 7, 12345678901, 8])).toEqual(new Map());
+    expect(decodedScript(r.specs[0])).toBe(START_SCRIPT('7,8'));
+    r.specs.length = 0;
+    expect(await helpers.processStartTimes([0, -2, Number.NaN])).toEqual(new Map());
+    expect(await helpers.processStartTimes([])).toEqual(new Map());
+    expect(r.specs).toEqual([]);
+  });
+
+  it('refuses more than 256 pids without spawning (null)', async () => {
+    const r = rig('win32');
+    const helpers = createProcessHelpers(r.deps);
+    const many = Array.from({ length: 257 }, (_, index) => index + 1);
+    expect(await helpers.processStartTimes(many)).toBeNull();
+    expect(r.specs).toEqual([]);
+    r.replies = [result('MCS-START-END\r\n')];
+    expect(await helpers.processStartTimes(many.slice(0, 256))).toEqual(new Map());
+  });
+
+  it('is null without spawning off Windows', async () => {
+    for (const platform of ['linux', 'darwin', 'other'] as const) {
+      const r = rig(platform);
+      expect(await createProcessHelpers(r.deps).processStartTimes([10])).toBeNull();
+      expect(r.specs).toEqual([]);
+    }
+  });
+});
+
+describe('listDescendantPids (scripted)', () => {
+  it('runs one constant CIM script of kind powershell.processes', async () => {
+    const r = rig('win32');
+    r.replies = [result('MCS-TREE-END\r\n')];
+    await createProcessHelpers(r.deps).listDescendantPids(100);
+    expect(r.specs).toHaveLength(1);
+    expect(r.specs[0]).toMatchObject({
+      kind: 'powershell.processes',
+      file: 'C:\\ps\\powershell.exe',
+      timeoutMs: 20_000,
+      maxOutputBytes: 1_048_576,
+      encoding: 'utf8',
+    });
+    expect(decodedScript(r.specs[0])).toBe(TREE_SCRIPT);
+  });
+
+  it('computes the tree in Node: every descendant, the root excluded, ascending', async () => {
+    const r = rig('win32');
+    r.replies = [
+      result(
+        ['1\t0', '100\t1', '103\t101', '101\t100', '102\t100', '104\t103', '200\t5', '201\t200', 'MCS-TREE-END'].join(
+          '\r\n',
+        ),
+      ),
+    ];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(100)).toEqual([101, 102, 103, 104]);
+    r.replies = [result(['100\t1', '200\t100', 'MCS-TREE-END'].join('\n'))];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(999)).toEqual([]);
+  });
+
+  it('survives a parent cycle (pid reuse) without looping and without returning the root', async () => {
+    const r = rig('win32');
+    r.replies = [result(['100\t101', '101\t100', '102\t102', 'MCS-TREE-END'].join('\n'))];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(100)).toEqual([101]);
+  });
+
+  it('ignores stray and malformed rows and everything after the marker', async () => {
+    const r = rig('win32');
+    r.replies = [
+      result(['WARNING: x', '101\tabc', '0\t100', '101\t100 ', '101\t100', 'MCS-TREE-END', '102\t100'].join('\n')),
+    ];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(100)).toEqual([101]);
+  });
+
+  it('needs the end marker; truncated output, a failed query and a throwing exec give null', async () => {
+    const r = rig('win32');
+    r.replies = [result('101\t100\r\n')];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(100)).toBeNull();
+    r.replies = [result('101\t100\r\nMCS-TREE-END\r\n', { truncated: true })];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(100)).toBeNull();
+    r.replies = [result('', { ok: false, code: 1, error: 'NONZERO_EXIT' })];
+    expect(await createProcessHelpers(r.deps).listDescendantPids(100)).toBeNull();
+    const throwing = createProcessHelpers({ ...r.deps, exec: () => Promise.reject(new Error('boom')) });
+    expect(await throwing.listDescendantPids(100)).toBeNull();
+    const none = createProcessHelpers({ ...r.deps, resolve: () => Promise.resolve(null) });
+    expect(await none.listDescendantPids(100)).toBeNull();
+  });
+
+  it('is null without spawning for an invalid root and off Windows', async () => {
+    const r = rig('win32');
+    for (const pid of [0, -1, 1.5, Number.NaN, 12345678901]) {
+      expect(await createProcessHelpers(r.deps).listDescendantPids(pid)).toBeNull();
+    }
+    expect(r.specs).toEqual([]);
+    for (const platform of ['linux', 'darwin', 'other'] as const) {
+      const other = rig(platform);
+      expect(await createProcessHelpers(other.deps).listDescendantPids(100)).toBeNull();
+      expect(other.specs).toEqual([]);
+    }
+  });
+});
+
 describe('real processes', () => {
   it('pidAlive: this process is alive, an unused pid is not, junk is not', () => {
     expect(pidAlive(process.pid)).toBe(true);
@@ -435,5 +723,85 @@ describe('real processes', () => {
 
   it('waitForExit returns false for a process that stays alive', async () => {
     expect(await waitForExit(process.pid, 250, 50)).toBe(false);
+  });
+});
+
+/** A child that starts a grandchild, writes the grandchild pid to the file named by its first argument, then idles. */
+const GRANDCHILD_SCRIPT = [
+  "const { spawn } = require('node:child_process');",
+  "const { writeFileSync } = require('node:fs');",
+  "const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' });",
+  'writeFileSync(process.argv[1], String(grandchild.pid));',
+  'setInterval(() => undefined, 1000);',
+].join('\n');
+
+function readPid(file: string): number | null {
+  try {
+    const text = readFileSync(file, 'utf8');
+    return /^[0-9]+$/.test(text) ? Number(text) : null;
+  } catch {
+    return null;
+  }
+}
+
+describe.runIf(process.platform === 'win32')('real processes: tree helpers (Windows)', () => {
+  it('processStartTimes reads this process and a child; a pid that is gone has no entry', async () => {
+    const expectedStart = Date.now() - process.uptime() * 1000;
+    const child = spawnTracked(process.execPath, ['-e', 'setInterval(() => undefined, 1000)']);
+    const gone = spawnTracked(process.execPath, ['-e', '0']);
+    await gone.exited;
+    expect(await waitForExit(gone.pid, 5000)).toBe(true);
+    const before = childStats()['powershell.processes'].spawned;
+    const times = await processStartTimes([process.pid, child.pid, gone.pid]);
+    expect(childStats()['powershell.processes'].spawned).toBe(before + 1);
+    expect(times).not.toBeNull();
+    const own = times?.get(process.pid);
+    const childStart = times?.get(child.pid);
+    expect(own).toBeDefined();
+    expect(childStart).toBeDefined();
+    expect(Math.abs((own ?? 0) - expectedStart)).toBeLessThan(10_000);
+    expect(childStart ?? 0).toBeGreaterThanOrEqual((own ?? 0) - 1000);
+    expect(Math.abs((childStart ?? 0) - Date.now())).toBeLessThan(60_000);
+    expect(times?.has(gone.pid)).toBe(false);
+  }, 60_000);
+
+  it('listDescendantPids finds a grandchild and forceKillTree ends the whole tree', async () => {
+    const dir = makeTempDir('proc-tree');
+    try {
+      const marker = path.join(dir.path, 'grandchild.pid');
+      const child = spawnTracked(process.execPath, ['-e', GRANDCHILD_SCRIPT, marker]);
+      const grandchild = await waitFor(() => readPid(marker), { timeoutMs: 20_000, what: 'the grandchild pid file' });
+      expect(pidAlive(grandchild)).toBe(true);
+      const descendants = await listDescendantPids(child.pid);
+      expect(descendants).toContain(grandchild);
+      expect(descendants).not.toContain(child.pid);
+      const before = childStats().taskkill.spawned;
+      await forceKillTree(child.pid);
+      expect(childStats().taskkill.spawned).toBe(before + 1);
+      expect(await waitForExit(child.pid, 10_000)).toBe(true);
+      expect(await waitForExit(grandchild, 10_000)).toBe(true);
+      await child.exited;
+    } finally {
+      dir.remove();
+    }
+  }, 60_000);
+
+  it('forceKillTree of a pid that is already dead resolves', async () => {
+    const child = spawnTracked(process.execPath, ['-e', '0']);
+    await child.exited;
+    expect(await waitForExit(child.pid, 5000)).toBe(true);
+    await expect(forceKillTree(child.pid)).resolves.toBeUndefined();
+  }, 30_000);
+});
+
+describe('real processes: tree helpers refuse junk', () => {
+  it('forceKillTree rejects invalid pids without spawning; the other two never spawn for them', async () => {
+    const before = { ...childStats() };
+    for (const pid of [0, -1, 1.5, Number.NaN]) await expect(forceKillTree(pid)).rejects.toBeInstanceOf(RangeError);
+    expect(await processStartTimes([0, -1])).toEqual(new Map());
+    expect(await listDescendantPids(0)).toBeNull();
+    const after = childStats();
+    expect(after.taskkill.spawned).toBe(before.taskkill.spawned);
+    expect(after['powershell.processes'].spawned).toBe(before['powershell.processes'].spawned);
   });
 });

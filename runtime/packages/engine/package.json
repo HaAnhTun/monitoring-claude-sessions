@@ -9,6 +9,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./testing": {
+      "@mcs/source": "./src/terminal/testing.ts",
+      "types": "./dist/terminal/testing.d.ts",
+      "default": "./dist/terminal/testing.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
