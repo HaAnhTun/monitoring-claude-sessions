@@ -308,28 +308,23 @@ describe('T-LC-08: a start that never becomes healthy', () => {
 // ---- T-LC-13 -------------------------------------------------------------------------------------------------------------------
 
 /**
- * One constant script: no console can be attached to a process that has none (`AttachConsole` fails with
- * ERROR_INVALID_HANDLE, 6); `MainWindowHandle` is 0 for a process without a window. Only the integer pid is interpolated.
+ * One constant script, no compiled code: a console program owns a console host (`conhost.exe` or `OpenConsole.exe`) as a
+ * child process, a detached hidden server owns none; `MainWindowHandle` is 0 for a process without a window. Only the
+ * integer pid is interpolated.
  */
 function consoleProbeScript(pid: number): string {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new RangeError('consoleProbeScript: not a pid');
   return [
     "$ErrorActionPreference = 'Stop'",
-    `Add-Type -Name P -Namespace X -MemberDefinition '[DllImport("kernel32.dll", SetLastError=true)] public static extern bool FreeConsole(); [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AttachConsole(int pid); [DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();'`,
     `$proc = Get-Process -Id ${String(pid)}`,
-    '[void][X.P]::FreeConsole()',
-    `$ok = [X.P]::AttachConsole(${String(pid)})`,
-    '$err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()',
-    '$hw = [X.P]::GetConsoleWindow()',
-    '[void][X.P]::FreeConsole()',
-    "'attach=' + $ok + ';error=' + $err + ';consoleWindow=' + $hw.ToInt64() + ';mainWindow=' + [int64]$proc.MainWindowHandle",
+    `$hosts = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(pid)}" | Where-Object { $_.Name -eq 'conhost.exe' -or $_.Name -eq 'OpenConsole.exe' })`,
+    "'consoleHosts=' + $hosts.Count + ';mainWindow=' + [int64]$proc.MainWindowHandle",
   ].join(LF);
 }
 
 interface ConsoleFacts {
-  readonly attach: boolean;
-  readonly error: number;
-  readonly consoleWindow: number;
+  /** How many console host processes (`conhost.exe`, `OpenConsole.exe`) are children of the process. */
+  readonly consoleHosts: number;
   readonly mainWindow: number;
 }
 
@@ -344,7 +339,7 @@ async function consoleFacts(pid: number): Promise<ConsoleFacts> {
     maxOutputBytes: 65_536,
     encoding: 'utf8',
   });
-  const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith('attach='));
+  const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith('consoleHosts='));
   if (!result.ok || line === undefined)
     throw new Error(`the console probe failed: ${result.error ?? 'no result'} ${result.stderr}`);
   const fields = new Map<string, string>();
@@ -353,9 +348,7 @@ async function consoleFacts(pid: number): Promise<ConsoleFacts> {
     if (at > 0) fields.set(part.slice(0, at), part.slice(at + 1));
   }
   return {
-    attach: fields.get('attach') === 'True',
-    error: Number(fields.get('error')),
-    consoleWindow: Number(fields.get('consoleWindow')),
+    consoleHosts: Number(fields.get('consoleHosts')),
     mainWindow: Number(fields.get('mainWindow')),
   };
 }
@@ -395,16 +388,16 @@ describe.runIf(process.platform === 'win32')(
       const control = await visibleConsoleProgram();
       try {
         const visible = await consoleFacts(control);
-        expect(visible.attach, 'the positive control has a console: the detector must attach to it').toBe(true);
-        expect(visible.consoleWindow).toBeGreaterThan(0);
+        expect(
+          visible.consoleHosts,
+          'the positive control owns a console host: the detector must see it',
+        ).toBeGreaterThan(0);
       } finally {
         await forceKill(control);
       }
 
       const server = await consoleFacts(pid);
-      expect(server.attach, `AttachConsole to the server answered error ${String(server.error)}`).toBe(false);
-      expect(server.error).toBe(6);
-      expect(server.consoleWindow).toBe(0);
+      expect(server.consoleHosts, 'the detached server owns no console host').toBe(0);
       expect(server.mainWindow).toBe(0);
       expect((await mcs(p.sb, ['stop', '--task', SLUG])).code).toBe(0);
     }, 240_000);
