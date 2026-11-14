@@ -25,6 +25,7 @@ export * from './api/health.ts';
 export * from './api/legacy-health.ts';
 export * from './api/panels.ts';
 export * from './api/stream.ts';
+export * from './api/terminal.ts';
 export * from './api/export.ts';
 export * from './api/routes.ts';
 

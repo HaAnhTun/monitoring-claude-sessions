@@ -8,47 +8,67 @@ sent. The contract rules (versioning, ids, times, pagination, errors) are in `do
 
 ## Routes
 
-| Route id | Method | Path | Summary |
-|---|---|---|---|
-| [`legacyHealth`](#legacyhealth) | GET | `/api/health` | Legacy health body (13 keys) that the legacy CLI readers understand. |
-| [`health`](#health) | GET | `/api/v3/health` | Runtime, database, ingestion, child process and panel health of the instance. |
-| [`healthIngest`](#healthingest) | GET | `/api/v3/health/ingest` | The last ingestion health report of the ingest service. |
-| [`instance`](#instance) | GET | `/api/v3/instance` | Identity, configuration summary, poll intervals, features and limits of the instance. |
-| [`config`](#config) | GET | `/api/v3/config` | Effective configuration with the source of every value. |
-| [`errors`](#errors) | GET | `/api/v3/errors` | Recent server and ingestion errors, newest first. |
-| [`overview`](#overview) | GET | `/api/v3/overview` | Metrics with their source and rule, recent activity, recent errors and open alerts. |
-| [`listSessions`](#listsessions) | GET | `/api/v3/sessions` | Sessions, filtered, sorted and paged with a keyset cursor. |
-| [`getSession`](#getsession) | GET | `/api/v3/sessions/:sessionId` | One session with its files, reconciliations and audit references. |
-| [`sessionAgents`](#sessionagents) | GET | `/api/v3/sessions/:sessionId/agents` | The agents of one session in depth order. |
-| [`sessionTimeline`](#sessiontimeline) | GET | `/api/v3/sessions/:sessionId/timeline` | The activity events of one session (the events route with the session fixed). |
-| [`sessionToolCalls`](#sessiontoolcalls) | GET | `/api/v3/sessions/:sessionId/tool-calls` | The tool calls of one session. |
-| [`sessionTransitions`](#sessiontransitions) | GET | `/api/v3/sessions/:sessionId/transitions` | Lifecycle transitions of one session, newest first. |
-| [`sessionUsage`](#sessionusage) | GET | `/api/v3/sessions/:sessionId/usage` | Token usage of one session by agent or model. |
-| [`transcriptWindow`](#transcriptwindow) | GET | `/api/v3/sessions/:sessionId/transcript` | A window of transcript entries read from the transcript file on request. |
-| [`transcriptLocate`](#transcriptlocate) | GET | `/api/v3/sessions/:sessionId/transcript/locate` | The transcript entry at an index, a time or a byte offset. |
-| [`searchTranscript`](#searchtranscript) | GET | `/api/v3/search/transcript` | Content search inside one session transcript, with honest coverage. |
-| [`searchTranscripts`](#searchtranscripts) | GET | `/api/v3/search/transcripts` | Content search across the transcripts of the instance, with honest coverage. |
-| [`listAgents`](#listagents) | GET | `/api/v3/agents` | Agents across sessions, filtered, sorted and paged. |
-| [`listEvents`](#listevents) | GET | `/api/v3/events` | Activity events: history pages, a page around an event, or the live tail after an id. |
-| [`getEvent`](#getevent) | GET | `/api/v3/events/:eventId` | One activity event. |
-| [`listToolCalls`](#listtoolcalls) | GET | `/api/v3/tool-calls` | Tool calls across sessions, filtered, sorted and paged. |
-| [`workItemBoard`](#workitemboard) | GET | `/api/v3/work-items` | The work item board: every item (at most 500) and how it is derived. |
-| [`getWorkItem`](#getworkitem) | GET | `/api/v3/work-items/:workItemId` | One work item with its member sessions. |
-| [`analyticsUsage`](#analyticsusage) | GET | `/api/v3/analytics/usage` | Token usage grouped by model, session, project, work item, agent or not at all. |
-| [`analyticsSeries`](#analyticsseries) | GET | `/api/v3/analytics/series` | Token usage over time in hour or day buckets (empty buckets are omitted). |
-| [`analyticsTools`](#analyticstools) | GET | `/api/v3/analytics/tools` | Tool call frequency, failures and durations by tool or MCP server. |
-| [`listAlerts`](#listalerts) | GET | `/api/v3/alerts` | Alerts, open by default. |
-| [`alertRules`](#alertrules) | GET | `/api/v3/alerts/rules` | The alert rules and their configured thresholds. |
-| [`panel`](#panel) | GET | `/api/v3/panels/:key` | One panel (git, machine, attempts, ledger, chain log, logs) with the state of each source. The query `limit` (1..200, default 30) applies to attempts only (panelQueryAllowed). |
-| [`export`](#export) | GET | `/api/v3/export` | Streams the instance data as JSON lines in the format mcs.export/1. |
-| [`ingestNudge`](#ingestnudge) | POST | `/api/v3/ingest/nudge` | Tells the server that the spool has new data; the body carries no event data. |
-| [`ingestProbe`](#ingestprobe) | GET | `/api/v3/ingest/probes/:probeSessionId` | Whether a hook probe envelope has been committed (the hook verification check V7). |
-| [`stream`](#stream) | GET | `/api/v3/stream` | Server-sent events: hello, change, heartbeat and reset frames. |
-| [`listFolders`](#listfolders) | GET | `/api/v3/folders` | The project folders with their DA memory and Claude home details, and what each source said. |
-| [`addFolder`](#addfolder) | POST | `/api/v3/folders` | Adds a folder by hand to the folder list; the answer is its row. |
-| [`removeFolder`](#removefolder) | POST | `/api/v3/folders/:key/remove` | Removes a folder that was added by hand from the folder list; the folder on disk is not touched. |
-| [`sessionResume`](#sessionresume) | GET | `/api/v3/sessions/:sessionId/resume` | Whether the session can be resumed in a terminal, whether a copy can, and why not. |
-| [`explainCompletion`](#explaincompletion) | GET | `/api/v3/completion` | Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only. |
+| Route id | Method | Path | Access | Summary |
+|---|---|---|---|---|
+| [`legacyHealth`](#legacyhealth) | GET | `/api/health` | open | Legacy health body (13 keys) that the legacy CLI readers understand. |
+| [`health`](#health) | GET | `/api/v3/health` | open | Runtime, database, ingestion, child process and panel health of the instance. |
+| [`healthIngest`](#healthingest) | GET | `/api/v3/health/ingest` | open | The last ingestion health report of the ingest service. |
+| [`instance`](#instance) | GET | `/api/v3/instance` | open | Identity, configuration summary, poll intervals, features and limits of the instance. |
+| [`config`](#config) | GET | `/api/v3/config` | open | Effective configuration with the source of every value. |
+| [`errors`](#errors) | GET | `/api/v3/errors` | open | Recent server and ingestion errors, newest first. |
+| [`overview`](#overview) | GET | `/api/v3/overview` | open | Metrics with their source and rule, recent activity, recent errors and open alerts. |
+| [`listSessions`](#listsessions) | GET | `/api/v3/sessions` | open | Sessions, filtered, sorted and paged with a keyset cursor. |
+| [`getSession`](#getsession) | GET | `/api/v3/sessions/:sessionId` | open | One session with its files, reconciliations and audit references. |
+| [`sessionAgents`](#sessionagents) | GET | `/api/v3/sessions/:sessionId/agents` | open | The agents of one session in depth order. |
+| [`sessionTimeline`](#sessiontimeline) | GET | `/api/v3/sessions/:sessionId/timeline` | reader | The activity events of one session (the events route with the session fixed). |
+| [`sessionToolCalls`](#sessiontoolcalls) | GET | `/api/v3/sessions/:sessionId/tool-calls` | reader | The tool calls of one session. |
+| [`sessionTransitions`](#sessiontransitions) | GET | `/api/v3/sessions/:sessionId/transitions` | open | Lifecycle transitions of one session, newest first. |
+| [`sessionUsage`](#sessionusage) | GET | `/api/v3/sessions/:sessionId/usage` | open | Token usage of one session by agent or model. |
+| [`transcriptWindow`](#transcriptwindow) | GET | `/api/v3/sessions/:sessionId/transcript` | reader | A window of transcript entries read from the transcript file on request. |
+| [`transcriptLocate`](#transcriptlocate) | GET | `/api/v3/sessions/:sessionId/transcript/locate` | reader | The transcript entry at an index, a time or a byte offset. |
+| [`searchTranscript`](#searchtranscript) | GET | `/api/v3/search/transcript` | reader | Content search inside one session transcript, with honest coverage. |
+| [`searchTranscripts`](#searchtranscripts) | GET | `/api/v3/search/transcripts` | reader | Content search across the transcripts of the instance, with honest coverage. |
+| [`listAgents`](#listagents) | GET | `/api/v3/agents` | open | Agents across sessions, filtered, sorted and paged. |
+| [`listEvents`](#listevents) | GET | `/api/v3/events` | open | Activity events: history pages, a page around an event, or the live tail after an id. |
+| [`getEvent`](#getevent) | GET | `/api/v3/events/:eventId` | reader | One activity event. |
+| [`listToolCalls`](#listtoolcalls) | GET | `/api/v3/tool-calls` | reader | Tool calls across sessions, filtered, sorted and paged. |
+| [`workItemBoard`](#workitemboard) | GET | `/api/v3/work-items` | open | The work item board: every item (at most 500) and how it is derived. |
+| [`getWorkItem`](#getworkitem) | GET | `/api/v3/work-items/:workItemId` | open | One work item with its member sessions. |
+| [`analyticsUsage`](#analyticsusage) | GET | `/api/v3/analytics/usage` | open | Token usage grouped by model, session, project, work item, agent or not at all. |
+| [`analyticsSeries`](#analyticsseries) | GET | `/api/v3/analytics/series` | open | Token usage over time in hour or day buckets (empty buckets are omitted). |
+| [`analyticsTools`](#analyticstools) | GET | `/api/v3/analytics/tools` | open | Tool call frequency, failures and durations by tool or MCP server. |
+| [`listAlerts`](#listalerts) | GET | `/api/v3/alerts` | open | Alerts, open by default. |
+| [`alertRules`](#alertrules) | GET | `/api/v3/alerts/rules` | open | The alert rules and their configured thresholds. |
+| [`panel`](#panel) | GET | `/api/v3/panels/:key` | open | One panel (git, machine, attempts, ledger, chain log, logs) with the state of each source. The query `limit` (1..200, default 30) applies to attempts only (panelQueryAllowed). |
+| [`export`](#export) | GET | `/api/v3/export` | reader | Streams the instance data as JSON lines in the format mcs.export/1. |
+| [`ingestNudge`](#ingestnudge) | POST | `/api/v3/ingest/nudge` | open | Tells the server that the spool has new data; the body carries no event data. |
+| [`ingestProbe`](#ingestprobe) | GET | `/api/v3/ingest/probes/:probeSessionId` | open | Whether a hook probe envelope has been committed (the hook verification check V7). |
+| [`stream`](#stream) | GET | `/api/v3/stream` | open | Server-sent events: hello, change, heartbeat and reset frames. |
+| [`listFolders`](#listfolders) | GET | `/api/v3/folders` | session | The project folders with their DA memory and Claude home details, and what each source said. |
+| [`addFolder`](#addfolder) | POST | `/api/v3/folders` | session | Adds a folder by hand to the folder list; the answer is its row. |
+| [`removeFolder`](#removefolder) | POST | `/api/v3/folders/:key/remove` | session | Removes a folder that was added by hand from the folder list; the folder on disk is not touched. |
+| [`sessionResume`](#sessionresume) | GET | `/api/v3/sessions/:sessionId/resume` | session | Whether the session can be resumed in a terminal, whether a copy can, and why not. |
+| [`authSession`](#authsession) | GET | `/api/v3/auth/session` | open | Whether the request carries a valid session cookie; the page asks this before it exchanges an access code. |
+| [`authExchange`](#authexchange) | POST | `/api/v3/auth/exchange` | ticket | Redeems the one-time access code of the login link once and answers with the session cookie in Set-Cookie; the code is single use and short lived. |
+| [`authLogout`](#authlogout) | POST | `/api/v3/auth/logout` | session | Ends the session: the credential is revoked, its sockets close and the cookie is cleared. |
+| [`terminalState`](#terminalstate) | GET | `/api/v3/terminal/state` | session | What the terminal can do on this system (capabilities, with the reason when it cannot) and the live sessions; the polling fallback of the events feed. |
+| [`terminalEvents`](#terminalevents) | GET | `/api/v3/terminal/events` | session | Server-sent events: hello, the full list of live sessions after every change (latest wins) and heartbeat frames. |
+| [`terminalCreateSession`](#terminalcreatesession) | POST | `/api/v3/terminal/sessions` | session | Starts the claude command in a folder as a new terminal session; the body carries the folder only, never a command line, arguments or an environment. |
+| [`terminalKillSession`](#terminalkillsession) | POST | `/api/v3/terminal/sessions/:name/kill` | session | Kills the process of a terminal session; its viewers get the exit frame and the close code killed. |
+| [`terminalSocket`](#terminalsocket) | GET | `/api/v3/terminal/sessions/:name/socket` | session | WebSocket (subprotocol caw.terminal.v1) to one terminal: binary frames are the raw bytes in both directions, text frames are the protocol messages; a plain GET answers 426. |
+| [`terminalPickFolder`](#terminalpickfolder) | POST | `/api/v3/terminal/pick-folder` | session | Opens the folder dialog of the computer and answers the chosen folder, or null when the dialog was closed. |
+| [`terminalResume`](#terminalresume) | POST | `/api/v3/terminal/resume` | session | Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments. |
+| [`explainCompletion`](#explaincompletion) | GET | `/api/v3/completion` | open | Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only. |
+
+## Access
+
+Each route section names who may call it (`Access:`). The access and terminal routes and the folder routes exist on the user
+instance only; a task instance answers `route_not_found` for them.
+
+- `open`: any local client that passes the Host and Origin checks.
+- `reader`: a valid session cookie, or on a GET the control token as `Authorization: Bearer <token>`; served open when the instance has no access service (a task instance).
+- `ticket`: the one route that redeems the one-time access code (`authExchange`) and answers with the session cookie.
+- `session`: a valid session cookie (an HttpOnly cookie that `authExchange` sets).
 
 ## Errors every route can answer
 
@@ -61,6 +81,7 @@ sent. The contract rules (versioning, ids, times, pagination, errors) are in `do
 Legacy health body (13 keys) that the legacy CLI readers understand.
 
 - Success: 200 `application/json`
+- Access: open
 - Response: [`api/legacyHealth.response.schema.json`](../../schemas/api/legacyHealth.response.schema.json)
 - Specific errors: none
 
@@ -71,6 +92,7 @@ Legacy health body (13 keys) that the legacy CLI readers understand.
 Runtime, database, ingestion, child process and panel health of the instance.
 
 - Success: 200 `application/json`
+- Access: open
 - Response: [`api/health.response.schema.json`](../../schemas/api/health.response.schema.json)
 - Specific errors: none
 
@@ -81,6 +103,7 @@ Runtime, database, ingestion, child process and panel health of the instance.
 The last ingestion health report of the ingest service.
 
 - Success: 200 `application/json`
+- Access: open
 - Response: [`api/healthIngest.response.schema.json`](../../schemas/api/healthIngest.response.schema.json)
 - Specific errors: none
 
@@ -91,6 +114,7 @@ The last ingestion health report of the ingest service.
 Identity, configuration summary, poll intervals, features and limits of the instance.
 
 - Success: 200 `application/json`
+- Access: open
 - Response: [`api/instance.response.schema.json`](../../schemas/api/instance.response.schema.json)
 - Specific errors: none
 
@@ -101,6 +125,7 @@ Identity, configuration summary, poll intervals, features and limits of the inst
 Effective configuration with the source of every value.
 
 - Success: 200 `application/json`
+- Access: open
 - Response: [`api/config.response.schema.json`](../../schemas/api/config.response.schema.json)
 - Specific errors: none
 
@@ -111,6 +136,7 @@ Effective configuration with the source of every value.
 Recent server and ingestion errors, newest first.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `since`, `source`, `limit` ([`api/errors.query.schema.json`](../../schemas/api/errors.query.schema.json))
 - Response: [`api/errors.response.schema.json`](../../schemas/api/errors.response.schema.json)
 - Specific errors: none
@@ -122,6 +148,7 @@ Recent server and ingestion errors, newest first.
 Metrics with their source and rule, recent activity, recent errors and open alerts.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `range`, `from`, `to`, `window`, `includeUnmatched` ([`api/overview.query.schema.json`](../../schemas/api/overview.query.schema.json))
 - Response: [`api/overview.response.schema.json`](../../schemas/api/overview.response.schema.json)
 - Specific errors: `range_invalid`
@@ -133,6 +160,7 @@ Metrics with their source and rule, recent activity, recent errors and open aler
 Sessions, filtered, sorted and paged with a keyset cursor.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `q`, `state`, `presence`, `project`, `session`, `workItem`, `model`, `hasErrors`, `range`, `from`, `to`, `window`, `tokensMin`, `tokensMax`, `includeUnmatched`, `sort`, `dir`, `cursor`, `limit`, `includeTotal` ([`api/listSessions.query.schema.json`](../../schemas/api/listSessions.query.schema.json))
 - Response: [`api/listSessions.response.schema.json`](../../schemas/api/listSessions.response.schema.json)
 - Specific errors: `cursor_invalid`, `range_invalid`, `range_too_large`, `query_too_short`
@@ -144,6 +172,7 @@ Sessions, filtered, sorted and paged with a keyset cursor.
 One session with its files, reconciliations and audit references.
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `sessionId` (required) ([`api/getSession.params.schema.json`](../../schemas/api/getSession.params.schema.json))
 - Response: [`api/getSession.response.schema.json`](../../schemas/api/getSession.response.schema.json)
 - Specific errors: `session_not_found`
@@ -155,6 +184,7 @@ One session with its files, reconciliations and audit references.
 The agents of one session in depth order.
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `sessionId` (required) ([`api/sessionAgents.params.schema.json`](../../schemas/api/sessionAgents.params.schema.json))
 - Query parameters: `state`, `includeInternal`, `cursor`, `limit` ([`api/sessionAgents.query.schema.json`](../../schemas/api/sessionAgents.query.schema.json))
 - Response: [`api/sessionAgents.response.schema.json`](../../schemas/api/sessionAgents.response.schema.json)
@@ -167,6 +197,7 @@ The agents of one session in depth order.
 The activity events of one session (the events route with the session fixed).
 
 - Success: 200 `application/json`
+- Access: reader
 - Path parameters: `sessionId` (required) ([`api/sessionTimeline.params.schema.json`](../../schemas/api/sessionTimeline.params.schema.json))
 - Query parameters: `type`, `category`, `severity`, `agent`, `workItem`, `tool`, `q`, `range`, `from`, `to`, `dir`, `cursor`, `limit`, `around`, `afterId` ([`api/sessionTimeline.query.schema.json`](../../schemas/api/sessionTimeline.query.schema.json))
 - Response: [`api/sessionTimeline.response.schema.json`](../../schemas/api/sessionTimeline.response.schema.json)
@@ -179,6 +210,7 @@ The activity events of one session (the events route with the session fixed).
 The tool calls of one session.
 
 - Success: 200 `application/json`
+- Access: reader
 - Path parameters: `sessionId` (required) ([`api/sessionToolCalls.params.schema.json`](../../schemas/api/sessionToolCalls.params.schema.json))
 - Query parameters: `agent`, `tool`, `status`, `q`, `range`, `from`, `to`, `sort`, `dir`, `cursor`, `limit` ([`api/sessionToolCalls.query.schema.json`](../../schemas/api/sessionToolCalls.query.schema.json))
 - Response: [`api/sessionToolCalls.response.schema.json`](../../schemas/api/sessionToolCalls.response.schema.json)
@@ -191,6 +223,7 @@ The tool calls of one session.
 Lifecycle transitions of one session, newest first.
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `sessionId` (required) ([`api/sessionTransitions.params.schema.json`](../../schemas/api/sessionTransitions.params.schema.json))
 - Query parameters: `agent`, `cursor`, `limit` ([`api/sessionTransitions.query.schema.json`](../../schemas/api/sessionTransitions.query.schema.json))
 - Response: [`api/sessionTransitions.response.schema.json`](../../schemas/api/sessionTransitions.response.schema.json)
@@ -203,6 +236,7 @@ Lifecycle transitions of one session, newest first.
 Token usage of one session by agent or model.
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `sessionId` (required) ([`api/sessionUsage.params.schema.json`](../../schemas/api/sessionUsage.params.schema.json))
 - Query parameters: `groupBy`, `includeCost` ([`api/sessionUsage.query.schema.json`](../../schemas/api/sessionUsage.query.schema.json))
 - Response: [`api/sessionUsage.response.schema.json`](../../schemas/api/sessionUsage.response.schema.json)
@@ -215,6 +249,7 @@ Token usage of one session by agent or model.
 A window of transcript entries read from the transcript file on request.
 
 - Success: 200 `application/json`
+- Access: reader
 - Path parameters: `sessionId` (required) ([`api/transcriptWindow.params.schema.json`](../../schemas/api/transcriptWindow.params.schema.json))
 - Query parameters: `agent`, `after`, `before`, `limit`, `textChars`, `thinking` ([`api/transcriptWindow.query.schema.json`](../../schemas/api/transcriptWindow.query.schema.json))
 - Response: [`api/transcriptWindow.response.schema.json`](../../schemas/api/transcriptWindow.response.schema.json)
@@ -227,6 +262,7 @@ A window of transcript entries read from the transcript file on request.
 The transcript entry at an index, a time or a byte offset.
 
 - Success: 200 `application/json`
+- Access: reader
 - Path parameters: `sessionId` (required) ([`api/transcriptLocate.params.schema.json`](../../schemas/api/transcriptLocate.params.schema.json))
 - Query parameters: `agent`, `i`, `ts`, `offset` ([`api/transcriptLocate.query.schema.json`](../../schemas/api/transcriptLocate.query.schema.json))
 - Response: [`api/transcriptLocate.response.schema.json`](../../schemas/api/transcriptLocate.response.schema.json)
@@ -239,6 +275,7 @@ The transcript entry at an index, a time or a byte offset.
 Content search inside one session transcript, with honest coverage.
 
 - Success: 200 `application/json`
+- Access: reader
 - Query parameters: `session` (required), `agent`, `q`, `kinds`, `tool`, `errors`, `limit`, `budgetMs` ([`api/searchTranscript.query.schema.json`](../../schemas/api/searchTranscript.query.schema.json))
 - Response: [`api/searchTranscript.response.schema.json`](../../schemas/api/searchTranscript.response.schema.json)
 - Specific errors: `session_not_found`, `search_busy`, `transcript_gone`
@@ -250,6 +287,7 @@ Content search inside one session transcript, with honest coverage.
 Content search across the transcripts of the instance, with honest coverage.
 
 - Success: 200 `application/json`
+- Access: reader
 - Query parameters: `q` (required), `session`, `project`, `workItem`, `range`, `from`, `to`, `window`, `kinds`, `limit`, `budgetMs`, `continue` ([`api/searchTranscripts.query.schema.json`](../../schemas/api/searchTranscripts.query.schema.json))
 - Response: [`api/searchTranscripts.response.schema.json`](../../schemas/api/searchTranscripts.response.schema.json)
 - Specific errors: `search_busy`, `cursor_invalid`, `query_too_short`
@@ -261,6 +299,7 @@ Content search across the transcripts of the instance, with honest coverage.
 Agents across sessions, filtered, sorted and paged.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `state`, `kind`, `q`, `session`, `project`, `hasErrors`, `includeInternal`, `range`, `from`, `to`, `window`, `includeUnmatched`, `sort`, `dir`, `cursor`, `limit` ([`api/listAgents.query.schema.json`](../../schemas/api/listAgents.query.schema.json))
 - Response: [`api/listAgents.response.schema.json`](../../schemas/api/listAgents.response.schema.json)
 - Specific errors: `query_too_short`
@@ -272,6 +311,7 @@ Agents across sessions, filtered, sorted and paged.
 Activity events: history pages, a page around an event, or the live tail after an id.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `session`, `project`, `type`, `category`, `severity`, `agent`, `workItem`, `tool`, `q`, `range`, `from`, `to`, `dir`, `cursor`, `limit`, `around`, `afterId` ([`api/listEvents.query.schema.json`](../../schemas/api/listEvents.query.schema.json))
 - Response: [`api/listEvents.response.schema.json`](../../schemas/api/listEvents.response.schema.json)
 - Specific errors: `filter_requires_scope`, `event_not_found`, `query_too_short`
@@ -283,6 +323,7 @@ Activity events: history pages, a page around an event, or the live tail after a
 One activity event.
 
 - Success: 200 `application/json`
+- Access: reader
 - Path parameters: `eventId` (required) ([`api/getEvent.params.schema.json`](../../schemas/api/getEvent.params.schema.json))
 - Response: [`api/getEvent.response.schema.json`](../../schemas/api/getEvent.response.schema.json)
 - Specific errors: `event_not_found`
@@ -294,6 +335,7 @@ One activity event.
 Tool calls across sessions, filtered, sorted and paged.
 
 - Success: 200 `application/json`
+- Access: reader
 - Query parameters: `session`, `agent`, `project`, `tool`, `status`, `q`, `range`, `from`, `to`, `sort`, `dir`, `cursor`, `limit` ([`api/listToolCalls.query.schema.json`](../../schemas/api/listToolCalls.query.schema.json))
 - Response: [`api/listToolCalls.response.schema.json`](../../schemas/api/listToolCalls.response.schema.json)
 - Specific errors: `filter_requires_scope`, `query_too_short`
@@ -305,6 +347,7 @@ Tool calls across sessions, filtered, sorted and paged.
 The work item board: every item (at most 500) and how it is derived.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `state`, `q` ([`api/workItemBoard.query.schema.json`](../../schemas/api/workItemBoard.query.schema.json))
 - Response: [`api/workItemBoard.response.schema.json`](../../schemas/api/workItemBoard.response.schema.json)
 - Specific errors: `query_too_short`
@@ -316,6 +359,7 @@ The work item board: every item (at most 500) and how it is derived.
 One work item with its member sessions.
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `workItemId` (required) ([`api/getWorkItem.params.schema.json`](../../schemas/api/getWorkItem.params.schema.json))
 - Response: [`api/getWorkItem.response.schema.json`](../../schemas/api/getWorkItem.response.schema.json)
 - Specific errors: `work_item_not_found`
@@ -327,6 +371,7 @@ One work item with its member sessions.
 Token usage grouped by model, session, project, work item, agent or not at all.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `groupBy`, `session`, `project`, `workItem`, `model`, `range`, `from`, `to`, `window`, `limit`, `includeCost` ([`api/analyticsUsage.query.schema.json`](../../schemas/api/analyticsUsage.query.schema.json))
 - Response: [`api/analyticsUsage.response.schema.json`](../../schemas/api/analyticsUsage.response.schema.json)
 - Specific errors: `range_too_large`
@@ -338,6 +383,7 @@ Token usage grouped by model, session, project, work item, agent or not at all.
 Token usage over time in hour or day buckets (empty buckets are omitted).
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `bucket`, `tzOffsetMinutes`, `groupBy`, `session`, `project`, `workItem`, `model`, `range`, `from`, `to` ([`api/analyticsSeries.query.schema.json`](../../schemas/api/analyticsSeries.query.schema.json))
 - Response: [`api/analyticsSeries.response.schema.json`](../../schemas/api/analyticsSeries.response.schema.json)
 - Specific errors: `range_too_large`
@@ -349,6 +395,7 @@ Token usage over time in hour or day buckets (empty buckets are omitted).
 Tool call frequency, failures and durations by tool or MCP server.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `groupBy`, `session`, `agent`, `project`, `tool`, `range`, `from`, `to`, `limit` ([`api/analyticsTools.query.schema.json`](../../schemas/api/analyticsTools.query.schema.json))
 - Response: [`api/analyticsTools.response.schema.json`](../../schemas/api/analyticsTools.response.schema.json)
 - Specific errors: none
@@ -360,6 +407,7 @@ Tool call frequency, failures and durations by tool or MCP server.
 Alerts, open by default.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `status`, `severity`, `rule`, `session`, `cursor`, `limit` ([`api/listAlerts.query.schema.json`](../../schemas/api/listAlerts.query.schema.json))
 - Response: [`api/listAlerts.response.schema.json`](../../schemas/api/listAlerts.response.schema.json)
 - Specific errors: none
@@ -371,6 +419,7 @@ Alerts, open by default.
 The alert rules and their configured thresholds.
 
 - Success: 200 `application/json`
+- Access: open
 - Response: [`api/alertRules.response.schema.json`](../../schemas/api/alertRules.response.schema.json)
 - Specific errors: none
 
@@ -381,6 +430,7 @@ The alert rules and their configured thresholds.
 One panel (git, machine, attempts, ledger, chain log, logs) with the state of each source. The query `limit` (1..200, default 30) applies to attempts only (panelQueryAllowed).
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `key` (required) ([`api/panel.params.schema.json`](../../schemas/api/panel.params.schema.json))
 - Query parameters: `limit` ([`api/panel.query.schema.json`](../../schemas/api/panel.query.schema.json))
 - Response: [`api/panel.response.schema.json`](../../schemas/api/panel.response.schema.json)
@@ -393,6 +443,7 @@ One panel (git, machine, attempts, ledger, chain log, logs) with the state of ea
 Streams the instance data as JSON lines in the format mcs.export/1.
 
 - Success: 200 `application/x-ndjson`
+- Access: reader
 - Query parameters: `session`, `workItem`, `range`, `from`, `to`, `include`, `redaction`, `includeContent` ([`api/export.query.schema.json`](../../schemas/api/export.query.schema.json))
 - Specific errors: `range_invalid`, `export_busy`
 
@@ -403,6 +454,7 @@ Streams the instance data as JSON lines in the format mcs.export/1.
 Tells the server that the spool has new data; the body carries no event data.
 
 - Success: 204
+- Access: open
 - Body: `instanceId` (required) ([`api/ingestNudge.body.schema.json`](../../schemas/api/ingestNudge.body.schema.json))
 - Specific errors: `instance_mismatch`, `payload_too_large`, `unsupported_media_type`, `body_invalid_json`
 
@@ -413,6 +465,7 @@ Tells the server that the spool has new data; the body carries no event data.
 Whether a hook probe envelope has been committed (the hook verification check V7).
 
 - Success: 200 `application/json`
+- Access: open
 - Path parameters: `probeSessionId` (required) ([`api/ingestProbe.params.schema.json`](../../schemas/api/ingestProbe.params.schema.json))
 - Response: [`api/ingestProbe.response.schema.json`](../../schemas/api/ingestProbe.response.schema.json)
 - Specific errors: `probe_not_found`
@@ -424,6 +477,7 @@ Whether a hook probe envelope has been committed (the hook verification check V7
 Server-sent events: hello, change, heartbeat and reset frames.
 
 - Success: 200 `text/event-stream`
+- Access: open
 - Query parameters: `since`, `epoch` ([`api/stream.query.schema.json`](../../schemas/api/stream.query.schema.json))
 - Specific errors: `stream_limit`
 
@@ -434,6 +488,7 @@ Server-sent events: hello, change, heartbeat and reset frames.
 The project folders with their DA memory and Claude home details, and what each source said.
 
 - Success: 200 `application/json`
+- Access: session
 - Response: [`api/listFolders.response.schema.json`](../../schemas/api/listFolders.response.schema.json)
 - Specific errors: none
 
@@ -444,6 +499,7 @@ The project folders with their DA memory and Claude home details, and what each 
 Adds a folder by hand to the folder list; the answer is its row.
 
 - Success: 200 `application/json`
+- Access: session
 - Body: `path` (required) ([`api/addFolder.body.schema.json`](../../schemas/api/addFolder.body.schema.json))
 - Response: [`api/addFolder.response.schema.json`](../../schemas/api/addFolder.response.schema.json)
 - Specific errors: `folder_invalid`, `folder_limit`
@@ -455,6 +511,7 @@ Adds a folder by hand to the folder list; the answer is its row.
 Removes a folder that was added by hand from the folder list; the folder on disk is not touched.
 
 - Success: 204
+- Access: session
 - Path parameters: `key` (required) ([`api/removeFolder.params.schema.json`](../../schemas/api/removeFolder.params.schema.json))
 - Body ([`api/removeFolder.body.schema.json`](../../schemas/api/removeFolder.body.schema.json))
 - Specific errors: `folder_not_found`
@@ -466,9 +523,126 @@ Removes a folder that was added by hand from the folder list; the folder on disk
 Whether the session can be resumed in a terminal, whether a copy can, and why not.
 
 - Success: 200 `application/json`
+- Access: session
 - Path parameters: `sessionId` (required) ([`api/sessionResume.params.schema.json`](../../schemas/api/sessionResume.params.schema.json))
 - Response: [`api/sessionResume.response.schema.json`](../../schemas/api/sessionResume.response.schema.json)
 - Specific errors: `session_not_found`
+
+## authSession
+
+`GET /api/v3/auth/session`
+
+Whether the request carries a valid session cookie; the page asks this before it exchanges an access code.
+
+- Success: 200 `application/json`
+- Access: open
+- Response: [`api/authSession.response.schema.json`](../../schemas/api/authSession.response.schema.json)
+- Specific errors: none
+
+## authExchange
+
+`POST /api/v3/auth/exchange`
+
+Redeems the one-time access code of the login link once and answers with the session cookie in Set-Cookie; the code is single use and short lived.
+
+- Success: 200 `application/json`
+- Access: ticket
+- Body: `code` (required) ([`api/authExchange.body.schema.json`](../../schemas/api/authExchange.body.schema.json))
+- Response: [`api/authExchange.response.schema.json`](../../schemas/api/authExchange.response.schema.json)
+- Specific errors: `access_code_invalid`, `access_rate_limited`
+
+## authLogout
+
+`POST /api/v3/auth/logout`
+
+Ends the session: the credential is revoked, its sockets close and the cookie is cleared.
+
+- Success: 200 `application/json`
+- Access: session
+- Body ([`api/authLogout.body.schema.json`](../../schemas/api/authLogout.body.schema.json))
+- Response: [`api/authLogout.response.schema.json`](../../schemas/api/authLogout.response.schema.json)
+- Specific errors: none
+
+## terminalState
+
+`GET /api/v3/terminal/state`
+
+What the terminal can do on this system (capabilities, with the reason when it cannot) and the live sessions; the polling fallback of the events feed.
+
+- Success: 200 `application/json`
+- Access: session
+- Response: [`api/terminalState.response.schema.json`](../../schemas/api/terminalState.response.schema.json)
+- Specific errors: none
+
+## terminalEvents
+
+`GET /api/v3/terminal/events`
+
+Server-sent events: hello, the full list of live sessions after every change (latest wins) and heartbeat frames.
+
+- Success: 200 `text/event-stream`
+- Access: session
+- Specific errors: `stream_limit`
+
+## terminalCreateSession
+
+`POST /api/v3/terminal/sessions`
+
+Starts the claude command in a folder as a new terminal session; the body carries the folder only, never a command line, arguments or an environment.
+
+- Success: 200 `application/json`
+- Access: session
+- Body: `path` (required) ([`api/terminalCreateSession.body.schema.json`](../../schemas/api/terminalCreateSession.body.schema.json))
+- Response: [`api/terminalCreateSession.response.schema.json`](../../schemas/api/terminalCreateSession.response.schema.json)
+- Specific errors: `folder_invalid`, `claude_not_found`, `terminal_unavailable`, `terminal_limit`
+
+## terminalKillSession
+
+`POST /api/v3/terminal/sessions/:name/kill`
+
+Kills the process of a terminal session; its viewers get the exit frame and the close code killed.
+
+- Success: 200 `application/json`
+- Access: session
+- Path parameters: `name` (required) ([`api/terminalKillSession.params.schema.json`](../../schemas/api/terminalKillSession.params.schema.json))
+- Body ([`api/terminalKillSession.body.schema.json`](../../schemas/api/terminalKillSession.body.schema.json))
+- Response: [`api/terminalKillSession.response.schema.json`](../../schemas/api/terminalKillSession.response.schema.json)
+- Specific errors: `terminal_not_found`
+
+## terminalSocket
+
+`GET /api/v3/terminal/sessions/:name/socket`
+
+WebSocket (subprotocol caw.terminal.v1) to one terminal: binary frames are the raw bytes in both directions, text frames are the protocol messages; a plain GET answers 426.
+
+- Success: 101 `websocket`
+- Access: session
+- Path parameters: `name` (required) ([`api/terminalSocket.params.schema.json`](../../schemas/api/terminalSocket.params.schema.json))
+- Specific errors: `terminal_not_found`, `upgrade_required`, `stream_limit`, `terminal_unavailable`
+
+## terminalPickFolder
+
+`POST /api/v3/terminal/pick-folder`
+
+Opens the folder dialog of the computer and answers the chosen folder, or null when the dialog was closed.
+
+- Success: 200 `application/json`
+- Access: session
+- Body ([`api/terminalPickFolder.body.schema.json`](../../schemas/api/terminalPickFolder.body.schema.json))
+- Response: [`api/terminalPickFolder.response.schema.json`](../../schemas/api/terminalPickFolder.response.schema.json)
+- Specific errors: `picker_busy`, `terminal_unavailable`
+
+## terminalResume
+
+`POST /api/v3/terminal/resume`
+
+Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments.
+
+- Success: 200 `application/json`
+- Access: session
+- Body: `sessionId` (required), `fork` ([`api/terminalResume.body.schema.json`](../../schemas/api/terminalResume.body.schema.json))
+- Response: [`api/terminalResume.response.schema.json`](../../schemas/api/terminalResume.response.schema.json)
+- Specific errors: `session_not_found`, `resume_unavailable`, `folder_invalid`, `claude_not_found`, `terminal_unavailable`, `terminal_limit`
 
 ## explainCompletion
 
@@ -477,6 +651,7 @@ Whether the session can be resumed in a terminal, whether a copy can, and why no
 Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only.
 
 - Success: 200 `application/json`
+- Access: open
 - Query parameters: `session`, `label`, `attemptPart` ([`api/explainCompletion.query.schema.json`](../../schemas/api/explainCompletion.query.schema.json))
 - Response: [`api/explainCompletion.response.schema.json`](../../schemas/api/explainCompletion.response.schema.json)
 - Specific errors: `completion_target_not_found`
@@ -484,6 +659,29 @@ Whether an unattended run really finished: the outcome (completed, failed or not
 ## Stream
 
 Event names: `hello`, `change`, `heartbeat`, `reset`. Schemas: [`api/stream.schema.json`](../../schemas/api/stream.schema.json).
+
+## Terminal socket
+
+`GET /api/v3/terminal/sessions/:name/socket` (`terminalSocket`) upgrades to a WebSocket with the subprotocol `caw.terminal.v1`; a plain GET answers `426 upgrade_required`.
+
+- Binary frames carry the terminal bytes in both directions, unchanged; one message from the client is at most 262144 bytes.
+- Text frames are protocol messages, at most 256 bytes from the client: the client sends `resize`; the server sends `ready` (before any byte), `live`, `size` and `exit`. Schemas: [`api/terminal-socket.schema.json`](../../schemas/api/terminal-socket.schema.json).
+- A size is clamped to 20..500 columns and 5..200 rows (the default is 120 x 30).
+- Close codes (a client tells them apart by number):
+  - `1000` normal
+  - `1001` shuttingDown
+  - `1002` protocolError
+  - `1008` badMessage
+  - `1009` tooBig
+  - `1011` internalError
+  - `1013` slowConsumer
+  - `4000` exited
+  - `4001` killed
+  - `4003` signedOut
+
+## Terminal events
+
+`GET /api/v3/terminal/events` (`terminalEvents`) is a server-sent event stream. Event names: `hello`, `sessions`, `heartbeat`; `sessions` carries the full list of live sessions and a client keeps the newest `version`. Schemas: [`api/terminal-events.schema.json`](../../schemas/api/terminal-events.schema.json).
 
 ## Export lines
 

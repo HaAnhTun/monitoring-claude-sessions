@@ -2,6 +2,7 @@
 // the Zod schemas of the built `@mcs/shared` and writes
 //   <skill>/schemas/{config,runtime,instance,state,backup-manifest,cli-envelope,diagnostics}.v1.schema.json   (01 2.9)
 //   <skill>/schemas/api/<routeId>.{params,query,body,response}.schema.json and schemas/api/stream.schema.json (03 13)
+//   <skill>/schemas/api/terminal-socket.schema.json and terminal-events.schema.json                            (CAW 02 2.4)
 //   <skill>/schemas/export/<type>.schema.json                                                                 (03 11.1)
 //   <skill>/docs/api/reference.md                                                                             (03 13)
 // Usage:  node scripts/gen-schemas.mjs [--check] [--no-pending] [--root <skill folder>]
@@ -99,6 +100,13 @@ function isSchema(value) {
   return typeof value === 'object' && value !== null && typeof value.safeParse === 'function';
 }
 
+/** A schema as a `$defs` entry: its JSON Schema without the `$schema` key (the document that holds it carries one). */
+function definition(schema, io) {
+  const json = { ...z.toJSONSchema(schema, { target: DRAFT, io }) };
+  delete json.$schema;
+  return json;
+}
+
 /** The parameters of an input schema as `[name, required]`, read from its JSON Schema. */
 function parameterList(json) {
   const properties =
@@ -159,9 +167,7 @@ export function generateAll(shared) {
   if (typeof eventSchemas === 'object' && eventSchemas !== null) {
     const defs = {};
     for (const [name, schema] of Object.entries(eventSchemas)) {
-      const inner = { ...z.toJSONSchema(schema, { target: DRAFT, io: 'output' }) };
-      delete inner.$schema;
-      defs[name] = inner;
+      defs[name] = definition(schema, 'output');
       streamEvents.push(name);
     }
     const stream = {
@@ -177,6 +183,57 @@ export function generateAll(shared) {
     files.set('schemas/api/stream.schema.json', text(stream));
   } else {
     pending.push('schemas/api/stream.schema.json (StreamEventSchemas is not exported by @mcs/shared yet)');
+  }
+
+  // ---- the terminal socket (the text frames of protocol v1, both directions) and the terminal event feed
+  let socketDoc = null;
+  const terminalEvents = [];
+  if (isSchema(shared.TerminalClientMessageSchema) && isSchema(shared.TerminalServerMessageSchema)) {
+    const socket = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: `${SCHEMA_ID_PREFIX}api/terminal-socket.schema.json`,
+      $comment: GENERATED_MARKER,
+      title: 'GET /api/v3/terminal/sessions/:name/socket text frames',
+      description: `The text frames of the terminal socket (subprotocol ${shared.TERMINAL_SUBPROTOCOL}): client is what the browser sends (resize), server is what the server sends (ready, live, size, exit). Binary frames carry the terminal bytes and have no schema (docs/api/reference.md, "Terminal socket").`,
+      oneOf: [{ $ref: '#/$defs/client' }, { $ref: '#/$defs/server' }],
+      $defs: {
+        client: definition(shared.TerminalClientMessageSchema, 'input'),
+        server: definition(shared.TerminalServerMessageSchema, 'output'),
+      },
+    };
+    files.set('schemas/api/terminal-socket.schema.json', text(socket));
+    socketDoc = {
+      subprotocol: shared.TERMINAL_SUBPROTOCOL,
+      closeCodes: shared.TERMINAL_CLOSE_CODES,
+      inputMaxBytes: shared.TERMINAL_INPUT_MAX_BYTES,
+      textFrameMaxBytes: shared.TERMINAL_TEXT_FRAME_MAX_BYTES,
+      sizeLimits: shared.TERMINAL_SIZE_LIMITS,
+    };
+  } else {
+    pending.push(
+      'schemas/api/terminal-socket.schema.json (TerminalClientMessageSchema or TerminalServerMessageSchema is not exported by @mcs/shared yet)',
+    );
+  }
+  const terminalEventSchemas = shared.TerminalEventSchemas;
+  if (typeof terminalEventSchemas === 'object' && terminalEventSchemas !== null) {
+    const defs = {};
+    for (const [name, schema] of Object.entries(terminalEventSchemas)) defs[name] = definition(schema, 'output');
+    terminalEvents.push(...Object.keys(defs));
+    files.set(
+      'schemas/api/terminal-events.schema.json',
+      text({
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        $id: `${SCHEMA_ID_PREFIX}api/terminal-events.schema.json`,
+        $comment: GENERATED_MARKER,
+        title: 'GET /api/v3/terminal/events events',
+        description:
+          'The data of each server-sent event name of the terminal feed: hello, sessions (the full list of live sessions, latest wins) and heartbeat.',
+        oneOf: terminalEvents.map((name) => ({ $ref: `#/$defs/${name}` })),
+        $defs: defs,
+      }),
+    );
+  } else {
+    pending.push('schemas/api/terminal-events.schema.json (TerminalEventSchemas is not exported by @mcs/shared yet)');
   }
 
   // ---- the export format: one file per line type
@@ -203,7 +260,10 @@ export function generateAll(shared) {
     pending.push('schemas/export/*.schema.json (ExportLineSchemas is not exported by @mcs/shared yet)');
   }
 
-  files.set(REFERENCE_FILE, referenceMarkdown(routeDocs, shared.COMMON_ERROR_CODES ?? [], streamEvents, exportTypes));
+  files.set(
+    REFERENCE_FILE,
+    referenceMarkdown(routeDocs, shared.COMMON_ERROR_CODES ?? [], streamEvents, exportTypes, socketDoc, terminalEvents),
+  );
   return { files, pending };
 }
 
@@ -212,7 +272,21 @@ export function generateAll(shared) {
 /** Keeps a table cell on one line. */
 const cell = (value) => String(value).replaceAll('|', '/').replaceAll(/\s+/g, ' ');
 
-function referenceMarkdown(routeDocs, commonErrors, streamEvents, exportTypes) {
+/** Who may call a route, in the words of the `Access` section of the reference (the values of `RouteAccess`). */
+const ACCESS_LEGEND = [
+  ['open', 'any local client that passes the Host and Origin checks.'],
+  [
+    'reader',
+    'a valid session cookie, or on a GET the control token as `Authorization: Bearer <token>`; served open when the instance has no access service (a task instance).',
+  ],
+  [
+    'ticket',
+    'the one route that redeems the one-time access code (`authExchange`) and answers with the session cookie.',
+  ],
+  ['session', 'a valid session cookie (an HttpOnly cookie that `authExchange` sets).'],
+];
+
+function referenceMarkdown(routeDocs, commonErrors, streamEvents, exportTypes, socketDoc, terminalEvents) {
   const link = (file) => `[\`${file}\`](../../schemas/${file})`;
   const lines = [
     '<!-- Generated by runtime/scripts/gen-schemas.mjs (npm run schemas); generated; do not edit. -->',
@@ -225,12 +299,19 @@ function referenceMarkdown(routeDocs, commonErrors, streamEvents, exportTypes) {
     '',
     '## Routes',
     '',
-    '| Route id | Method | Path | Summary |',
-    '|---|---|---|---|',
+    '| Route id | Method | Path | Access | Summary |',
+    '|---|---|---|---|---|',
     ...routeDocs.map(
       ({ route }) =>
-        `| [\`${route.id}\`](#${route.id.toLowerCase()}) | ${route.method} | \`${route.path}\` | ${cell(route.summary)} |`,
+        `| [\`${route.id}\`](#${route.id.toLowerCase()}) | ${route.method} | \`${route.path}\` | ${route.access} | ${cell(route.summary)} |`,
     ),
+    '',
+    '## Access',
+    '',
+    'Each route section names who may call it (`Access:`). The access and terminal routes and the folder routes exist on the user',
+    'instance only; a task instance answers `route_not_found` for them.',
+    '',
+    ...ACCESS_LEGEND.map(([value, meaning]) => `- \`${value}\`: ${meaning}`),
     '',
     '## Errors every route can answer',
     '',
@@ -240,6 +321,7 @@ function referenceMarkdown(routeDocs, commonErrors, streamEvents, exportTypes) {
   for (const { route, parts } of routeDocs) {
     lines.push(`## ${route.id}`, '', `\`${route.method} ${route.path}\``, '', route.summary, '');
     lines.push(`- Success: ${route.successStatus}${route.contentType === null ? '' : ` \`${route.contentType}\``}`);
+    lines.push(`- Access: ${route.access}`);
     for (const [part, label] of [
       ['params', 'Path parameters'],
       ['query', 'Query parameters'],
@@ -265,6 +347,28 @@ function referenceMarkdown(routeDocs, commonErrors, streamEvents, exportTypes) {
     streamEvents.length === 0
       ? 'Not generated yet.'
       : `Event names: ${streamEvents.map((name) => `\`${name}\``).join(', ')}. Schemas: ${link('api/stream.schema.json')}.`,
+    '',
+  );
+  lines.push('## Terminal socket', '');
+  if (socketDoc === null) lines.push('Not generated yet.', '');
+  else {
+    const { subprotocol, closeCodes, inputMaxBytes, textFrameMaxBytes, sizeLimits } = socketDoc;
+    lines.push(
+      `\`GET /api/v3/terminal/sessions/:name/socket\` (\`terminalSocket\`) upgrades to a WebSocket with the subprotocol \`${subprotocol}\`; a plain GET answers \`426 upgrade_required\`.`,
+      '',
+      `- Binary frames carry the terminal bytes in both directions, unchanged; one message from the client is at most ${inputMaxBytes} bytes.`,
+      `- Text frames are protocol messages, at most ${textFrameMaxBytes} bytes from the client: the client sends \`resize\`; the server sends \`ready\` (before any byte), \`live\`, \`size\` and \`exit\`. Schemas: ${link('api/terminal-socket.schema.json')}.`,
+      `- A size is clamped to ${sizeLimits.minCols}..${sizeLimits.maxCols} columns and ${sizeLimits.minRows}..${sizeLimits.maxRows} rows (the default is ${sizeLimits.defaultCols} x ${sizeLimits.defaultRows}).`,
+      '- Close codes (a client tells them apart by number):',
+      ...Object.entries(closeCodes).map(([name, code]) => `  - \`${code}\` ${name}`),
+      '',
+    );
+  }
+  lines.push('## Terminal events', '');
+  lines.push(
+    terminalEvents.length === 0
+      ? 'Not generated yet.'
+      : `\`GET /api/v3/terminal/events\` (\`terminalEvents\`) is a server-sent event stream. Event names: ${terminalEvents.map((name) => `\`${name}\``).join(', ')}; \`sessions\` carries the full list of live sessions and a client keeps the newest \`version\`. Schemas: ${link('api/terminal-events.schema.json')}.`,
     '',
     '## Export lines',
     '',

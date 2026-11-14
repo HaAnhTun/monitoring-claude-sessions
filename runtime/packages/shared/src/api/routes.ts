@@ -61,6 +61,21 @@ import { ErrorItemSchema, HealthReportSchema, HookProbeResultSchema, InstanceInf
 import { CountSchema, ProbeSessionIdSchema, ProjectIdSchema, SessionIdSchema, intString } from './ids.ts';
 import { LegacyHealthSchema } from './legacy-health.ts';
 import { PanelKeySchema, PanelResponseSchema } from './panels.ts';
+import {
+  AuthSessionResponseSchema,
+  CreateSessionBodySchema,
+  CreateSessionResponseSchema,
+  EmptyBodySchema,
+  ExchangeBodySchema,
+  ExchangeResponseSchema,
+  KillSessionResponseSchema,
+  LogoutResponseSchema,
+  PickFolderResponseSchema,
+  ResumeBodySchema,
+  ResumeResponseSchema,
+  TerminalNameParamsSchema,
+  TerminalStateSchema,
+} from './terminal.ts';
 
 // ---- definition ----------------------------------------------------------------------------------------------------
 
@@ -213,9 +228,6 @@ export function routeErrors(
 // ---- parameter and response schemas that belong to no entity -------------------------------------------------------
 
 const SessionPath = z.strictObject({ sessionId: SessionIdSchema });
-
-/** The body of a POST that carries no data: `{}` and nothing else (an extra key is refused). */
-const NoBodySchema = z.strictObject({});
 
 /** `GET /work-items`: every item (cap 500) and the text that explains how the board is derived (02 7.11). */
 export const WorkItemBoardSchema = z.strictObject({
@@ -729,7 +741,7 @@ export const routes = {
     path: '/api/v3/folders/:key/remove',
     params: z.strictObject({ key: ProjectIdSchema }),
     query: null,
-    body: NoBodySchema,
+    body: EmptyBodySchema,
     response: null,
     successStatus: 204,
     errors: ['folder_not_found'],
@@ -751,6 +763,165 @@ export const routes = {
     contentType: 'application/json',
     access: 'session',
   }),
+  // @wp-begin CAW-09
+  // the access and terminal routes (CAW-09, design 02 2.1): mounted on the user instance only; every write is a POST and
+  // answers 200 (no DELETE, no 201); the socket is a registry route like the others and answers 426 to a plain GET
+  authSession: defineRoute({
+    id: 'authSession',
+    method: 'GET',
+    path: '/api/v3/auth/session',
+    params: null,
+    query: null,
+    body: null,
+    response: AuthSessionResponseSchema,
+    successStatus: 200,
+    errors: [],
+    summary:
+      'Whether the request carries a valid session cookie; the page asks this before it exchanges an access code.',
+    contentType: 'application/json',
+    access: 'open',
+  }),
+  authExchange: defineRoute({
+    id: 'authExchange',
+    method: 'POST',
+    path: '/api/v3/auth/exchange',
+    params: null,
+    query: null,
+    body: ExchangeBodySchema,
+    response: ExchangeResponseSchema,
+    successStatus: 200,
+    errors: ['access_code_invalid', 'access_rate_limited'],
+    summary:
+      'Redeems the one-time access code of the login link once and answers with the session cookie in Set-Cookie; the code is single use and short lived.',
+    contentType: 'application/json',
+    access: 'ticket',
+  }),
+  authLogout: defineRoute({
+    id: 'authLogout',
+    method: 'POST',
+    path: '/api/v3/auth/logout',
+    params: null,
+    query: null,
+    body: EmptyBodySchema,
+    response: LogoutResponseSchema,
+    successStatus: 200,
+    errors: [],
+    summary: 'Ends the session: the credential is revoked, its sockets close and the cookie is cleared.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  terminalState: defineRoute({
+    id: 'terminalState',
+    method: 'GET',
+    path: '/api/v3/terminal/state',
+    params: null,
+    query: null,
+    body: null,
+    response: TerminalStateSchema,
+    successStatus: 200,
+    errors: [],
+    summary:
+      'What the terminal can do on this system (capabilities, with the reason when it cannot) and the live sessions; the polling fallback of the events feed.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  terminalEvents: defineRoute({
+    id: 'terminalEvents',
+    method: 'GET',
+    path: '/api/v3/terminal/events',
+    params: null,
+    query: null,
+    body: null,
+    response: null,
+    successStatus: 200,
+    errors: ['stream_limit'],
+    summary:
+      'Server-sent events: hello, the full list of live sessions after every change (latest wins) and heartbeat frames.',
+    contentType: 'text/event-stream',
+    access: 'session',
+  }),
+  terminalCreateSession: defineRoute({
+    id: 'terminalCreateSession',
+    method: 'POST',
+    path: '/api/v3/terminal/sessions',
+    params: null,
+    query: null,
+    body: CreateSessionBodySchema,
+    response: CreateSessionResponseSchema,
+    successStatus: 200,
+    errors: ['folder_invalid', 'claude_not_found', 'terminal_unavailable', 'terminal_limit'],
+    summary:
+      'Starts the claude command in a folder as a new terminal session; the body carries the folder only, never a command line, arguments or an environment.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  terminalKillSession: defineRoute({
+    id: 'terminalKillSession',
+    method: 'POST',
+    path: '/api/v3/terminal/sessions/:name/kill',
+    params: TerminalNameParamsSchema,
+    query: null,
+    body: EmptyBodySchema,
+    response: KillSessionResponseSchema,
+    successStatus: 200,
+    errors: ['terminal_not_found'],
+    summary: 'Kills the process of a terminal session; its viewers get the exit frame and the close code killed.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  terminalSocket: defineRoute({
+    id: 'terminalSocket',
+    method: 'GET',
+    path: '/api/v3/terminal/sessions/:name/socket',
+    params: TerminalNameParamsSchema,
+    query: null,
+    body: null,
+    response: null,
+    successStatus: 101,
+    errors: ['terminal_not_found', 'upgrade_required', 'stream_limit', 'terminal_unavailable'],
+    summary:
+      'WebSocket (subprotocol caw.terminal.v1) to one terminal: binary frames are the raw bytes in both directions, text frames are the protocol messages; a plain GET answers 426.',
+    contentType: 'websocket',
+    access: 'session',
+  }),
+  terminalPickFolder: defineRoute({
+    id: 'terminalPickFolder',
+    method: 'POST',
+    path: '/api/v3/terminal/pick-folder',
+    params: null,
+    query: null,
+    body: EmptyBodySchema,
+    response: PickFolderResponseSchema,
+    successStatus: 200,
+    errors: ['picker_busy', 'terminal_unavailable'],
+    summary:
+      'Opens the folder dialog of the computer and answers the chosen folder, or null when the dialog was closed.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  terminalResume: defineRoute({
+    id: 'terminalResume',
+    method: 'POST',
+    path: '/api/v3/terminal/resume',
+    params: null,
+    query: null,
+    body: ResumeBodySchema,
+    response: ResumeResponseSchema,
+    successStatus: 200,
+    errors: [
+      'session_not_found',
+      'resume_unavailable',
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+      'terminal_limit',
+    ],
+    summary:
+      'Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments.',
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  // @wp-end CAW-09
   // @wp-begin WP-29
   explainCompletion: defineRoute({
     id: 'explainCompletion',
@@ -774,6 +945,79 @@ export type RouteId = keyof Routes;
 
 /** Every route id of the registry, in declaration order. */
 export const ROUTE_IDS: readonly RouteId[] = Object.values(routes).map((route) => route.id);
+
+/**
+ * Who may call each route, written out a second time on purpose (02 2.1, D1): the type makes a route without an entry a
+ * compile error, and the meta-test of `routes.test.ts` compares every entry with the definition and pins the groups (the nine
+ * reader routes, the session routes, the one ticket route, the open rest). A route's access changes in two places, in review.
+ */
+export const ACCESS_POLICY: Readonly<Record<RouteId, RouteAccess>> = {
+  legacyHealth: 'open',
+  health: 'open',
+  healthIngest: 'open',
+  instance: 'open',
+  config: 'open',
+  errors: 'open',
+  overview: 'open',
+  listSessions: 'open',
+  getSession: 'open',
+  sessionAgents: 'open',
+  sessionTimeline: 'reader',
+  sessionToolCalls: 'reader',
+  sessionTransitions: 'open',
+  sessionUsage: 'open',
+  transcriptWindow: 'reader',
+  transcriptLocate: 'reader',
+  searchTranscript: 'reader',
+  searchTranscripts: 'reader',
+  listAgents: 'open',
+  listEvents: 'open',
+  getEvent: 'reader',
+  listToolCalls: 'reader',
+  workItemBoard: 'open',
+  getWorkItem: 'open',
+  analyticsUsage: 'open',
+  analyticsSeries: 'open',
+  analyticsTools: 'open',
+  listAlerts: 'open',
+  alertRules: 'open',
+  panel: 'open',
+  export: 'reader',
+  ingestNudge: 'open',
+  ingestProbe: 'open',
+  stream: 'open',
+  listFolders: 'session',
+  addFolder: 'session',
+  removeFolder: 'session',
+  sessionResume: 'session',
+  authSession: 'open',
+  authExchange: 'ticket',
+  authLogout: 'session',
+  terminalState: 'session',
+  terminalEvents: 'session',
+  terminalCreateSession: 'session',
+  terminalKillSession: 'session',
+  terminalSocket: 'session',
+  terminalPickFolder: 'session',
+  terminalResume: 'session',
+  explainCompletion: 'open',
+};
+
+/**
+ * Every route that changes something: the POST routes (there is no DELETE, 02 D2). The nudge of the spool is the one that
+ * stays `open`; every other one needs the session cookie or, for the exchange, the one-time access code.
+ */
+export const WRITE_ROUTE_IDS: readonly RouteId[] = [
+  'ingestNudge',
+  'addFolder',
+  'removeFolder',
+  'authExchange',
+  'authLogout',
+  'terminalCreateSession',
+  'terminalKillSession',
+  'terminalPickFolder',
+  'terminalResume',
+];
 
 // ---- URL building --------------------------------------------------------------------------------------------------
 

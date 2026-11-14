@@ -8,16 +8,34 @@ import { ERROR_CODES, RESERVED_ERROR_CODES, type ErrorCode } from './errors.ts';
 import { FolderListResponseSchema, FolderSchema, ResumeEligibilitySchema } from './folders.ts';
 import { PanelResponseSchema } from './panels.ts';
 import {
+  ACCESS_POLICY,
   COMMON_ERROR_CODES,
   DEFAULT_MAX_BODY_BYTES,
   ROUTE_IDS,
+  WRITE_ROUTE_IDS,
   buildPath,
   defineRoute,
   routeErrors,
   routeUrl,
   routes,
+  type RouteAccess,
   type RouteId,
 } from './routes.ts';
+import {
+  AuthSessionResponseSchema,
+  CreateSessionBodySchema,
+  CreateSessionResponseSchema,
+  EmptyBodySchema,
+  ExchangeBodySchema,
+  ExchangeResponseSchema,
+  KillSessionResponseSchema,
+  LogoutResponseSchema,
+  PickFolderResponseSchema,
+  ResumeBodySchema,
+  ResumeResponseSchema,
+  TerminalNameParamsSchema,
+  TerminalStateSchema,
+} from './terminal.ts';
 
 const SID = '0b9f3f3e-6f0e-4c1e-9a53-0f4f2f1c9d11';
 const AT = '2026-10-11T10:00:00.000Z';
@@ -212,28 +230,100 @@ const TABLE: [RouteId, string, string, string, ErrorCode[]][] = [
   ['addFolder', 'POST', '/api/v3/folders', '', ['folder_invalid', 'folder_limit']],
   ['removeFolder', 'POST', '/api/v3/folders/:key/remove', '', ['folder_not_found']],
   ['sessionResume', 'GET', '/api/v3/sessions/:sessionId/resume', '', ['session_not_found']],
+  // the access and terminal routes of CAW-09 (design 02 2.1)
+  ['authSession', 'GET', '/api/v3/auth/session', '', []],
+  ['authExchange', 'POST', '/api/v3/auth/exchange', '', ['access_code_invalid', 'access_rate_limited']],
+  ['authLogout', 'POST', '/api/v3/auth/logout', '', []],
+  ['terminalState', 'GET', '/api/v3/terminal/state', '', []],
+  ['terminalEvents', 'GET', '/api/v3/terminal/events', '', ['stream_limit']],
+  [
+    'terminalCreateSession',
+    'POST',
+    '/api/v3/terminal/sessions',
+    '',
+    ['folder_invalid', 'claude_not_found', 'terminal_unavailable', 'terminal_limit'],
+  ],
+  ['terminalKillSession', 'POST', '/api/v3/terminal/sessions/:name/kill', '', ['terminal_not_found']],
+  [
+    'terminalSocket',
+    'GET',
+    '/api/v3/terminal/sessions/:name/socket',
+    '',
+    ['terminal_not_found', 'upgrade_required', 'stream_limit', 'terminal_unavailable'],
+  ],
+  ['terminalPickFolder', 'POST', '/api/v3/terminal/pick-folder', '', ['picker_busy', 'terminal_unavailable']],
+  [
+    'terminalResume',
+    'POST',
+    '/api/v3/terminal/resume',
+    '',
+    [
+      'session_not_found',
+      'resume_unavailable',
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+      'terminal_limit',
+    ],
+  ],
 ];
 
 /** The routes of the projects area: every one of them needs the session cookie (design 03 7.2). */
 const PROJECT_ROUTE_IDS: readonly RouteId[] = ['listFolders', 'addFolder', 'removeFolder', 'sessionResume'];
 
-/** The write routes: the open nudge of the spool and the two folder routes behind the session cookie. */
-const WRITE_ROUTE_IDS: readonly string[] = ['ingestNudge', 'addFolder', 'removeFolder'];
+/** The routes of the terminal: the list and the feed, the socket and the five commands; every one needs the session cookie. */
+const TERMINAL_ROUTE_IDS: readonly RouteId[] = [
+  'terminalState',
+  'terminalEvents',
+  'terminalCreateSession',
+  'terminalKillSession',
+  'terminalSocket',
+  'terminalPickFolder',
+  'terminalResume',
+];
 
-/**
- * TEMPORARY (CAW-07): the codes whose routes arrive in later work packages (the access routes, the terminal routes, the
- * projects routes). TERMCONTRACTS removes every entry its routes list; nothing is added here.
- */
-const PENDING_ROUTE_CODES: readonly ErrorCode[] = [
-  'access_code_invalid',
-  'access_rate_limited',
-  'upgrade_required',
-  'terminal_unavailable',
-  'claude_not_found',
-  'terminal_not_found',
-  'terminal_limit',
-  'picker_busy',
-  'resume_unavailable',
+/** The write routes, spelled out here as the independent expectation of `WRITE_ROUTE_IDS` of the registry. */
+const EXPECTED_WRITE_ROUTE_IDS: readonly string[] = [
+  'ingestNudge',
+  'addFolder',
+  'removeFolder',
+  'authExchange',
+  'authLogout',
+  'terminalCreateSession',
+  'terminalKillSession',
+  'terminalPickFolder',
+  'terminalResume',
+];
+
+/** Every open route (any local client that passes the guards): the monitoring reads, the nudge and the session probe. */
+const OPEN_ROUTE_IDS: readonly string[] = [
+  'legacyHealth',
+  'health',
+  'healthIngest',
+  'instance',
+  'config',
+  'errors',
+  'overview',
+  'listSessions',
+  'getSession',
+  'sessionAgents',
+  'sessionTransitions',
+  'sessionUsage',
+  'listAgents',
+  'listEvents',
+  'workItemBoard',
+  'getWorkItem',
+  'analyticsUsage',
+  'analyticsSeries',
+  'analyticsTools',
+  'listAlerts',
+  'alertRules',
+  'panel',
+  'ingestNudge',
+  'ingestProbe',
+  'stream',
+  'explainCompletion',
+  'authSession',
 ];
 
 /** The routes whose content any local client could read before the access code existed (02 A1). */
@@ -261,8 +351,8 @@ describe('route registry (03 6.1, 13)', () => {
     const all: readonly string[] = ROUTE_IDS;
     const own = all.filter((id) => id !== 'explainCompletion');
     expect([...own].sort()).toEqual(TABLE.map(([id]) => id).sort());
-    expect(own).toHaveLength(38);
-    expect(all).toHaveLength(all.includes('explainCompletion') ? 39 : 38);
+    expect(own).toHaveLength(48);
+    expect(all).toHaveLength(all.includes('explainCompletion') ? 49 : 48);
     expect(Object.keys(routes).sort()).toEqual([...ROUTE_IDS].sort());
   });
 
@@ -276,7 +366,7 @@ describe('route registry (03 6.1, 13)', () => {
     expect(route.summary.length).toBeGreaterThan(5);
   });
 
-  it('is read-only except the nudge (03 5.1) and the two folder writes (CAW-08)', () => {
+  it('is read-only except the nudge (03 5.1), the two folder writes (CAW-08) and the access and terminal writes (CAW-09)', () => {
     for (const id of ROUTE_IDS) {
       expect(routes[id].method).toBe(WRITE_ROUTE_IDS.includes(id) ? 'POST' : 'GET');
     }
@@ -289,18 +379,21 @@ describe('route registry (03 6.1, 13)', () => {
     }
   });
 
-  it('declares content types: json, ndjson for export, event-stream for stream, none for 204', () => {
+  it('declares content types: json, ndjson for export, event-stream for the two feeds, websocket for the socket, none for 204', () => {
     for (const id of ROUTE_IDS) {
       const expected =
         id === 'export'
           ? 'application/x-ndjson'
-          : id === 'stream'
+          : id === 'stream' || id === 'terminalEvents'
             ? 'text/event-stream'
-            : id === 'ingestNudge' || id === 'removeFolder'
-              ? null
-              : 'application/json';
+            : id === 'terminalSocket'
+              ? 'websocket'
+              : id === 'ingestNudge' || id === 'removeFolder'
+                ? null
+                : 'application/json';
       expect(routes[id].contentType, id).toBe(expected);
       if (expected === 'application/json') expect(routes[id].response, id).not.toBeNull();
+      else expect(routes[id].response, id).toBeNull();
     }
     expect(routes.export.response).toBeNull();
     expect(routes.stream.response).toBeNull();
@@ -339,25 +432,36 @@ describe('route registry (03 6.1, 13)', () => {
     expect(queryKeys('listSessions')).not.toContain('task');
   });
 
-  it('every error code except the reserved and the pending ones is listed by some route (DA-T-API-3 meta-test)', () => {
+  it('every error code except the reserved one is listed by some route (DA-T-API-3 meta-test; no code is pending any more)', () => {
     const listed = new Set<ErrorCode>(COMMON_ERROR_CODES);
     for (const id of ROUTE_IDS) for (const code of routeErrors(routes[id])) listed.add(code);
     // completion_target_not_found belongs to the explainCompletion row that WP-29 adds
-    const pending: ErrorCode[] = [
-      ...('explainCompletion' in routes ? [] : (['completion_target_not_found'] as const)),
-      ...PENDING_ROUTE_CODES,
-    ];
+    const pending: ErrorCode[] = 'explainCompletion' in routes ? [] : ['completion_target_not_found'];
     const missing = ERROR_CODES.filter(
       (c) => !listed.has(c) && !RESERVED_ERROR_CODES.includes(c) && !pending.includes(c),
     );
     expect(missing).toEqual([]);
+    expect([...RESERVED_ERROR_CODES]).toEqual(['alert_not_found']);
     for (const code of RESERVED_ERROR_CODES) expect(listed.has(code), code).toBe(false);
   });
 
-  it('the pending list names catalogue codes only and shrinks as the routes arrive', () => {
-    for (const code of PENDING_ROUTE_CODES) expect(ERROR_CODES).toContain(code);
-    // csrf_rejected and access_required are derived from the metadata, so they are no longer pending
-    for (const code of ['csrf_rejected', 'access_required'] as const) expect(PENDING_ROUTE_CODES).not.toContain(code);
+  it('the codes of the access and terminal routes are listed by the routes that produce them', () => {
+    const listedBy = (code: ErrorCode): string[] => ROUTE_IDS.filter((id) => routes[id].errors.includes(code)).sort();
+    expect(listedBy('access_code_invalid')).toEqual(['authExchange']);
+    expect(listedBy('access_rate_limited')).toEqual(['authExchange']);
+    expect(listedBy('upgrade_required')).toEqual(['terminalSocket']);
+    expect(listedBy('picker_busy')).toEqual(['terminalPickFolder']);
+    expect(listedBy('terminal_not_found')).toEqual(['terminalKillSession', 'terminalSocket']);
+    expect(listedBy('terminal_limit')).toEqual(['terminalCreateSession', 'terminalResume']);
+    expect(listedBy('resume_unavailable')).toEqual(['terminalResume']);
+    expect(listedBy('claude_not_found')).toEqual(['terminalCreateSession', 'terminalResume']);
+    expect(listedBy('terminal_unavailable')).toEqual([
+      'terminalCreateSession',
+      'terminalPickFolder',
+      'terminalResume',
+      'terminalSocket',
+    ]);
+    expect(listedBy('stream_limit')).toEqual(['stream', 'terminalEvents', 'terminalSocket']);
   });
 
   it('common errors are the ones of the registry header, and a route lists them once', () => {
@@ -408,13 +512,20 @@ describe('route registry (03 6.1, 13)', () => {
 });
 
 describe('route metadata (02 2.1, A1)', () => {
-  it('is open except the nine content routes (reader) and the four projects routes (session)', () => {
+  it('is open except the nine content routes (reader), the projects, terminal and logout routes (session) and the exchange (ticket)', () => {
     for (const id of ROUTE_IDS) {
-      const expected = READER_ROUTE_IDS.includes(id) ? 'reader' : PROJECT_ROUTE_IDS.includes(id) ? 'session' : 'open';
+      const expected: RouteAccess = READER_ROUTE_IDS.includes(id)
+        ? 'reader'
+        : PROJECT_ROUTE_IDS.includes(id) || TERMINAL_ROUTE_IDS.includes(id) || id === 'authLogout'
+          ? 'session'
+          : id === 'authExchange'
+            ? 'ticket'
+            : 'open';
       expect(routes[id].access, id).toBe(expected);
     }
     expect(ROUTE_IDS.filter((id) => routes[id].access === 'reader')).toHaveLength(9);
-    expect(ROUTE_IDS.filter((id) => routes[id].access === 'session')).toHaveLength(4);
+    expect(ROUTE_IDS.filter((id) => routes[id].access === 'session')).toHaveLength(12);
+    expect(ROUTE_IDS.filter((id) => routes[id].access === 'ticket')).toEqual(['authExchange']);
   });
 
   it('keeps the body limit of the nudge guard and no body limit for a route without a body', () => {
@@ -424,13 +535,71 @@ describe('route metadata (02 2.1, A1)', () => {
     }
   });
 
-  it('every existing route answers 200 or 204, never 101', () => {
-    for (const id of ROUTE_IDS) expect([200, 204], id).toContain(routes[id].successStatus);
+  it('every route answers 200 or 204; the socket alone answers 101 (the status after the upgrade)', () => {
+    for (const id of ROUTE_IDS) {
+      if (id === 'terminalSocket') expect(routes[id].successStatus, id).toBe(101);
+      else expect([200, 204], id).toContain(routes[id].successStatus);
+    }
+    expect(ROUTE_IDS.filter((id) => routes[id].contentType === 'websocket')).toEqual(['terminalSocket']);
   });
 
   it('the only write route that is open is the nudge', () => {
     for (const id of ROUTE_IDS) {
       if (routes[id].method !== 'GET' && id !== 'ingestNudge') expect(routes[id].access, id).not.toBe('open');
+    }
+  });
+});
+
+describe('ACCESS_POLICY and WRITE_ROUTE_IDS (02 2.1: the policy table the meta-test fixes)', () => {
+  it('has an entry for every route and no other, and each entry equals the access of its definition', () => {
+    expect(Object.keys(ACCESS_POLICY).sort()).toEqual([...ROUTE_IDS].sort());
+    for (const id of ROUTE_IDS) expect(ACCESS_POLICY[id], id).toBe(routes[id].access);
+  });
+
+  it('pins the nine reader routes', () => {
+    const readers = ROUTE_IDS.filter((id) => ACCESS_POLICY[id] === 'reader');
+    expect([...readers].sort()).toEqual([...READER_ROUTE_IDS].sort());
+    expect(readers).toHaveLength(9);
+    // a reader route is a GET: the Bearer control token is never accepted on a POST
+    for (const id of readers) expect(routes[id].method, id).toBe('GET');
+  });
+
+  it('pins the open routes: the monitoring reads, the nudge and the session probe', () => {
+    const open = ROUTE_IDS.filter((id) => ACCESS_POLICY[id] === 'open');
+    expect([...open].sort()).toEqual([...OPEN_ROUTE_IDS].sort());
+  });
+
+  it('pins the session routes and the one ticket route', () => {
+    const session = ROUTE_IDS.filter((id) => ACCESS_POLICY[id] === 'session');
+    expect([...session].sort()).toEqual([...PROJECT_ROUTE_IDS, ...TERMINAL_ROUTE_IDS, 'authLogout'].sort());
+    expect(ROUTE_IDS.filter((id) => ACCESS_POLICY[id] === 'ticket')).toEqual(['authExchange']);
+  });
+
+  it('lists the write routes: every POST of the registry and no GET', () => {
+    expect([...WRITE_ROUTE_IDS].sort()).toEqual([...EXPECTED_WRITE_ROUTE_IDS].sort());
+    expect(new Set(WRITE_ROUTE_IDS).size).toBe(WRITE_ROUTE_IDS.length);
+    expect(ROUTE_IDS.filter((id) => routes[id].method === 'POST').sort()).toEqual([...WRITE_ROUTE_IDS].sort());
+    for (const id of WRITE_ROUTE_IDS) expect(ROUTE_IDS as readonly string[], id).toContain(id);
+  });
+
+  it('every write route is session or ticket, except the nudge of the spool', () => {
+    for (const id of WRITE_ROUTE_IDS) {
+      const access = ACCESS_POLICY[id];
+      if (id === 'ingestNudge') expect(access, id).toBe('open');
+      else expect(['session', 'ticket'], id).toContain(access);
+    }
+  });
+
+  it('every session route is a terminal, folder-write, folder, resume-eligibility or logout route', () => {
+    const allowed = new Set<string>([...PROJECT_ROUTE_IDS, ...TERMINAL_ROUTE_IDS, 'authLogout']);
+    for (const id of ROUTE_IDS) if (ACCESS_POLICY[id] === 'session') expect(allowed.has(id), id).toBe(true);
+  });
+
+  it('every monitoring GET that was open before the access code stays open or reader, never session', () => {
+    for (const id of ROUTE_IDS) {
+      if (routes[id].method !== 'GET') continue;
+      if (PROJECT_ROUTE_IDS.includes(id) || TERMINAL_ROUTE_IDS.includes(id)) continue;
+      expect(['open', 'reader'], id).toContain(ACCESS_POLICY[id]);
     }
   });
 });
@@ -460,6 +629,7 @@ describe('projects routes (CAW-08, design 03 7.2)', () => {
     expect(routes.addFolder.response).toBe(FolderSchema);
     expect(routes.removeFolder.body.safeParse({}).success).toBe(true);
     expect(routes.removeFolder.body.safeParse({ key: 'a' }).success).toBe(false);
+    expect(routes.removeFolder.body).toBe(EmptyBodySchema);
     expect(routes.removeFolder.response).toBeNull();
     expect(routes.listFolders.response).toBe(FolderListResponseSchema);
     expect(routes.sessionResume.response).toBe(ResumeEligibilitySchema);
@@ -486,11 +656,132 @@ describe('projects routes (CAW-08, design 03 7.2)', () => {
     expect(routes.addFolder.errors).toEqual(['folder_invalid', 'folder_limit']);
   });
 
-  it('the new codes are not pending: a route lists each of them', () => {
+  it('the new codes are listed by a route', () => {
     const listed = new Set<ErrorCode>(ROUTE_IDS.flatMap((id) => routeErrors(routes[id])));
     for (const code of ['folder_invalid', 'folder_limit', 'folder_not_found'] as const) {
       expect(listed.has(code), code).toBe(true);
-      expect(PENDING_ROUTE_CODES).not.toContain(code);
+    }
+  });
+});
+
+describe('access and terminal routes (CAW-09, design 02 2.1)', () => {
+  it('the three access routes: an open probe, a ticket exchange, a logout behind the cookie', () => {
+    expect(routes.authSession.access).toBe('open');
+    expect(routes.authSession.body).toBeNull();
+    expect(routes.authSession.response).toBe(AuthSessionResponseSchema);
+    expect(routes.authExchange.access).toBe('ticket');
+    expect(routes.authExchange.body).toBe(ExchangeBodySchema);
+    expect(routes.authExchange.response).toBe(ExchangeResponseSchema);
+    expect(routes.authLogout.access).toBe('session');
+    expect(routes.authLogout.body).toBe(EmptyBodySchema);
+    expect(routes.authLogout.response).toBe(LogoutResponseSchema);
+    for (const id of ['authSession', 'authExchange', 'authLogout'] as const) {
+      expect(routes[id].contentType, id).toBe('application/json');
+      expect(routes[id].successStatus, id).toBe(200);
+    }
+  });
+
+  it('the exchange derives the body errors but not access_required (the code is the credential), the probe derives nothing', () => {
+    const exchange = routeErrors(routes.authExchange);
+    expect(exchange).toEqual(expect.arrayContaining(['csrf_rejected', 'payload_too_large', 'body_invalid_json']));
+    expect(exchange).toEqual(expect.arrayContaining(['access_code_invalid', 'access_rate_limited']));
+    expect(exchange).not.toContain('access_required');
+    expect(routeErrors(routes.authLogout)).toContain('access_required');
+    const probe = routeErrors(routes.authSession);
+    for (const code of ['access_required', 'csrf_rejected', 'payload_too_large', 'body_invalid_json'] as const) {
+      expect(probe).not.toContain(code);
+    }
+  });
+
+  it('every terminal route needs the session cookie and derives access_required', () => {
+    for (const id of TERMINAL_ROUTE_IDS) {
+      expect(routes[id].access, id).toBe('session');
+      expect(routeErrors(routes[id]), id).toContain('access_required');
+    }
+  });
+
+  it('the terminal writes are POST with a 4 KiB strict body and derive the body errors; the reads have no body', () => {
+    for (const id of [
+      'terminalCreateSession',
+      'terminalKillSession',
+      'terminalPickFolder',
+      'terminalResume',
+    ] as const) {
+      expect(routes[id].method, id).toBe('POST');
+      expect(routes[id].body, id).not.toBeNull();
+      expect(routes[id].maxBodyBytes, id).toBe(DEFAULT_MAX_BODY_BYTES);
+      expect(routeErrors(routes[id]), id).toEqual(
+        expect.arrayContaining(['csrf_rejected', 'payload_too_large', 'body_invalid_json']),
+      );
+      expect(routes[id].successStatus, id).toBe(200);
+    }
+    for (const id of ['terminalState', 'terminalEvents', 'terminalSocket'] as const) {
+      expect(routes[id].method, id).toBe('GET');
+      expect(routes[id].body, id).toBeNull();
+      expect(routes[id].maxBodyBytes, id).toBe(0);
+    }
+  });
+
+  it('uses the schemas of terminal.ts for every body and response', () => {
+    expect(routes.terminalState.response).toBe(TerminalStateSchema);
+    expect(routes.terminalCreateSession.body).toBe(CreateSessionBodySchema);
+    expect(routes.terminalCreateSession.response).toBe(CreateSessionResponseSchema);
+    expect(routes.terminalKillSession.body).toBe(EmptyBodySchema);
+    expect(routes.terminalKillSession.response).toBe(KillSessionResponseSchema);
+    expect(routes.terminalPickFolder.body).toBe(EmptyBodySchema);
+    expect(routes.terminalPickFolder.response).toBe(PickFolderResponseSchema);
+    expect(routes.terminalResume.body).toBe(ResumeBodySchema);
+    expect(routes.terminalResume.response).toBe(ResumeResponseSchema);
+  });
+
+  it('the events feed is a server-sent stream and the socket is a websocket upgrade: neither has a response schema', () => {
+    expect(routes.terminalEvents.contentType).toBe('text/event-stream');
+    expect(routes.terminalEvents.response).toBeNull();
+    expect(routes.terminalEvents.successStatus).toBe(200);
+    expect(routes.terminalSocket.contentType).toBe('websocket');
+    expect(routes.terminalSocket.response).toBeNull();
+    expect(routes.terminalSocket.successStatus).toBe(101);
+    expect(routes.terminalSocket.params).toBe(TerminalNameParamsSchema);
+    expect(routes.terminalKillSession.params).toBe(TerminalNameParamsSchema);
+  });
+
+  it('names a session by the MTOP pattern in the path and builds the socket path from it', () => {
+    expect(buildPath(routes.terminalKillSession, { name: 'app-1' })).toBe('/api/v3/terminal/sessions/app-1/kill');
+    expect(buildPath(routes.terminalSocket, { name: 'app-1' })).toBe('/api/v3/terminal/sessions/app-1/socket');
+    for (const bad of ['..', 'a/b', 'a b', 'a.b', '', 'a'.repeat(65), 'a%2Fb']) {
+      expect(() => buildPath(routes.terminalSocket, { name: bad }), bad).toThrow(TypeError);
+      expect(() => buildPath(routes.terminalKillSession, { name: bad }), bad).toThrow(TypeError);
+    }
+  });
+
+  it('resume is by monitored session id (and the fork flag) only: no route takes a command line, arguments or environment', () => {
+    const body = routes.terminalResume.body;
+    expect(body.safeParse({ sessionId: SID }).success).toBe(true);
+    expect(body.safeParse({ sessionId: SID, fork: true }).success).toBe(true);
+    for (const key of ['command', 'args', 'env', 'cwd'])
+      expect(body.safeParse({ sessionId: SID, [key]: 'x' }).success).toBe(false);
+    for (const id of ['terminalCreateSession', 'terminalResume'] as const) {
+      const keys = Object.keys(routes[id].body.shape);
+      for (const forbidden of ['command', 'args', 'env', 'cmd', 'argv']) expect(keys, id).not.toContain(forbidden);
+    }
+  });
+
+  it('the registry names every error code of a route in its row: the browser and the CLI read the column', () => {
+    expect(routes.terminalCreateSession.errors).toEqual([
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+      'terminal_limit',
+    ]);
+    expect(routes.terminalPickFolder.errors).toEqual(['picker_busy', 'terminal_unavailable']);
+    expect(routes.terminalResume.errors).toContain('resume_unavailable');
+    expect(routes.terminalResume.errors).toContain('session_not_found');
+  });
+
+  it('every route has a one-sentence summary that says what it does', () => {
+    for (const id of [...TERMINAL_ROUTE_IDS, 'authSession', 'authExchange', 'authLogout'] as const) {
+      expect(routes[id].summary.length, id).toBeGreaterThan(20);
+      expect(routes[id].summary.endsWith('.'), id).toBe(true);
     }
   });
 });

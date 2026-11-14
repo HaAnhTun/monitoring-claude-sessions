@@ -60,8 +60,13 @@ describe('generateAll', () => {
     }
   });
 
-  it('writes one schema per non-null route part, the stream, one per export line type and the reference', () => {
-    const expected = new Set<string>(['schemas/api/stream.schema.json', generator.REFERENCE_FILE]);
+  it('writes one schema per non-null route part, the stream, the terminal socket and events, one per export line type and the reference', () => {
+    const expected = new Set<string>([
+      'schemas/api/stream.schema.json',
+      'schemas/api/terminal-socket.schema.json',
+      'schemas/api/terminal-events.schema.json',
+      generator.REFERENCE_FILE,
+    ]);
     for (const route of Object.values(shared.routes)) {
       for (const part of ['params', 'query', 'body', 'response'] as const) {
         if (route[part] !== null) expected.add(`schemas/api/${route.id}.${part}.schema.json`);
@@ -132,6 +137,92 @@ describe('generateAll', () => {
     const links = [...reference.matchAll(/\]\(\.\.\/\.\.\/(schemas\/[^)]+)\)/g)].map((m) => m[1] ?? '');
     expect(links.length).toBeGreaterThan(Object.keys(shared.routes).length);
     for (const link of links) expect(generated.files.has(link), link).toBe(true);
+  });
+
+  /** The text of the `## <heading>` section of the reference, up to the next `## ` heading. */
+  function section(reference: string, heading: string): string {
+    const start = reference.indexOf(`\n## ${heading}\n`);
+    expect(start, heading).toBeGreaterThanOrEqual(0);
+    const next = reference.indexOf('\n## ', start + 1);
+    return reference.slice(start, next === -1 ? undefined : next);
+  }
+
+  it('prints the access of every route and the status of a websocket route (design 02 2.4)', () => {
+    const reference = generated.files.get(generator.REFERENCE_FILE) ?? '';
+    for (const route of Object.values(shared.routes)) {
+      const text = section(reference, route.id);
+      expect(text, route.id).toContain(`- Access: ${route.access}`);
+    }
+    expect(section(reference, 'terminalSocket')).toContain('- Success: 101 `websocket`');
+    expect(section(reference, 'terminalEvents')).toContain('- Success: 200 `text/event-stream`');
+    expect(section(reference, 'authExchange')).toContain('- Access: ticket');
+    expect(section(reference, 'authSession')).toContain('- Access: open');
+    expect(section(reference, 'terminalState')).toContain('- Access: session');
+    expect(section(reference, 'transcriptWindow')).toContain('- Access: reader');
+  });
+
+  it('explains the four access values once, near the top, and shows the access in the route table', () => {
+    const reference = generated.files.get(generator.REFERENCE_FILE) ?? '';
+    const routesTable = section(reference, 'Routes');
+    expect(routesTable).toContain('| Route id | Method | Path | Access | Summary |');
+    const access = section(reference, 'Access');
+    for (const value of ['open', 'reader', 'ticket', 'session']) expect(access, value).toContain(`\`${value}\``);
+    expect(reference.indexOf('\n## Access\n')).toBeLessThan(reference.indexOf('\n## authSession\n'));
+  });
+
+  it('documents the terminal socket and the terminal events with their schema files and constants', () => {
+    const reference = generated.files.get(generator.REFERENCE_FILE) ?? '';
+    const socket = section(reference, 'Terminal socket');
+    expect(socket).toContain(shared.TERMINAL_SUBPROTOCOL);
+    expect(socket).toContain('](../../schemas/api/terminal-socket.schema.json)');
+    for (const [name, code] of Object.entries(shared.TERMINAL_CLOSE_CODES)) {
+      expect(socket, name).toContain(`\`${String(code)}\``);
+    }
+    expect(socket).toContain(String(shared.TERMINAL_INPUT_MAX_BYTES));
+    const events = section(reference, 'Terminal events');
+    for (const name of shared.TERMINAL_EVENT_NAMES) expect(events, name).toContain(`\`${name}\``);
+    expect(events).toContain('](../../schemas/api/terminal-events.schema.json)');
+    expect(reference.indexOf('\n## Terminal socket\n')).toBeGreaterThan(reference.indexOf('\n## Stream\n'));
+    expect(reference.indexOf('\n## Terminal events\n')).toBeGreaterThan(reference.indexOf('\n## Terminal socket\n'));
+    expect(reference.indexOf('\n## Export lines\n')).toBeGreaterThan(reference.indexOf('\n## Terminal events\n'));
+  });
+
+  it('writes the socket schema with the client and the server frames as named definitions', () => {
+    const json = JSON.parse(generated.files.get('schemas/api/terminal-socket.schema.json') ?? '{}') as {
+      description: string;
+      oneOf: { $ref: string }[];
+      $defs: Record<
+        string,
+        {
+          type?: string;
+          oneOf?: { properties: Record<string, { const?: unknown }> }[];
+          properties?: Record<string, { const?: unknown }>;
+          required?: string[];
+        }
+      >;
+    };
+    expect(json.description).toContain(shared.TERMINAL_SUBPROTOCOL);
+    expect(Object.keys(json.$defs)).toEqual(['client', 'server']);
+    expect(json.oneOf).toEqual([{ $ref: '#/$defs/client' }, { $ref: '#/$defs/server' }]);
+    const client = json.$defs['client'];
+    expect(client?.properties?.['type']?.const).toBe('resize');
+    expect([...(client?.required ?? [])].sort()).toEqual(['cols', 'rows', 'type']);
+    const server = json.$defs['server'];
+    const frames = server?.oneOf ?? [];
+    expect(frames.map((frame) => frame.properties['type']?.const)).toEqual(['ready', 'live', 'size', 'exit']);
+  });
+
+  it('writes the events schema with one definition per event name, in the order of TERMINAL_EVENT_NAMES', () => {
+    const json = JSON.parse(generated.files.get('schemas/api/terminal-events.schema.json') ?? '{}') as {
+      oneOf: { $ref: string }[];
+      $defs: Record<string, unknown>;
+    };
+    expect(Object.keys(json.$defs)).toEqual([...shared.TERMINAL_EVENT_NAMES]);
+    expect(json.oneOf).toEqual(shared.TERMINAL_EVENT_NAMES.map((name) => ({ $ref: `#/$defs/${name}` })));
+    const sessions = JSON.stringify(json.$defs['sessions']);
+    expect(sessions).toContain('"maxItems":64');
+    expect(sessions).toContain('folderKey');
+    expect(sessions).not.toContain('monitorSessionId');
   });
 });
 
