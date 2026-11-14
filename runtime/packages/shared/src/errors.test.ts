@@ -36,8 +36,34 @@ describe('the launcher leftovers (ADR 0062 item 4)', () => {
   });
 
   it('gives every remaining code an exit number, and an unknown code the internal-error exit', () => {
-    for (const code of CLI_ERROR_CODES) expect([1, 2], code).toContain(cliExitCode(code));
+    for (const code of CLI_ERROR_CODES) expect([1, 2, 3], code).toContain(cliExitCode(code));
     expect(cliExitCode('USAGE')).toBe(2);
     expect(cliExitCode('NOT_A_CODE' as never)).toBe(1);
+  });
+});
+
+describe('the user instance codes (06 1.8, 2.7)', () => {
+  it('lists TERMINALS_LIVE and UNSUPPORTED_PLATFORM in the catalogue', () => {
+    for (const code of ['TERMINALS_LIVE', 'UNSUPPORTED_PLATFORM']) {
+      expect(CLI_ERROR_CODES, code).toContain(code);
+      expect(isCliErrorCode(code), code).toBe(true);
+      expect(CliErrorCodeSchema.safeParse(code).success, code).toBe(true);
+    }
+  });
+
+  it('exits 3 for TERMINALS_LIVE and nothing else, so a script can tell "refused, terminals are live"', () => {
+    expect(cliExitCode('TERMINALS_LIVE')).toBe(3);
+    expect(CLI_ERROR_CODES.filter((code) => cliExitCode(code) === 3)).toEqual(['TERMINALS_LIVE']);
+  });
+
+  it('exits 1 for UNSUPPORTED_PLATFORM, 2 for USAGE', () => {
+    expect(cliExitCode('UNSUPPORTED_PLATFORM')).toBe(1);
+    expect(cliExitCode('USAGE')).toBe(2);
+  });
+
+  it('can be raised as an McsError', () => {
+    const e = new McsError('TERMINALS_LIVE', 'terminals are open', { details: { live: 2 } });
+    expect(e.code).toBe('TERMINALS_LIVE');
+    expect(e.details).toEqual({ live: 2 });
   });
 });

@@ -2,7 +2,10 @@
 // 03 (`api/errors.ts`); the CLI union is `CliErrorCode`.
 import { z } from 'zod';
 
-/** Every code that can appear in `CliEnvelope.error.code`. `USAGE` exits 2, all others exit 1. */
+/**
+ * Every code that can appear in `CliEnvelope.error.code`. `USAGE` exits 2, `TERMINALS_LIVE` exits 3 (the stop was refused
+ * because terminals are open, 06 3), all others exit 1.
+ */
 export const CLI_ERROR_CODES = [
   'USAGE',
   'CONFIG_INVALID',
@@ -38,6 +41,8 @@ export const CLI_ERROR_CODES = [
   'OUTPUT_PATH_FORBIDDEN',
   'NODE_TOO_OLD',
   'HOOKS_FAILED',
+  'TERMINALS_LIVE',
+  'UNSUPPORTED_PLATFORM',
   'NOT_FOUND',
   'API_ERROR',
   'INTERNAL',
@@ -53,9 +58,13 @@ export function isCliErrorCode(value: unknown): value is CliErrorCode {
   return KNOWN.has(value);
 }
 
-/** Process exit code of a failed command: 2 for a usage error, 1 for every other code (01 6.2). */
-export function cliExitCode(code: CliErrorCode): 1 | 2 {
-  return code === 'USAGE' ? 2 : 1;
+/**
+ * Process exit code of a failed command: 2 for a usage error, 3 when a stop or restart was refused because terminals are
+ * live, 1 for every other code (01 6.2, 06 3).
+ */
+export function cliExitCode(code: CliErrorCode): 1 | 2 | 3 {
+  if (code === 'USAGE') return 2;
+  return code === 'TERMINALS_LIVE' ? 3 : 1;
 }
 
 export interface McsErrorOptions {

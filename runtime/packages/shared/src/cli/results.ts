@@ -844,3 +844,23 @@ export const DiagnosticsBundleSchema = z.strictObject({
 
 export type DiagnosticsBundle = z.infer<typeof DiagnosticsBundleSchema>;
 // @wp-end WP-141
+
+// ---- autostart (06 2.7) ------------------------------------------------------------------------------------------------
+
+/**
+ * The answer of `autostart status|enable|disable`. Windows only: elsewhere `supported` is false and every other field is
+ * `null` or false. `matchesLauncher` compares the shortcut with the launcher that runs the command.
+ */
+export const AutostartStatusSchema = z.strictObject({
+  supported: z.boolean(),
+  enabled: z.boolean(),
+  /** Path of the `.lnk` in the Startup folder. */
+  shortcut: z.string().nullable(),
+  target: z.string().nullable(),
+  arguments: z.string().nullable(),
+  targetExists: z.boolean().nullable(),
+  matchesLauncher: z.boolean().nullable(),
+  note: z.string().nullable(),
+});
+
+export type AutostartStatus = z.infer<typeof AutostartStatusSchema>;

@@ -512,7 +512,10 @@ describe('zeroChildStats and eventLoopDelayP99Ms', () => {
     const a = zeroChildStats();
     const b = zeroChildStats();
     expect(Object.keys(a)).toEqual([...CHILD_KINDS]);
-    expect(Object.keys(a)).toHaveLength(9);
+    expect(Object.keys(a)).toHaveLength(12);
+    for (const kind of ['powershell.shortcut', 'claude', 'powershell.picker'] as const) {
+      expect(a[kind], kind).toEqual({ spawned: 0, failed: 0, timedOut: 0, totalMs: 0 });
+    }
     expect('python' in a).toBe(false);
     expect(a).toEqual(b);
     expect(a).not.toBe(b);

@@ -39,6 +39,13 @@
       "type": "string",
       "const": "node"
     },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "task",
+        "user"
+      ]
+    },
     "hooks": {
       "type": "object",
       "properties": {

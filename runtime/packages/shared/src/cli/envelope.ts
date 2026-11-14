@@ -17,7 +17,7 @@ export interface CliEnvelope<T> {
   schema: typeof CLI_SCHEMA;
   command: string;
   ok: boolean;
-  exitCode: 0 | 1 | 2;
+  exitCode: 0 | 1 | 2 | 3;
   data: T | null;
   error: CliError | null;
   warnings: string[];
@@ -32,7 +32,7 @@ export const CliErrorSchema = z.strictObject({
 
 /**
  * Envelope schema for a given `data` schema. Beyond the shapes it checks what the contract says about the exit code:
- * `ok` means exit 0 and no error; a failure has a non-zero exit code, and an error fixes it (`USAGE` = 2, others = 1).
+ * `ok` means exit 0 and no error; a failure has a non-zero exit code, and an error fixes it (`USAGE` = 2, `TERMINALS_LIVE` = 3, others = 1).
  * A failure may carry `data` and no error (a check that found problems).
  */
 export function cliEnvelopeSchema<T extends z.ZodType>(data: T) {
@@ -41,7 +41,7 @@ export function cliEnvelopeSchema<T extends z.ZodType>(data: T) {
       schema: z.literal(CLI_SCHEMA),
       command: z.string().min(1),
       ok: z.boolean(),
-      exitCode: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+      exitCode: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
       data: data.nullable(),
       error: CliErrorSchema.nullable(),
       warnings: z.array(z.string()),
@@ -53,7 +53,7 @@ export function cliEnvelopeSchema<T extends z.ZodType>(data: T) {
         return;
       }
       if (env.exitCode === 0)
-        ctx.addIssue({ code: 'custom', path: ['exitCode'], message: 'a failure needs exitCode 1 or 2' });
+        ctx.addIssue({ code: 'custom', path: ['exitCode'], message: 'a failure needs exitCode 1, 2 or 3' });
       else if (env.error !== null && env.exitCode !== cliExitCode(env.error.code)) {
         ctx.addIssue({
           code: 'custom',

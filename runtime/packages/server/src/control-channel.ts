@@ -375,9 +375,14 @@ class ChannelServer {
         ? { v: 1, ok: true, op: 'backup', bytes: outcome.bytes, dbSchemaVersion: outcome.dbSchemaVersion }
         : refusal(outcome.error);
     }
-    if (request.fromSegment !== null && !SPOOL_SEGMENT_RE.test(request.fromSegment)) return refusal('BAD_REQUEST');
-    const outcome = await o.onIngestReplay(request.fromSegment);
-    return outcome.ok ? { v: 1, ok: true, op: 'ingest-replay', segments: outcome.segments } : refusal(outcome.error);
+    if (request.op === 'ingest-replay') {
+      if (request.fromSegment !== null && !SPOOL_SEGMENT_RE.test(request.fromSegment)) return refusal('BAD_REQUEST');
+      const outcome = await o.onIngestReplay(request.fromSegment);
+      return outcome.ok ? { v: 1, ok: true, op: 'ingest-replay', segments: outcome.segments } : refusal(outcome.error);
+    }
+    // `terminals` and `access` are parsed by the shared protocol but served only by the user instance (06 1.8): until the
+    // server wires them, they are answered like any request this channel does not know.
+    return refusal('BAD_REQUEST');
   }
 }
 

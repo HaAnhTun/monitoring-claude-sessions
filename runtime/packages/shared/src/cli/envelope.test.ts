@@ -69,9 +69,12 @@ describe('CliErrorCode (98 7.2, C19)', () => {
     expect(CLI_ERROR_CODES).not.toContain('E_ATTEMPTS_TIME_FORMAT');
   });
 
-  it('exits 2 for USAGE and 1 for everything else', () => {
+  it('exits 2 for USAGE, 3 for TERMINALS_LIVE and 1 for everything else', () => {
     expect(cliExitCode('USAGE')).toBe(2);
-    for (const code of CLI_ERROR_CODES.filter((c) => c !== 'USAGE')) expect(cliExitCode(code), code).toBe(1);
+    expect(cliExitCode('TERMINALS_LIVE')).toBe(3);
+    for (const code of CLI_ERROR_CODES.filter((c) => c !== 'USAGE' && c !== 'TERMINALS_LIVE')) {
+      expect(cliExitCode(code), code).toBe(1);
+    }
   });
 
   it('validates with a type guard and a zod enum', () => {
@@ -173,6 +176,15 @@ describe('CliEnvelope (01 6.2)', () => {
     );
   });
 
+  it('a TERMINALS_LIVE failure is exit 3 and the base schema accepts it', () => {
+    const live = failureEnvelope('stop', toCliError(new McsError('TERMINALS_LIVE', 'terminals are open')));
+    expect(live.exitCode).toBe(3);
+    expect(CliEnvelopeSchema.safeParse(live).success).toBe(true);
+    const unsupported = failureEnvelope('autostart', toCliError(new McsError('UNSUPPORTED_PLATFORM', 'windows only')));
+    expect(unsupported.exitCode).toBe(1);
+    expect(CliEnvelopeSchema.safeParse(unsupported).success).toBe(true);
+  });
+
   it('a data schema narrows the envelope', () => {
     const schema = cliEnvelopeSchema(CliErrorSchema.pick({ message: true }));
     expect(schema.safeParse(successEnvelope('x', { message: 'ok' })).success).toBe(true);
@@ -186,7 +198,8 @@ describe('CliEnvelope (01 6.2)', () => {
     expect(bad({})).toBe(true);
     expect(bad({ schema: 'mcs.cli/2' })).toBe(false);
     expect(bad({ command: '' })).toBe(false);
-    expect(bad({ exitCode: 3 })).toBe(false);
+    expect(bad({ exitCode: 3 })).toBe(false); // ok true needs exit code 0
+    expect(bad({ exitCode: 4 })).toBe(false);
     expect(bad({ ok: false })).toBe(false); // ok false needs a non-zero exit code
     expect(bad({ exitCode: 1 })).toBe(false); // ok true needs exit code 0
     expect(bad({ error: { code: 'INTERNAL', message: 'm', hint: null, details: null } })).toBe(false); // ok true, error set
@@ -199,6 +212,16 @@ describe('CliEnvelope (01 6.2)', () => {
     expect(bad({ ok: false, exitCode: 1, error: { code: 'NOPE', message: 'm', hint: null, details: null } })).toBe(
       false,
     );
+    expect(
+      bad({ ok: false, exitCode: 3, error: { code: 'TERMINALS_LIVE', message: 'm', hint: null, details: null } }),
+    ).toBe(true); // TERMINALS_LIVE is exit 3
+    expect(
+      bad({ ok: false, exitCode: 1, error: { code: 'TERMINALS_LIVE', message: 'm', hint: null, details: null } }),
+    ).toBe(false);
+    expect(bad({ ok: false, exitCode: 3, error: { code: 'INTERNAL', message: 'm', hint: null, details: null } })).toBe(
+      false,
+    );
+    expect(bad({ ok: false, exitCode: 3, error: null })).toBe(true); // data only, exit 3
     expect(bad({ ok: false, exitCode: 1, error: null })).toBe(true); // a check that found problems, data only
     expect(bad({ warnings: [1] })).toBe(false);
     expect(bad({ extra: 1 })).toBe(false);
@@ -323,13 +346,16 @@ describe('control protocol (01 4.3, zod-free)', () => {
   const requests: ControlRequest[] = [
     { v: 1, op: 'identify' },
     { v: 1, op: 'shutdown', instanceId: ID, token: TOKEN, reason: 'stop' },
+    { v: 1, op: 'shutdown', instanceId: ID, token: TOKEN, reason: 'stop', force: true },
+    { v: 1, op: 'terminals', instanceId: ID, token: TOKEN },
+    { v: 1, op: 'access', instanceId: ID, token: TOKEN },
     { v: 1, op: 'backup', instanceId: ID, token: TOKEN, dest: 'C:/ws/data/backups/x.partial/monitor.db' },
     { v: 1, op: 'ingest-replay', instanceId: ID, token: TOKEN, fromSegment: 'hooks-20261011T08Z.ndjson' },
     { v: 1, op: 'ingest-replay', instanceId: ID, token: TOKEN, fromSegment: null },
   ];
 
-  it('lists the four ops, three phases and six error codes (INTERNAL is WP-100)', () => {
-    expect([...CONTROL_OPS]).toEqual(['identify', 'shutdown', 'backup', 'ingest-replay']);
+  it('lists the six ops, three phases and eight error codes', () => {
+    expect([...CONTROL_OPS]).toEqual(['identify', 'shutdown', 'backup', 'ingest-replay', 'terminals', 'access']);
     expect([...CONTROL_PHASES]).toEqual(['starting', 'ready', 'stopping']);
     expect([...CONTROL_ERROR_CODES]).toEqual([
       'BAD_REQUEST',
@@ -338,6 +364,8 @@ describe('control protocol (01 4.3, zod-free)', () => {
       'NOT_READY',
       'BACKUP_FAILED',
       'INTERNAL',
+      'TERMINALS_LIVE',
+      'UNSUPPORTED',
     ]);
     expect(CONTROL_REQUEST_MAX_BYTES).toBe(4096);
   });
@@ -415,7 +443,25 @@ describe('control protocol (01 4.3, zod-free)', () => {
     { v: 1, ok: true, op: 'shutdown', phase: 'stopping' },
     { v: 1, ok: true, op: 'backup', bytes: 4096, dbSchemaVersion: 3 },
     { v: 1, ok: true, op: 'ingest-replay', segments: 2 },
+    {
+      v: 1,
+      ok: true,
+      op: 'terminals',
+      live: 1,
+      max: 8,
+      sessions: [{ name: 'api-1', startedAt: '2026-11-14T10:00:00.000Z' }],
+    },
+    {
+      v: 1,
+      ok: true,
+      op: 'access',
+      code: 'a'.repeat(43),
+      expiresAt: '2026-11-14T10:02:00.000Z',
+      ttlSeconds: 120,
+    },
     { v: 1, ok: false, error: 'FORBIDDEN' },
+    { v: 1, ok: false, error: 'TERMINALS_LIVE' },
+    { v: 1, ok: false, error: 'UNSUPPORTED' },
   ];
 
   it('parses every response shape', () => {

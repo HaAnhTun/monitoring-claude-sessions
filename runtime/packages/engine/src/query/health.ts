@@ -240,7 +240,7 @@ const zero = (): ChildKindStats => ({ spawned: 0, failed: 0, timedOut: 0, totalM
 
 /**
  * Every child kind with zero counters, in the order of `CHILD_KINDS`; fresh objects on every call. The literal lists the
- * nine kinds, so a kind that is added to or removed from the shared list is a compile error here.
+ * twelve kinds, so a kind that is added to or removed from the shared list is a compile error here.
  */
 export function zeroChildStats(): Record<ChildKind, ChildKindStats> {
   return {
@@ -253,6 +253,9 @@ export function zeroChildStats(): Record<ChildKind, ChildKindStats> {
     node: zero(),
     icacls: zero(),
     opener: zero(),
+    'powershell.shortcut': zero(),
+    claude: zero(),
+    'powershell.picker': zero(),
   };
 }
 

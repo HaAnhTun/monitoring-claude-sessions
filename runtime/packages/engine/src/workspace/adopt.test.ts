@@ -43,7 +43,8 @@ function legacyBytes(ws: WorkspaceRef): Buffer[] {
 describe('newInstanceFile', () => {
   it('has the keys of InstanceFileSchema in schema order with the creation defaults', () => {
     const file = newInstanceFile('demo', { nowMs: NOW, instanceId: ID });
-    expect(Object.keys(file)).toEqual(Object.keys(InstanceFileSchema.shape));
+    // `kind` is optional and written only for the user instance (06 1.3): a task file has every other key, in order.
+    expect(Object.keys(file)).toEqual(Object.keys(InstanceFileSchema.shape).filter((key) => key !== 'kind'));
     expect(file).toEqual({
       schema_version: 1,
       instanceId: ID,

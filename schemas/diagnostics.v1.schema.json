@@ -925,7 +925,10 @@
                   "taskkill",
                   "node",
                   "icacls",
-                  "opener"
+                  "opener",
+                  "powershell.shortcut",
+                  "claude",
+                  "powershell.picker"
                 ]
               },
               "additionalProperties": {
@@ -968,7 +971,10 @@
                 "taskkill",
                 "node",
                 "icacls",
-                "opener"
+                "opener",
+                "powershell.shortcut",
+                "claude",
+                "powershell.picker"
               ]
             },
             "panels": {

@@ -59,7 +59,8 @@ describe('buildTaskWorkspace', () => {
     const ws = buildTaskWorkspace(repo, { slug: 'a', config: {}, instance: {} });
     const raw = json(join(ws, 'instance.json'));
     const parsed = InstanceFileSchema.parse(raw);
-    expect(Object.keys(raw)).toEqual(Object.keys(InstanceFileSchema.shape));
+    // `kind` is written only for a user instance; a task file has no such key (06 1.3).
+    expect(Object.keys(raw)).toEqual(Object.keys(InstanceFileSchema.shape).filter((key) => key !== 'kind'));
     expect(parsed).toMatchObject({
       schema_version: 1,
       slug: 'a',
@@ -96,6 +97,14 @@ describe('buildTaskWorkspace', () => {
       dbSchemaVersion: 3,
     });
     expect(() => buildTaskWorkspace(repo, { slug: 'a', config: {}, instance: { dbSchemaVersion: -1 } })).toThrow();
+  });
+
+  it('writes kind between engine and hooks when the instance is a user instance', () => {
+    const { repo } = buildRepo(join(tempDir('ws5k').path, 'r'));
+    const ws = buildTaskWorkspace(repo, { slug: 'a', config: {}, instance: { kind: 'user' } });
+    const raw = json(join(ws, 'instance.json'));
+    expect(raw['kind']).toBe('user');
+    expect(Object.keys(raw)).toEqual(Object.keys(InstanceFileSchema.shape));
   });
 
   it('rejects slugs that are not valid workspace names', () => {

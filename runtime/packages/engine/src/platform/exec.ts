@@ -172,6 +172,9 @@ function mapKinds<T>(make: (kind: ChildKind) => T): Record<ChildKind, T> {
     node: make('node'),
     icacls: make('icacls'),
     opener: make('opener'),
+    'powershell.shortcut': make('powershell.shortcut'),
+    claude: make('claude'),
+    'powershell.picker': make('powershell.picker'),
   };
 }
 

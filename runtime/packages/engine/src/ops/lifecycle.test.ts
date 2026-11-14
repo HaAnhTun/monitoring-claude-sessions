@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, writeS
 import path from 'node:path';
 
 import {
+  CHILD_KINDS,
   McsError,
   RUNTIME_VERSION,
   StateFileSchema,
@@ -1250,11 +1251,7 @@ const BODY = {
         lastError: null,
       },
     },
-    children: Object.fromEntries(
-      ['git', 'docker', 'powershell.processes', 'powershell.cmdline', 'ps', 'taskkill', 'icacls', 'node', 'opener'].map(
-        (kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }],
-      ),
-    ),
+    children: Object.fromEntries(CHILD_KINDS.map((kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }])),
     panels: {},
     alerts: [],
     errors: [],

@@ -165,7 +165,7 @@ describe('panel contracts (06 3.3)', () => {
 });
 
 describe('child process contracts (06 3.6, registry C10, C11)', () => {
-  it('has the nine child kinds, without python (ADR 0066)', () => {
+  it('has the twelve child kinds, without python (ADR 0066), the last three for the user instance (06 2.7)', () => {
     expect([...CHILD_KINDS]).toEqual([
       'powershell.processes',
       'powershell.cmdline',
@@ -176,7 +176,14 @@ describe('child process contracts (06 3.6, registry C10, C11)', () => {
       'node',
       'icacls',
       'opener',
+      'powershell.shortcut',
+      'claude',
+      'powershell.picker',
     ]);
+    for (const kind of ['powershell.shortcut', 'claude', 'powershell.picker']) {
+      expect(ChildKindSchema.safeParse(kind).success, kind).toBe(true);
+    }
+    expect(ChildKindSchema.safeParse('powershell').success).toBe(false);
     expect(ChildKindSchema.safeParse('opener').success).toBe(true);
     expect(ChildKindSchema.safeParse('bash').success).toBe(false);
     expect(ChildKindSchema.safeParse('python').success).toBe(false);

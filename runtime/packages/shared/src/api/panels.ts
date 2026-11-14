@@ -192,7 +192,10 @@ export type PanelResponse<K extends PanelKey = PanelKey> = Extract<z.infer<typeo
 
 // ---- child processes and panel statistics (HealthReport.children, HealthReport.panels) ------------------------------
 
-/** The nine kinds of child process of 06 3.6 (ADR 0066 removed `python`); the order is the order of the registry. */
+/**
+ * The twelve kinds of child process (06 3.6; ADR 0066 removed `python`); the order is the order of the registry. The last
+ * three belong to the user instance: the autostart shortcut, the `claude` command and the folder picker (lif 2.7).
+ */
 export const CHILD_KINDS = [
   'powershell.processes',
   'powershell.cmdline',
@@ -203,6 +206,9 @@ export const CHILD_KINDS = [
   'node',
   'icacls',
   'opener',
+  'powershell.shortcut',
+  'claude',
+  'powershell.picker',
 ] as const;
 export const ChildKindSchema = z.enum(CHILD_KINDS);
 export type ChildKind = z.infer<typeof ChildKindSchema>;

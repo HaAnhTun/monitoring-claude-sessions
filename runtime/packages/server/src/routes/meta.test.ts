@@ -13,6 +13,7 @@ import {
   type RuntimeProcessInfo,
 } from '@mcs/engine';
 import {
+  CHILD_KINDS,
   ConfigInspectionSchema,
   HealthReportSchema,
   IngestHealthSchema,
@@ -169,11 +170,7 @@ function context(over: Partial<Pick<AppContext, 'instance'>> = {}): { ctx: AppCo
         lastError: null,
       },
     },
-    children: Object.fromEntries(
-      ['powershell.processes', 'powershell.cmdline', 'git', 'docker', 'ps', 'taskkill', 'node', 'icacls', 'opener'].map(
-        (kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }],
-      ),
-    ),
+    children: Object.fromEntries(CHILD_KINDS.map((kind) => [kind, { spawned: 0, failed: 0, timedOut: 0, totalMs: 0 }])),
     panels: {},
     alerts: [],
     errors: [],

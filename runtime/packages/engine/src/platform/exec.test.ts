@@ -557,6 +557,11 @@ describe('childStats', () => {
   it('has every kind, each with the four counters, and returns a copy', () => {
     const stats = childStats();
     expect(Object.keys(stats).sort()).toEqual([...CHILD_KINDS].sort());
+    for (const kind of ['powershell.shortcut', 'claude', 'powershell.picker'] as const) {
+      // Nothing in this file spawns them (an earlier case refuses stdin for them, which counts as failed).
+      expect(stats[kind].spawned, kind).toBe(0);
+      expect(stats[kind].totalMs, kind).toBe(0);
+    }
     for (const kind of CHILD_KINDS) {
       expect(Object.keys(stats[kind]).sort()).toEqual(['failed', 'spawned', 'timedOut', 'totalMs']);
       expect(stats[kind].spawned).toBeGreaterThanOrEqual(0);

@@ -1,3 +1,4 @@
+export * from './access.ts';
 export * from './control.ts';
 export * from './env-names.ts';
 

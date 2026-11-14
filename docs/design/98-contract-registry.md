@@ -153,7 +153,7 @@ Overview metric keys (03 8.1; 04 S-7): `sessions.active`, `sessions.waiting_inpu
 | `PanelStatus`, `PanelResponse<K>`, `PanelDataMap` | enum, type | 06 3.3 | 06 | same | 03, 04 | `ok partial error`; the UI type `PanelViewStatus` is separate (04 4.4.1) |
 | `MachinePanel`, `GitPanel`, `LinesPanel`, `LogsPanel`, `AttemptsPanel`, `AttemptState` | type, enum | 06 3.3 | 06 | same | 03 (`AttemptState`), 04 | `AttemptState`: `COMPLETED FAILED RUNNING UNKNOWN` |
 | `PanelResponseSchema`, `GitPanelSchema`, `MachinePanelSchema`, `AttemptsPanelSchema`, `LinesPanelSchema`, `LogsPanelSchema` | schema | 06 3.3 | 06 | same | 03 13 registry | discriminated union on `key` |
-| `ChildKind` | enum | 06 3.6 | 06 | `sh/api/panels.ts` (re-exported by `en/platform/exec.ts`) | 01, 03 `HealthReport.children` | `powershell.processes powershell.cmdline git docker ps taskkill node python icacls opener` (C11 resolved) |
+| `ChildKind` | enum | 06 3.6 | 06 | `sh/api/panels.ts` (re-exported by `en/platform/exec.ts`) | 01, 03 `HealthReport.children` | `powershell.processes powershell.cmdline git docker ps taskkill node python icacls opener` (C11 resolved); CAW-05 (user instance) added `powershell.shortcut claude powershell.picker` |
 | `ChildKindStats` | type | 06 3.6 | 06 | same | 01 4.2 (`childStats()`), 03 6.2 and `QueryDeps` | `{spawned, failed, timedOut, totalMs}`; 03 renamed its `ChildStat` (C10 resolved) |
 | `PanelStats`, `PanelSourceStats` | type | 06 3.4 | 06 | same | 03 `HealthReport.panels` | |
 
@@ -688,6 +688,7 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_WEB_DEV_PORT` | dev | `vite.config.ts` | default 18766 | same |
 | `MCS_WEB_PREVIEW_PORT` | dev | `vite.config.ts` | default 18767 | same |
 | `MCS_BUILD_ID` | dev | `vite.config.ts` | `VITE_BUILD_ID` (default `dev`) | same |
+| `MCS_NATIVE_TARBALLS` | dev | `runtime/scripts/native-stage.mjs` | folder with the `npm pack` tarballs of the native terminal packages; `bundle` and `bundle:check` stage the native files from it instead of the network (ADR 0082) | CAW-02 |
 | `LOCALAPPDATA`, `XDG_STATE_HOME` | runtime (non-MCS) | `resolveMcsHome` | default `MCS_HOME` location | 02 2.6.1 |
 | `CLAUDE_PID` | runtime (non-MCS) | hook handler | `claude_pid` envelope field | 02 2.3.1, A0019 |
 | `TZ` | test (non-MCS) | Vitest config, golden capture | `UTC` pinned | 05 2.8, 06 5.2.3 |
@@ -744,7 +745,7 @@ usage, 130 interrupted; 01 6.2); "Proc exit" is the server process exit code (01
 
 ### 7.2 CLI error codes (owner 01 6.2, `sh/errors.ts`, union `CliErrorCode`; C19 resolved)
 
-All exit 1 except `USAGE` (exit 2). Emitted in `CliEnvelope.error.code`.
+All exit 1 except `USAGE` (exit 2) and `TERMINALS_LIVE` (exit 3, a stop or restart refused because terminals are live). Emitted in `CliEnvelope.error.code`.
 
 | Code | Raised by (01 section) | Proc exit when raised at boot |
 |---|---|---|
@@ -775,6 +776,8 @@ All exit 1 except `USAGE` (exit 2). Emitted in `CliEnvelope.error.code`.
 | `OUTPUT_EXISTS`, `OUTPUT_PATH_FORBIDDEN` | `export`, `diagnostics --out` | - |
 | `NODE_TOO_OLD` | launcher section 5.1 | - |
 | `HOOKS_FAILED` | hooks commands; `details.reason` in section 7.6 | - |
+| `TERMINALS_LIVE` | `stop`, `restart` and update restarts of the user instance while terminals are open and `--force` is absent (exit 3; design 06 section 3); the control reply `TERMINALS_LIVE` | - |
+| `UNSUPPORTED_PLATFORM` | `autostart enable` and the Windows-only parts of the user instance off Windows (design 06 section 2.7) | - |
 | `NOT_FOUND` | readers, `ingest replay --from` missing segment, completion `target_not_found` | - |
 | `API_ERROR` | `ApiReader` non-2xx | - |
 | `INTERNAL` | uncaught (stack with `MCS_DEBUG=1`) | 70 |
