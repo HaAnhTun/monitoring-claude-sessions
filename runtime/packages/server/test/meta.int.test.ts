@@ -345,7 +345,7 @@ describe('instance and config', () => {
       'restart',
       'status',
     ]);
-    expect(info.commands.status).toContain('scripts/mcs.mjs status --task demo');
+    expect(info.commands.status).toContain('scripts/caw.mjs status --task demo');
     expect(info.commands.cleanupDryRun).toContain('cleanup --task demo --scope logs');
     expect(info.commands.export).toContain('/logs/export.ndjson');
     expect(info.commands.export).not.toContain('.jsonl');

@@ -1,6 +1,6 @@
 // The MCP server as the user gets it (ADR 0060 point 8, ADR 0062): a bundle built INTO A TEMP FOLDER with `node scripts/bundle.mjs
 // --out` (the tracked `bundle/` is never rewritten), a temp skill folder assembled from it (the layout of ADR 0062: the launcher,
-// `config/defaults.json`, `runtime/defaults.json` and `bundle/`), and the real launcher `scripts/mcs.mjs mcp` driven with a raw
+// `config/defaults.json`, `runtime/defaults.json` and `bundle/`), and the real launcher `scripts/caw.mjs mcp` driven with a raw
 // JSON-RPC client under the running Node and under every Node binary listed in `TEST_NODE_BINARIES` (split at the platform path
 // delimiter). Needs `packages/web/dist` (the gate runs `npm run build` first). The instance whose database is read is made by the
 // built CLI of the checkout; the launcher under test only reads it. Nothing touches the real `~/.claude` or any real workspace.
@@ -78,9 +78,9 @@ beforeAll(async () => {
 
   // the layout of ADR 0062 item 1, from the files of the skill folder and the fresh bundle
   skillDir = path.join(buildRoot, 'skill');
-  launcher = path.join(skillDir, 'scripts', 'mcs.mjs');
+  launcher = path.join(skillDir, 'scripts', 'caw.mjs');
   mkdirSync(path.dirname(launcher), { recursive: true });
-  copyFileSync(path.join(SKILL_SOURCE, 'scripts', 'mcs.mjs'), launcher);
+  copyFileSync(path.join(SKILL_SOURCE, 'scripts', 'caw.mjs'), launcher);
   for (const rel of ['config/defaults.json', 'runtime/defaults.json']) {
     mkdirSync(path.dirname(path.join(skillDir, rel)), { recursive: true });
     copyFileSync(path.join(SKILL_SOURCE, rel), path.join(skillDir, rel));

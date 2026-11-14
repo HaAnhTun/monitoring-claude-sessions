@@ -21,7 +21,7 @@ describe('mainPathsOf', () => {
       'C:/repo/skills/monitoring-claude-sessions/SKILL.md',
     ]);
     const expected = {
-      launcherPath: 'C:\\repo\\skills\\monitoring-claude-sessions\\scripts\\mcs.mjs',
+      launcherPath: 'C:\\repo\\skills\\monitoring-claude-sessions\\scripts\\caw.mjs',
       skillDir: 'C:\\repo\\skills\\monitoring-claude-sessions',
       runtimeDir: 'C:\\repo\\runtime',
     };
@@ -32,7 +32,7 @@ describe('mainPathsOf', () => {
   it('finds the bundle folder of an installed skill (POSIX)', () => {
     const fs = seam('linux', ['/opt/claude/skills/monitoring-claude-sessions/bundle/mcs-server.mjs']);
     expect(mainPathsOf('file:///opt/claude/skills/monitoring-claude-sessions/bundle/mcs-cli.mjs', fs)).toEqual({
-      launcherPath: '/opt/claude/skills/monitoring-claude-sessions/scripts/mcs.mjs',
+      launcherPath: '/opt/claude/skills/monitoring-claude-sessions/scripts/caw.mjs',
       skillDir: '/opt/claude/skills/monitoring-claude-sessions',
       runtimeDir: '/opt/claude/skills/monitoring-claude-sessions/bundle',
     });

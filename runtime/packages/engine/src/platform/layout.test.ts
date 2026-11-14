@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 import type { HostPlatform } from './host.ts';
 import {
   BUNDLE_SERVER_FILE,
+  LAUNCHER_FILE,
+  LEGACY_LAUNCHER_FILE,
   SKILL_FOLDER_NAME,
   layoutOfModule,
   layoutOfRuntimeDir,
@@ -51,7 +53,7 @@ function bundleFields(skillDir: string, runtimeDir: string, p: path.PlatformPath
     mode: 'bundle',
     skillDir,
     runtimeDir,
-    launcherPath: p.join(skillDir, 'scripts', 'mcs.mjs'),
+    launcherPath: p.join(skillDir, 'scripts', 'caw.mjs'),
     serverEntry: p.join(runtimeDir, 'mcs-server.mjs'),
     hookEntry: p.join(runtimeDir, 'mcs-hook.mjs'),
     webDir: p.join(runtimeDir, 'web'),
@@ -65,7 +67,7 @@ function sourceFields(skillDir: string, runtimeDir: string, p: path.PlatformPath
     mode: 'source',
     skillDir,
     runtimeDir,
-    launcherPath: p.join(skillDir, 'scripts', 'mcs.mjs'),
+    launcherPath: p.join(skillDir, 'scripts', 'caw.mjs'),
     serverEntry: p.join(runtimeDir, 'packages', 'server', 'dist', 'main.js'),
     hookEntry: p.join(runtimeDir, 'packages', 'cli', 'dist', 'hook.js'),
     webDir: p.join(runtimeDir, 'packages', 'web', 'dist'),
@@ -79,6 +81,28 @@ function scripted(platform: HostPlatform, files: readonly string[]): LayoutFs {
   const set = new Set(files);
   return { platform, exists: (file) => set.has(file) };
 }
+
+describe('the launcher file names', () => {
+  it('the canonical launcher is caw.mjs and the legacy alias next to it is mcs.mjs', () => {
+    expect(LAUNCHER_FILE).toBe('caw.mjs');
+    expect(LEGACY_LAUNCHER_FILE).toBe('mcs.mjs');
+  });
+
+  it('launcherPath names the canonical file in both layouts, on both path flavours, never the alias', () => {
+    const { skillDir, bundle } = bundleTree();
+    expect(layoutOfRuntimeDir(bundle).launcherPath).toBe(path.join(skillDir, 'scripts', LAUNCHER_FILE));
+    const { runtime, skillDir: sourceSkill } = sourceTree();
+    expect(layoutOfRuntimeDir(runtime).launcherPath).toBe(path.join(sourceSkill, 'scripts', LAUNCHER_FILE));
+    const skill = 'C:\\skills\\monitoring-claude-sessions';
+    const win = layoutOfRuntimeDir(`${skill}\\bundle`, scripted('win32', [`${skill}\\bundle\\mcs-server.mjs`]));
+    expect(win.launcherPath).toBe(`${skill}\\scripts\\caw.mjs`);
+    const posix = layoutOfRuntimeDir('/opt/s/bundle', scripted('linux', ['/opt/s/bundle/mcs-server.mjs']));
+    expect(posix.launcherPath).toBe('/opt/s/scripts/caw.mjs');
+    for (const layout of [layoutOfRuntimeDir(bundle), layoutOfRuntimeDir(runtime), win, posix]) {
+      expect(layout.launcherPath.endsWith(LEGACY_LAUNCHER_FILE)).toBe(false);
+    }
+  });
+});
 
 describe('layoutOfRuntimeDir', () => {
   it('a bundle folder (it holds mcs-server.mjs) is the bundle layout, every field', () => {

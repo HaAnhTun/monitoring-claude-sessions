@@ -14,6 +14,10 @@ import { hostPlatform, type HostPlatform } from './host.ts';
 /** The name of the skill folder (and of the skill in its `SKILL.md` frontmatter). */
 export const SKILL_FOLDER_NAME = 'monitoring-claude-sessions';
 
+/** The canonical launcher in `<skillDir>/scripts` (CAW-04) and the legacy alias that calls it; both ship in every layout. */
+export const LAUNCHER_FILE = 'caw.mjs';
+export const LEGACY_LAUNCHER_FILE = 'mcs.mjs';
+
 /** The file names of the bundle layout (directly in `<skillDir>/bundle`). */
 export const BUNDLE_SERVER_FILE = 'mcs-server.mjs';
 export const BUNDLE_CLI_FILE = 'mcs-cli.mjs';
@@ -29,7 +33,7 @@ export interface RuntimeLayout {
   readonly skillDir: string;
   /** The folder that holds the server entry and `.mcs-build.json`. */
   readonly runtimeDir: string;
-  /** `<skillDir>/scripts/mcs.mjs`. */
+  /** `<skillDir>/scripts/caw.mjs` (`LAUNCHER_FILE`): the canonical launcher, never the legacy alias. */
   readonly launcherPath: string;
   readonly serverEntry: string;
   /** The hook handler: the one locator of the hooks installer and the testkit. */
@@ -74,7 +78,7 @@ function bundleLayout(r: Resolved, runtimeDir: string): RuntimeLayout {
     mode: 'bundle',
     skillDir,
     runtimeDir,
-    launcherPath: p.join(skillDir, 'scripts', 'mcs.mjs'),
+    launcherPath: p.join(skillDir, 'scripts', LAUNCHER_FILE),
     serverEntry: p.join(runtimeDir, BUNDLE_SERVER_FILE),
     hookEntry: p.join(runtimeDir, BUNDLE_HOOK_FILE),
     webDir: p.join(runtimeDir, 'web'),
@@ -93,7 +97,7 @@ function sourceLayout(r: Resolved, runtimeDir: string): RuntimeLayout {
     mode: 'source',
     skillDir,
     runtimeDir,
-    launcherPath: p.join(skillDir, 'scripts', 'mcs.mjs'),
+    launcherPath: p.join(skillDir, 'scripts', LAUNCHER_FILE),
     serverEntry: p.join(runtimeDir, 'packages', 'server', 'dist', 'main.js'),
     hookEntry: p.join(runtimeDir, 'packages', 'cli', 'dist', 'hook.js'),
     webDir: p.join(runtimeDir, 'packages', 'web', 'dist'),

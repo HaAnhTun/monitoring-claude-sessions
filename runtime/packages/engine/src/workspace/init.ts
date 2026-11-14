@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { CHANGES_HEADER, changeEntryText } from '../audit/writer.ts';
 import { checkSchemaVersion, getEntry, type JsonObject } from '../config/defaults.ts';
 import { LEGACY_KEYS, compileConfigPatterns, validateLegacy } from '../config/validate-legacy.ts';
+import { LAUNCHER_FILE } from '../platform/layout.ts';
 import { pidAlive } from '../platform/process.ts';
 import { fromPlain, jsonEquals, quoteText, toPlain, type JsonDoc } from '../json/index.ts';
 import {
@@ -214,7 +215,7 @@ const README_NOTES =
 function readmeText(name: string, description: string, slug: string): string {
   return (
     `# Monitoring task: ${name}\n\n${description}\n\n${README_NOTES}` +
-    `- Inspect: \`node <skill>/scripts/mcs.mjs inspect --task ${slug}\` (\`<skill>\` is the installed skill folder that holds \`SKILL.md\`)\n` +
+    `- Inspect: \`node <skill>/scripts/${LAUNCHER_FILE} inspect --task ${slug}\` (\`<skill>\` is the installed skill folder that holds \`SKILL.md\`)\n` +
     '- Never copy transcripts here; they are read in place.\n'
   );
 }

@@ -365,13 +365,15 @@ describe('instanceInfo (03 6.2)', () => {
     const fx = await fixture();
     const ctx = await build(fx);
     const expected = instanceCommands({
-      launcherPath: path.join(fx.skill, 'scripts', 'mcs.mjs'),
+      launcherPath: path.join(fx.skill, 'scripts', 'caw.mjs'),
       slug: 'demo',
       repoDir: ctx.config.monitor.repo,
       instanceDir: fx.ws.dir,
     });
     expect(ctx.queries.instanceInfo(ctx.scope).commands).toEqual(expected);
     expect(expected.export).toContain('/logs/export.ndjson');
+    // the commands name the canonical launcher, never the legacy alias next to it
+    for (const command of Object.values(expected)) expect(command).toContain('scripts/caw.mjs');
   });
 
   it('has headSeq of the change log and the epoch of this database open', async () => {

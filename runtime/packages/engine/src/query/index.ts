@@ -39,6 +39,7 @@ import { HookProbesRepo } from '../db/repos/hook-probes.ts';
 import { IngestHealthRepo } from '../db/repos/ingest-health.ts';
 import { SessionsRepo } from '../db/repos/sessions.ts';
 import { instanceCommands } from '../ops/commands.ts';
+import { LAUNCHER_FILE } from '../platform/layout.ts';
 import type { AuditQueries, QueryDeps, TranscriptQueries } from '../runtime/context.ts';
 import {
   buildHealthReport,
@@ -126,7 +127,7 @@ function readIdentity(config: ResolvedConfig): Identity {
   const defaultsFile = config.files.find((file) => file.name === 'defaults.json');
   const workspaceDir = configFile === undefined ? null : path.dirname(configFile.path);
   const skillDir = defaultsFile === undefined ? null : path.dirname(path.dirname(defaultsFile.path));
-  const launcherPath = path.join(skillDir ?? '.', 'scripts', 'mcs.mjs');
+  const launcherPath = path.join(skillDir ?? '.', 'scripts', LAUNCHER_FILE);
   if (workspaceDir === null) {
     return { slug: '', description: null, hooksEnabled: false, workspaceDir, launcherPath };
   }

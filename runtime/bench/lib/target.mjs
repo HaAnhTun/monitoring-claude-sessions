@@ -10,7 +10,7 @@ export const BENCH_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const RUNTIME_ROOT = resolve(BENCH_DIR, '..');
 export const SKILL_ROOT = resolve(RUNTIME_ROOT, '..');
 export const RESULTS_DIR = join(BENCH_DIR, 'results');
-export const DEFAULT_LAUNCHER = join(SKILL_ROOT, 'skills', 'monitoring-claude-sessions', 'scripts', 'mcs.mjs');
+export const DEFAULT_LAUNCHER = join(SKILL_ROOT, 'skills', 'monitoring-claude-sessions', 'scripts', 'caw.mjs');
 
 export class TargetError extends Error {
   constructor(message) {

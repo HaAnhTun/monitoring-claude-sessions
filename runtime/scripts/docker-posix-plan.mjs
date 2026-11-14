@@ -86,8 +86,8 @@ export function containerScript({ target, quick, bundle }) {
   ];
   if (TARGETS[target].floor) {
     lines.push(
-      'launcher=skills/monitoring-claude-sessions/scripts/mcs.mjs',
-      '[ -f "$launcher" ] || launcher=scripts/mcs.mjs',
+      'launcher=skills/monitoring-claude-sessions/scripts/caw.mjs',
+      '[ -f "$launcher" ] || launcher=scripts/caw.mjs',
       'out=$(node "$launcher" --version 2>&1); code=$?',
       'printf "%s\\n" "$out"',
       'echo "| gate | result | ms |"',

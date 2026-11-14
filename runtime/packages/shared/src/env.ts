@@ -42,11 +42,11 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   },
   { name: 'MCS_FS_WATCH', scope: 'runtime', readers: ['runtime/packages/engine/src/platform/watch-hint.ts'] },
   // `bundle` or `dev`: forces the launcher's runtime (default: the bundle when it exists, else a checkout's dist).
-  { name: 'MCS_LAUNCHER_MODE', scope: 'runtime', readers: ['skills/monitoring-claude-sessions/scripts/mcs.mjs'] },
+  { name: 'MCS_LAUNCHER_MODE', scope: 'runtime', readers: ['skills/monitoring-claude-sessions/scripts/caw.mjs'] },
   {
     name: 'MCS_DEBUG',
     scope: 'runtime',
-    readers: ['runtime/packages/cli/src/main.ts', 'skills/monitoring-claude-sessions/scripts/mcs.mjs'],
+    readers: ['runtime/packages/cli/src/main.ts', 'skills/monitoring-claude-sessions/scripts/caw.mjs'],
   },
   {
     name: 'MCS_TEST',
@@ -74,6 +74,9 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_WEB_DEV_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_WEB_PREVIEW_PORT', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
   { name: 'MCS_BUILD_ID', scope: 'dev', readers: ['runtime/packages/web/vite.config.ts'] },
+  // A folder with the `npm pack` tarballs of the native terminal packages (ADR 0082): `npm run bundle` and `bundle:check` stage the
+  // native files from it instead of the network (the Docker harness mounts it).
+  { name: 'MCS_NATIVE_TARBALLS', scope: 'dev', readers: ['runtime/scripts/native-stage.mjs'] },
 ];
 
 /**

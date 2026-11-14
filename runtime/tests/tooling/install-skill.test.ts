@@ -60,7 +60,7 @@ function fakeCheckout(root: string, opts: { launcherCode?: number; version?: str
   copyFileSync(INSTALLER, join(checkout, 'install.mjs'));
   const skill = join(checkout, 'skills', NAME);
   write(join(skill, 'SKILL.md'), SKILL_MD);
-  write(join(skill, 'scripts', 'mcs.mjs'), launcherSource(opts.launcherCode ?? 0, opts.version ?? '9.9.9-test'));
+  write(join(skill, 'scripts', 'caw.mjs'), launcherSource(opts.launcherCode ?? 0, opts.version ?? '9.9.9-test'));
   write(join(skill, 'bundle', '.mcs-build.json'), `{ "runtimeVersion": "${opts.version ?? '9.9.9-test'}" }\n`);
   write(join(skill, 'reference', 'notes with space.md'), 'Synthetic test data. Not real data.\n');
   write(join(skill, 'bundle', 'web', 'a.js'), 'export const a = 1;\n');
@@ -129,13 +129,16 @@ describe('install.mjs: install', () => {
     expect(copied).toEqual(filesOf(source));
     expect([...marker.files].sort()).toEqual(Object.keys(copied).sort());
     expect(marker.installedAt).toMatch(/Z$/);
-    const version = spawnSync(process.execPath, [join(target, 'scripts', 'mcs.mjs'), '--version'], {
-      env,
-      encoding: 'utf8',
-      windowsHide: true,
-    });
-    expect(version.status).toBe(0);
-    expect(version.stdout.trim()).toBe(`mcs ${marker.version}`);
+    // the self-check runs the canonical launcher; the alias next to it answers the same
+    for (const file of ['caw.mjs', 'mcs.mjs']) {
+      const version = spawnSync(process.execPath, [join(target, 'scripts', file), '--version'], {
+        env,
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+      expect(version.status, file).toBe(0);
+      expect(version.stdout.trim(), file).toBe(`mcs ${marker.version}`);
+    }
     expect(siblingsOf(skills)).toEqual([NAME]);
     // nothing outside the destination: the temp state folders stay empty or absent
     expect(existsSync(join(root, 'state', 'claude-home'))).toBe(false);
@@ -192,7 +195,7 @@ describe('install.mjs: install', () => {
     const s = setup('selfcheck');
     expect(run(s.installer, ['--dest', s.skills], s.env).code).toBe(0);
     const before = snapshotTree(s.skills);
-    write(join(s.source, 'scripts', 'mcs.mjs'), launcherSource(1, 'x'));
+    write(join(s.source, 'scripts', 'caw.mjs'), launcherSource(1, 'x'));
     const r = run(s.installer, ['--dest', s.skills, '--force'], s.env);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('self-check');
@@ -204,6 +207,16 @@ describe('install.mjs: install', () => {
     const r = run(s.installer, ['--dest', s.skills], s.env);
     expect(r.code).toBe(1);
     expect(siblingsOf(s.skills)).toEqual([]);
+  });
+
+  it('runs the self-check through caw.mjs and never through the alias mcs.mjs next to it', () => {
+    const s = setup('selfcheck-alias');
+    write(join(s.source, 'scripts', 'mcs.mjs'), launcherSource(1, 'broken alias'));
+    const r = run(s.installer, ['--dest', s.skills], s.env);
+    expect(r.stderr).toBe('');
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('9.9.9-test');
+    expect(siblingsOf(s.skills)).toEqual([NAME]);
   });
 
   it('--dry-run prints the real paths and every decision and writes nothing', () => {
@@ -276,6 +289,16 @@ describe('install.mjs: refusals', () => {
       expect(r.stderr).toContain('is a link');
     }
     expect(readFileSync(join(other, 'keep.txt'), 'utf8')).toBe('keep\n');
+  });
+
+  it('refuses a source whose scripts folder holds only the legacy alias mcs.mjs and no caw.mjs', () => {
+    const s = setup('no-caw');
+    rmSync(join(s.source, 'scripts', 'caw.mjs'));
+    write(join(s.source, 'scripts', 'mcs.mjs'), launcherSource(0, '9.9.9-test'));
+    const r = run(s.installer, ['--dest', s.skills], s.env);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('no skill folder next to install.mjs');
+    expect(existsSync(s.skills)).toBe(false);
   });
 
   it('refuses a filesystem root as the destination folder', () => {

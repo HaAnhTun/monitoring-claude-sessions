@@ -1,6 +1,8 @@
-// The bundle-first launcher `skills/monitoring-claude-sessions/scripts/mcs.mjs` (ADR 0062 item 4): the pure helpers, the
-// in-process hand-over to a (fake) bundle and a checkout's `dist`, the floor check on a spoofed old Node, the real committed
-// bundle on a hermetic instance under a path with spaces and non-ASCII characters, and static checks of the file itself.
+// The bundle-first launcher `skills/monitoring-claude-sessions/scripts/caw.mjs` (ADR 0062 item 4; CAW-04: canonical file, `mcs.mjs`
+// is its alias): the pure helpers, the in-process hand-over to a (fake) bundle and a checkout's `dist`, the floor check on a
+// spoofed old Node, the real committed bundle on a hermetic instance under a path with spaces and non-ASCII characters, the
+// parity of the alias with the canonical file (same `--version`, help, exit codes; the CLI gets the canonical `launcherPath`),
+// and static checks of the file itself. `caw-launcher.test.ts` holds the checks that are specific to the two entry points.
 import { execFile } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,7 +15,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const REPO = resolve(import.meta.dirname, '..', '..', '..');
 const SKILLDIR = join(REPO, 'skills', 'monitoring-claude-sessions');
-const LAUNCHER = join(SKILLDIR, 'scripts', 'mcs.mjs');
+const LAUNCHER = join(SKILLDIR, 'scripts', 'caw.mjs');
+const ALIAS = join(SKILLDIR, 'scripts', 'mcs.mjs');
 
 interface LauncherModule {
   NODE_FLOOR: string;
@@ -85,20 +88,25 @@ function runNode(args: readonly string[], env: Record<string, string>, cwd: stri
   });
 }
 
-/** The parent's environment without any `MCS_*` / `CLAUDE_*` variable, plus `extra`. */
+/** The parent's environment without any `CAW_*`, `MCS_*` or `CLAUDE_*` variable, plus `extra`. */
 function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !/^(MCS_|CLAUDE_)/i.test(key)) env[key] = value;
+    if (value !== undefined && !/^(CAW_|MCS_|CLAUDE_)/i.test(key)) env[key] = value;
   }
   return { ...env, MCS_HOOK_DISABLE: '1', ...extra };
 }
 
-/** `<root>/repo/skills/mcs/` with the real launcher, optional fake bundle and optional fake checkout `dist`. */
-function fakeCheckout(root: string, opts: { bundle?: string; dist?: string }): { skillDir: string; launcher: string } {
+/** `<root>/repo/skills/mcs/` with the real launcher and its alias, optional fake bundle and optional fake checkout `dist`. */
+function fakeCheckout(
+  root: string,
+  opts: { bundle?: string; dist?: string },
+): { skillDir: string; launcher: string; alias: string } {
   const skillDir = join(root, 'repo', 'skills', 'mcs');
-  const copy = join(skillDir, 'scripts', 'mcs.mjs');
+  const copy = join(skillDir, 'scripts', 'caw.mjs');
+  const alias = join(skillDir, 'scripts', 'mcs.mjs');
   write(copy, readFileSync(LAUNCHER, 'utf8'));
+  write(alias, readFileSync(ALIAS, 'utf8'));
   if (opts.bundle !== undefined) {
     write(join(skillDir, 'bundle', 'mcs-cli.mjs'), opts.bundle);
     write(join(skillDir, 'bundle', '.mcs-build.json'), '{"schemaVersion":1,"runtimeVersion":"8.8.8"}\n');
@@ -107,7 +115,7 @@ function fakeCheckout(root: string, opts: { bundle?: string; dist?: string }): {
     write(join(root, 'repo', 'runtime', 'packages', 'cli', 'dist', 'main.js'), opts.dist);
     write(join(root, 'repo', 'runtime', 'package.json'), '{"name":"fake","version":"9.9.9","type":"module"}\n');
   }
-  return { skillDir, launcher: copy };
+  return { skillDir, launcher: copy, alias };
 }
 
 describe('launcher helpers', () => {
@@ -162,7 +170,7 @@ describe('launcher helpers', () => {
 });
 
 describe('launcher hand-over (fake runtimes)', () => {
-  it('passes the argv and { launcherPath, skillDir, runtimeDir } to the bundle and propagates the exit code', async () => {
+  it('passes the argv and { launcherPath, skillDir, runtimeDir, program } to the bundle and propagates the exit code', async () => {
     const root = tempRoot('bundle');
     const fake = fakeCheckout(root, { bundle: fakeCli('bundle', 7) });
     const record = join(root, 'record.json');
@@ -172,7 +180,31 @@ describe('launcher hand-over (fake runtimes)', () => {
     expect(JSON.parse(readFileSync(record, 'utf8'))).toEqual({
       tag: 'bundle',
       argv: ['status', '--json'],
-      paths: { launcherPath: fake.launcher, skillDir: fake.skillDir, runtimeDir: join(fake.skillDir, 'bundle') },
+      paths: {
+        launcherPath: fake.launcher,
+        skillDir: fake.skillDir,
+        runtimeDir: join(fake.skillDir, 'bundle'),
+        program: 'caw',
+      },
+    });
+  });
+
+  it('gives the CLI the canonical caw.mjs path and the program mcs when it is started through the alias', async () => {
+    const root = tempRoot('alias');
+    const fake = fakeCheckout(root, { bundle: fakeCli('bundle', 7) });
+    const record = join(root, 'record.json');
+    const run = await runNode([fake.alias, 'status', '--json'], cleanEnv({ FAKE_RECORD: record }), root);
+    expect(run.stderr).toBe('');
+    expect(run.code).toBe(7);
+    expect(JSON.parse(readFileSync(record, 'utf8'))).toEqual({
+      tag: 'bundle',
+      argv: ['status', '--json'],
+      paths: {
+        launcherPath: fake.launcher,
+        skillDir: fake.skillDir,
+        runtimeDir: join(fake.skillDir, 'bundle'),
+        program: 'mcs',
+      },
     });
   });
 
@@ -237,7 +269,7 @@ describe('launcher with the committed bundle', () => {
     const skillDir = join(root, 'skill folder ñé ü', 'monitoring-claude-sessions');
     cpSync(SKILLDIR, skillDir, { recursive: true });
     const before = snapshotTree(skillDir);
-    const copy = join(skillDir, 'scripts', 'mcs.mjs');
+    const copy = join(skillDir, 'scripts', 'caw.mjs');
     const repo = join(root, 'repo');
     mkdirSync(repo, { recursive: true });
     const env = hermeticEnv(join(root, 'env'));
@@ -274,6 +306,63 @@ describe('launcher with the committed bundle', () => {
       }
     }
     expect(snapshotTree(skillDir)).toBe(before);
+  }, 120_000);
+});
+
+describe('alias parity with the committed bundle', () => {
+  it('caw.mjs and mcs.mjs give identical --version, help, usage errors and exit codes, and the CLI sees caw.mjs', async () => {
+    const root = tempRoot('parity');
+    const skillDir = join(root, 'skill folder ñé ü', 'monitoring-claude-sessions');
+    cpSync(SKILLDIR, skillDir, { recursive: true });
+    const caw = join(skillDir, 'scripts', 'caw.mjs');
+    const alias = join(skillDir, 'scripts', 'mcs.mjs');
+    const repo = join(root, 'repo');
+    mkdirSync(repo, { recursive: true });
+    const env = hermeticEnv(join(root, 'env'));
+    for (const dir of [env['HOME'], env['MCS_HOME'], env['CLAUDE_CONFIG_DIR']])
+      mkdirSync(dir ?? root, { recursive: true });
+    const port = await allocatePort();
+    const init = await runNode(
+      [caw, 'init', '--slug', 'demo', '--name', 'FIXTURE demo', '--repo', repo, '--port', String(port)],
+      env,
+      root,
+    );
+    expect(init.code, init.stderr || init.stdout).toBe(0);
+
+    const stamp = JSON.parse(readFileSync(join(SKILLDIR, 'bundle', '.mcs-build.json'), 'utf8')) as {
+      runtimeVersion: string;
+    };
+    const cases: { args: string[]; code: number }[] = [
+      { args: ['--version'], code: 0 },
+      { args: ['version', '--short'], code: 0 },
+      { args: ['version', '--json'], code: 0 },
+      { args: ['help'], code: 0 },
+      { args: ['help', 'init'], code: 0 },
+      { args: ['no-such-command'], code: 2 },
+      { args: ['mcp', '--print-config', '--task', 'demo', '--repo', repo], code: 0 },
+    ];
+    for (const { args, code } of cases) {
+      const [fromCaw, fromAlias] = await Promise.all([
+        runNode([caw, ...args], env, root),
+        runNode([alias, ...args], env, root),
+      ]);
+      expect(fromAlias, args.join(' ')).toEqual(fromCaw);
+      expect(fromCaw.code, `${args.join(' ')}: ${fromCaw.stderr}`).toBe(code);
+    }
+    expect(await runNode([alias, '--version'], env, root)).toEqual({
+      code: 0,
+      stdout: `mcs ${stamp.runtimeVersion}\n`,
+      stderr: '',
+    });
+    // the CLI is handed the canonical launcher path, so the registration command names caw.mjs whichever entry point ran
+    const printed = await runNode(
+      [alias, 'mcp', '--print-config', '--task', 'demo', '--repo', repo, '--json'],
+      env,
+      root,
+    );
+    expect(printed.code, printed.stderr).toBe(0);
+    expect(printed.stdout).toContain('caw.mjs');
+    expect(printed.stdout).not.toContain('mcs.mjs');
   }, 120_000);
 });
 

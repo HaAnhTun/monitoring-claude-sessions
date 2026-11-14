@@ -10,8 +10,8 @@
 // file, or when its folder is a filesystem root; `--force` and `--uninstall` only touch a folder that holds the install marker
 // `.mcs-installed.json`, a `SKILL.md` named monitoring-claude-sessions, and no `.git`, `runtime/package.json` or
 // `.claude-plugin`. A new copy is built in a temp sibling and renamed into place; with `--force` the old copy is renamed to
-// `<dest>.bak-<UTC stamp>` first and removed only after the launcher self-check (`--version`) of the new copy passed (on a
-// failure the new copy is removed and the old one renamed back). The marker is written as the last step.
+// `<dest>.bak-<UTC stamp>` first and removed only after the launcher self-check (`scripts/caw.mjs --version`) of the new copy
+// passed (on a failure the new copy is removed and the old one renamed back). The marker is written as the last step.
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
@@ -31,6 +31,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const SKILL_NAME = 'monitoring-claude-sessions';
 export const MARKER = '.mcs-installed.json';
+/** The canonical launcher of the skill (CAW-04); the self-check runs it. `scripts/mcs.mjs` is only its alias. */
+export const LAUNCHER_FILE = 'caw.mjs';
 const CHECKOUT_SIGNS = ['.git', join('runtime', 'package.json'), '.claude-plugin'];
 
 const USAGE = [
@@ -168,7 +170,7 @@ function copyTree(from, to, prefix, files) {
 
 /** Runs the launcher of an installed copy with `--version`: `{ ok, version, detail }`. */
 function selfCheck(dir) {
-  const launcher = join(dir, 'scripts', 'mcs.mjs');
+  const launcher = join(dir, 'scripts', LAUNCHER_FILE);
   const run = spawnSync(process.execPath, [launcher, '--version'], {
     cwd: dir,
     encoding: 'utf8',
@@ -190,7 +192,7 @@ function removeTree(path) {
 function inspect(options, env, scriptDir, say) {
   const checkout = realOf(scriptDir);
   const sourcePath = join(checkout, 'skills', SKILL_NAME);
-  if (!existsSync(join(sourcePath, 'scripts', 'mcs.mjs')) || !hasSkillManifest(sourcePath)) {
+  if (!existsSync(join(sourcePath, 'scripts', LAUNCHER_FILE)) || !hasSkillManifest(sourcePath)) {
     throw new Refusal(`no skill folder next to install.mjs (expected ${sourcePath})`);
   }
   const source = realOf(sourcePath);

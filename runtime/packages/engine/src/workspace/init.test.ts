@@ -104,7 +104,7 @@ describe('initWorkspace: a new workspace', () => {
     expect(read(repo, 'nightly-build', 'README.md')).toBe(
       '# Monitoring task: Nightly build\n\nChecks the nightly build.\n\n' +
         '- `task.json` identity, `config.json` overrides of the shared defaults, `runtime.json` Node runtime overrides, `instance.json` runtime identity, `audit/` change and decision log, `data/` database and hook spool, `logs/` runtime logs.\n' +
-        '- Inspect: `node <skill>/scripts/mcs.mjs inspect --task nightly-build` (`<skill>` is the installed skill folder that holds `SKILL.md`)\n' +
+        '- Inspect: `node <skill>/scripts/caw.mjs inspect --task nightly-build` (`<skill>` is the installed skill folder that holds `SKILL.md`)\n' +
         '- Never copy transcripts here; they are read in place.\n',
     );
     expect(read(repo, 'nightly-build', 'audit', 'changes.md')).toBe(

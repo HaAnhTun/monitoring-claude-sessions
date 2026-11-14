@@ -27,6 +27,9 @@ const BUNDLE_ENTRIES = [
 /** The documented top-level entries of the skill folder (ADR 0062 item 1). */
 const SKILLDIR_ENTRIES = ['SKILL.md', 'config', 'runtime', 'scripts', 'bundle', 'reference'];
 
+/** The files of `scripts/`: the canonical launcher, its `mcs` alias (design 07 section 5.2) and the hook stub. */
+const SCRIPT_FILES = ['caw.mjs', 'mcs-hook.mjs', 'mcs.mjs'];
+
 /** The commands `mcs help` lists; `SKILL.md` may teach only these. */
 const CLI_COMMANDS = [
   'discover',
@@ -194,6 +197,12 @@ describe('skill folder', () => {
       }
     };
     walk(SKILLDIR);
+  });
+
+  it('holds in scripts/ exactly the canonical launcher, its alias and the hook stub, all plain files', () => {
+    const scripts = join(SKILLDIR, 'scripts');
+    expect(readdirSync(scripts).sort()).toEqual(SCRIPT_FILES);
+    for (const name of SCRIPT_FILES) expect(lstatSync(join(scripts, name)).isFile(), name).toBe(true);
   });
 
   it('holds the only copies of config/defaults.json and reference/transcript-format.md (the root originals are gone)', () => {
