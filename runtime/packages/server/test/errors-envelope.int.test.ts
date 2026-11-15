@@ -8,6 +8,7 @@ import path from 'node:path';
 
 import {
   buildInstanceContext,
+  createAccessService,
   defaultSkillDir,
   DbError,
   initWorkspace,
@@ -32,8 +33,13 @@ import { z } from 'zod';
 
 import { createApp, createHttpServer } from '../src/app.ts';
 import { ApiError, ERROR_MESSAGES } from '../src/errors.ts';
+import { createAccessVerifier } from '../src/http/access-guard.ts';
 import { registerRoute, type RouteModule } from '../src/route-adapter.ts';
+import { createAuthRoutes } from '../src/routes/auth.ts';
 import { readLegacyTask } from '../src/routes/meta.ts';
+import { createTerminalRoutes } from '../src/routes/terminal.ts';
+import { mintAndExchange, pageOrigin, writeHeaders } from './terminal/helpers/auth.ts';
+import { FakeTerminalError, FakeTerminalPorts } from './terminal/helpers/fake-terminal.ts';
 
 /** The reply of the HTTP helper of the testkit (its type is not exported). */
 type HttpReply = Awaited<ReturnType<typeof httpRequest>>;
@@ -123,6 +129,9 @@ interface Running {
   readonly ctx: InstanceContext;
   readonly port: number;
   phase: 'starting' | 'ready' | 'stopping';
+  /** The access service and the terminal host of an instance started with `terminal: true`. */
+  readonly access: ReturnType<typeof createAccessService> | undefined;
+  readonly ports: FakeTerminalPorts | undefined;
 }
 
 const live: { server: Server; ctx: InstanceContext; port: number }[] = [];
@@ -151,7 +160,11 @@ function silentLogger(): Logger {
   };
 }
 
-async function startInstance(): Promise<Running> {
+/**
+ * A task-like instance, or with `terminal: true` a user-like one: the real access service and verifier, the auth routes and the
+ * terminal routes over a fake host, so that the guards and the routes of the access and terminal work produce their own codes.
+ */
+async function startInstance(options: { readonly terminal?: boolean } = {}): Promise<Running> {
   const root = makeTemp('errors-int').path;
   const skill = path.join(root, 'skill');
   const runtimeDir = path.join(skill, 'runtime');
@@ -176,12 +189,23 @@ async function startInstance(): Promise<Running> {
     processInfo: { phase: () => run.phase },
   });
   const port = await allocatePort();
+  const access = options.terminal === true ? createAccessService({ clock }) : undefined;
+  const ports = options.terminal === true ? new FakeTerminalPorts() : undefined;
   const app = createApp({
     ctx,
     port: () => port,
     nudge: () => undefined,
     task: await readLegacyTask(ws.dir),
-    extraModules: [testRoutes],
+    ...(access === undefined ? {} : { access: createAccessVerifier(access, ctx.instanceId) }),
+    extraModules: [
+      testRoutes,
+      ...(access === undefined
+        ? []
+        : [
+            createAuthRoutes({ access, instanceId: ctx.instanceId }),
+            createTerminalRoutes({ ports: ports ?? null, epoch: ctx.db.epoch, now: () => ctx.clock.now() }),
+          ]),
+    ],
   });
   const server = createHttpServer(app, ctx.config.runtime.server.requestTimeoutMs);
   await new Promise<void>((resolve) => {
@@ -193,6 +217,8 @@ async function startInstance(): Promise<Running> {
   return {
     ctx,
     port,
+    access,
+    ports,
     get phase() {
       return run.phase;
     },
@@ -245,22 +271,32 @@ const GUARD_AND_ROUTER_CODES: readonly ErrorCode[] = [
   'db_busy',
   'disk_full',
   'shutting_down',
-];
-
-/**
- * TEMPORARY (CAW-07): codes of the catalogue that no route definition lists yet. TERM-ROUTES removes the entries of its routes
- * (and adds the guard codes it produces to `GUARD_AND_ROUTER_CODES`); nothing is added here.
- */
-const PENDING_ROUTE_CODES: readonly ErrorCode[] = [
+  // the access and terminal chain (CAW-20): the guards and the routes of a user instance, crafted in their own test below
+  'access_required',
+  'csrf_rejected',
   'access_code_invalid',
   'access_rate_limited',
-  'upgrade_required',
   'terminal_unavailable',
   'claude_not_found',
+  'folder_invalid',
   'terminal_not_found',
   'terminal_limit',
   'picker_busy',
+  'resume_unavailable',
+];
+
+/** The codes `produces the codes of the access and terminal chain` crafts through a user instance. */
+const CHAIN_CODES: readonly ErrorCode[] = [
+  'access_required',
+  'csrf_rejected',
+  'access_code_invalid',
+  'access_rate_limited',
+  'terminal_unavailable',
+  'claude_not_found',
   'folder_invalid',
+  'terminal_not_found',
+  'terminal_limit',
+  'picker_busy',
   'resume_unavailable',
 ];
 
@@ -331,7 +367,66 @@ describe('DA-T-API-3: one crafted request per error code', () => {
     run.phase = 'stopping';
     check(await httpRequest(p, '/api/v3/instance'), 'shutting_down', 'stopping');
     run.phase = 'ready';
-    expect([...produced].sort()).toEqual([...GUARD_AND_ROUTER_CODES].sort());
+    // the codes of the access and terminal chain are crafted by the test below, through a user instance
+    expect([...produced].sort()).toEqual(GUARD_AND_ROUTER_CODES.filter((code) => !CHAIN_CODES.includes(code)).sort());
+  });
+
+  it('produces the codes of the access and terminal chain through the real guards and routes of a user instance', async () => {
+    const run = await startInstance({ terminal: true });
+    const { access, ports } = run;
+    if (access === undefined || ports === undefined) throw new Error('the user instance was not started');
+    const p = run.port;
+    const cookie = await mintAndExchange(p, access);
+    const write = (path: string, body: unknown, withCookie = true): Promise<HttpReply> =>
+      httpRequest(p, path, {
+        method: 'POST',
+        headers: writeHeaders(withCookie ? cookie : undefined),
+        origin: pageOrigin(p),
+        body: JSON.stringify(body),
+      });
+    const sessionId = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+    const folder = { path: 'C:\\work\\demo' };
+    const createWith = (thrown: string): Promise<HttpReply> => {
+      ports.sessions.createFailure = new FakeTerminalError(thrown);
+      return write(routes.terminalCreateSession.path, folder);
+    };
+    const crafted: [ErrorCode, HttpReply][] = [];
+    crafted.push(['access_required', await httpRequest(p, routes.terminalState.path)]);
+    crafted.push([
+      'csrf_rejected',
+      await httpRequest(p, routes.terminalPickFolder.path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', Cookie: cookie },
+        origin: pageOrigin(p),
+        body: '{}',
+      }),
+    ]);
+    crafted.push(['terminal_unavailable', await createWith('UNSUPPORTED_OS')]);
+    crafted.push(['claude_not_found', await createWith('CLAUDE_NOT_FOUND')]);
+    crafted.push(['folder_invalid', await createWith('FOLDER_INVALID')]);
+    crafted.push(['terminal_limit', await createWith('SESSION_LIMIT')]);
+    crafted.push(['terminal_not_found', await write(routes.terminalKillSession.path.replace(':name', 'ghost-1'), {})]);
+    ports.resumeFailure = new FakeTerminalError('resume_unavailable');
+    crafted.push(['resume_unavailable', await write(routes.terminalResume.path, { sessionId })]);
+    ports.fakePicker.failure = new FakeTerminalError('picker_busy');
+    crafted.push(['picker_busy', await write(routes.terminalPickFolder.path, {})]);
+    // the access limiter: a wrong code is 401, the ninth wrong one in a window is 429
+    const wrongCode = (n: number): string => Buffer.alloc(32, n + 1).toString('base64url');
+    crafted.push(['access_code_invalid', await write(routes.authExchange.path, { code: wrongCode(0) }, false)]);
+    for (let i = 1; i < 8; i += 1) await write(routes.authExchange.path, { code: wrongCode(i) }, false);
+    crafted.push(['access_rate_limited', await write(routes.authExchange.path, { code: wrongCode(9) }, false)]);
+    for (const [code, reply] of crafted) {
+      expect(reply.status, code).toBe(ERROR_HTTP_STATUS[code]);
+      const error = envelopeOf(reply);
+      expect(error.code, code).toBe(code);
+      expect(error.message, code).toBe(ERROR_MESSAGES[code]);
+      expect(error.requestId, code).toBe(reply.headers['x-request-id']);
+      expect(reply.headers['cache-control'], code).toBe('no-store');
+      expect(reply.body, code).not.toContain('SECRET');
+    }
+    expect(crafted.map(([code]) => code).sort()).toEqual([...CHAIN_CODES].sort());
+    // every code of the chain belongs to the group this suite says it produces through the real chain
+    for (const code of CHAIN_CODES) expect(GUARD_AND_ROUTER_CODES, code).toContain(code);
   });
 
   it('records the unexpected failures in the server error ring with the route id and no request data', async () => {
@@ -373,7 +468,7 @@ describe('DA-T-API-3: one crafted request per error code', () => {
     }
   });
 
-  it('meta-test: every code except the reserved one and the pending ones is listed by a route definition and produced by a request', async () => {
+  it('meta-test: every code except the reserved one is listed by a route definition and produced by a request', async () => {
     const run = await startInstance();
     // the codes of the guard and router group were produced above (their own test); the others are produced here
     const reserved = new Set<ErrorCode>(RESERVED_ERROR_CODES);
@@ -381,11 +476,7 @@ describe('DA-T-API-3: one crafted request per error code', () => {
     const listed = new Set<ErrorCode>(Object.values(routes).flatMap((route) => routeErrors(route)));
     // `completion_target_not_found` is listed by the `explainCompletion` row, which WP-29 adds to the registry; until then it
     // is the one code without a route definition, and this exemption disappears by itself when the row exists
-    // TEMPORARY (CAW-07): the codes whose routes arrive with the access and terminal work packages; TERM-ROUTES removes this list
-    const staged = new Set<ErrorCode>([
-      ...('explainCompletion' in routes ? [] : (['completion_target_not_found'] as const)),
-      ...PENDING_ROUTE_CODES,
-    ]);
+    const staged = new Set<ErrorCode>('explainCompletion' in routes ? [] : (['completion_target_not_found'] as const));
     for (const code of ERROR_CODES) {
       if (reserved.has(code) || staged.has(code)) continue;
       expect(listed.has(code), `${code} is listed by a route definition`).toBe(true);
