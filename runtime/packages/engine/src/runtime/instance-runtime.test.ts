@@ -12,6 +12,7 @@ import { defaultSkillDir } from '../config/defaults.ts';
 import type { LogFields, LogLevel, Logger } from '../log/logger.ts';
 import { initWorkspace } from '../workspace/init.ts';
 import { buildInstanceContext, panelStatsOf, type InstanceContext } from './context.ts';
+import { createUserServices } from './create-user-services.ts';
 import {
   STUB_FACTORIES,
   createInstanceRuntime,
@@ -444,6 +445,16 @@ describe('createInstanceRuntime: the user services of a user instance (06 1.7, A
     expect(runtime.user).toBe(services);
     expect(fakes.factories.createUserServices).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fakes.factories.createUserServices).mock.calls[0]?.[0]).toBe(env.ctx);
+  });
+
+  it('hands the factory the services of the runtime (the linker needs the importer hint of the ingest service)', async () => {
+    const env = await makeEnv('user');
+    const fakes = makeFakes();
+    make(env, fakes);
+    const seen = vi.mocked(fakes.factories.createUserServices).mock.calls[0]?.[1];
+    expect(seen?.ingest).toBe(fakes.ingest);
+    expect(seen?.panels).toBe(fakes.panels);
+    expect(Object.keys(seen ?? {}).sort()).toEqual(['ingest', 'panels', 'scheduler', 'sweeper']);
   });
 
   it('starts its components after the alert components and before the route file, and stops them before the alert ones', async () => {
@@ -962,6 +973,11 @@ describe('createInstanceRuntime: stubs and the registration of the real factorie
     const { createUserServices } = makeFakes().factories;
     runtimes.push(createInstanceRuntime(real.ctx, { factories: { ...STUB_FACTORIES, createUserServices } }));
     expect(stubWarnings(real)).not.toContain('user-services');
+  });
+
+  it('registers the real user services at import time, so a user instance has a terminal, folders and an access service', () => {
+    expect(registeredFactories.createUserServices).toBe(createUserServices);
+    expect(registeredFactories.createUserServices).not.toBe(STUB_FACTORIES.createUserServices);
   });
 
   it('runs a whole runtime on the stubs: start, an idle ingestUntilIdle, replay, stop', async () => {

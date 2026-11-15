@@ -11,6 +11,7 @@ import {
   type ShutdownDecisionInput,
   type TerminalCensus,
   type TerminalCensusEntry,
+  type UserServices,
 } from './user-services.ts';
 
 type SessionState = 'starting' | 'live' | 'lost' | 'ended';
@@ -59,13 +60,52 @@ describe('EMPTY_CENSUS and EMPTY_USER_SERVICES', () => {
     }).not.toThrow();
   });
 
-  it('have no access minter and no components, and cannot be changed by a caller', () => {
+  it('have no access minter, no terminal host, no folder service and no components, and cannot be changed by a caller', () => {
     expect(EMPTY_USER_SERVICES.census).toBe(EMPTY_CENSUS);
     expect(EMPTY_USER_SERVICES.access).toBeNull();
+    expect(EMPTY_USER_SERVICES.accessService).toBeNull();
+    expect(EMPTY_USER_SERVICES.terminal).toBeNull();
+    expect(EMPTY_USER_SERVICES.folders).toBeNull();
     expect(EMPTY_USER_SERVICES.components).toEqual([]);
     expect(Object.isFrozen(EMPTY_USER_SERVICES)).toBe(true);
     expect(Object.isFrozen(EMPTY_USER_SERVICES.components)).toBe(true);
     expect(Object.isFrozen(EMPTY_CENSUS)).toBe(true);
+  });
+});
+
+describe('UserServices: the members the terminal and the folder list add', () => {
+  it('may be built by hand without them (the lifecycle tests do): a reader treats a missing member as null', () => {
+    const byHand: UserServices = { census: EMPTY_CENSUS, access: null, components: [] };
+    expect(byHand.terminal ?? null).toBeNull();
+    expect(byHand.folders ?? null).toBeNull();
+    expect(byHand.accessService ?? null).toBeNull();
+  });
+
+  it('holds the terminal host, the folder service and the whole access service when the real services are built', () => {
+    const real: UserServices = {
+      ...EMPTY_USER_SERVICES,
+      terminal: {
+        capabilities: () => ({
+          available: false,
+          reason: 'unsupported_os',
+          folderPicker: false,
+          resume: false,
+          maxSessions: 0,
+        }),
+        sessions: {
+          list: () => [],
+          get: () => null,
+          create: () => Promise.reject(new Error('none')),
+          kill: () => Promise.resolve(false),
+          subscribe: () => () => undefined,
+        },
+        picker: null,
+        resume: () => Promise.reject(new Error('none')),
+        census: EMPTY_CENSUS,
+        close: () => undefined,
+      },
+    };
+    expect(real.terminal?.capabilities().available).toBe(false);
   });
 });
 

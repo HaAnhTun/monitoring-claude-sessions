@@ -3,14 +3,17 @@
 // control op `access` calls, and the components that start with the runtime (the terminal host, the folder picker). A task
 // instance has none of it: `InstanceRuntime.user` is `null` there.
 //
-// The real services are made by the work packages of the terminal and security areas and registered as
-// `RuntimeFactories.createUserServices`; until then `EMPTY_USER_SERVICES` stands in: no sessions, no minter, no components. This
-// module holds the contract, the empty services and the one rule the server applies to a shutdown request (`decideShutdown`).
-// It imports no HTTP, no child process and no terminal code: the terminal service is adapted to `TerminalCensus` by its owner.
+// The real services are made by `createUserServices` (`create-user-services.ts`, CAW-31) and registered as
+// `RuntimeFactories.createUserServices`; `EMPTY_USER_SERVICES` stands in where none is wanted (tests): no sessions, no minter, no
+// components. This module holds the contract, the empty services and the one rule the server applies to a shutdown request
+// (`decideShutdown`). It imports no HTTP, no child process and no terminal code (types only): the terminal service is adapted to
+// `TerminalCensus` by the terminal host.
 import type { InstanceKind } from '@mcs/shared';
 import type { ControlShutdownReason } from '@mcs/shared/protocol';
 
-import type { AccessMint } from './access-service.ts';
+import type { FolderService } from '../folders/service.ts';
+import type { TerminalHost } from '../terminal/host.ts';
+import type { AccessMint, AccessService } from './access-service.ts';
 import type { RuntimeComponent } from './instance-runtime.ts';
 
 /** One session as the control op `terminals` shows it: its name and when it started. Nothing else about a terminal leaves the engine. */
@@ -46,6 +49,19 @@ export interface UserServices {
   readonly access: AccessMinter | null;
   /** Started after the alert components, stopped before them; the terminal host kills every session in its `stop`. */
   readonly components: readonly RuntimeComponent[];
+  /**
+   * The whole access service (tickets, credentials, the Bearer check): the server's access verifier, the auth routes and the
+   * reader routes use it. It is the same object as `access` in a real user instance. Absent in a hand-built value: read it as
+   * `null`, and boot then refuses to start a user instance (a session route without it would fail open).
+   */
+  readonly accessService?: AccessService | null;
+  /**
+   * The terminal host: the sessions, the capabilities, the folder picker and the resume of the terminal routes, the gateway and the
+   * event feed (assignable to the server's `TerminalPorts`). `null` or absent: no terminal (every terminal route says so).
+   */
+  readonly terminal?: TerminalHost | null;
+  /** The folder service of the sidebar (`listFolders`, `addFolder`, `removeFolder`, `sessionResume`). `null` or absent: none. */
+  readonly folders?: FolderService | null;
 }
 
 /** No terminal can exist: nothing to protect, nothing to drain. */
@@ -59,6 +75,9 @@ export const EMPTY_CENSUS: TerminalCensus = Object.freeze({
 export const EMPTY_USER_SERVICES: UserServices = Object.freeze({
   census: EMPTY_CENSUS,
   access: null,
+  accessService: null,
+  terminal: null,
+  folders: null,
   components: Object.freeze([]),
 });
 

@@ -11,6 +11,8 @@ export * from './diagnose.ts';
 export * from './env.ts';
 export * from './errors.ts';
 export * from './folder.ts';
+export * from './folder-picker.ts';
+export * from './host.ts';
 export * from './limits.ts';
 export * from './manager.ts';
 export * from './names.ts';

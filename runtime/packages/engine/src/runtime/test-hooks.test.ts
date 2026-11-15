@@ -3,7 +3,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { EMPTY_CENSUS, type TerminalCensus } from './user-services.ts';
-import { FAKE_TERMINALS_MAX, TEST_HOOK_NAMES, fakeTerminalCount, testHook, withFakeTerminals } from './test-hooks.ts';
+import {
+  FAKE_TERMINALS_MAX,
+  TEST_HOOK_NAMES,
+  TEST_HOOK_VARIABLES,
+  fakeTerminalCount,
+  folderPickerHook,
+  testHook,
+  withFakeTerminals,
+} from './test-hooks.ts';
 
 describe('testHook', () => {
   it('is inert while MCS_TEST is not set to 1', () => {
@@ -69,14 +77,16 @@ describe('testHook', () => {
     expect(testHook('BOOT_HANG', { MCS_TEST_BOOT_HANG: '1' })).toBeUndefined();
   });
 
-  it('documents exactly the hooks of 01 2.10, the open-file recorder and the fake terminals', () => {
+  it('documents exactly the hooks of 01 2.10, the open-file recorder, the fake terminals and the folder picker', () => {
     expect([...TEST_HOOK_NAMES].sort()).toEqual([
       'BOOT_HANG',
       'FAKE_TERMINALS',
+      'FOLDER_PICKER',
       'IGNORE_CONTROL',
       'INIT_CRASH',
       'OPEN_FILE',
     ]);
+    expect(TEST_HOOK_VARIABLES.FOLDER_PICKER).toBe('MCS_TEST_FOLDER_PICKER');
   });
 });
 
@@ -154,5 +164,37 @@ describe('FAKE_TERMINALS (06 1.7): scripted terminal sessions for the stop guard
     wrapped.beginDrain();
     expect(census.drained).toBe(1);
     expect(wrapped.count()).toBe(3);
+  });
+});
+
+describe('FOLDER_PICKER: the testkit fake picker instead of the Windows dialog', () => {
+  const ON = { MCS_TEST: '1' } as const;
+  const SCRIPT = '/FIXTURE/testkit/assets/fake-picker.mjs';
+
+  it('is read in test mode only, by its short name and by its variable', () => {
+    expect(testHook('FOLDER_PICKER', { ...ON, MCS_TEST_FOLDER_PICKER: SCRIPT })).toBe(SCRIPT);
+    expect(testHook('MCS_TEST_FOLDER_PICKER', { ...ON, MCS_TEST_FOLDER_PICKER: SCRIPT })).toBe(SCRIPT);
+    expect(testHook('FOLDER_PICKER', { MCS_TEST_FOLDER_PICKER: SCRIPT })).toBeUndefined();
+    expect(testHook('FOLDER_PICKER', { ...ON, MCS_TEST_FOLDER_PICKER: '' })).toBeUndefined();
+  });
+
+  it('answers the script of the fake picker and hands its answer variable on, only while the hook is on', () => {
+    const answer = 'D:\\FIXTURE\\one';
+    expect(folderPickerHook({ ...ON, MCS_TEST_FOLDER_PICKER: SCRIPT, FAKE_PICKER_RESULT: answer })).toEqual({
+      script: SCRIPT,
+      env: { FAKE_PICKER_RESULT: answer },
+    });
+    expect(folderPickerHook({ ...ON, MCS_TEST_FOLDER_PICKER: SCRIPT })).toEqual({ script: SCRIPT, env: {} });
+  });
+
+  it('is undefined while the hook is off: test mode off, no variable, an empty variable', () => {
+    expect(folderPickerHook({ MCS_TEST_FOLDER_PICKER: SCRIPT, FAKE_PICKER_RESULT: 'x' })).toBeUndefined();
+    expect(folderPickerHook(ON)).toBeUndefined();
+    expect(folderPickerHook({ ...ON, MCS_TEST_FOLDER_PICKER: '' })).toBeUndefined();
+  });
+
+  it('hands on nothing else of the environment', () => {
+    const hook = folderPickerHook({ ...ON, MCS_TEST_FOLDER_PICKER: SCRIPT, MCS_HOME: '/h', SECRET_TOKEN: 's' });
+    expect(hook?.env).toEqual({});
   });
 });

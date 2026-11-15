@@ -99,6 +99,8 @@ export interface CreateSessionRequest {
   readonly rows?: number;
   /** A Claude session id: becomes `--resume <id>` after validation against RESUME_ID_RE. */
   readonly resume?: string;
+  /** With `resume`: a copy of that session (`--fork-session` after `--resume <id>`); without `resume` it is refused (ARGS_UNSAFE). */
+  readonly fork?: boolean;
 }
 
 export interface TerminalStatus {

@@ -219,7 +219,11 @@ async function failure(promise: Promise<unknown>): Promise<TerminalError> {
   throw new Error('expected the call to reject with a TerminalError');
 }
 
-async function create(r: Rig, folder = FOLDER, extra: { resume?: string; cols?: number; rows?: number } = {}) {
+async function create(
+  r: Rig,
+  folder = FOLDER,
+  extra: { resume?: string; fork?: boolean; cols?: number; rows?: number } = {},
+) {
   const info = await r.service.create({ folder, ...extra });
   const pty = r.backend.last;
   if (pty === undefined) throw new Error('nothing was spawned');
@@ -300,6 +304,17 @@ describe('create (design 01 section 3.10, the 12 steps)', () => {
     const r = rig({ config: { args: ['--verbose'] } });
     await create(r, FOLDER, { resume: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' });
     expect(r.backend.spawns[0]?.args).toEqual(['--verbose', '--resume', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890']);
+  });
+
+  it('adds --fork-session after --resume <id> for a copy of a session', async () => {
+    const r = rig({ config: { args: ['--verbose'] } });
+    await create(r, FOLDER, { resume: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', fork: true });
+    expect(r.backend.spawns[0]?.args).toEqual([
+      '--verbose',
+      '--resume',
+      'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      '--fork-session',
+    ]);
   });
 
   it('starts a .cmd shim through cmd.exe with the command line as one string', async () => {
@@ -472,6 +487,10 @@ describe('create: the error codes', () => {
       env: { PATH: TOOLS, PATHEXT: '.ps1', SystemRoot: 'C:\\Windows' },
     });
     expect(await codeOf(r)).toBe('COMMAND_UNSUPPORTED');
+  });
+
+  it('ARGS_UNSAFE for a copy without a session to resume', async () => {
+    expect(await codeOf(rig(), { folder: FOLDER, fork: true })).toBe('ARGS_UNSAFE');
   });
 
   it('ARGS_UNSAFE for a resume id that is no session id', async () => {

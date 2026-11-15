@@ -3,17 +3,26 @@
 // hooks live here and nowhere else, so a scan of the production sources for them finds only this file.
 //
 // Registered for the terminal and the user instance (CAW-06) and wired into `TEST_HOOK_NAMES` by the packages that read
-// them: MCS_TEST_OPEN_FILE (records the login URL instead of opening a browser; `platform/browser.ts`, wired) and
-// MCS_TEST_FAKE_TERMINALS (scripted terminal sessions that only the stop guard sees; `withFakeTerminals`, below), and still to
-// come MCS_TEST_FOLDER_PICKER (a fixed answer for the folder dialog).
+// them: MCS_TEST_OPEN_FILE (records the login URL instead of opening a browser; `platform/browser.ts`, wired),
+// MCS_TEST_FAKE_TERMINALS (scripted terminal sessions that only the stop guard sees; `withFakeTerminals`, below) and
+// MCS_TEST_FOLDER_PICKER (runs the testkit fake picker instead of the Windows folder dialog; `folderPickerHook`, below, read by
+// `terminal/folder-picker.ts`).
 import type { TerminalCensus, TerminalCensusEntry } from './user-services.ts';
 
 /**
  * The documented hooks by their short name: T-LC-06 (control ignored), T-LC-08 (boot hangs), T-LC-10 (init crash) and
  * `OPEN_FILE` (the login URL is appended to that file instead of being opened, 06 2.5) and `FAKE_TERMINALS` (the census of a
- * user instance reports that many extra sessions, 06 1.7).
+ * user instance reports that many extra sessions, 06 1.7) and `FOLDER_PICKER` (the script of the fake folder picker that runs
+ * instead of the Windows dialog).
  */
-export const TEST_HOOK_NAMES = ['IGNORE_CONTROL', 'BOOT_HANG', 'INIT_CRASH', 'OPEN_FILE', 'FAKE_TERMINALS'] as const;
+export const TEST_HOOK_NAMES = [
+  'IGNORE_CONTROL',
+  'BOOT_HANG',
+  'INIT_CRASH',
+  'OPEN_FILE',
+  'FAKE_TERMINALS',
+  'FOLDER_PICKER',
+] as const;
 
 export type TestHookName = (typeof TEST_HOOK_NAMES)[number];
 
@@ -24,6 +33,7 @@ export const TEST_HOOK_VARIABLES: Readonly<Record<TestHookName, string>> = {
   INIT_CRASH: 'MCS_TEST_INIT_CRASH',
   OPEN_FILE: 'MCS_TEST_OPEN_FILE',
   FAKE_TERMINALS: 'MCS_TEST_FAKE_TERMINALS',
+  FOLDER_PICKER: 'MCS_TEST_FOLDER_PICKER',
 };
 
 function variableOf(name: string): string | undefined {
@@ -90,4 +100,28 @@ export function withFakeTerminals(
       census.beginDrain();
     },
   };
+}
+
+// ---- FOLDER_PICKER ---------------------------------------------------------------------------------------------------------------
+
+/** What the hook FOLDER_PICKER asks for: the script that runs instead of the dialog, and the environment it is given. */
+export interface FolderPickerHook {
+  /** The script to run with Node (the `fake-picker.mjs` of the testkit). Whatever the variable says: the caller refuses what cannot run. */
+  readonly script: string;
+  /** The only variable of the environment that the script is given: `FAKE_PICKER_RESULT`, when set (the answer it plays). */
+  readonly env: Readonly<Record<string, string>>;
+}
+
+/**
+ * The hook of the folder picker: while test mode is on and `MCS_TEST_FOLDER_PICKER` names a script, the folder picker runs that
+ * script with Node instead of showing the Windows dialog, and gives it `FAKE_PICKER_RESULT` of the environment (a path, nothing for
+ * a cancel, or one of the failure words of the fake). `undefined` while the hook is off, so the real dialog is used.
+ */
+export function folderPickerHook(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): FolderPickerHook | undefined {
+  const script = testHook('FOLDER_PICKER', env);
+  if (script === undefined) return undefined;
+  const answer = env['FAKE_PICKER_RESULT'];
+  return { script, env: answer === undefined ? {} : { FAKE_PICKER_RESULT: answer } };
 }

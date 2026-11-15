@@ -1046,3 +1046,29 @@ export { createDaMemoryReader, defaultDaMemoryDir } from './folders/da-memory.ts
 export type { DaFolder, DaMemoryReader, DaMemoryResult } from './folders/da-memory.ts';
 export { effectivePanels } from './projects/scope.ts';
 // @wp-end CAW-29
+
+// @wp-begin CAW-31
+export { createUserServices, SWEEP_BUDGET_MS } from './runtime/create-user-services.ts';
+export type { CreateUserServicesOptions, ExitHook } from './runtime/create-user-services.ts';
+export { folderPickerHook } from './runtime/test-hooks.ts';
+export type { FolderPickerHook } from './runtime/test-hooks.ts';
+export { TerminalApiError, capabilitiesOf, createTerminalHost } from './terminal/host.ts';
+export type {
+  CapabilityFacts,
+  HostAttachment,
+  HostExit,
+  HostSession,
+  HostSessions,
+  HostViewer,
+  TerminalApiErrorDetail,
+  TerminalHost,
+  TerminalHostDeps,
+} from './terminal/host.ts';
+export {
+  PICKER_OUTPUT_MAX_BYTES,
+  PICKER_SCRIPT,
+  PICKER_TIMEOUT_MS,
+  createFolderPicker,
+} from './terminal/folder-picker.ts';
+export type { FolderPickerDeps, FolderPickerPort } from './terminal/folder-picker.ts';
+// @wp-end CAW-31

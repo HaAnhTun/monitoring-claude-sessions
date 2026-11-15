@@ -191,12 +191,17 @@ function cmdExeOf(env: EnvSource, fs: CommandFs): string {
 export function buildLaunch(
   resolved: ResolvedCommand,
   args: readonly string[],
-  o: { env: EnvSource; platform: HostPlatform; fs: CommandFs; resume?: string },
+  o: { env: EnvSource; platform: HostPlatform; fs: CommandFs; resume?: string; fork?: boolean },
 ): ClaudeLaunch {
   const all = [...args];
   if (o.resume !== undefined) {
     if (!RESUME_ID_RE.test(o.resume)) throw new TerminalError('ARGS_UNSAFE');
     all.push('--resume', o.resume);
+    // a copy of the session: the fixed argument is made of letters and dashes, so it passes `isCmdSafeArg` too
+    if (o.fork === true) all.push('--fork-session');
+  } else if (o.fork === true) {
+    // a copy of nothing
+    throw new TerminalError('ARGS_UNSAFE');
   }
   if (all.some((arg) => CONTROL_CHARACTER.test(arg))) throw new TerminalError('ARGS_UNSAFE');
 

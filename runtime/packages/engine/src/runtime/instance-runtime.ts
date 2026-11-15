@@ -7,7 +7,8 @@
 // bindings of `ctx` (panel statistics, ownership flag).
 //
 // The factories of the other owners do not exist yet. Until their work packages land, `STUB_FACTORIES` below holds stubs with
-// the owners' signatures (02 4.6 and 4.10, 03 11.4, 06 3.4); the marked blocks at the end of the file are empty and are where
+// the owners' signatures (02 4.6 and 4.10, 03 11.4, 06 3.4); the user services are real since CAW-31 (`create-user-services.ts`, registered
+// at the end of this file), the stub stays for tests; the marked blocks at the end of the file are empty and are where
 // WP-35 (ingest service, sweeper, scheduler, route file), WP-41 (panel service) and WP-59 (alerts) register their real
 // factories: an import of the real module, then `registeredFactories.<name> = <name>;`. The assignment is checked against the
 // signatures below, so a real factory that differs from its owner's contract does not compile. A stub that is still in use
@@ -67,8 +68,11 @@ export interface RuntimeFactories {
   readonly publishRouteFile: (ctx: InstanceContext) => Promise<void>;
   /** Components added after the panel service, before the state watchdog (WP-59). */
   readonly createAlertComponents: (ctx: InstanceContext, services: RuntimeServices) => readonly RuntimeComponent[];
-  /** Called only when `ctx.kind` is `user` (06 1.7): the census, the access minter and the components of the terminal host. */
-  readonly createUserServices: (ctx: InstanceContext) => UserServices;
+  /**
+   * Called only when `ctx.kind` is `user` (06 1.7): the census, the access service, the terminal host, the folder service and their
+   * components. It gets the services of the runtime (the linker of the terminal host needs the importer hint of the ingest service).
+   */
+  readonly createUserServices: (ctx: InstanceContext, services: RuntimeServices) => UserServices;
 }
 
 export interface InstanceRuntimeOptions {
@@ -250,7 +254,7 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
   bindOwnershipConflict(ctx, () => watchdog.ownershipConflict());
   const services: RuntimeServices = { ingest, sweeper, scheduler, panels };
   // a task instance has no terminal and no access code: the factory is not even called (06 1.7)
-  const user = ctx.kind === 'user' ? factories.createUserServices(ctx) : null;
+  const user = ctx.kind === 'user' ? factories.createUserServices(ctx, services) : null;
 
   // ---- component 4: the attempts timer (registry C57) -------------------------------------------------------------------
 
@@ -534,3 +538,9 @@ import { createAlertComponents } from '../alerts/service.ts';
 
 registeredFactories.createAlertComponents = createAlertComponents;
 // @wp-end WP-59
+
+// @wp-begin CAW-31
+import { createUserServices } from './create-user-services.ts';
+
+registeredFactories.createUserServices = createUserServices;
+// @wp-end CAW-31

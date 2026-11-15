@@ -392,6 +392,7 @@ export function createTerminalService(deps: TerminalDeps): TerminalService {
       platform,
       fs: deps.fs,
       ...(req.resume === undefined ? {} : { resume: req.resume }),
+      ...(req.fork === undefined ? {} : { fork: req.fork }),
     });
     const childEnv = buildTerminalEnv(env, { keep: config.envKeep, platform });
     const size = clampSessionSize(

@@ -449,7 +449,7 @@ const WIN_ENV: EnvSource = { SystemRoot: SYSTEM_ROOT };
 function launchWin(
   resolved: ResolvedCommand,
   args: readonly string[] = [],
-  o: { env?: EnvSource; files?: readonly string[]; resume?: string } = {},
+  o: { env?: EnvSource; files?: readonly string[]; resume?: string; fork?: boolean } = {},
 ): ClaudeLaunch {
   const fs = winFs(o.files ?? [CMD_EXE]);
   return buildLaunch(resolved, args, {
@@ -457,6 +457,7 @@ function launchWin(
     platform: 'win32',
     fs,
     ...(o.resume === undefined ? {} : { resume: o.resume }),
+    ...(o.fork === undefined ? {} : { fork: o.fork }),
   });
 }
 
@@ -689,6 +690,34 @@ describe('TC-UNIT-04 buildLaunch: other kinds of command', () => {
     const launch = buildLaunch(resolved!, ['--verbose'], { env, platform: 'win32', fs });
     expect(launch.kind).toBe('shim');
     expect(shim(launch).args.toLowerCase()).toBe('/d /s /c ""c:\\tools\\npm dir\\claude.cmd" --verbose"');
+  });
+});
+
+describe('TC-UNIT-04 buildLaunch: a copy of a session (--fork-session)', () => {
+  it('appends --fork-session after --resume <id> on the direct route', () => {
+    expect(launchWin(EXE, ['--verbose'], { resume: RESUME_ID, fork: true })).toMatchObject({
+      kind: 'exe',
+      args: ['--verbose', '--resume', RESUME_ID, '--fork-session'],
+    });
+  });
+
+  it('quotes nothing special for it on the shim route', () => {
+    const launch = launchWin(SHIM, [], { resume: RESUME_ID, fork: true });
+    expect(parseCommandLine(cmdInner(shim(launch).args))).toEqual([SHIM.path, '--resume', RESUME_ID, '--fork-session']);
+  });
+
+  it('adds nothing for fork false or absent', () => {
+    expect(launchWin(EXE, [], { resume: RESUME_ID, fork: false })).toMatchObject({ args: ['--resume', RESUME_ID] });
+    expect(launchWin(EXE, [], { resume: RESUME_ID })).toMatchObject({ args: ['--resume', RESUME_ID] });
+  });
+
+  it('refuses a copy of nothing: fork needs a session id to resume (ARGS_UNSAFE)', () => {
+    expect(codeOf(() => launchWin(EXE, [], { fork: true }))).toBe('ARGS_UNSAFE');
+    expect(codeOf(() => launchWin(SHIM, [], { fork: true }))).toBe('ARGS_UNSAFE');
+  });
+
+  it('adds nothing at all when fork is false and nothing is resumed', () => {
+    expect(launchWin(EXE, ['--verbose'], { fork: false })).toMatchObject({ args: ['--verbose'] });
   });
 });
 
