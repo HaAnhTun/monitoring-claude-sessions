@@ -48,6 +48,28 @@ nothing about POSIX and the quick gates above are the evidence.
 | Linux arm64                                                                                           | emulated run only: unit tests pass, process tests time out under QEMU | UNVERIFIED                                  | needs a native arm64 runner or a raised `MCS_PERF_FACTOR`                             |
 | Node floor message on Node 20                                                                         | verified (`floor` target)                                             | not applicable                              | harness `floor` target                                                                |
 
+## Terminal (Windows only)
+
+The terminal of the application (ADR 0079, 0080, 0083) starts `claude` in a pseudo console, and that exists on Windows only. Everything else in this
+document, the monitoring part, runs on every host named above. On a host without the terminal the application says why: the status carries the reason,
+`create` is refused with `UNSUPPORTED_OS`, `NATIVE_MISSING` or `NATIVE_LOAD_FAILED`, and the UI says "not supported on this OS".
+
+| Host                                                              | Terminal                | Reason reported      | Evidence                                                                                              |
+| ----------------------------------------------------------------- | ----------------------- | -------------------- | ----------------------------------------------------------------------------------------------------- |
+| Windows 10 1809 (build 17763) or newer, x64                       | supported               | none                 | measured on Windows 11 10.0.26200 (ADR 0080, 0083); unit tests of the backend choice and of the check |
+| Windows 10 1809 (build 17763) or newer, arm64                     | supported, not executed | none                 | the prebuilt files are Microsoft's, pinned by sha256; no ARM64 machine has run them (ADR 0083)        |
+| Windows before build 17763                                        | not supported           | `os-too-old`         | `default.test.ts`, `diagnose.test.ts`                                                                 |
+| Windows on another architecture (ia32, ...)                       | not supported           | `unsupported-os`     | `default.test.ts`, `diagnose.test.ts`                                                                 |
+| Linux, any architecture                                           | not supported           | `unsupported-os`     | `default.test.ts`, `diagnose.test.ts`                                                                 |
+| macOS, any architecture                                           | not supported           | `unsupported-os`     | `default.test.ts`, `diagnose.test.ts` (macOS stays UNVERIFIED for the rest, see above)                |
+| Windows x64 or arm64 with the addon files missing from the bundle | not supported           | `native-missing`     | `default.test.ts`, `diagnose.test.ts`                                                                 |
+| Windows x64 or arm64 where the addon does not load                | not supported           | `native-load-failed` | `default.test.ts`, `diagnose.test.ts`                                                                 |
+
+The branches that differ by platform in the terminal code (the program lookup, the folder rules, the environment, the data type of the output) already
+exist for POSIX and are unit-tested with an injected platform, so the Linux Docker harness runs them. What Linux and macOS need to become supported is
+listed in ADR 0083, decision 2: more prebuilt targets and pins, the execute bit of the helper, a process-group kill, start times from `/proc`, the
+registry enabled and the real-terminal tests un-gated.
+
 ## Defects the Docker runs found
 
 - `openSqlite` on a folder: Linux opens a folder read-only and fails only on the first read (`db_io`), Windows refuses it
