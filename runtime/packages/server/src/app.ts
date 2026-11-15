@@ -8,6 +8,7 @@
 //   (inside its own marked block)
 //   import { sessionRoutes } from './routes/sessions.ts';
 //   ROUTE_MODULES.push(sessionRoutes);
+import { randomBytes } from 'node:crypto';
 import { lstat, readdir, stat } from 'node:fs/promises';
 import { createServer, type RequestListener, type Server } from 'node:http';
 import path from 'node:path';
@@ -37,10 +38,33 @@ import { metaRoutes } from './routes/meta.ts';
 
 export type { LegacyTask, RouteDeps } from './route-adapter.ts';
 
-/** The content security policy of every HTML response (04 12.2, ADR 0039): same-origin only, no inline script. */
-export const HTML_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; " +
-  "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+/** The text of the web build's HTML that `sendStatic` replaces with a fresh nonce on every response (design 02 7, ADR 0086). */
+export const CSP_NONCE_PLACEHOLDER = '__CSP_NONCE__';
+
+/** The one host form the policy is built for: `Host` after `hostGuard`, always a loopback name and a port. */
+const CSP_HOST_RE = /^(127[.]0[.]0[.]1|localhost):[0-9]{1,5}$/;
+/** What a nonce may look like: base64 (a quote, a space or a semicolon would add a source or a directive). */
+const CSP_NONCE_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * The content security policy of an HTML response (design 02 7, ADR 0086, amends 0039): same-origin only, no inline script, no
+ * eval; `style-src-elem` carries the nonce of this response because xterm.js creates `<style>` elements; `connect-src` names the
+ * host of the request for the terminal socket (`ws://`, never `wss:`; `'self'` covers it in current browsers, the explicit source
+ * keeps older ones working). `host` and `nonce` are checked again here, so no header text is ever interpolated: a value that does
+ * not match throws a `RangeError` (which the error mapper answers as a 500, never with the value).
+ */
+export function htmlCsp(host: string, nonce: string): string {
+  if (!CSP_HOST_RE.test(host)) throw new RangeError('htmlCsp: the host is not a loopback name with a port');
+  if (!CSP_NONCE_RE.test(nonce)) throw new RangeError('htmlCsp: the nonce is not base64');
+  return (
+    "default-src 'self'; script-src 'self'; style-src 'self'; " +
+    `style-src-elem 'self' 'nonce-${nonce}'; img-src 'self' data:; connect-src 'self' ws://${host}; font-src 'self'; ` +
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+  );
+}
+
+/** Added to every HTML response (design 02 7): no camera, microphone, location or clipboard read; clipboard write for the page only. */
+export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=(self)';
 
 /** Limits and timeouts of the HTTP server (05 5.3 S-NET-6, ADR 0045). */
 export const SERVER_LIMITS = {
@@ -179,12 +203,30 @@ function isHtml(file: StaticFile): boolean {
   return file.type.startsWith('text/html');
 }
 
-function sendStatic(res: Response, file: StaticFile, cache: string): void {
+const PLACEHOLDER_BYTES = Buffer.from(CSP_NONCE_PLACEHOLDER, 'utf8');
+
+/**
+ * Answers with a file of the build. An HTML file gets a fresh 16-byte nonce on every response: it replaces the placeholder in the
+ * body and goes into the policy of the header, next to the Permissions-Policy. Any other file is sent as it is, with no policy.
+ */
+function sendStatic(req: Request, res: Response, file: StaticFile, cache: string): void {
   res.locals['routeId'] = 'static';
   res.setHeader('Content-Type', file.type);
   res.setHeader('Cache-Control', cache);
-  if (isHtml(file)) res.setHeader('Content-Security-Policy', HTML_CSP);
-  res.status(200).send(file.body);
+  if (!isHtml(file)) {
+    res.status(200).send(file.body);
+    return;
+  }
+  const nonce = randomBytes(16).toString('base64');
+  // The policy is built first: a host that fails its check throws before anything of the page is written. `hostGuard` compares the
+  // Host without regard to letter case, so the same is done here (a host the guard let through holds only ASCII letters, and none
+  // of `localhost` folds to or from a non-ASCII one); the policy names the host in lower case.
+  res.setHeader('Content-Security-Policy', htmlCsp((req.headers.host ?? '').toLowerCase(), nonce));
+  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
+  const body = file.body.includes(PLACEHOLDER_BYTES)
+    ? Buffer.from(file.body.toString('utf8').replaceAll(CSP_NONCE_PLACEHOLDER, nonce), 'utf8')
+    : file.body;
+  res.status(200).send(body);
 }
 
 /** `null` for a path that cannot be a key of the site: bad escapes, NUL, backslash, an empty, `.` or `..` segment. */
@@ -236,7 +278,7 @@ function staticMiddleware(site: StaticSite): RequestHandler {
       return;
     }
     if (file !== undefined) {
-      sendStatic(res, file, isAsset ? ASSET_CACHE : NO_STORE);
+      sendStatic(req, res, file, isAsset ? ASSET_CACHE : NO_STORE);
       return;
     }
     if (isAsset) {
@@ -244,7 +286,7 @@ function staticMiddleware(site: StaticSite): RequestHandler {
       return;
     }
     const accept = req.headers.accept ?? '';
-    if (accept.toLowerCase().includes('text/html')) sendStatic(res, index, NO_STORE);
+    if (accept.toLowerCase().includes('text/html')) sendStatic(req, res, index, NO_STORE);
     else next();
   };
 }

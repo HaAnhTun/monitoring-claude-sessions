@@ -28,7 +28,7 @@ import { FakeClock, allocatePort, assertPortClosed, httpRequest } from '@mcs/tes
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { createApp, createHttpServer, HTML_CSP, type AppDeps } from './app.ts';
+import { createApp, createHttpServer, htmlCsp, type AppDeps, type StaticSite } from './app.ts';
 import { createAccessVerifier, type AccessVerifier } from './http/access-guard.ts';
 import { cookieName } from './http/cookie.ts';
 import { mountedRoutes, registerRoute } from './route-adapter.ts';
@@ -552,11 +552,128 @@ describe('createHttpServer (05 5.3 S-NET-6, ADR 0045)', () => {
   });
 });
 
-describe('HTML_CSP (04 12.2, ADR 0039)', () => {
-  it('is the policy of the design, character for character', () => {
-    expect(HTML_CSP).toBe(
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+describe('htmlCsp (design 02 7, ADR 0086)', () => {
+  const NONCE = 'AAAAAAAAAAAAAAAAAAAAAA==';
+
+  it('is the policy of the design, character for character, for both hosts', () => {
+    for (const host of ['127.0.0.1:7690', 'localhost:18123']) {
+      expect(htmlCsp(host, NONCE), host).toBe(
+        "default-src 'self'; script-src 'self'; style-src 'self'; " +
+          `style-src-elem 'self' 'nonce-${NONCE}'; img-src 'self' data:; connect-src 'self' ws://${host}; font-src 'self'; ` +
+          "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      );
+    }
+  });
+
+  it('keeps inline script, inline style, eval, remote sources and a secure socket out of the policy', () => {
+    const csp = htmlCsp('127.0.0.1:7690', NONCE);
+    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|wss:|https?:|\*/);
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toMatch(/style-src-attr/);
+  });
+
+  it('refuses a host that is not a loopback name with a port, whatever it says (no header text is ever interpolated)', () => {
+    const hostile = [
+      '',
+      'evil.example',
+      'evil.example:80',
+      '127.0.0.1',
+      'localhost',
+      '127.0.0.1:',
+      '127.0.0.1:123456',
+      '127.0.0.1:80 evil.example',
+      '127.0.0.1:80; script-src *',
+      `127.0.0.1:80${CRLF}X: y`,
+      'LOCALHOST:80',
+      '[::1]:80',
+      '127.0.0.1.evil.example:80',
+      'user@127.0.0.1:80',
+      'localhost:80/',
+      ' 127.0.0.1:80',
+    ];
+    for (const host of hostile) expect(() => htmlCsp(host, NONCE), JSON.stringify(host)).toThrow(RangeError);
+  });
+
+  it('refuses a nonce that is not base64, so a value cannot add a source or a directive', () => {
+    for (const nonce of ['', "x' 'unsafe-inline", 'a b', 'a;b', `a${CRLF}b`, "'nonce-x'"]) {
+      expect(() => htmlCsp('127.0.0.1:7690', nonce), JSON.stringify(nonce)).toThrow(RangeError);
+    }
+  });
+});
+
+describe('the HTML responses of the static site (design 02 7, ADR 0086)', () => {
+  const PAGE =
+    '<!doctype html><html><head><meta name="csp-nonce" content="__CSP_NONCE__"></head><body>__CSP_NONCE__</body></html>';
+  const site: StaticSite = {
+    files: new Map([
+      ['/index.html', { type: 'text/html; charset=utf-8', body: Buffer.from(PAGE) }],
+      ['/theme-init.js', { type: 'text/javascript; charset=utf-8', body: Buffer.from('/* __CSP_NONCE__ */') }],
+    ]),
+  };
+
+  function nonceOf(reply: HttpReply): string {
+    const match = /style-src-elem 'self' 'nonce-([A-Za-z0-9+/]{22}==)'/.exec(
+      reply.headers['content-security-policy'] ?? '',
     );
+    expect(match).not.toBeNull();
+    return match?.[1] ?? '';
+  }
+
+  it('gives every HTML response a fresh 16-byte nonce, in the header and in every placeholder of the body', async () => {
+    const h = await start({ site });
+    const seen = new Set<string>();
+    for (let i = 0; i < 12; i += 1) {
+      const reply = await httpRequest(h.port, '/');
+      expect(reply.status).toBe(200);
+      const nonce = nonceOf(reply);
+      expect(Buffer.from(nonce, 'base64')).toHaveLength(16);
+      expect(reply.body).toBe(PAGE.replaceAll('__CSP_NONCE__', nonce));
+      expect(reply.body).not.toContain('__CSP_NONCE__');
+      seen.add(nonce);
+    }
+    expect(seen.size).toBe(12);
+  });
+
+  it('puts the host of the request into connect-src and the Permissions-Policy on the page', async () => {
+    const h = await start({ site });
+    for (const host of [`127.0.0.1:${String(h.port)}`, `localhost:${String(h.port)}`]) {
+      const reply = await httpRequest(h.port, '/', { host });
+      expect(reply.headers['content-security-policy'], host).toContain(`connect-src 'self' ws://${host};`);
+      expect(reply.headers['permissions-policy'], host).toBe(
+        'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=(self)',
+      );
+      expect(reply.headers['cache-control'], host).toBe('no-store');
+    }
+  });
+
+  it('answers a Host in another letter case the way the guard does: 200, with the host in lower case in connect-src', async () => {
+    const h = await start({ site });
+    for (const host of [`LOCALHOST:${String(h.port)}`, `Localhost:${String(h.port)}`, `127.0.0.1:${String(h.port)}`]) {
+      const reply = await httpRequest(h.port, '/', { host });
+      expect(reply.status, host).toBe(200);
+      expect(reply.headers['content-security-policy'], host).toContain(
+        `connect-src 'self' ws://${host.toLowerCase()};`,
+      );
+      expect(reply.headers['permissions-policy'], host).toBeDefined();
+    }
+  });
+
+  it('leaves a response that is not HTML as it is: no policy, no nonce, no replacement', async () => {
+    const h = await start({ site });
+    const reply = await httpRequest(h.port, '/theme-init.js');
+    expect(reply.status).toBe(200);
+    expect(reply.body).toBe('/* __CSP_NONCE__ */');
+    expect(reply.headers['content-security-policy']).toBeUndefined();
+    expect(reply.headers['permissions-policy']).toBeUndefined();
+  });
+
+  it('refuses a hostile Host before the page is built: the guard answers, the policy is never made', async () => {
+    const h = await start({ site });
+    for (const host of ['evil.example', '127.0.0.1:1;script-src *', `127.0.0.1:${String(h.port)}.evil.example`]) {
+      const reply = await httpRequest(h.port, '/', { host });
+      expect(reply.status, host).toBe(403);
+      expect(reply.headers['content-security-policy'], host).toBeUndefined();
+    }
   });
 });
 

@@ -27,12 +27,20 @@ const makeTemp = useTempDirs();
 const NOW = Date.UTC(2026, 9, 11, 14, 5, 7);
 const ID = '11111111-1111-4111-8111-111111111111';
 const HTML_ACCEPT = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
-const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+const PLACEHOLDER = '__CSP_NONCE__';
+const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=(self)';
+/** The policy of design 02 section 7 for `host` and `nonce`, written out here and not built by the code under test. */
+function expectedCsp(host: string, nonce: string): string {
+  return (
+    "default-src 'self'; script-src 'self'; style-src 'self'; " +
+    `style-src-elem 'self' 'nonce-${nonce}'; img-src 'self' data:; connect-src 'self' ws://${host}; font-src 'self'; ` +
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+  );
+}
 
 const INDEX_HTML =
   '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>Claude session monitor</title>' +
-  '<link rel="icon" href="data:,"><script src="/theme-init.js"></script>' +
+  '<meta name="csp-nonce" content="__CSP_NONCE__"><link rel="icon" href="data:,"><script src="/theme-init.js"></script>' +
   '<script type="module" src="/assets/index-abc123.js"></script></head><body><div id="root"></div></body></html>\n';
 
 /** A synthetic web build, with the files that must never be served next to the ones that must. */
@@ -41,9 +49,9 @@ function buildDist(root: string): string {
   mkdirSync(path.join(dist, 'assets'), { recursive: true });
   mkdirSync(path.join(dist, '.vite'), { recursive: true });
   writeFileSync(path.join(dist, 'index.html'), INDEX_HTML);
-  writeFileSync(path.join(dist, 'theme-init.js'), '/* theme */\n');
+  writeFileSync(path.join(dist, 'theme-init.js'), '/* theme __CSP_NONCE__ */\n');
   writeFileSync(path.join(dist, 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
-  writeFileSync(path.join(dist, 'assets', 'index-abc123.js'), 'console.log("app");\n');
+  writeFileSync(path.join(dist, 'assets', 'index-abc123.js'), 'console.log("app __CSP_NONCE__");\n');
   writeFileSync(path.join(dist, 'assets', 'index-abc123.css'), 'body{margin:0}\n');
   writeFileSync(path.join(dist, 'assets', 'index-abc123.js.map'), '{"SECRET":"MAP-SENTINEL"}');
   writeFileSync(path.join(dist, '.vite', 'manifest.json'), '{"SECRET":"MANIFEST-SENTINEL"}');
@@ -125,33 +133,109 @@ function get(run: Running, route: string, accept?: string): Promise<HttpReply> {
   return httpRequest(run.port, route, accept === undefined ? {} : { headers: { Accept: accept } });
 }
 
+/** The nonce a reply announces in `style-src-elem`, or `null` when it has no policy. */
+function nonceOf(reply: HttpReply): string | null {
+  const match = /style-src-elem 'self' 'nonce-([A-Za-z0-9+/]{22}==)'/.exec(
+    reply.headers['content-security-policy'] ?? '',
+  );
+  return match?.[1] ?? null;
+}
+
+/** The page the build holds, with the placeholder replaced by the nonce of this reply (the page itself when it has none). */
+function pageOf(reply: HttpReply): string {
+  const nonce = nonceOf(reply);
+  return nonce === null ? INDEX_HTML : INDEX_HTML.replaceAll(PLACEHOLDER, nonce);
+}
+
 function isEnvelope404(reply: HttpReply): boolean {
   return reply.status === 404 && ErrorEnvelopeSchema.safeParse(JSON.parse(reply.body)).success;
 }
 
 describe('the pages (04 12.1, 12.2)', () => {
-  it('serves index.html at / and /index.html with the CSP of ADR 0039, no-store, nosniff and no referrer', async () => {
+  it('serves index.html at / and /index.html with the CSP of ADR 0086, no-store, nosniff and no referrer (TC-SEC-17)', async () => {
     const run = await startInstance();
     for (const route of ['/', '/index.html']) {
       const reply = await get(run, route);
       expect(reply.status, route).toBe(200);
-      expect(reply.body, route).toBe(INDEX_HTML);
+      const nonce = nonceOf(reply);
+      expect(nonce, route).not.toBeNull();
+      expect(reply.body, route).toBe(INDEX_HTML.replaceAll(PLACEHOLDER, nonce ?? ''));
       expect(reply.headers['content-type'], route).toBe('text/html; charset=utf-8');
       expect(reply.headers['cache-control'], route).toBe('no-store');
-      expect(reply.headers['content-security-policy'], route).toBe(CSP);
+      expect(reply.headers['content-security-policy'], route).toBe(
+        expectedCsp(`127.0.0.1:${String(run.port)}`, nonce ?? ''),
+      );
+      expect(reply.headers['permissions-policy'], route).toBe(PERMISSIONS_POLICY);
       expect(reply.headers['x-content-type-options'], route).toBe('nosniff');
       expect(reply.headers['referrer-policy'], route).toBe('no-referrer');
       expect(reply.headers['x-frame-options'], route).toBe('DENY');
+      expect(
+        Object.keys(reply.headers).filter((name) => name.startsWith('access-control-')),
+        route,
+      ).toEqual([]);
     }
   });
 
-  it('keeps the CSP free of inline script, inline style, remote sources and eval', async () => {
+  it('names the host of the request in connect-src, for both allowed hosts (TC-SEC-17)', async () => {
+    const run = await startInstance();
+    for (const host of [`127.0.0.1:${String(run.port)}`, `localhost:${String(run.port)}`]) {
+      const reply = await httpRequest(run.port, '/', { host });
+      expect(reply.status, host).toBe(200);
+      const nonce = nonceOf(reply);
+      expect(reply.headers['content-security-policy'], host).toBe(expectedCsp(host, nonce ?? ''));
+      expect(reply.body, host).toContain(`<meta name="csp-nonce" content="${nonce ?? ''}">`);
+    }
+  });
+
+  it('answers a Host in another letter case with the page and a lower-case host in connect-src, never a 500 (TC-SEC-17)', async () => {
+    const run = await startInstance();
+    for (const host of [`LOCALHOST:${String(run.port)}`, `Localhost:${String(run.port)}`]) {
+      const reply = await httpRequest(run.port, '/', { host });
+      expect(reply.status, host).toBe(200);
+      expect(reply.headers['content-security-policy'], host).toBe(
+        expectedCsp(host.toLowerCase(), nonceOf(reply) ?? ''),
+      );
+    }
+  });
+
+  it('uses a new nonce for every HTML response and never repeats one in the header or the body of another', async () => {
+    const run = await startInstance();
+    const nonces = new Set<string>();
+    for (let i = 0; i < 10; i += 1) {
+      const reply = await get(run, i % 2 === 0 ? '/' : '/sessions', HTML_ACCEPT);
+      const nonce = nonceOf(reply);
+      expect(nonce).not.toBeNull();
+      nonces.add(nonce ?? '');
+      expect(reply.body).not.toContain(PLACEHOLDER);
+    }
+    expect(nonces.size).toBe(10);
+  });
+
+  it('keeps the CSP free of inline script, inline style, remote sources, eval and wss', async () => {
     const run = await startInstance();
     const csp = (await get(run, '/')).headers['content-security-policy'] ?? '';
-    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|https?:|\*/);
+    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|https?:|wss:|\*/);
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain(`ws://127.0.0.1:${String(run.port)};`);
+  });
+
+  it('leaves every file that is not HTML untouched: the body keeps its bytes, no policy, no Permissions-Policy', async () => {
+    const run = await startInstance();
+    const expected: Record<string, string> = {
+      '/theme-init.js': '/* theme __CSP_NONCE__ */\n',
+      '/assets/index-abc123.js': 'console.log("app __CSP_NONCE__");\n',
+      '/assets/index-abc123.css': 'body{margin:0}\n',
+      '/favicon.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    };
+    for (const [route, body] of Object.entries(expected)) {
+      const reply = await get(run, route);
+      expect(reply.status, route).toBe(200);
+      expect(reply.body, route).toBe(body);
+      expect(reply.headers['content-security-policy'], route).toBeUndefined();
+      expect(reply.headers['permissions-policy'], route).toBeUndefined();
+    }
   });
 
   it('serves theme-init.js no-store, and the hashed assets as immutable with their media types', async () => {
@@ -163,7 +247,7 @@ describe('the pages (04 12.1, 12.2)', () => {
     expect(theme.headers['content-security-policy']).toBeUndefined();
     const js = await get(run, '/assets/index-abc123.js');
     expect(js.status).toBe(200);
-    expect(js.body).toBe('console.log("app");\n');
+    expect(js.body).toBe('console.log("app __CSP_NONCE__");\n');
     expect(js.headers['content-type']).toBe('text/javascript; charset=utf-8');
     expect(js.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(js.headers['x-content-type-options']).toBe('nosniff');
@@ -201,13 +285,16 @@ describe('the history fallback (04 3.1 rule 4)', () => {
     ]) {
       const reply = await get(run, route, HTML_ACCEPT);
       expect(reply.status, route).toBe(200);
-      expect(reply.body, route).toBe(INDEX_HTML);
+      expect(reply.body, route).toBe(pageOf(reply));
+      expect(nonceOf(reply), route).not.toBeNull();
       expect(reply.headers['cache-control'], route).toBe('no-store');
-      expect(reply.headers['content-security-policy'], route).toBe(CSP);
+      expect(reply.headers['content-security-policy'], route).toBe(
+        expectedCsp(`127.0.0.1:${String(run.port)}`, nonceOf(reply) ?? ''),
+      );
     }
     const query = await get(run, '/sessions?tab=transcript&i=3', HTML_ACCEPT);
     expect(query.status).toBe(200);
-    expect(query.body).toBe(INDEX_HTML);
+    expect(query.body).toBe(pageOf(query));
   });
 
   it('answers 404 JSON for a path that does not accept text/html', async () => {
@@ -256,7 +343,7 @@ describe('what is never served', () => {
         const reply = await get(run, route, accept);
         for (const sentinel of SENTINELS) expect(reply.body, `${route} ${sentinel}`).not.toContain(sentinel);
         if (accept === undefined) expect(reply.status, route).toBe(404);
-        else expect(reply.body === INDEX_HTML || reply.status === 404, route).toBe(true);
+        else expect(reply.body === pageOf(reply) || reply.status === 404, route).toBe(true);
       }
     }
   });
@@ -300,7 +387,7 @@ describe('what is never served', () => {
         }
         for (const sentinel of SENTINELS) expect(reply.body, `${route} ${sentinel}`).not.toContain(sentinel);
         expect([200, 400, 404], route).toContain(reply.status);
-        if (reply.status === 200) expect(reply.body, route).toBe(INDEX_HTML);
+        if (reply.status === 200) expect(reply.body, route).toBe(pageOf(reply));
       }
     }
   });
@@ -330,7 +417,7 @@ describe('methods and guards on static paths', () => {
     const head = await httpRequest(run.port, '/', { method: 'HEAD' });
     expect(head.status).toBe(200);
     expect(head.body).toBe('');
-    expect(head.headers['content-length']).toBe(String(Buffer.byteLength(INDEX_HTML)));
+    expect(head.headers['content-length']).toBe(String(Buffer.byteLength(pageOf(head))));
     for (const route of ['/', '/assets/index-abc123.js', '/theme-init.js']) {
       const reply = await httpRequest(run.port, route, {
         method: 'POST',
@@ -371,7 +458,7 @@ describe('the in-memory copy and loadStaticSite', () => {
     rmSync(run.dist, { recursive: true, force: true });
     const page = await get(run, '/');
     expect(page.status).toBe(200);
-    expect(page.body).toBe(INDEX_HTML);
+    expect(page.body).toBe(pageOf(page));
     expect((await get(run, '/assets/index-abc123.js')).status).toBe(200);
   });
 
