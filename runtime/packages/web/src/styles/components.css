@@ -1,4 +1,5 @@
-/* Primitives (ADR 0071 decision 7): buttons in three levels, one input style, chips, cards, keyboard keys, popovers.
+/* Primitives (ADR 0071 decision 7, ADR 0100): buttons in three levels (30 px), one input style, chips, cards, keyboard keys, popovers and the
+   dialog.
    Feature styles live in their own files (index.css lists them). Transitions never list `outline`: a transition fades the focus ring. */
 
 /* Secondary level: the default button, an outline. */
@@ -57,7 +58,7 @@
 /* Tertiary level: no border, a fill on hover; the quiet and icon variants. */
 .btn-quiet,
 .btn-icon {
-  min-height: calc(var(--ctl-h) - 4px);
+  min-height: max(var(--ctl-h-inline), calc(var(--ctl-h) - 4px));
   background: transparent;
   color: var(--text-muted);
   border-color: transparent;
@@ -72,7 +73,7 @@
   background: var(--border);
 }
 .btn-icon {
-  min-width: calc(var(--ctl-h) - 4px);
+  min-width: max(var(--ctl-h-inline), calc(var(--ctl-h) - 4px));
   padding: 0 var(--sp-2);
 }
 .btn-group {
@@ -188,4 +189,56 @@
 }
 .popover__panel:focus {
   outline: none;
+}
+
+/* Dialog (design 05, section 3.3): a native `<dialog>` opened with `showModal()`, so the browser traps the focus and closes it on Esc.
+   `.dialog__head` is the title with a line under it, `.dialog__body` the scrolling content, `.dialog__foot` the actions at the end with a
+   line over them. The scrim is `--backdrop`. The shortcuts dialog is native markup without the class, so the same rules name it.
+   The box scrolls as a whole when its content is taller than the window; a `.dialog` is a flex column while it is open, so its
+   `.dialog__body` scrolls alone between the head and the foot. */
+.dialog,
+.shortcuts-dialog {
+  width: min(32.5rem, calc(100vw - 2 * var(--sp-5)));
+  max-height: calc(100vh - 2 * var(--sp-5));
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--elev-2);
+}
+.dialog::backdrop,
+.shortcuts-dialog::backdrop {
+  background: var(--backdrop);
+}
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.dialog__head {
+  flex: none;
+  padding: var(--sp-4) var(--sp-5);
+  color: var(--strong);
+  border-bottom: var(--border-w) solid var(--border);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-md);
+}
+.dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--sp-4) var(--sp-5);
+  overflow-y: auto;
+}
+.dialog__foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: var(--border-w) solid var(--border);
 }

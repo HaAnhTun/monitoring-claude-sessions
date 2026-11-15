@@ -1,5 +1,5 @@
 /* Top bar, Live control and its popover, user menu, shortcuts dialog, stale-data marker (04-ui.md 5.6, 6.5, ADR 0033, ADR 0073 decisions 4 to 6).
-   The bar is 48 px high on one row and wraps to a second row, never a third, at 600 px. Colour is a second cue: every dot has a word. */
+   The bar is 40 px high (--topbar-h) on one row and wraps to a second row, never a third, at 600 px. Colour is a second cue: every dot has a word. */
 
 /* ---- the bar ---- */
 .topbar {
@@ -294,7 +294,7 @@
   align-items: center;
   gap: var(--sp-3);
   width: 100%;
-  min-height: var(--ctl-h);
+  min-height: var(--row-h-list);
   padding: 0 var(--sp-3);
   background: transparent;
   color: var(--text);
@@ -331,30 +331,17 @@
   margin-inline-start: auto;
 }
 
-/* ---- the shortcuts dialog ---- */
-.shortcuts-dialog {
-  width: min(34rem, calc(100vw - 2 * var(--sp-5)));
-  max-height: calc(100vh - 2 * var(--sp-5));
-  margin: auto;
-  padding: var(--sp-5) var(--sp-6);
-  overflow-y: auto;
-  background: var(--surface);
-  color: var(--text);
-  border: var(--border-w) solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--elev-2);
-}
-.shortcuts-dialog::backdrop {
-  background: var(--backdrop);
-}
+/* ---- the shortcuts dialog: its box is the .dialog primitive (components.css); this is what sits inside it ---- */
 .shortcuts-dialog__title {
-  margin-bottom: var(--sp-4);
-  font-size: var(--fs-lg);
+  padding: var(--sp-4) var(--sp-5);
+  color: var(--strong);
+  border-bottom: var(--border-w) solid var(--border);
+  font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
-  line-height: var(--lh-lg);
+  line-height: var(--lh-md);
 }
-.shortcuts-dialog__group + .shortcuts-dialog__group {
-  margin-top: var(--sp-5);
+.shortcuts-dialog__group {
+  padding: var(--sp-4) var(--sp-5) 0;
 }
 .shortcuts-dialog__heading {
   margin-bottom: var(--sp-3);
@@ -381,7 +368,9 @@
 }
 .shortcuts-dialog .state__actions {
   justify-content: flex-end;
-  margin-top: var(--sp-5);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: var(--border-w) solid var(--border);
 }
 @media (max-width: 479px) {
   .shortcuts-dialog__row {
@@ -404,4 +393,13 @@
 main[data-stale='true'] [data-stale-scope] {
   outline: 2px dashed var(--stale-fg);
   outline-offset: -2px;
+}
+
+/* Forced colours remove background colours: the dots become CanvasText discs (the word beside each dot carries the state). */
+@media (forced-colors: active) {
+  .live-dot,
+  .live-dot[data-tone] {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }

@@ -35,6 +35,28 @@
   top: var(--sp-3);
 }
 
+/* The product name: 13 px, 600, in the strong text colour. The brand orange is a shape beside it (a 3:1 graphic; on the cream theme it
+   is too light for text), never the colour of the word. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--strong);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-md);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.brand::before {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  content: '';
+  background: var(--brand);
+  border-radius: var(--radius-sm);
+}
+
 /* ---- the sidebar: 240 px from 1200 px; the column is as tall as the page and its content sticks to the top of the window ---- */
 .sidebar {
   flex: 0 0 var(--side-w);
@@ -72,7 +94,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  min-height: var(--ctl-h);
+  min-height: var(--row-h-list);
   padding: 0 var(--sp-3);
   border-radius: var(--radius);
   color: var(--text-muted);
@@ -89,10 +111,11 @@
   color: var(--text);
   text-decoration: none;
 }
-/* The selected entry is the one place of the sidebar that uses the accent: a bar and the icon; the text stays at full contrast. */
+/* The selected entry is the one place of the sidebar that uses the accent: a 2 px bar and the icon, on the --selected fill; the text
+   stays at full contrast. Hover is --surface-2, so a hovered entry and the current one differ. */
 .sidebar-nav__link[aria-current='page'] {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--selected);
+  color: var(--strong);
   font-weight: var(--fw-semibold);
   box-shadow: inset 2px 0 0 var(--accent);
 }
@@ -151,7 +174,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  min-height: var(--ctl-h);
+  min-height: var(--row-h-list);
   padding: 0 var(--sp-3);
   border-radius: var(--radius);
   color: var(--text);
@@ -164,7 +187,7 @@
   text-decoration: none;
 }
 .sidebar-switcher__row[aria-current='page'] {
-  background: var(--surface-2);
+  background: var(--selected);
   font-weight: var(--fw-semibold);
   box-shadow: inset 2px 0 0 var(--accent);
 }
@@ -227,8 +250,10 @@
     flex-basis: var(--side-w-rail);
     width: var(--side-w-rail);
   }
+  /* The collapsed labels are clipped away (clip-path), not cut by an overflow of their own, so the column cuts what sticks out sideways. */
   .sidebar__inner {
     padding: var(--sp-4) var(--sp-2);
+    overflow-x: hidden;
   }
   .sidebar-nav__link {
     justify-content: center;
@@ -240,8 +265,8 @@
     height: 1px;
     margin: -1px;
     padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
+    overflow: visible;
+    clip-path: inset(50%);
     white-space: nowrap;
   }
   .sidebar-nav__count {
@@ -256,7 +281,8 @@
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--surface);
     color: transparent;
-    font-size: 0;
+    font-size: var(--fs-xs);
+    line-height: 0;
   }
   .sidebar-nav__link:hover .sidebar-nav__count,
   .sidebar-nav__link[aria-current='page'] .sidebar-nav__count {
@@ -313,5 +339,22 @@
     position: static;
     flex: 1 1 auto;
     max-height: none;
+  }
+}
+
+/* Forced colours remove the fills and shadows that mark the current entry: an outline takes their place. */
+@media (forced-colors: active) {
+  .sidebar-nav__link[aria-current='page'],
+  .sidebar-switcher__row[aria-current='page'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+/* The count of the rail is a dot on the icon: it stays a disc (the number is in the title of the link). */
+@media (forced-colors: active) and (min-width: 900px) and (max-width: 1199px) {
+  .sidebar-nav__count,
+  .sidebar-nav__count[data-tone='alert'] {
+    forced-color-adjust: none;
+    background: CanvasText;
   }
 }

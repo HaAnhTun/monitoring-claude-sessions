@@ -98,7 +98,7 @@
 .filter-bar__text .input {
   width: 100%;
 }
-/* A flag in the row is a toggle with the box of a control; it takes the accent border while it is on. */
+/* A flag in the row is a toggle with the box of a control; it takes the --selected fill and the accent border while it is on. */
 .filter-bar__toggle {
   display: inline-flex;
   align-items: center;
@@ -117,7 +117,7 @@
   border-color: var(--text-muted);
 }
 .filter-bar__toggle:has(input:checked) {
-  background: var(--surface-2);
+  background: var(--selected);
   border-color: var(--accent);
 }
 .filter-bar__toggle:has(input:focus-visible) {
@@ -257,11 +257,13 @@ a.summary-tile:hover {
   background: var(--surface-2);
   border-color: var(--border-strong);
 }
-/* A pressed tile is the filter that is on: the accent marks it, because it is interactive. */
+/* A pressed tile is the filter that is on: the --selected fill and the 2 px accent bar, because it is interactive. */
 button.summary-tile[aria-pressed='true'] {
-  background: var(--surface-2);
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--selected);
+  border-color: var(--border-strong);
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    var(--elev-1);
 }
 .summary-tile__value {
   font-size: var(--fs-2xl);
@@ -341,7 +343,7 @@ button.summary-tile[aria-pressed='true'] {
   vertical-align: middle;
 }
 .data-table td {
-  height: calc(44px * var(--d));
+  height: var(--row-h);
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
@@ -406,11 +408,11 @@ button.summary-tile[aria-pressed='true'] {
   background: var(--surface-2);
 }
 .data-table__row[aria-current='true'] {
-  background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--selected);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .data-table__row[aria-current='true'] .is-sticky-start {
-  background: var(--surface-2);
+  background: var(--selected);
 }
 .data-table__link {
   color: inherit;
@@ -477,6 +479,7 @@ button.summary-tile[aria-pressed='true'] {
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
+  min-height: var(--row-h);
   padding: var(--sp-3) var(--sp-4);
   border-bottom: var(--border-w) solid var(--border);
 }
@@ -487,8 +490,8 @@ button.summary-tile[aria-pressed='true'] {
   background: var(--surface-2);
 }
 .data-card[aria-current='true'] {
-  background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--selected);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .data-card__head {
   display: flex;
@@ -582,6 +585,30 @@ button.summary-tile[aria-pressed='true'] {
 .token-figures__row dd {
   margin: 0;
   text-align: end;
+}
+
+/* ---- Forced colours: fills and shadows disappear, so a selected row or tile is outlined and a dot is a disc ---- */
+@media (forced-colors: active) {
+  .data-table__row[aria-current='true'],
+  .data-card[aria-current='true'],
+  button.summary-tile[aria-pressed='true'],
+  .filter-bar__toggle:has(input:checked) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  /* the focus ring of a toggle stays outside the box, so it is told from the selected outline inside it */
+  .filter-bar__toggle:has(input:focus-visible) {
+    outline-offset: 2px;
+  }
+  .summary-tile__dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .summary-tile--waiting .summary-tile__dot,
+  .summary-tile--quiet .summary-tile__dot {
+    background: transparent;
+    border-color: CanvasText;
+  }
 }
 
 /* ---- V3 token components (TokenLine, TokenSummary); WP-124 removes them with their styles ------------------------------------- */

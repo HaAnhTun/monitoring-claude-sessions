@@ -100,7 +100,7 @@
   text-overflow: ellipsis;
 }
 
-/* State badge: a dot and a 13 px word. The transparent border keeps an inferred (dashed) badge the same size as a solid one. */
+/* State badge: a dot and a 12 px word. The transparent border keeps an inferred (dashed) badge the same size as a solid one. */
 .badge--state {
   padding: 0 var(--sp-3);
   border: var(--border-w) solid transparent;
@@ -146,7 +146,7 @@
   }
 }
 
-/* Tag: a muted 12 px word with an optional icon; no border, no fill. The tones that need attention keep their colour. */
+/* Tag: a muted 11 px word with an optional icon; no border, no fill. The tones that need attention keep their colour. */
 .badge--tag {
   gap: var(--sp-2);
   padding: 0;
@@ -165,7 +165,7 @@
   color: var(--tone-fg);
 }
 
-/* Evidence line: one muted 12 px line under (list) or next to (header) the badge; the full text is in the title.
+/* Evidence line: one muted 11 px line under (list) or next to (header) the badge; the full text is in the title.
    The width is bounded in ch, not in per cent: in an auto-layout table cell a no-wrap line sets the column's minimum width, so
    a long server text (an MCP tool name runs to 100 characters) would stretch the State column and squeeze the others. */
 .evidence-line {
@@ -177,4 +177,17 @@
   line-height: var(--lh-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Forced colours (Windows high contrast) remove background colours: a dot becomes a CanvasText disc, the ring keeps its shape, and the
+   word beside it (always present) names the state. The dashed border of an inferred badge is a border, which the system keeps. */
+@media (forced-colors: active) {
+  .state-dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .state-dot--ring {
+    background: transparent;
+    border-color: CanvasText;
+  }
 }
