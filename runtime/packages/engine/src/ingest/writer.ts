@@ -38,6 +38,7 @@ import { EventsRepo } from '../db/repos/events.ts';
 import { HookProbesRepo } from '../db/repos/hook-probes.ts';
 import { IngestErrorsRepo } from '../db/repos/ingest-errors.ts';
 import { IngestHealthRepo } from '../db/repos/ingest-health.ts';
+import { ProjectsRepo } from '../db/repos/projects.ts';
 import {
   ReconciliationsRepo,
   type ReconciliationDetail,
@@ -66,6 +67,7 @@ import {
 import { agentFactsOf, applyEvent, emptyModel, workflowFactsOf, type LifecycleModel } from '../lifecycle/merge.ts';
 import type { Logger } from '../log/logger.ts';
 import { clipCodePoints } from '../platform/fsx.ts';
+import { projectOfSeen, type SeenProject } from '../projects/folder-key.ts';
 import {
   CONTENT_WINDOW_MS,
   emptyDuplicateCounts,
@@ -329,6 +331,7 @@ function changedSessionPatch(row: SessionRow, wanted: SessionPatch): SessionPatc
   if (wanted.agentCount !== undefined && wanted.agentCount !== row.agentCount) patch.agentCount = wanted.agentCount;
   if (wanted.cwd !== undefined && wanted.cwd !== row.cwd) patch.cwd = wanted.cwd;
   if (wanted.claudePid !== undefined && wanted.claudePid !== row.claudePid) patch.claudePid = wanted.claudePid;
+  if (wanted.projectId !== undefined && wanted.projectId !== row.projectId) patch.projectId = wanted.projectId;
   return patch;
 }
 
@@ -354,6 +357,11 @@ interface Working {
   warningEvents: number;
   /** Column patch from `session.seen` and friends; written once at the end. */
   readonly patch: { cwd?: string; entrypoint?: string; ccVersion?: string; gitBranch?: string; lastModel?: string };
+  /**
+   * The project this transaction learned from a `session.seen` that carried a transcript path (CAW design 03 2.5): the first
+   * usable folder wins, a later event only fills a missing root. The row gets it once, at the end of the transaction.
+   */
+  project?: SeenProject;
   titleAi?: string;
   titleCustom?: string;
   continuedIn?: string;
@@ -423,6 +431,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
   const itemsPerTxCap = itemsPerTx;
 
   const sessions = new SessionsRepo(db);
+  const projects = new ProjectsRepo(db);
   const agents = new AgentsRepo(db);
   const events = new EventsRepo(db);
   const toolCalls = new ToolCallsRepo(db);
@@ -604,6 +613,12 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
   }
 
   // ---- entity writes ---------------------------------------------------------------------------------------------------
+
+  /** The first usable project of the transaction stays; a later event of the same session only supplies a root that was missing. */
+  function rememberProject(w: Working, seen: SeenProject | null): void {
+    if (seen === null) return;
+    w.project = w.project === undefined ? seen : { ...w.project, root: w.project.root ?? seen.root };
+  }
 
   function upsertAgent(c: TxState, w: Working, a: Omit<NewAgent, 'sessionId' | 'parentAgentId' | 'depth'>): number {
     const spec: NewAgent = { ...a, sessionId: w.rowId, parentAgentId: w.mainAgentId, depth: 1 };
@@ -796,6 +811,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
           if (event.version !== undefined) w.patch.ccVersion = clipCodePoints(event.version, 32);
           if (event.gitBranch !== undefined) w.patch.gitBranch = clipCodePoints(event.gitBranch, 255);
         }
+        rememberProject(w, projectOfSeen(event.transcriptPath, event.cwd));
         break;
       case 'session.start':
         if (event.model !== undefined) w.patch.lastModel = clipCodePoints(event.model, 128);
@@ -1222,9 +1238,20 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     if (row !== undefined) {
       const startedAt = Math.min(row.startedAt, w.startedAt);
       const pid = facts.claudePid?.value;
+      const lastActivityAt = Math.max(startedAt, maxOf(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt));
+      // the first assignment wins: a session that has a project never asks for another (CAW design 03 2.5)
+      const projectId =
+        row.projectId === null && w.project !== undefined
+          ? projects.ensure(scope, c.tx, {
+              projectKey: w.project.key,
+              dirName: w.project.dirName,
+              rootPath: w.project.root,
+              at: lastActivityAt,
+            })
+          : undefined;
       const wanted: SessionPatch = {
         startedAt,
-        lastActivityAt: Math.max(startedAt, maxOf(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt)),
+        lastActivityAt,
         lastHookAt: facts.lastHookAt ?? row.lastHookAt,
         endedAt: facts.end === null ? row.endedAt : Math.max(startedAt, facts.end.stamp.at),
         eventCount: row.eventCount + w.eventsInserted,
@@ -1233,6 +1260,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         agentCount: agents.countBySession(scope, w.rowId),
         ...(w.patch.cwd === undefined ? {} : { cwd: w.patch.cwd }),
         ...(pid === undefined || pid <= 0 ? {} : { claudePid: pid }),
+        ...(projectId === undefined ? {} : { projectId }),
       };
       const patch = changedSessionPatch(row, wanted);
       const stored = db.driver

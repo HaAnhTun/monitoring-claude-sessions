@@ -427,6 +427,63 @@ describe('instanceInfo (03 6.2)', () => {
     expect(info.headSeq).toBeGreaterThan(0);
     expect(info.epoch).toMatch(/^[0-9a-f]{8}$/);
   });
+
+  describe('scope and panels (CAW design 03 2.1, D11)', () => {
+    const PANELS_ON = {
+      panels: { git: true, machine: true, attempts: true, ledger: true, chain_log: true, logs: true },
+    };
+
+    it('reads the repository for a task instance and all projects for the user instance, as projects.scope auto says', async () => {
+      const task = await build(await fixture());
+      expect(task.queries.instanceInfo(task.scope).scope).toBe('repo');
+      const user = await build(await fixture({ kind: 'user' }));
+      expect(user.queries.instanceInfo(user.scope).scope).toBe('all');
+      expect(InstanceInfoSchema.parse(user.queries.instanceInfo(user.scope)).scope).toBe('all');
+    });
+
+    it('lets projects.scope force either scope whatever the kind of the instance is', async () => {
+      const forcedAll = await build(await fixture({ runtime: { schema_version: 1, projects: { scope: 'all' } } }));
+      expect(forcedAll.queries.instanceInfo(forcedAll.scope).scope).toBe('all');
+      const pinned = await build(
+        await fixture({ kind: 'user', runtime: { schema_version: 1, projects: { scope: 'repo' } } }),
+      );
+      expect(pinned.queries.instanceInfo(pinned.scope).scope).toBe('repo');
+    });
+
+    it('keeps the panels of a task instance as configured', async () => {
+      const task = await build(await fixture({ config: PANELS_ON }));
+      expect(task.queries.instanceInfo(task.scope).panels).toEqual({
+        git: true,
+        machine: true,
+        attempts: true,
+        ledger: true,
+        chainLog: true,
+        logs: true,
+      });
+    });
+
+    it('turns the per-repository panels off for the user instance whatever config.json says, and keeps machine and logs', async () => {
+      const user = await build(await fixture({ kind: 'user', config: PANELS_ON }));
+      expect(user.queries.instanceInfo(user.scope).panels).toEqual({
+        git: false,
+        machine: true,
+        attempts: false,
+        ledger: false,
+        chainLog: false,
+        logs: true,
+      });
+      const quiet = await build(
+        await fixture({ kind: 'user', config: { panels: { git: true, machine: false, logs: false } } }),
+      );
+      expect(quiet.queries.instanceInfo(quiet.scope).panels).toMatchObject({ machine: false, logs: false, git: false });
+    });
+
+    it('offers the project reads on the layer', async () => {
+      const ctx = await build(await fixture());
+      expect(ctx.queries.projectStats(ctx.scope, { windowFromMs: null })).toEqual([]);
+      expect(ctx.queries.resumeFacts(ctx.scope, '11111111-1111-4111-8111-111111111111')).toBeNull();
+    });
+  });
 });
 
 function alertInput(

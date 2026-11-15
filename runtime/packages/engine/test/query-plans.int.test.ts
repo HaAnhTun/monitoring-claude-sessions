@@ -24,6 +24,7 @@ import type { InstanceDb } from '../src/db/open.ts';
 import type { Logger } from '../src/log/logger.ts';
 import { createAgentQueries } from '../src/query/agents.ts';
 import { createEventQueries } from '../src/query/events.ts';
+import { createProjectQueries } from '../src/query/projects.ts';
 import { createSessionQueries } from '../src/query/sessions.ts';
 import { createToolCallQueries } from '../src/query/tool-calls.ts';
 import { createTransitionQueries } from '../src/query/transitions.ts';
@@ -374,5 +375,31 @@ describe('tool calls, agents and transitions', () => {
       queries.sessionTransitions(ctx.scope, uid(1), TransitionListQuerySchema.parse({}));
     });
     expect(flat(plans)).toContain('idx_transitions_session');
+  });
+});
+
+describe('projects (CAW design 03 2.8)', () => {
+  it('counts the sessions of every project by the project index, without a scan of the sessions', () => {
+    const queries = createProjectQueries(spyDb);
+    const plans = plansOf(() => {
+      const stats = queries.projectStats(ctx.scope, { windowFromMs: NOW - 86_400_000 });
+      expect(stats.map((row) => row.key).sort()).toEqual(['proj-a', 'proj-b']);
+      expect(stats.reduce((sum, row) => sum + row.totalSessions, 0)).toBe(SESSIONS);
+    });
+    expect(plans).toHaveLength(1);
+    expect(flat(plans)).toContain('idx_sessions_project');
+    expect(flat(plans)).not.toMatch(/^SCAN (sessions|s)\b/m);
+    expectNoBareScan(plans);
+  });
+
+  it('reads the facts of a resume by the unique session index and the transcript file index', () => {
+    const queries = createProjectQueries(spyDb);
+    const plans = plansOf(() => {
+      expect(queries.resumeFacts(ctx.scope, uid(7))).toMatchObject({ sessionId: uid(7), projectKey: 'proj-b' });
+    });
+    expect(plans).toHaveLength(1);
+    expect(flat(plans)).toContain('sqlite_autoindex_sessions_1');
+    expect(flat(plans)).toContain('idx_transcript_files_session');
+    expect(flat(plans)).not.toMatch(/^SCAN (sessions|s)\b/m);
   });
 });

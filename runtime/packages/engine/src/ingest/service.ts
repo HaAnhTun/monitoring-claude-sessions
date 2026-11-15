@@ -3,8 +3,9 @@
 // of 02 7.10 (registry, jobs), and it publishes the figures that the ingestion health needs (`bindHealthSources`). The writer has
 // the activity throttle of 03 3.6; `start()` binds its flush (`bindActivityFlush`) to the one-second job of the schedule.
 //
-// `start()` (in order): resolve the transcripts folder, write the route file, drain every unsealed spool segment once (this is
-// where `runtime_unavailable` is recorded), then start the import scheduler and the pollers. `stop(deadlineMs)` stops them, gives
+// `start()` (in order): give the sessions of an older database their project (the backfill of CAW design 03 2.5), resolve the
+// transcripts folder, write the route file, drain every unsealed spool segment once (this is where `runtime_unavailable` is
+// recorded), then start the import scheduler and the pollers. `stop(deadlineMs)` stops them, gives
 // the writer until the deadline to commit what is queued (what is not committed stays in the spool or is read again from the
 // transcript, nothing is lost) and marks the route file stopped.
 //
@@ -27,6 +28,7 @@ import { bindHealthSources } from '../health/ingest-health.ts';
 import { DEFAULT_LIFECYCLE_CFG, type LifecycleCfg } from '../lifecycle/facts.ts';
 import { bindActivityFlush } from '../maintenance/schedule.ts';
 import { pidAlive as realPidAlive } from '../platform/process.ts';
+import { backfillProjects } from '../projects/backfill.ts';
 import type { InstanceContext } from '../runtime/context.ts';
 import { IngestWriterClosedError, ingestError } from './errors.ts';
 import type { LogicalEvent } from './event-row.ts';
@@ -98,6 +100,8 @@ export interface IngestServiceOptions {
   readonly onIdlePoll?: () => void;
   readonly externalFs?: ExternalFs;
   readonly pidAlive?: (pid: number) => boolean;
+  /** Replaces the project backfill that `start` runs (a test makes it fail or counts its calls). */
+  readonly backfillProjects?: typeof backfillProjects;
 }
 
 // ---- configuration ------------------------------------------------------------------------------------------------------
@@ -459,11 +463,25 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     };
   }
 
+  /**
+   * Sessions written before the project dimension was filled get their project now, once per start (CAW design 03 2.5). It runs
+   * before the producers start, so it never competes with the writer; a failure is logged as a code and never stops ingestion.
+   */
+  async function backfillProjectDimension(): Promise<void> {
+    try {
+      const result = await (options.backfillProjects ?? backfillProjects)(db, scope);
+      if (result.assigned > 0) logger.info('project_backfill', { scanned: result.scanned, assigned: result.assigned });
+    } catch (error) {
+      logger.warn('project_backfill_failed', { code: failureCode(error) });
+    }
+  }
+
   async function doStart(): Promise<void> {
     try {
       unsubscribeCommits = onCommitted(db, noteCommit);
       accepting = true;
       bindActivityFlush(ctx, () => writer.flushActivity());
+      await backfillProjectDimension();
       transcriptsDir = await resolveTranscriptsDir(ctx);
       importer.setTranscriptsDir(transcriptsDir);
       await writeRoute({ stoppedAt: null });

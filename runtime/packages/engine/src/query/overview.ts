@@ -19,6 +19,7 @@ import {
 import type { SqlValue } from '../db/driver.ts';
 import type { InstanceDb, RepoContext } from '../db/open.ts';
 import { AlertsRepo } from '../db/repos/alerts.ts';
+import { instanceKindOfConfig, unmatchedVisible } from '../projects/scope.ts';
 import type { QueryDeps } from '../runtime/context.ts';
 import { selectAlerts } from './alerts.ts';
 import { createEventQueries } from './events.ts';
@@ -39,7 +40,7 @@ export interface MetricProviderInput {
   readonly asOfSeq: number;
   /** The time stamp of every metric (`Metric.asOf`). */
   readonly asOf: IsoTime;
-  /** The unmatched sessions are part of the answer (`includeUnmatched=1` or the monitor setting). */
+  /** The unmatched sessions are part of the answer (`includeUnmatched=1`, the monitor setting or the scope `all`). */
   readonly includeUnmatched: boolean;
 }
 
@@ -189,7 +190,7 @@ export function createOverviewQueries(db: InstanceDb, deps: QueryDeps): Overview
         const nowMs = deps.now();
         const asOf = isoMsZ(nowMs);
         const window = resolveWindow(deps, q, 'window', null);
-        const includeUnmatched = q.includeUnmatched === true || deps.config.monitor.include_unmatched;
+        const includeUnmatched = unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q);
 
         const states = new Map<string, number>();
         const sessionBind = new Binder();

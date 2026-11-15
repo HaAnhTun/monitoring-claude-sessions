@@ -19,6 +19,7 @@ import {
 
 import type { SqlValue } from '../db/driver.ts';
 import type { InstanceDb, RepoContext } from '../db/open.ts';
+import { instanceKindOfConfig, unmatchedVisible } from '../projects/scope.ts';
 import type { QueryDeps } from '../runtime/context.ts';
 import {
   Binder,
@@ -345,6 +346,7 @@ export type SessionFilter = Pick<
   | 'tokensMin'
   | 'tokensMax'
   | 'includeUnmatched'
+  | 'session'
 >;
 
 /** The parts of the `WHERE` clause that make the result set (everything but the keyset), over `sessions s`. */
@@ -362,6 +364,8 @@ export function filterSql(
   }
   where.push(`s.started_at < ${bind.bind(window.toMs)}`);
   if (q.q !== undefined) where.push(`instr(s.search_text, ${bind.bind(foldQuery(q.q))}) > 0`);
+  // the terminal sidebar asks for the rows of its live sessions (at most 50 ids, CAW design 03 2.8)
+  if (q.session !== undefined) where.push(`s.session_uid IN ${bind.list(q.session)}`);
   if (q.state !== undefined) where.push(`s.state IN ${bind.list(expandStateFilter(q.state))}`);
   if (q.presence !== undefined) where.push(`s.presence IN ${bind.list(q.presence)}`);
   if (q.project !== undefined) {
@@ -377,7 +381,7 @@ export function filterSql(
   const tokens = 's.tok_input + s.tok_output + s.tok_cache_read + s.tok_cache_creation';
   if (q.tokensMin !== undefined) where.push(`(${tokens}) >= ${bind.bind(q.tokensMin)}`);
   if (q.tokensMax !== undefined) where.push(`(${tokens}) <= ${bind.bind(q.tokensMax)}`);
-  if (q.includeUnmatched !== true && !deps.config.monitor.include_unmatched) {
+  if (!unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q)) {
     where.push('(s.matched = 1 OR s.pinned = 1)');
   }
   return where;

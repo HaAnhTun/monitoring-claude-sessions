@@ -209,6 +209,47 @@ describe('SessionsRepo.update', () => {
   });
 });
 
+describe('SessionsRepo.update: the project of a session (CAW design 03 2.5)', () => {
+  function addProject(db: InstanceDb, key: string): number {
+    return db.driver
+      .prepare('INSERT INTO projects (project_key, dir_name, first_seen_at, last_activity_at) VALUES (?, ?, ?, ?)')
+      .run([key, key, T0, T0]).lastInsertRowid;
+  }
+
+  it('assigns the project, announced by the seq the caller reserved, and leaves it alone when the patch has none', () => {
+    const db = database();
+    const repo = new SessionsRepo(db);
+    const { id } = addSession(db);
+    const projectId = addProject(db, 'd--work-app');
+    expect(repo.byUid(CTX, UID_A)?.projectId).toBeNull();
+    const seq = withWriteTx(db, CTX, (tx) => {
+      const reserved = tx.changes.reserve('session', 'upsert', { entityId: id, sessionUid: UID_A });
+      repo.update(CTX, tx, id, { projectId }, reserved);
+      return reserved;
+    });
+    expect(repo.byUid(CTX, UID_A)).toMatchObject({ projectId, updatedSeq: seq });
+    withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, id, { label: 'later' }, null));
+    expect(repo.byUid(CTX, UID_A)?.projectId).toBe(projectId);
+  });
+
+  it('clears the project with null and refuses a project that does not exist', () => {
+    const db = database();
+    const repo = new SessionsRepo(db);
+    const { id } = addSession(db);
+    const projectId = addProject(db, 'p');
+    withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, id, { projectId }, null));
+    withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, id, { projectId: null }, null));
+    expect(repo.byUid(CTX, UID_A)?.projectId).toBeNull();
+    let error: unknown;
+    try {
+      withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, id, { projectId: 9999 }, null));
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: 'db_constraint' });
+  });
+});
+
 describe('SessionsRepo soft references (03 3.4)', () => {
   it('refuses an update that names a transcript file that does not exist', () => {
     const db = database();
@@ -412,6 +453,50 @@ function addTranscriptFile(
     .lastInsertRowid;
 }
 
+describe('SessionsRepo.withoutProject (CAW design 03 2.5)', () => {
+  it('lists the sessions without a project that have a main file, by row id after a cursor', () => {
+    const db = database();
+    const repo = new SessionsRepo(db);
+    const a = addSession(db, UID_A, T0);
+    const b = addSession(db, UID_B, T0);
+    const none = addSession(db, 'cccccccc-0000-4000-8000-000000000003', T0);
+    addTranscriptFile(db, { sessionUid: UID_A, firstTs: null, mtime: null });
+    addTranscriptFile(db, { sessionUid: UID_B, firstTs: null, mtime: null });
+    withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, a.id, { cwd: '/work/a', lastActivityAt: T0 + 9 }, null));
+    const all = repo.withoutProject(CTX, 0, 10);
+    expect(all).toEqual([
+      { id: a.id, sessionUid: UID_A, cwd: '/work/a', lastActivityAt: T0 + 9, transcriptPath: `C:/t/${UID_A}.jsonl` },
+      { id: b.id, sessionUid: UID_B, cwd: null, lastActivityAt: T0, transcriptPath: `C:/t/${UID_B}.jsonl` },
+    ]);
+    expect(all.map((row) => row.id)).not.toContain(none.id);
+    expect(repo.withoutProject(CTX, 0, 1).map((row) => row.id)).toEqual([a.id]);
+    expect(repo.withoutProject(CTX, a.id, 10).map((row) => row.id)).toEqual([b.id]);
+    expect(repo.withoutProject(CTX, b.id, 10)).toEqual([]);
+  });
+
+  it('leaves out a session that has a project, and prefers the file the session points at', () => {
+    const db = database();
+    const repo = new SessionsRepo(db);
+    const a = addSession(db, UID_A, T0);
+    addTranscriptFile(db, { sessionUid: UID_A, firstTs: null, mtime: null });
+    const projectId = db.driver
+      .prepare("INSERT INTO projects (project_key, dir_name, first_seen_at, last_activity_at) VALUES ('p', 'p', ?, ?)")
+      .run([T0, T0]).lastInsertRowid;
+    withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, a.id, { projectId }, null));
+    expect(repo.withoutProject(CTX, 0, 10)).toEqual([]);
+    const b = addSession(db, UID_B, T0);
+    addTranscriptFile(db, { sessionUid: UID_B, firstTs: null, mtime: null });
+    const second = db.driver
+      .prepare(
+        `INSERT INTO transcript_files (path, path_key, kind, session_uid, discovered_at, updated_at)
+         VALUES ('C:/t/second.jsonl', 'c:/t/second.jsonl', 'session', ?, ?, ?)`,
+      )
+      .run([UID_B, T0, T0]).lastInsertRowid;
+    withWriteTx(db, CTX, (tx) => repo.update(CTX, tx, b.id, { transcriptFileId: second }, null));
+    expect(repo.withoutProject(CTX, 0, 10).map((row) => row.transcriptPath)).toEqual(['C:/t/second.jsonl']);
+  });
+});
+
 describe('SessionsRepo.attemptCandidates (03 3.6, DA-T-DB-20)', () => {
   it('returns first-record and last-activity times from the main transcript file', () => {
     const db = database();
@@ -565,6 +650,7 @@ describe('SessionsRepo scope (DA-T-DB-7)', () => {
       uidsByRowIds: () => repo.uidsByRowIds(FOREIGN, [id]),
       attemptCandidates: () => repo.attemptCandidates(FOREIGN, ['a'], T0),
       completionCandidates: () => repo.completionCandidates(FOREIGN, { sessionId: UID_A }),
+      withoutProject: () => repo.withoutProject(FOREIGN, 0, 10),
     });
     expect(repo.byUid(CTX, UID_A)?.label).not.toBe('a');
     expect(repo.idByUid(CTX, UID_B)).toBeUndefined();

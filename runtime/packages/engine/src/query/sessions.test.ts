@@ -55,8 +55,15 @@ function silentLogger(): Logger {
   };
 }
 
+interface InstanceOptions {
+  /** `user` makes the workspace the user instance (CAW design 03 2.1); absent is a task. */
+  readonly kind?: 'task' | 'user';
+  /** The `projects` keys of `runtime.json`. */
+  readonly projects?: Readonly<Record<string, unknown>>;
+}
+
 /** A real instance (workspace, database, query layer) in a temp folder; the clock is fixed at `NOW`. */
-async function instance(): Promise<{ ctx: InstanceContext; clock: FakeClock }> {
+async function instance(o: InstanceOptions = {}): Promise<{ ctx: InstanceContext; clock: FakeClock }> {
   const root = makeTemp('q-sessions').path;
   const skill = path.join(root, 'skill');
   const runtimeDir = path.join(skill, 'runtime');
@@ -67,7 +74,17 @@ async function instance(): Promise<{ ctx: InstanceContext; clock: FakeClock }> {
   const repo = path.join(root, 'repo');
   mkdirSync(repo);
   const clock = new FakeClock(NOW);
-  const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock, newId: () => ID });
+  const { ws } = await initWorkspace({
+    repo,
+    name: 'Demo',
+    slug: 'demo',
+    clock,
+    newId: () => ID,
+    ...(o.kind === undefined ? {} : { kind: o.kind }),
+  });
+  if (o.projects !== undefined) {
+    writeFileSync(path.join(ws.dir, 'runtime.json'), JSON.stringify({ schema_version: 1, projects: o.projects }));
+  }
   const ctx = await buildInstanceContext({
     instanceDir: ws.dir,
     env: { MCS_HOME: path.join(root, 'mcs-home'), CLAUDE_CONFIG_DIR: path.join(root, 'claude-home') },
@@ -272,6 +289,90 @@ describe('listSessions: filters', () => {
     expect(withFlag.items.map((item) => item.id)).toContain(unmatched.uid);
   });
 
+  describe('the unmatched sessions in the scope all (CAW design 03 2.6)', () => {
+    async function seeded(
+      o: InstanceOptions,
+    ): Promise<{ ctx: InstanceContext; ids: { matched: string; unmatched: string; pinned: string } }> {
+      const { ctx } = await instance(o);
+      const matched = addSession(ctx, { n: 1 });
+      const unmatched = addSession(ctx, { n: 2, matched: false });
+      const pinned = addSession(ctx, { n: 3, matched: false, pinned: true });
+      return { ctx, ids: { matched: matched.uid, unmatched: unmatched.uid, pinned: pinned.uid } };
+    }
+    const listed = (ctx: InstanceContext): string[] =>
+      ctx.queries
+        .listSessions(ctx.scope, SessionListQuerySchema.parse({ range: 'all' }))
+        .items.map((item) => item.id)
+        .sort();
+
+    it('lists them without a flag on the user instance, where projects.scope auto means all', async () => {
+      const { ctx, ids } = await seeded({ kind: 'user' });
+      expect(listed(ctx)).toEqual([ids.matched, ids.unmatched, ids.pinned].sort());
+    });
+
+    it('lists them on a task instance whose projects.scope says all', async () => {
+      const { ctx, ids } = await seeded({ projects: { scope: 'all' } });
+      expect(listed(ctx)).toEqual([ids.matched, ids.unmatched, ids.pinned].sort());
+    });
+
+    it('hides them as before on a task instance, with the default scope and with scope repo', async () => {
+      for (const o of [{}, { projects: { scope: 'repo' } }, { projects: { scope: 'auto' } }] as const) {
+        const { ctx, ids } = await seeded(o);
+        expect(listed(ctx), JSON.stringify(o)).toEqual([ids.matched, ids.pinned].sort());
+      }
+    });
+
+    it('hides them on a user instance that is pinned back to its repository', async () => {
+      const { ctx, ids } = await seeded({ kind: 'user', projects: { scope: 'repo' } });
+      expect(listed(ctx)).toEqual([ids.matched, ids.pinned].sort());
+    });
+
+    it('keeps `matched` and `pinned` as badges of the rows it lists', async () => {
+      const { ctx, ids } = await seeded({ kind: 'user' });
+      const page = ctx.queries.listSessions(ctx.scope, SessionListQuerySchema.parse({ range: 'all' }));
+      const rowOf = (id: string): { matched: boolean; pinned: boolean } | undefined => {
+        const item = page.items.find((candidate) => candidate.id === id);
+        return item === undefined ? undefined : { matched: item.matched, pinned: item.pinned };
+      };
+      expect(rowOf(ids.matched)).toEqual({ matched: true, pinned: false });
+      expect(rowOf(ids.unmatched)).toEqual({ matched: false, pinned: false });
+      expect(rowOf(ids.pinned)).toEqual({ matched: false, pinned: true });
+    });
+  });
+
+  it('selects sessions by id with `session`, alone and together with another filter', async () => {
+    const { ctx } = await instance();
+    const a = addSession(ctx, { n: 1, state: 'working', lastActivityAt: NOW - 1 * 60_000 });
+    const b = addSession(ctx, { n: 2, state: 'completed', lastActivityAt: NOW - 2 * 60_000 });
+    const c = addSession(ctx, { n: 3, state: 'working', lastActivityAt: NOW - 3 * 60_000 });
+    addSession(ctx, { n: 4, lastActivityAt: NOW - 4 * 60_000 });
+    const uids = (params: Record<string, string>): string[] =>
+      ctx.queries.listSessions(ctx.scope, parseQuery(params)).items.map((item) => item.id);
+    expect(uids({ session: a.uid })).toEqual([a.uid]);
+    expect(uids({ session: `${c.uid},${a.uid}` })).toEqual([a.uid, c.uid]);
+    expect(uids({ session: `${a.uid},${b.uid},${c.uid}`, state: 'active' })).toEqual([a.uid, c.uid]);
+    expect(uids({ session: uidOf(99) })).toEqual([]);
+    // the total of the filtered set counts only those sessions
+    expect(
+      ctx.queries.listSessions(ctx.scope, parseQuery({ session: `${a.uid},${b.uid}`, includeTotal: '1' })).total,
+    ).toBe(2);
+  });
+
+  it('serves the sessions of a terminal sidebar whatever their age: `session` with `range=all`', async () => {
+    const { ctx } = await instance();
+    const old = addSession(ctx, { n: 1, startedAt: NOW - 90 * HOUR, lastActivityAt: NOW - 80 * HOUR });
+    addSession(ctx, { n: 2 });
+    const page = ctx.queries.listSessions(ctx.scope, SessionListQuerySchema.parse({ session: old.uid, range: 'all' }));
+    expect(page.items.map((item) => item.id)).toEqual([old.uid]);
+  });
+
+  it('pages a `session` selection and keeps the selection in the cursor', async () => {
+    const { ctx } = await instance();
+    const rows = [1, 2, 3, 4, 5].map((n) => addSession(ctx, { n, lastActivityAt: NOW - n * 60_000 }));
+    const wanted = [rows[0], rows[2], rows[4]].map((row) => row?.uid ?? '');
+    expect(walk(ctx, { session: wanted.join(','), limit: '2' })).toEqual(wanted);
+  });
+
   it('applies the window of `window=1` with the pinned sessions always included, and overlap for ranges', async () => {
     const { ctx } = await instance();
     const fresh = addSession(ctx, { n: 1, startedAt: NOW - 2 * HOUR, lastActivityAt: NOW - HOUR });
@@ -444,6 +545,7 @@ describe('listSessions: paging', () => {
     expect(refused({ dir: 'asc' })).toBe('cursor_invalid');
     expect(refused({ state: 'working' })).toBe('cursor_invalid');
     expect(refused({ q: 'zz' })).toBe('cursor_invalid');
+    expect(refused({ session: uidOf(1) })).toBe('cursor_invalid');
     expect(refused({ cursor: 'AAAA' })).toBe('cursor_invalid');
   });
 

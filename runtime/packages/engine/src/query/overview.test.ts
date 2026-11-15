@@ -50,8 +50,11 @@ function silentLogger(): Logger {
   };
 }
 
-/** A real instance (workspace, database, query layer) in a temp folder; the clock is fixed at `NOW`. `runtime` is the content of runtime.json. */
-async function instance(runtime?: Record<string, unknown>): Promise<InstanceContext> {
+/**
+ * A real instance (workspace, database, query layer) in a temp folder; the clock is fixed at `NOW`. `runtime` is the content of
+ * runtime.json; `kind` `user` makes it the user instance.
+ */
+async function instance(runtime?: Record<string, unknown>, kind?: 'task' | 'user'): Promise<InstanceContext> {
   const root = makeTemp('q-overview').path;
   const skill = path.join(root, 'skill');
   const runtimeDir = path.join(skill, 'runtime');
@@ -62,7 +65,14 @@ async function instance(runtime?: Record<string, unknown>): Promise<InstanceCont
   const repo = path.join(root, 'repo');
   mkdirSync(repo);
   const clock = new FakeClock(NOW);
-  const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock, newId: () => ID });
+  const { ws } = await initWorkspace({
+    repo,
+    name: 'Demo',
+    slug: 'demo',
+    clock,
+    newId: () => ID,
+    ...(kind === undefined ? {} : { kind }),
+  });
   if (runtime !== undefined) {
     writeFileSync(
       path.join(ws.dir, 'runtime.json'),
@@ -383,6 +393,44 @@ describe('overview: sessions and agents', () => {
     ctx.db.driver.prepare("UPDATE agents SET state = 'working' WHERE agent_uid = 'main'").run();
     expect(valueOf(overview(ctx), 'agents.running')).toBe(3);
     expect(valueOf(overview(ctx, { includeUnmatched: '1' }), 'agents.running')).toBe(4);
+  });
+
+  describe('the unmatched sessions in the scope all (CAW design 03 2.6)', () => {
+    /** Two matched and one unmatched session in the window, each with a running subagent. */
+    async function seeded(runtime?: Record<string, unknown>, kind?: 'task' | 'user'): Promise<InstanceContext> {
+      const ctx = await instance(runtime, kind);
+      addAgent(ctx, addSession(ctx, { n: 1 }), 1, 'subagent', 'working');
+      addAgent(ctx, addSession(ctx, { n: 2 }), 2, 'subagent', 'working');
+      addAgent(ctx, addSession(ctx, { n: 3, matched: false }), 3, 'subagent', 'working');
+      return ctx;
+    }
+    const tiles = (ctx: InstanceContext): [unknown, unknown] => {
+      const reply = overview(ctx);
+      return [valueOf(reply, 'sessions.active'), valueOf(reply, 'agents.running')];
+    };
+
+    it('counts the unmatched sessions and their agents without a flag on the user instance', async () => {
+      expect(tiles(await seeded(undefined, 'user'))).toEqual([3, 3]);
+    });
+
+    it('counts them on a task instance whose projects.scope says all', async () => {
+      expect(tiles(await seeded({ projects: { scope: 'all' } }))).toEqual([3, 3]);
+    });
+
+    it('leaves them out as before on a task instance, and on a user instance pinned back to its repository', async () => {
+      expect(tiles(await seeded())).toEqual([2, 2]);
+      expect(tiles(await seeded({ projects: { scope: 'repo' } }))).toEqual([2, 2]);
+      expect(tiles(await seeded({ projects: { scope: 'repo' } }, 'user'))).toEqual([2, 2]);
+    });
+
+    it('keeps the state tiles equal to the counts of listSessions', async () => {
+      const ctx = await seeded(undefined, 'user');
+      const page = ctx.queries.listSessions(
+        ctx.scope,
+        SessionListQuerySchema.parse({ state: 'active', includeTotal: '1', limit: '1' }),
+      );
+      expect(valueOf(overview(ctx), 'sessions.active')).toBe(page.total);
+    });
   });
 });
 

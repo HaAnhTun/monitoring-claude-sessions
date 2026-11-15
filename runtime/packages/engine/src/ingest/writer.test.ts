@@ -1680,3 +1680,185 @@ describe('the per-writer activity throttle (CR-WP-35-1, 03 3.6)', () => {
     expect(dumpDatabase(throttled.db)['events']).toEqual(dumpDatabase(plain.db)['events']);
   });
 });
+
+describe('the project of a session (CAW design 03 2.5)', () => {
+  const PROJECTS = '/home/me/.claude/projects';
+  const BS = String.fromCharCode(92);
+  const WORK = ['D:', 'Work', 'App'].join(BS);
+  const fileIn = (dirName: string, uid: string = FIXTURE_SESSION_ID): string => `${PROJECTS}/${dirName}/${uid}.jsonl`;
+
+  /** A hook of a session whose transcript lies in `dirName` and whose working directory is `cwd`. */
+  function hookIn(
+    dirName: string,
+    cwd: string | null,
+    over: { uid?: string; at?: number; eventUid?: string } = {},
+  ): HookEnvelopeV1 {
+    return fixtureEnvelope('UserPromptSubmit', {
+      ...(over.eventUid === undefined ? {} : { eventUid: over.eventUid }),
+      receivedAt: over.at ?? SEQUENCE_START,
+      top: { session_id: over.uid ?? FIXTURE_SESSION_ID, transcript_path: fileIn(dirName, over.uid), cwd },
+    });
+  }
+
+  /** The `session.seen` the importer sends for a main transcript file. */
+  function transcriptSeen(sessionUid: string, path: string, cwd: string | undefined, at = SEQUENCE_START): IngestBatch {
+    return {
+      source: 'transcript',
+      bytes: 100,
+      items: [
+        {
+          kind: 'record',
+          rows: [],
+          events: [
+            {
+              k: 'session.seen',
+              sessionId: sessionUid,
+              stamp: { at, rank: 0, tie: `t:1:seen:${sessionUid}` },
+              transcriptPath: path,
+              ...(cwd === undefined ? {} : { cwd }),
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  interface ProjectRow {
+    project_key: string;
+    dir_name: string;
+    root_path: string | null;
+  }
+
+  const projectRows = (db: InstanceDb): ProjectRow[] =>
+    db.driver.prepare<ProjectRow>('SELECT project_key, dir_name, root_path FROM projects ORDER BY id').all();
+
+  const projectKeyOf = (db: InstanceDb, uid: string = FIXTURE_SESSION_ID): string | null | undefined =>
+    db.driver
+      .prepare<{ project_key: string | null }>(
+        `SELECT p.project_key AS project_key FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
+          WHERE s.session_uid = ?`,
+      )
+      .get([uid])?.project_key;
+
+  const sessionChangesSince = (db: InstanceDb, since: number): number =>
+    db.driver
+      .prepare<{ n: number }>("SELECT count(*) AS n FROM changes WHERE seq > ? AND kind = 'session'")
+      .get([since])?.n ?? -1;
+
+  it('is assigned from the hook: key lower-cased, the folder name as written, the working directory as the root', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('D--Work-App', WORK)]);
+    expect(projectKeyOf(r.db)).toBe('d--work-app');
+    expect(projectRows(r.db)).toEqual([{ project_key: 'd--work-app', dir_name: 'D--Work-App', root_path: WORK }]);
+  });
+
+  it('is announced with the session that gets it, once: a second source for the same project announces nothing', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('odd folder', WORK)]);
+    expect(projectKeyOf(r.db)).toBeNull();
+    const mark = maxSeq(r.db);
+    const seen = transcriptSeen(FIXTURE_SESSION_ID, fileIn('D--Work-App'), WORK, SEQUENCE_START + 5);
+    expect(r.writer.submit(seen)).toBe(true);
+    await r.writer.flushNow();
+    expect(projectKeyOf(r.db)).toBe('d--work-app');
+    expect(sessionChangesSince(r.db, mark)).toBe(1);
+    const stamped = r.db.driver
+      .prepare<{ updated_seq: number }>('SELECT updated_seq FROM sessions WHERE session_uid = ?')
+      .get([FIXTURE_SESSION_ID]);
+    expect(stamped?.updated_seq).toBeGreaterThan(mark);
+    // the same facts delivered again change and announce nothing
+    const again = maxSeq(r.db);
+    expect(r.writer.submit(seen)).toBe(true);
+    await r.writer.flushNow();
+    expect(sessionChangesSince(r.db, again)).toBe(0);
+    expect(projectRows(r.db)).toHaveLength(1);
+  });
+
+  it('keeps the first project of a session: a later event from another folder changes nothing', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('first-folder', '/work/first')]);
+    await ingest(r, [hookIn('second-folder', '/work/second', { at: SEQUENCE_START + 10, eventUid: uidOf(9102) })]);
+    expect(projectKeyOf(r.db)).toBe('first-folder');
+    expect(projectRows(r.db).map((row) => row.project_key)).toEqual(['first-folder']);
+  });
+
+  it('gives no project for a folder name that is not a project name, and no project row', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('odd folder', '/work/odd')]);
+    await ingest(r, [hookIn('a.b', '/work/odd', { uid: SECOND_SESSION, eventUid: uidOf(9103) })]);
+    expect(projectKeyOf(r.db)).toBeNull();
+    expect(projectKeyOf(r.db, SECOND_SESSION)).toBeNull();
+    expect(projectRows(r.db)).toEqual([]);
+  });
+
+  it('assigns the project later, when a later event has a usable path', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('odd folder', '/work/odd')]);
+    expect(projectKeyOf(r.db)).toBeNull();
+    await ingest(r, [hookIn('fine-folder', '/work/fine', { at: SEQUENCE_START + 10, eventUid: uidOf(9104) })]);
+    expect(projectKeyOf(r.db)).toBe('fine-folder');
+  });
+
+  it('agrees between the hook and the transcript: one project, whichever arrives first', async () => {
+    for (const order of ['hook first', 'transcript first'] as const) {
+      const r = rig();
+      const transcript = transcriptSeen(FIXTURE_SESSION_ID, fileIn('D--Work-App'), WORK);
+      if (order === 'hook first') {
+        await ingest(r, [hookIn('D--Work-App', WORK)]);
+        expect(r.writer.submit(transcript)).toBe(true);
+      } else {
+        expect(r.writer.submit(transcript)).toBe(true);
+        await ingest(r, [hookIn('D--Work-App', WORK)]);
+      }
+      await r.writer.flushNow();
+      expect(projectRows(r.db), order).toEqual([
+        { project_key: 'd--work-app', dir_name: 'D--Work-App', root_path: WORK },
+      ]);
+      expect(projectKeyOf(r.db), order).toBe('d--work-app');
+    }
+  });
+
+  it('treats the two spellings of a drive letter as one project and keeps the first folder name', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('D--Work-App', WORK)]);
+    expect(r.writer.submit(transcriptSeen(SECOND_SESSION, fileIn('d--Work-App', SECOND_SESSION), WORK))).toBe(true);
+    await r.writer.flushNow();
+    expect(projectRows(r.db)).toHaveLength(1);
+    expect(projectRows(r.db)[0]?.dir_name).toBe('D--Work-App');
+    expect(projectKeyOf(r.db, SECOND_SESSION)).toBe(projectKeyOf(r.db));
+  });
+
+  it('reads the path of a Windows hook as well as a POSIX one', async () => {
+    const r = rig();
+    const windowsPath = ['C:', 'Users', 'me', '.claude', 'projects', 'C--work-app', `${FIXTURE_SESSION_ID}.jsonl`].join(
+      BS,
+    );
+    await ingest(r, [
+      fixtureEnvelope('UserPromptSubmit', {
+        top: { transcript_path: windowsPath, cwd: ['C:', 'work', 'app'].join(BS) },
+      }),
+    ]);
+    expect(projectKeyOf(r.db)).toBe('c--work-app');
+  });
+
+  it('fills the root of a known project from a later session, and never replaces one it has', async () => {
+    const r = rig();
+    await ingest(r, [hookIn('shared-folder', null)]);
+    expect(projectRows(r.db)[0]?.root_path).toBeNull();
+    await ingest(r, [hookIn('shared-folder', '/work/shared', { uid: SECOND_SESSION, eventUid: uidOf(9105) })]);
+    expect(projectRows(r.db)).toHaveLength(1);
+    expect(projectRows(r.db)[0]?.root_path).toBe('/work/shared');
+    const third = '88888888-8888-4888-8888-888888888888';
+    await ingest(r, [hookIn('shared-folder', '/work/elsewhere', { uid: third, eventUid: uidOf(9106) })]);
+    expect(projectRows(r.db)[0]?.root_path).toBe('/work/shared');
+    expect(projectKeyOf(r.db, third)).toBe('shared-folder');
+  });
+
+  it('has no project for a session that only a record without a folder announced', async () => {
+    const r = rig();
+    expect(r.writer.submit(transcriptSeen(FIXTURE_SESSION_ID, 'no-folder.jsonl', undefined))).toBe(true);
+    await r.writer.flushNow();
+    expect(projectKeyOf(r.db)).toBeNull();
+    expect(projectRows(r.db)).toEqual([]);
+  });
+});

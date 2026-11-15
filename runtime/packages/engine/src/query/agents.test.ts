@@ -44,8 +44,15 @@ function silentLogger(): Logger {
   };
 }
 
+interface InstanceOptions {
+  /** `user` makes the workspace the user instance (CAW design 03 2.1); absent is a task. */
+  readonly kind?: 'task' | 'user';
+  /** The `projects` keys of `runtime.json`. */
+  readonly projects?: Readonly<Record<string, unknown>>;
+}
+
 /** A real instance (workspace, database, query layer) in a temp folder; the clock is fixed at `NOW`. */
-async function instance(): Promise<{ ctx: InstanceContext; clock: FakeClock }> {
+async function instance(o: InstanceOptions = {}): Promise<{ ctx: InstanceContext; clock: FakeClock }> {
   const root = makeTemp('q-part').path;
   const skill = path.join(root, 'skill');
   const runtimeDir = path.join(skill, 'runtime');
@@ -56,7 +63,17 @@ async function instance(): Promise<{ ctx: InstanceContext; clock: FakeClock }> {
   const repo = path.join(root, 'repo');
   mkdirSync(repo);
   const clock = new FakeClock(NOW);
-  const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock, newId: () => ID });
+  const { ws } = await initWorkspace({
+    repo,
+    name: 'Demo',
+    slug: 'demo',
+    clock,
+    newId: () => ID,
+    ...(o.kind === undefined ? {} : { kind: o.kind }),
+  });
+  if (o.projects !== undefined) {
+    writeFileSync(path.join(ws.dir, 'runtime.json'), JSON.stringify({ schema_version: 1, projects: o.projects }));
+  }
   const ctx = await buildInstanceContext({
     instanceDir: ws.dir,
     env: { MCS_HOME: path.join(root, 'mcs-home'), CLAUDE_CONFIG_DIR: path.join(root, 'claude-home') },
@@ -341,6 +358,37 @@ describe('listAgents', () => {
     const page = ctx.queries.listAgents(ctx.scope, AgentListQuerySchema.parse({ range: 'all' }));
     expect(page.items.some((item) => item.id === 'agent-b1')).toBe(false);
     expect(listedIds(ctx)).toContain('02:agent-b1');
+  });
+
+  describe('the agents of unmatched sessions in the scope all (CAW design 03 2.6)', () => {
+    /** One matched and one unmatched session, each with one subagent. */
+    async function twoSessions(o: InstanceOptions): Promise<InstanceContext> {
+      const { ctx } = await instance(o);
+      const matched = addSession(ctx, 1);
+      const unmatched = addSession(ctx, 2, { matched: 0 });
+      addAgent(ctx, matched, 'agent-m', { label: 'Matched' });
+      addAgent(ctx, unmatched, 'agent-u', { label: 'Unmatched' });
+      return ctx;
+    }
+    const subagentsListed = (ctx: InstanceContext): string[] =>
+      ctx.queries
+        .listAgents(ctx.scope, AgentListQuerySchema.parse({ range: 'all', kind: 'subagent' }))
+        .items.map((item) => item.id)
+        .sort();
+
+    it('lists them without a flag on the user instance, where projects.scope auto means all', async () => {
+      expect(subagentsListed(await twoSessions({ kind: 'user' }))).toEqual(['agent-m', 'agent-u']);
+    });
+
+    it('lists them on a task instance whose projects.scope says all', async () => {
+      expect(subagentsListed(await twoSessions({ projects: { scope: 'all' } }))).toEqual(['agent-m', 'agent-u']);
+    });
+
+    it('hides them as before on a task instance, and on a user instance pinned back to its repository', async () => {
+      expect(subagentsListed(await twoSessions({}))).toEqual(['agent-m']);
+      expect(subagentsListed(await twoSessions({ projects: { scope: 'repo' } }))).toEqual(['agent-m']);
+      expect(subagentsListed(await twoSessions({ kind: 'user', projects: { scope: 'repo' } }))).toEqual(['agent-m']);
+    });
   });
 
   it('walks both sorts and directions without a gap or a repeat', async () => {

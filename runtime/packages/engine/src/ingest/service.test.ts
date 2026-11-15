@@ -10,9 +10,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { defaultSkillDir } from '../config/defaults.ts';
 import { resolveConfig, type ResolvedConfig } from '../config/resolve.ts';
+import { SessionsRepo } from '../db/repos/sessions.ts';
+import { withWriteTx } from '../db/write.ts';
 import { DEFAULT_LIFECYCLE_CFG } from '../lifecycle/facts.ts';
 import type { Logger } from '../log/logger.ts';
 import { createDbSchedulerWith } from '../maintenance/schedule.ts';
+import { backfillProjects as realBackfill } from '../projects/backfill.ts';
 import { buildInstanceContext, type InstanceContext } from '../runtime/context.ts';
 import { initWorkspace } from '../workspace/init.ts';
 import { DEFAULT_IMPORT_SETTINGS } from './transcripts/importer.ts';
@@ -23,6 +26,7 @@ import {
   lifecycleCfgOf,
   sessionRulesOf,
   type IngestService,
+  type IngestServiceOptions,
   type IngestStats,
 } from './service.ts';
 
@@ -144,7 +148,9 @@ function silentLogger(): Logger {
 }
 
 /** An instance with a fixed clock: the window of the throttle moves only when the test moves the clock. */
-async function instance(): Promise<{ ctx: InstanceContext; clock: FakeClock; service: IngestService }> {
+async function instance(
+  options: IngestServiceOptions = {},
+): Promise<{ ctx: InstanceContext; clock: FakeClock; service: IngestService }> {
   const root = tempDir('ingest-service-bind').path;
   const skill = path.join(root, 'skill');
   mkdirSync(path.join(skill, 'config'), { recursive: true });
@@ -165,7 +171,7 @@ async function instance(): Promise<{ ctx: InstanceContext; clock: FakeClock; ser
     clock,
     logger: silentLogger(),
   });
-  const service = createIngestService(ctx);
+  const service = createIngestService(ctx, options);
   started.push({ ctx, service });
   return { ctx, clock, service };
 }
@@ -211,5 +217,53 @@ describe('start binds the flush of the throttled announcements', () => {
     const scheduler = createDbSchedulerWith(ctx, { evaluator: { refresh: () => Promise.resolve(undefined) } });
     clock.advance(5000);
     await expect(scheduler.runJob('announcements')).resolves.toBeUndefined();
+  });
+});
+
+// ---- start fills the project dimension of an older database (CAW design 03 2.5) ----------------------------------------------
+
+describe('start gives the sessions that have no project their project', () => {
+  /** A session row with a main transcript file in the folder `dirName` and no project, as a database of before the dimension has them. */
+  function seedOldSession(ctx: InstanceContext, dirName: string): void {
+    const sessions = new SessionsRepo(ctx.db);
+    withWriteTx(ctx.db, ctx.scope, (tx) =>
+      sessions.ensure(ctx.scope, tx, { sessionUid: SESSION, projectId: null, startedAt: NOW }),
+    );
+    const file = `/home/me/.claude/projects/${dirName}/${SESSION}.jsonl`;
+    ctx.db.driver
+      .prepare(
+        `INSERT INTO transcript_files (path, path_key, kind, session_uid, discovered_at, updated_at)
+         VALUES (?, ?, 'session', ?, ?, ?)`,
+      )
+      .run([file, file.toLowerCase(), SESSION, NOW, NOW]);
+  }
+
+  const projectOf = (ctx: InstanceContext): string | null | undefined =>
+    ctx.db.driver
+      .prepare<{ key: string | null }>(
+        'SELECT p.project_key AS key FROM sessions s LEFT JOIN projects p ON p.id = s.project_id WHERE s.session_uid = ?',
+      )
+      .get([SESSION])?.key;
+
+  it('runs the backfill once, and the session then has its project', async () => {
+    const calls: string[] = [];
+    const { ctx, service } = await instance({
+      backfillProjects: (db, scope, o) => {
+        calls.push('backfill');
+        return realBackfill(db, scope, o);
+      },
+    });
+    seedOldSession(ctx, 'D--Work-App');
+    expect(projectOf(ctx)).toBeNull();
+    await service.start();
+    expect(calls).toEqual(['backfill']);
+    expect(projectOf(ctx)).toBe('d--work-app');
+  });
+
+  it('starts anyway when the backfill fails', async () => {
+    const { ctx, service } = await instance({ backfillProjects: () => Promise.reject(new Error('disk full')) });
+    seedOldSession(ctx, 'D--Work-App');
+    await expect(service.start()).resolves.toBeUndefined();
+    expect(projectOf(ctx)).toBeNull();
   });
 });

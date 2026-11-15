@@ -42,6 +42,7 @@ import { IngestHealthRepo } from '../db/repos/ingest-health.ts';
 import { SessionsRepo } from '../db/repos/sessions.ts';
 import { instanceCommands } from '../ops/commands.ts';
 import { LAUNCHER_FILE } from '../platform/layout.ts';
+import { effectivePanels, isAllScope } from '../projects/scope.ts';
 import type { AuditQueries, QueryDeps, TranscriptQueries } from '../runtime/context.ts';
 import {
   buildHealthReport,
@@ -178,7 +179,9 @@ function instanceInfoOf(
   runtime: { readonly version: string; readonly codeStamp: string },
 ): InstanceInfo {
   const { monitor, runtime: config } = deps.config;
-  const { ui, poll, panels, limits } = monitor;
+  const { ui, poll, limits } = monitor;
+  // the user instance has no repository: its git, attempts, ledger and chain log panels are off whatever config.json says (D11)
+  const panels = effectivePanels(monitor.panels, identity.kind);
   return {
     instanceId: db.instanceId,
     slug: identity.slug,
@@ -192,6 +195,8 @@ function instanceInfoOf(
     kind: identity.kind,
     // only the user instance presents itself as an app; a task has no name to show (06 1.7)
     app: identity.kind === 'user' ? { name: config.app.name } : null,
+    // the effective scope: `projects.scope` may say `auto`, which the kind of the instance resolves (CAW design 03 2.1)
+    scope: isAllScope(config.projects.scope, identity.kind) ? 'all' : 'repo',
     staleAfterMs: num(poll, 'stale_after_ms', 15_000),
     heartbeatMs: STREAM_HEARTBEAT_MS,
     windowHours: monitor.window_hours,
@@ -465,3 +470,14 @@ registerQueryPart(createUsageQueries, ['usage', 'sessionUsage']);
 registerQueryPart(createSeriesQueries, ['series']);
 registerQueryPart(createToolFrequencyQueries, ['tools']);
 // @wp-end WP-58
+
+// The project reads (CAW design 03 2.8): the counts of every project for the folder list, the facts of one session for a resume.
+import { createProjectQueries, type ProjectQueries } from './projects.ts';
+
+export type { ProjectStat, ResumeFacts } from './projects.ts';
+
+export interface EngineQueries {
+  projectStats: ProjectQueries['projectStats'];
+  resumeFacts: ProjectQueries['resumeFacts'];
+}
+registerQueryPart(createProjectQueries, ['projectStats', 'resumeFacts']);

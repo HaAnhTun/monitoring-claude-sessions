@@ -85,6 +85,15 @@ export interface CompletionCandidate {
   view: StoredView;
 }
 
+/** A session that has no project yet and the path of its main transcript file (the project backfill, CAW design 03 2.5). */
+export interface ProjectCandidate {
+  id: number;
+  sessionUid: string;
+  cwd: string | null;
+  lastActivityAt: number;
+  transcriptPath: string;
+}
+
 export interface NewSession {
   sessionUid: string;
   projectId: number | null;
@@ -96,6 +105,8 @@ export interface NewSession {
  * Counters and rollups are written by the code that owns them (the writer, `UsageRepo`).
  */
 export interface SessionPatch {
+  /** The project of the session (CAW design 03 2.5): the ingest writer sets it once, the first assignment wins. */
+  projectId?: number | null;
   transcriptFileId?: number | null;
   label?: string;
   labelSource?: string;
@@ -135,6 +146,7 @@ export interface SessionPatch {
 
 function patchEntries(p: SessionPatch): PatchEntries {
   return [
+    ['project_id', p.projectId],
     ['transcript_file_id', p.transcriptFileId],
     ['label', p.label],
     ['label_source', p.labelSource],
@@ -391,6 +403,27 @@ export class SessionsRepo {
       .all({ idsJson: JSON.stringify([...new Set(rowIds)]) });
     for (const row of rows) result.set(row.id, row.sessionUid);
     return result;
+  }
+
+  /**
+   * The sessions without a project that have a main transcript file, by row id after `afterId` (a keyset: a session that
+   * cannot be assigned is passed over, never asked for again in one pass). The path is the one of the file the session names as
+   * its main file, else of the first main file registered for it.
+   */
+  withoutProject(ctx: RepoContext, afterId: number, limit: number): ProjectCandidate[] {
+    this.db.assertScope(ctx);
+    return this.db.driver
+      .prepare<ProjectCandidate>(
+        `SELECT id, sessionUid, cwd, lastActivityAt, transcriptPath FROM (
+           SELECT s.id AS id, s.session_uid AS sessionUid, s.cwd AS cwd, s.last_activity_at AS lastActivityAt,
+                  coalesce(
+                    (SELECT f.path FROM transcript_files f WHERE f.id = s.transcript_file_id AND f.kind = 'session'),
+                    (SELECT f.path FROM transcript_files f WHERE f.session_uid = s.session_uid AND f.kind = 'session'
+                      ORDER BY f.id LIMIT 1)) AS transcriptPath
+             FROM sessions s WHERE s.project_id IS NULL AND s.id > :afterId)
+         WHERE transcriptPath IS NOT NULL ORDER BY id LIMIT :limit`,
+      )
+      .all({ afterId, limit: rowLimit(limit) });
   }
 
   /**

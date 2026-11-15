@@ -13,6 +13,7 @@ import {
 } from '@mcs/shared';
 
 import type { InstanceDb, RepoContext } from '../db/open.ts';
+import { instanceKindOfConfig, unmatchedVisible } from '../projects/scope.ts';
 import type { QueryDeps } from '../runtime/context.ts';
 import {
   Binder,
@@ -280,7 +281,7 @@ export function createAgentQueries(db: InstanceDb, deps: QueryDeps): AgentQuerie
         }
         if (q.hasErrors === true) where.push('a.error_count > 0');
         if (q.includeInternal !== true && q.kind?.includes('internal') !== true) where.push("a.kind <> 'internal'");
-        if (q.includeUnmatched !== true && !deps.config.monitor.include_unmatched) {
+        if (!unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q)) {
           where.push('(s.matched = 1 OR s.pinned = 1)');
         }
         const expression = q.sort === 'started' ? 'a.started_at' : 'a.last_activity_at';

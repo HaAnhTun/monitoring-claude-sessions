@@ -56,7 +56,7 @@ export const CONFIG_KEY_SUPPORT: Readonly<Record<string, KeySupport>> = {
   ),
   include_unmatched: supported(
     'Keeps sessions that no rule matched visible instead of hiding them.',
-    'engine/src/query/sessions.ts',
+    'engine/src/projects/scope.ts',
   ),
   session_rules: supported(
     'Pattern rules that choose and label the sessions of this task.',
