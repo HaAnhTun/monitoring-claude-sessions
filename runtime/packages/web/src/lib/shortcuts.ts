@@ -1,5 +1,7 @@
-// Global keyboard shortcuts: the pure ignore rules and the help table (04 section 6.5). The registry that dispatches keys
-// lives in state/shortcuts-registry.tsx.
+// Global keyboard shortcuts: the pure ignore rules and the help table (04 section 6.5; design 04 7.5 for the terminal rows). The
+// registry that dispatches keys lives in state/shortcuts-registry.tsx.
+import { RELEASE_CHORD } from '../terminal/protocol.ts';
+
 /** The catalogue keys of the rows of the help table; none takes an argument. */
 export type ShortcutDescriptionKey =
   | 'filters.focusSearch'
@@ -8,13 +10,20 @@ export type ShortcutDescriptionKey =
   | 'transcript.shortcut.prevError'
   | 'shell.shortcutsHelp'
   | 'shortcuts.fixed.escape'
-  | 'shortcuts.fixed.sidebar';
+  | 'shortcuts.fixed.sidebar'
+  | 'workspace.shortcut.focusTerminal'
+  | 'workspace.shortcut.release'
+  | 'workspace.shortcut.copy'
+  | 'workspace.shortcut.paste'
+  | 'workspace.shortcut.scroll';
 
 /** The parts of an event target the rules read; a DOM element satisfies it. */
 export interface ShortcutTarget {
   tagName?: string | undefined;
   type?: string | undefined;
   isContentEditable?: boolean | undefined;
+  /** The target sits inside the terminal region (`[data-terminal-region]`): the terminal owns every key there (design 04 D12). */
+  insideTerminal?: boolean | undefined;
 }
 
 export interface KeyboardEventLike {
@@ -51,17 +60,19 @@ export function isTextEntry(target: ShortcutTarget | null): boolean {
 }
 
 /**
- * Should a global single-key shortcut run? False when the event was already handled, Ctrl, Meta or Alt is held, the
- * target takes typed text, or a dialog is open. Shift is allowed (`?`).
+ * Should a global single-key shortcut run? False when the event was already handled, Ctrl, Meta or Alt is held, the target is
+ * inside the terminal region (the program owns the keyboard there: its text area is a text entry already, this covers the other
+ * focusable elements of the region), the target takes typed text, or a dialog is open. Shift is allowed (`?`).
  */
 export function shouldHandleShortcut(e: KeyboardEventLike, dialogOpen: boolean): boolean {
   if (dialogOpen || e.defaultPrevented) return false;
   if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  if (e.target?.insideTerminal === true) return false;
   return !isTextEntry(e.target);
 }
 
 /** The groups of the shortcuts dialog, in the order they are drawn. */
-export const SHORTCUT_GROUPS = ['navigation', 'search', 'transcript'] as const;
+export const SHORTCUT_GROUPS = ['navigation', 'search', 'transcript', 'terminal'] as const;
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
 
 /** The key caps that are words; a key not listed here is drawn as it is (`/`, `f`, `?`). */
@@ -88,6 +99,19 @@ export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
     keys: [{ cap: 'up' }, { cap: 'down' }, { cap: 'home' }, { cap: 'end' }],
     descriptionKey: 'shortcuts.fixed.sidebar',
     group: 'navigation',
+    fixed: true,
+  },
+  // The terminal (design 04 7.5). `t` is registered by the Workspace page while a session is selected; the rest belongs to the
+  // terminal and the browser, so no component registers it. A chord is ONE key cap text (the dialog draws every string of `keys` as
+  // its own cap, and several caps are alternatives).
+  { keys: ['t'], descriptionKey: 'workspace.shortcut.focusTerminal', group: 'terminal', fixed: false },
+  { keys: [RELEASE_CHORD], descriptionKey: 'workspace.shortcut.release', group: 'terminal', fixed: true },
+  { keys: ['Ctrl+C'], descriptionKey: 'workspace.shortcut.copy', group: 'terminal', fixed: true },
+  { keys: ['Ctrl+V'], descriptionKey: 'workspace.shortcut.paste', group: 'terminal', fixed: true },
+  {
+    keys: ['Shift+PageUp', 'Shift+PageDown'],
+    descriptionKey: 'workspace.shortcut.scroll',
+    group: 'terminal',
     fixed: true,
   },
 ];

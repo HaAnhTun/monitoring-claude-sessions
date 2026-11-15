@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { hasMessageKey } from '../i18n/translate.ts';
+import { RELEASE_CHORD } from '../terminal/protocol.ts';
 import { msg } from '../test/msg.ts';
 import {
   groupOfKey,
@@ -81,6 +82,21 @@ describe('shouldHandleShortcut', () => {
     expect(on({ tagName: 'BODY' }, { defaultPrevented: true })).toBe(false);
   });
 
+  // TC-UI-12, design 04 D12 and 7.5: the terminal owns the keyboard while the focus is anywhere inside its region
+  it('ignores every key whose target is inside the terminal region, whatever the element (insideTerminal)', () => {
+    for (const tagName of ['DIV', 'BUTTON', 'A', 'BODY', 'TEXTAREA']) {
+      expect(on({ tagName, insideTerminal: true }), tagName).toBe(false);
+    }
+    expect(on({ tagName: 'DIV', insideTerminal: true }, { key: '?' })).toBe(false);
+    expect(on({ tagName: 'DIV', insideTerminal: true }, { key: '/' })).toBe(false);
+  });
+
+  it('handles the same keys outside the region: the flag is absent or false', () => {
+    expect(on({ tagName: 'DIV', insideTerminal: false })).toBe(true);
+    expect(on({ tagName: 'DIV' })).toBe(true);
+    expect(on({ tagName: 'BUTTON', insideTerminal: false }, { key: '?' })).toBe(true);
+  });
+
   it('ignores everything while a dialog is open', () => {
     expect(shouldHandleShortcut(event(), true)).toBe(false);
     expect(shouldHandleShortcut(event(), false)).toBe(true);
@@ -95,6 +111,11 @@ describe('shouldHandleShortcut', () => {
       ['?'],
       [{ cap: 'esc' }],
       [{ cap: 'up' }, { cap: 'down' }, { cap: 'home' }, { cap: 'end' }],
+      ['t'],
+      [RELEASE_CHORD],
+      ['Ctrl+C'],
+      ['Ctrl+V'],
+      ['Shift+PageUp', 'Shift+PageDown'],
     ]);
     for (const row of SHORTCUT_HELP) {
       expect(hasMessageKey(row.descriptionKey), row.descriptionKey).toBe(true);
@@ -107,13 +128,47 @@ describe('shouldHandleShortcut', () => {
     expect(SHORTCUT_HELP.filter((row) => row.fixed).map((row) => row.descriptionKey)).toEqual([
       'shortcuts.fixed.escape',
       'shortcuts.fixed.sidebar',
+      'workspace.shortcut.release',
+      'workspace.shortcut.copy',
+      'workspace.shortcut.paste',
+      'workspace.shortcut.scroll',
     ]);
   });
 
-  it('groups the registered keys: search, transcript and navigation (an unknown key is navigation)', () => {
+  it('groups the registered keys: search, transcript, terminal and navigation (an unknown key is navigation)', () => {
     expect(groupOfKey('/')).toBe('search');
     expect(['f', ']', '['].map(groupOfKey)).toEqual(['transcript', 'transcript', 'transcript']);
+    expect(groupOfKey('t')).toBe('terminal');
     expect(groupOfKey('?')).toBe('navigation');
     expect(groupOfKey('x')).toBe('navigation');
+  });
+
+  // design 04 7.5: the dialog draws every string of `keys` as its own key cap and several caps are alternatives, so a chord is ONE cap
+  it('writes a chord as one key cap string and the two scroll keys as two alternatives', () => {
+    const terminalRows = SHORTCUT_HELP.filter((row) => row.group === 'terminal');
+    expect(terminalRows.map((row) => row.descriptionKey)).toEqual([
+      'workspace.shortcut.focusTerminal',
+      'workspace.shortcut.release',
+      'workspace.shortcut.copy',
+      'workspace.shortcut.paste',
+      'workspace.shortcut.scroll',
+    ]);
+    const release = terminalRows.find((row) => row.descriptionKey === 'workspace.shortcut.release');
+    expect(release?.keys).toEqual([RELEASE_CHORD]);
+    expect(RELEASE_CHORD).toBe('Ctrl+Shift+Space');
+    for (const row of terminalRows) {
+      for (const cap of row.keys) expect(typeof cap, row.descriptionKey).toBe('string');
+    }
+  });
+
+  it('adds the terminal group after the other groups', () => {
+    expect(SHORTCUT_GROUPS).toEqual(['navigation', 'search', 'transcript', 'terminal']);
+    expect(msg('shortcuts.group.terminal').length).toBeGreaterThan(0);
+  });
+
+  it('registers only `t` through a component; the other terminal rows are the program and the browser', () => {
+    const terminalRows = SHORTCUT_HELP.filter((row) => row.group === 'terminal');
+    expect(terminalRows.filter((row) => !row.fixed).map((row) => row.keys)).toEqual([['t']]);
+    expect(terminalRows.filter((row) => row.fixed)).toHaveLength(4);
   });
 });

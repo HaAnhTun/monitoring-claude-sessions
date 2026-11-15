@@ -2,6 +2,40 @@
    the cell colours and the font come from the terminal options the view builds from the tokens (`lib/term-theme.ts`), never from here.
    `xterm.css` is imported before this file in the components layer, so a plain rule below beats it and no `!important` is needed. */
 
+/* the whole view (`TerminalView`, the skip link target `#terminal`): the bar above and the box below, taking the room the pane gives */
+.terminal-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* a focus that lands on the view itself is forwarded to the terminal at once, so no ring is drawn on the wrapper */
+.terminal-view:focus {
+  outline: none;
+}
+
+/* the status line, its one action and the hint: one row that wraps instead of growing the page sideways */
+.terminal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.terminal-status {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+
 /* the box the pane gives the terminal; the host fills it, so the terminal is sized by the box and never sizes it */
 .terminal-region {
   position: relative;
@@ -60,6 +94,8 @@
 
 /* the line beside the pane that names the way out of the keyboard trap (WCAG 2.1.2) */
 .terminal-hint {
+  margin: 0;
+  margin-inline-start: auto;
   color: var(--text-muted);
   font-size: var(--fs-sm);
   line-height: var(--lh-sm);

@@ -76,6 +76,9 @@ function createRegistry(): Registry {
   };
 }
 
+/** The attribute that marks the terminal region (`TerminalView`); a key press inside it is never a global shortcut. */
+const TERMINAL_REGION_SELECTOR = '[data-terminal-region]';
+
 function toEventLike(event: KeyboardEvent): KeyboardEventLike {
   const target = event.target instanceof Element ? event.target : null;
   return {
@@ -91,6 +94,8 @@ function toEventLike(event: KeyboardEvent): KeyboardEventLike {
             tagName: target.tagName,
             type: target instanceof HTMLInputElement ? target.type : undefined,
             isContentEditable: target instanceof HTMLElement ? target.isContentEditable : undefined,
+            // the terminal owns the keyboard anywhere inside its region (design 04 D12): the pure rule refuses these events
+            insideTerminal: target.closest(TERMINAL_REGION_SELECTOR) !== null,
           },
   };
 }

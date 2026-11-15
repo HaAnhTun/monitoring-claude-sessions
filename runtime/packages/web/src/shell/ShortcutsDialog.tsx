@@ -10,6 +10,7 @@ const GROUP_KEYS = {
   navigation: 'shortcuts.group.navigation',
   search: 'shortcuts.group.search',
   transcript: 'shortcuts.group.transcript',
+  terminal: 'shortcuts.group.terminal',
 } as const satisfies Record<ShortcutGroup, MessageKey>;
 
 const CAP_KEYS = {
@@ -29,9 +30,11 @@ interface Row {
 }
 
 /**
- * The shortcuts in a native `<dialog>` (04-ui.md 6.5, 6.6 rule 9), grouped as Navigation, Search and Transcript, one key cap
- * (`kbd`) per key. A shortcut that a mounted component registered is listed with the words that component gave it, so `f`, `[`
- * and `]` appear only while a transcript is open; the fixed rows (Esc and the arrow keys of the session list) are always there.
+ * The shortcuts in a native `<dialog>` (04-ui.md 6.5, 6.6 rule 9), grouped as Navigation, Search, Transcript and Terminal, one key
+ * cap (`kbd`) per key. A shortcut that a mounted component registered is listed with the words that component gave it, so `f`, `[`
+ * and `]` appear only while a transcript is open and `t` only on the Workspace; the fixed rows (Esc and the arrow keys of the
+ * session list, and the keys of the terminal: the way out of it, copy, paste and scrolling) are always there, so the way out of
+ * the keyboard trap is documented before anyone needs it.
  * Esc closes the dialog natively, so does a click on the backdrop.
  */
 export function ShortcutsDialog() {

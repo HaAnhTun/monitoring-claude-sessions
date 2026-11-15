@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
+import { useT } from '../i18n/context.ts';
 import { msg } from '../test/msg.ts';
 import { renderWithProviders } from '../test/render.tsx';
 import { ShortcutRegistryProvider, useShortcut, useShortcutRegistry } from '../state/shortcuts-registry.tsx';
+import { RELEASE_CHORD } from '../terminal/protocol.ts';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
 
 // 04 6.5, review R-20: one key cap per key, grouped as Navigation, Search and Transcript; a key shows up while a component that
@@ -40,11 +42,19 @@ function ViewerKeys() {
   return null;
 }
 
-function Harness({ viewer = false }: { viewer?: boolean }) {
+/** What the Workspace page registers while a session is selected (design 04 7.5). */
+function WorkspaceKeys() {
+  const t = useT();
+  useShortcut('t', () => undefined, { description: t('workspace.shortcut.focusTerminal'), group: 'terminal' });
+  return null;
+}
+
+function Harness({ viewer = false, workspace = false }: { viewer?: boolean; workspace?: boolean }) {
   const [mounted, setMounted] = useState(viewer);
   return (
     <ShortcutRegistryProvider>
       <ShellKeys />
+      {workspace ? <WorkspaceKeys /> : null}
       {mounted ? <ViewerKeys /> : null}
       <button
         type="button"
@@ -60,11 +70,14 @@ function Harness({ viewer = false }: { viewer?: boolean }) {
   );
 }
 
-async function openDialog(options: { viewer?: boolean; locale?: 'en' | 'vi' } = {}) {
+async function openDialog(options: { viewer?: boolean; workspace?: boolean; locale?: 'en' | 'vi' } = {}) {
   const user = userEvent.setup();
-  const rendered = renderWithProviders(<Harness viewer={options.viewer ?? false} />, {
-    ...(options.locale === undefined ? {} : { locale: options.locale }),
-  });
+  const rendered = renderWithProviders(
+    <Harness viewer={options.viewer ?? false} workspace={options.workspace ?? false} />,
+    {
+      ...(options.locale === undefined ? {} : { locale: options.locale }),
+    },
+  );
   await user.click(screen.getByRole('button', { name: 'open' }));
   const dialog = await screen.findByRole('dialog', { name: msg('shortcuts.title', undefined, options.locale ?? 'en') });
   return { user, dialog, ...rendered };
@@ -126,13 +139,59 @@ describe('ShortcutsDialog: content', () => {
     expect(navigation.getByText(msg('shortcuts.fixed.sidebar'))).toBeInTheDocument();
   });
 
-  it('draws the groups in the order Navigation, Search, Transcript', async () => {
+  it('draws the groups in the order Navigation, Search, Transcript, Terminal', async () => {
     const { dialog } = await openDialog({ viewer: true });
     expect(
       within(dialog)
         .getAllByRole('heading', { level: 3 })
         .map((h) => h.textContent),
-    ).toEqual([msg('shortcuts.group.navigation'), msg('shortcuts.group.search'), msg('shortcuts.group.transcript')]);
+    ).toEqual([
+      msg('shortcuts.group.navigation'),
+      msg('shortcuts.group.search'),
+      msg('shortcuts.group.transcript'),
+      msg('shortcuts.group.terminal'),
+    ]);
+  });
+
+  describe('the Terminal group (design 04 7.5, TC-UI-12)', () => {
+    const section = (dialog: HTMLElement): HTMLElement => {
+      const found = within(dialog)
+        .getByRole('heading', { name: msg('shortcuts.group.terminal') })
+        .closest('section');
+      if (found === null) throw new Error('no Terminal section');
+      return found;
+    };
+
+    it('always lists the way out of the terminal, copy, paste and scrolling, each chord in ONE key cap', async () => {
+      const { dialog } = await openDialog();
+      expect(keysOf(dialog, msg('workspace.shortcut.release'))).toEqual([RELEASE_CHORD]);
+      expect(keysOf(dialog, msg('workspace.shortcut.copy'))).toEqual(['Ctrl+C']);
+      expect(keysOf(dialog, msg('workspace.shortcut.paste'))).toEqual(['Ctrl+V']);
+      // two keys that both scroll are two caps: alternatives, not a chord
+      expect(keysOf(dialog, msg('workspace.shortcut.scroll'))).toEqual(['Shift+PageUp', 'Shift+PageDown']);
+      expect(within(section(dialog)).getAllByRole('term')).toHaveLength(4);
+    });
+
+    it('lists the key `t` only while the page that registered it is mounted, in the same group', async () => {
+      const without = await openDialog();
+      expect(within(section(without.dialog)).queryByText(msg('workspace.shortcut.focusTerminal'))).toBeNull();
+      without.unmount();
+      const withIt = await openDialog({ workspace: true });
+      expect(keysOf(withIt.dialog, msg('workspace.shortcut.focusTerminal'))).toEqual(['t']);
+      expect(within(section(withIt.dialog)).getAllByRole('term')).toHaveLength(5);
+    });
+
+    it('speaks Vietnamese: the heading and the descriptions of the rows', async () => {
+      const { dialog } = await openDialog({ locale: 'vi', workspace: true });
+      const vi = (
+        key: 'shortcuts.group.terminal' | 'workspace.shortcut.release' | 'workspace.shortcut.focusTerminal',
+      ) => msg(key, undefined, 'vi');
+      expect(
+        within(dialog).getByRole('heading', { level: 3, name: vi('shortcuts.group.terminal') }),
+      ).toBeInTheDocument();
+      expect(keysOf(dialog, vi('workspace.shortcut.release'))).toEqual([RELEASE_CHORD]);
+      expect(keysOf(dialog, vi('workspace.shortcut.focusTerminal'))).toEqual(['t']);
+    });
   });
 
   it('follows the mounted viewer while the dialog is open: unmounting removes its keys', async () => {
