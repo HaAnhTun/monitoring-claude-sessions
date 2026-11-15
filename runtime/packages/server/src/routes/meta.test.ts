@@ -401,6 +401,35 @@ describe('health, healthIngest, instance, config', () => {
     expect(IngestHealthSchema.safeParse(report).success).toBe(true);
     const info = InstanceInfoSchema.parse(JSON.parse((await httpRequest(port, '/api/v3/instance')).body));
     expect(info.slug).toBe('demo');
+    expect(info.kind).toBe('task');
+    expect(info.app).toBeNull();
+  });
+
+  it('serves kind and app of the user instance, and reads an instance info without them as a task (06 1.7)', async () => {
+    const { ctx } = context();
+    const userCtx: AppContext = {
+      ...ctx,
+      queries: asQueries({
+        ...ctx.queries,
+        instanceInfo: (scope) => ({
+          ...ctx.queries.instanceInfo(scope),
+          kind: 'user',
+          app: { name: 'Team Workspace' },
+        }),
+      }),
+    };
+    const userPort = await serveMeta(userCtx, null);
+    const user = InstanceInfoSchema.parse(JSON.parse((await httpRequest(userPort, '/api/v3/instance')).body));
+    expect(user.kind).toBe('user');
+    expect(user.app).toEqual({ name: 'Team Workspace' });
+
+    // the reply of a server that predates the two keys still parses, as a task without an app
+    const taskPort = await serveMeta(ctx, TASK);
+    const body = JSON.parse((await httpRequest(taskPort, '/api/v3/instance')).body) as Record<string, unknown>;
+    const older = Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'kind' && key !== 'app'));
+    expect(older).not.toHaveProperty('kind');
+    expect(older).not.toHaveProperty('app');
+    expect(InstanceInfoSchema.parse(older)).toMatchObject({ kind: 'task', app: null });
   });
 
   it('serves the configuration inspection with the engine of instance.json', async () => {

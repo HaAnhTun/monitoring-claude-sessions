@@ -2,7 +2,7 @@
 // The UI shows these strings on the Settings page with a copy button; the server never runs them. A value is double
 // quoted only when it needs it, so the common case reads `node D:/skill/scripts/mcs.mjs status --task demo`. The quoting
 // follows the rules of a POSIX shell (Git Bash, the shell of the plan); PowerShell and cmd read the common case alike.
-import type { InstanceInfo } from '@mcs/shared';
+import type { InstanceInfo, InstanceKind } from '@mcs/shared';
 
 import { hostPlatform } from '../platform/host.ts';
 
@@ -84,6 +84,8 @@ export interface InstanceCommandInput {
   readonly repoDir: string;
   /** The workspace folder `<repo>/.claude/monitor/tasks/<slug>`. */
   readonly instanceDir: string;
+  /** `user` builds the commands of the user instance, which take `--user` instead of `--task` and `--repo`; absent is `task`. */
+  readonly kind?: InstanceKind;
 }
 
 /** A path as it is shown: forward slashes on Windows, so that Git Bash, PowerShell and cmd all read the same text. */
@@ -101,7 +103,9 @@ export function instanceCommands(i: InstanceCommandInput): InstanceInfo['command
   const repo = shownPath(i.repoDir);
   const exportFile = `${shownPath(i.instanceDir)}/logs/export.ndjson`;
   const build = (command: string, options: readonly string[] = []): string =>
-    formatCommand(['node', launcher, command, '--task', i.slug, ...options, '--repo', repo]);
+    i.kind === 'user'
+      ? formatCommand(['node', launcher, command, '--user', ...options])
+      : formatCommand(['node', launcher, command, '--task', i.slug, ...options, '--repo', repo]);
   return {
     status: build('status'),
     restart: build('restart'),

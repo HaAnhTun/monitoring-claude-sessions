@@ -266,7 +266,7 @@ export type {
 } from './runtime/instance-runtime.ts';
 export { createStateWatchdog } from './runtime/state-watchdog.ts';
 export type { StateWatchdog } from './runtime/state-watchdog.ts';
-export { testHook } from './runtime/test-hooks.ts';
+export { testHook, withFakeTerminals } from './runtime/test-hooks.ts';
 
 export { createQueries, registerQueryPart } from './query/index.ts';
 export type { AuditQueries, AuditReader, EngineQueries, Queries, QueryDeps, QueryPart } from './query/index.ts';

@@ -86,6 +86,8 @@ const info = {
   dbSchemaVersion: 1,
   headSeq: 12,
   epoch: 'deadbeef',
+  kind: 'task',
+  app: null,
   staleAfterMs: 15000,
   heartbeatMs: 15000,
   windowHours: 6,
@@ -212,6 +214,32 @@ describe('InstanceInfo (03 6.2, registry C26)', () => {
     }
     for (const scope of ['auto', 'user', '', null, 1]) {
       expect(InstanceInfoSchema.safeParse({ ...info, scope }).success, String(scope)).toBe(false);
+    }
+  });
+
+  it('kind and app: an instance without them (an older server) parses as a task with no app', () => {
+    const parsed = InstanceInfoSchema.parse(info);
+    expect(parsed.kind).toBe('task');
+    expect(parsed.app).toBeNull();
+    const legacy = without(without(info, 'kind'), 'app');
+    expect(legacy).not.toHaveProperty('kind');
+    expect(legacy).not.toHaveProperty('app');
+    const legacyParsed = InstanceInfoSchema.parse(legacy);
+    expect(legacyParsed.kind).toBe('task');
+    expect(legacyParsed.app).toBeNull();
+  });
+
+  it('kind is task or user and app is { name } or null, with nothing else', () => {
+    expect(InstanceInfoSchema.parse({ ...info, kind: 'user', app: { name: 'Team Workspace' } })).toMatchObject({
+      kind: 'user',
+      app: { name: 'Team Workspace' },
+    });
+    expect(InstanceInfoSchema.parse({ ...info, kind: 'task', app: null }).app).toBeNull();
+    for (const kind of ['admin', '', null, 1]) {
+      expect(InstanceInfoSchema.safeParse({ ...info, kind }).success, String(kind)).toBe(false);
+    }
+    for (const app of [{}, { name: 1 }, { name: 'x', extra: 1 }, 'x']) {
+      expect(InstanceInfoSchema.safeParse({ ...info, app }).success, JSON.stringify(app)).toBe(false);
     }
   });
 

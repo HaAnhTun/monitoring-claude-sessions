@@ -20,6 +20,7 @@ import path from 'node:path';
 
 import {
   InstanceFileSchema,
+  instanceKindOf,
   RUNTIME_VERSION,
   STREAM_HEARTBEAT_MS,
   isoMsZ,
@@ -28,6 +29,7 @@ import {
   type HookProbeResult,
   type IngestHealth,
   type InstanceInfo,
+  type InstanceKind,
 } from '@mcs/shared';
 
 import type { AuditRef } from '../audit/reader.ts';
@@ -97,6 +99,8 @@ export function registerQueryPart(part: QueryPart, methods: readonly string[]): 
 
 interface Identity {
   readonly slug: string;
+  /** The `kind` of `instance.json`: `task` when the key is absent, the file is missing or it is invalid. */
+  readonly kind: InstanceKind;
   readonly description: string | null;
   readonly hooksEnabled: boolean;
   /** `<workspace>/` of the instance; `null` when the configuration was resolved without a workspace. */
@@ -129,11 +133,12 @@ function readIdentity(config: ResolvedConfig): Identity {
   const skillDir = defaultsFile === undefined ? null : path.dirname(path.dirname(defaultsFile.path));
   const launcherPath = path.join(skillDir ?? '.', 'scripts', LAUNCHER_FILE);
   if (workspaceDir === null) {
-    return { slug: '', description: null, hooksEnabled: false, workspaceDir, launcherPath };
+    return { slug: '', kind: 'task', description: null, hooksEnabled: false, workspaceDir, launcherPath };
   }
   const instance = InstanceFileSchema.safeParse(readJson(path.join(workspaceDir, 'instance.json')));
   return {
     slug: instance.success ? instance.data.slug : path.basename(workspaceDir),
+    kind: instance.success ? instanceKindOf(instance.data) : 'task',
     description: descriptionOf(readJson(path.join(workspaceDir, 'task.json'))),
     hooksEnabled: instance.success && instance.data.hooks.enabled,
     workspaceDir,
@@ -184,6 +189,9 @@ function instanceInfoOf(
     dbSchemaVersion: pragmaNumber(db.driver, 'user_version'),
     headSeq: db.headSeq(),
     epoch: db.epoch,
+    kind: identity.kind,
+    // only the user instance presents itself as an app; a task has no name to show (06 1.7)
+    app: identity.kind === 'user' ? { name: config.app.name } : null,
     staleAfterMs: num(poll, 'stale_after_ms', 15_000),
     heartbeatMs: STREAM_HEARTBEAT_MS,
     windowHours: monitor.window_hours,
@@ -225,6 +233,7 @@ function instanceInfoOf(
       slug: identity.slug,
       repoDir: monitor.repo,
       instanceDir: identity.workspaceDir ?? '',
+      kind: identity.kind,
     }),
     limits: {
       pageMax: 200,

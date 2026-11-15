@@ -2,7 +2,8 @@
 // hooks exist.
 import { describe, expect, it, vi } from 'vitest';
 
-import { TEST_HOOK_NAMES, testHook } from './test-hooks.ts';
+import { EMPTY_CENSUS, type TerminalCensus } from './user-services.ts';
+import { FAKE_TERMINALS_MAX, TEST_HOOK_NAMES, fakeTerminalCount, testHook, withFakeTerminals } from './test-hooks.ts';
 
 describe('testHook', () => {
   it('is inert while MCS_TEST is not set to 1', () => {
@@ -68,7 +69,90 @@ describe('testHook', () => {
     expect(testHook('BOOT_HANG', { MCS_TEST_BOOT_HANG: '1' })).toBeUndefined();
   });
 
-  it('documents exactly the hooks of 01 2.10 and the open-file recorder', () => {
-    expect([...TEST_HOOK_NAMES].sort()).toEqual(['BOOT_HANG', 'IGNORE_CONTROL', 'INIT_CRASH', 'OPEN_FILE']);
+  it('documents exactly the hooks of 01 2.10, the open-file recorder and the fake terminals', () => {
+    expect([...TEST_HOOK_NAMES].sort()).toEqual([
+      'BOOT_HANG',
+      'FAKE_TERMINALS',
+      'IGNORE_CONTROL',
+      'INIT_CRASH',
+      'OPEN_FILE',
+    ]);
+  });
+});
+
+describe('FAKE_TERMINALS (06 1.7): scripted terminal sessions for the stop guard', () => {
+  const ON = { MCS_TEST: '1' } as const;
+
+  /** A census with real sessions: two live, listed oldest first. */
+  function realCensus(): TerminalCensus & { drained: number } {
+    const sessions = [
+      { name: 'real-1', startedAt: '2026-11-14T10:00:00.000Z' },
+      { name: 'real-2', startedAt: '2026-11-14T10:01:00.000Z' },
+    ];
+    const census = {
+      drained: 0,
+      count: (): number => sessions.length,
+      sessions: (limit: number) => sessions.slice(0, limit),
+      beginDrain: (): void => {
+        census.drained += 1;
+      },
+    };
+    return census;
+  }
+
+  it('is read as a count from MCS_TEST_FAKE_TERMINALS, in test mode only', () => {
+    expect(testHook('FAKE_TERMINALS', { ...ON, MCS_TEST_FAKE_TERMINALS: '2' })).toBe('2');
+    expect(testHook('FAKE_TERMINALS', { MCS_TEST_FAKE_TERMINALS: '2' })).toBeUndefined();
+    expect(fakeTerminalCount({ ...ON, MCS_TEST_FAKE_TERMINALS: '2' })).toBe(2);
+    expect(fakeTerminalCount({ MCS_TEST_FAKE_TERMINALS: '2' })).toBe(0);
+    expect(fakeTerminalCount(ON)).toBe(0);
+  });
+
+  it('reads anything that is not a positive whole number as none, and caps the count', () => {
+    for (const value of ['0', '-1', '1.5', 'two', '1e3', '0x2', ' 2', '2 ', '+2', '']) {
+      expect(fakeTerminalCount({ ...ON, MCS_TEST_FAKE_TERMINALS: value }), JSON.stringify(value)).toBe(0);
+    }
+    expect(fakeTerminalCount({ ...ON, MCS_TEST_FAKE_TERMINALS: String(FAKE_TERMINALS_MAX) })).toBe(FAKE_TERMINALS_MAX);
+    expect(fakeTerminalCount({ ...ON, MCS_TEST_FAKE_TERMINALS: String(FAKE_TERMINALS_MAX + 1) })).toBe(
+      FAKE_TERMINALS_MAX,
+    );
+    expect(fakeTerminalCount({ ...ON, MCS_TEST_FAKE_TERMINALS: '99999999999999999999' })).toBe(FAKE_TERMINALS_MAX);
+  });
+
+  it('returns the very same census while the hook is off', () => {
+    const census = realCensus();
+    expect(withFakeTerminals(census, {})).toBe(census);
+    expect(withFakeTerminals(census, { MCS_TEST_FAKE_TERMINALS: '3' })).toBe(census);
+    expect(withFakeTerminals(census, { ...ON, MCS_TEST_FAKE_TERMINALS: 'x' })).toBe(census);
+  });
+
+  it('adds n sessions named fake-1..fake-n to the count and to the list', () => {
+    const wrapped = withFakeTerminals(EMPTY_CENSUS, { ...ON, MCS_TEST_FAKE_TERMINALS: '3' });
+    expect(wrapped.count()).toBe(3);
+    expect(wrapped.sessions(50).map((entry) => entry.name)).toEqual(['fake-1', 'fake-2', 'fake-3']);
+    for (const entry of wrapped.sessions(50)) {
+      expect(entry.name).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+      expect(entry.startedAt).toMatch(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/);
+    }
+    expect(wrapped.sessions(2).map((entry) => entry.name)).toEqual(['fake-1', 'fake-2']);
+    expect(wrapped.sessions(0)).toEqual([]);
+  });
+
+  it('keeps the real sessions: the count adds up, the list is oldest first and bounded by the limit', () => {
+    const census = realCensus();
+    const wrapped = withFakeTerminals(census, { ...ON, MCS_TEST_FAKE_TERMINALS: '2' });
+    expect(wrapped.count()).toBe(4);
+    expect(wrapped.sessions(50).map((entry) => entry.name)).toEqual(['fake-1', 'fake-2', 'real-1', 'real-2']);
+    expect(wrapped.sessions(3).map((entry) => entry.name)).toEqual(['fake-1', 'fake-2', 'real-1']);
+    const stamps = wrapped.sessions(50).map((entry) => entry.startedAt);
+    expect([...stamps].sort()).toEqual(stamps);
+  });
+
+  it('hands the drain to the wrapped census and ends nothing itself', () => {
+    const census = realCensus();
+    const wrapped = withFakeTerminals(census, { ...ON, MCS_TEST_FAKE_TERMINALS: '1' });
+    wrapped.beginDrain();
+    expect(census.drained).toBe(1);
+    expect(wrapped.count()).toBe(3);
   });
 });

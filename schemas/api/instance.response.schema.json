@@ -42,6 +42,34 @@
       "type": "string",
       "pattern": "^[0-9a-f]{8}$"
     },
+    "kind": {
+      "default": "task",
+      "type": "string",
+      "enum": [
+        "task",
+        "user"
+      ]
+    },
+    "app": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "scope": {
       "type": "string",
       "enum": [
@@ -298,6 +326,8 @@
     "dbSchemaVersion",
     "headSeq",
     "epoch",
+    "kind",
+    "app",
     "staleAfterMs",
     "heartbeatMs",
     "windowHours",

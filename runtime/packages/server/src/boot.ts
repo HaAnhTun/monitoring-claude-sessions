@@ -41,6 +41,7 @@ import {
   setChildLogSink,
   SpoolSegmentNotFoundError,
   testHook,
+  withFakeTerminals,
   workspacePath,
   type AccessMint,
   type InstanceContext,
@@ -182,9 +183,16 @@ export function assertUserLocation(kind: InstanceKind, root: string, env: EnvLik
   );
 }
 
-/** The census of the user services; the empty one while there is no runtime and for a task instance (the services are late-bound). */
-export function censusOf(runtime: Pick<InstanceRuntime, 'user'> | undefined): TerminalCensus {
-  return runtime?.user?.census ?? EMPTY_CENSUS;
+/**
+ * The census of the user services; the empty one while there is no runtime and for a task instance (the services are late-bound).
+ * In test mode the test hook FAKE_TERMINALS adds scripted sessions to the census of a user instance (`withFakeTerminals`).
+ */
+export function censusOf(
+  runtime: Pick<InstanceRuntime, 'user'> | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): TerminalCensus {
+  const census = runtime?.user?.census;
+  return census === undefined ? EMPTY_CENSUS : withFakeTerminals(census, env);
 }
 
 /** A fresh access code of the user services, or `null` (the control op answers `UNSUPPORTED`): no runtime, a task, no minter. */
@@ -648,7 +656,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
         answerShutdown(
           {
             kind,
-            census: () => censusOf(res.runtime),
+            census: () => censusOf(res.runtime, input.env),
             stopping: () => currentPhase() === 'stopping',
             trigger: (r) => {
               gate.request(r);
@@ -676,7 +684,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
       ...(kind === 'user'
         ? {
             onTerminals: () =>
-              terminalsOutcome(censusOf(res.runtime), res.ctx?.config.runtime.terminal.maxSessions ?? 0),
+              terminalsOutcome(censusOf(res.runtime, input.env), res.ctx?.config.runtime.terminal.maxSessions ?? 0),
             onAccess: () => mintOutcome(res.runtime),
           }
         : {}),

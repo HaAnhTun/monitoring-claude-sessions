@@ -75,6 +75,8 @@ interface Fixture {
 interface FixtureOptions {
   readonly description?: string;
   readonly hooks?: boolean;
+  /** `user` makes the workspace the user instance (06 1.3); absent is a task. */
+  readonly kind?: 'task' | 'user';
   /** Keys merged into the workspace's `config.json`. */
   readonly config?: Readonly<Record<string, unknown>>;
   /** The whole `runtime.json`. */
@@ -100,6 +102,7 @@ async function fixture(o: FixtureOptions = {}): Promise<Fixture> {
     clock,
     newId: () => ID,
     ...(o.description === undefined ? {} : { description: o.description }),
+    ...(o.kind === undefined ? {} : { kind: o.kind }),
   });
   if (o.config !== undefined) {
     const file = path.join(ws.dir, 'config.json');
@@ -374,6 +377,45 @@ describe('instanceInfo (03 6.2)', () => {
     expect(expected.export).toContain('/logs/export.ndjson');
     // the commands name the canonical launcher, never the legacy alias next to it
     for (const command of Object.values(expected)) expect(command).toContain('scripts/caw.mjs');
+  });
+
+  it('names the kind of the instance and no app for a task (06 1.7)', async () => {
+    const ctx = await build(await fixture());
+    const info = ctx.queries.instanceInfo(ctx.scope);
+    expect(info.kind).toBe('task');
+    expect(info.app).toBeNull();
+    expect(InstanceInfoSchema.parse(info)).toEqual(info);
+    // a task keeps its own app.name configuration to itself: the key only describes the user instance
+    const named = await build(await fixture({ runtime: { schema_version: 1, app: { name: 'Named Workspace' } } }));
+    expect(named.queries.instanceInfo(named.scope).app).toBeNull();
+  });
+
+  it('names kind user and the configured app.name for the user instance, with the --user commands', async () => {
+    const fx = await fixture({ kind: 'user' });
+    const ctx = await build(fx);
+    const info = ctx.queries.instanceInfo(ctx.scope);
+    expect(info.kind).toBe('user');
+    expect(info.app).toEqual({ name: ctx.config.runtime.app.name });
+    expect(info.app?.name.length).toBeGreaterThan(0);
+    expect(InstanceInfoSchema.parse(info)).toEqual(info);
+    expect(info.commands).toEqual(
+      instanceCommands({
+        launcherPath: path.join(fx.skill, 'scripts', 'caw.mjs'),
+        slug: 'demo',
+        repoDir: ctx.config.monitor.repo,
+        instanceDir: fx.ws.dir,
+        kind: 'user',
+      }),
+    );
+    for (const command of Object.values(info.commands)) {
+      expect(command).toContain(' --user');
+      expect(command).not.toContain('--task');
+    }
+
+    const named = await build(
+      await fixture({ kind: 'user', runtime: { schema_version: 1, app: { name: 'Named Workspace' } } }),
+    );
+    expect(named.queries.instanceInfo(named.scope).app).toEqual({ name: 'Named Workspace' });
   });
 
   it('has headSeq of the change log and the epoch of this database open', async () => {

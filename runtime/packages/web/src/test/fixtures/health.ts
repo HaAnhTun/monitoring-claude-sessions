@@ -25,6 +25,8 @@ export function makeInstance(overrides: Partial<InstanceInfo> = {}): InstanceInf
     dbSchemaVersion: 1,
     headSeq: 10,
     epoch: FIXTURE_EPOCH,
+    kind: 'task',
+    app: null,
     staleAfterMs: 30_000,
     heartbeatMs: 15_000,
     windowHours: 24,

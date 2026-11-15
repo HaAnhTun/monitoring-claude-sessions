@@ -158,9 +158,32 @@ describe('instanceCommands', () => {
     }
   });
 
+  it('builds the user-instance commands with --user and no --task or --repo (06 2.2)', () => {
+    const user: InstanceCommandInput = { ...PLAIN, slug: 'user', kind: 'user' };
+    expect(instanceCommands(user)).toEqual({
+      status: 'node D:/skill/scripts/mcs.mjs status --user',
+      restart: 'node D:/skill/scripts/mcs.mjs restart --user',
+      inspect: 'node D:/skill/scripts/mcs.mjs inspect --user',
+      export:
+        'node D:/skill/scripts/mcs.mjs export --user --out D:/work/repo/.claude/monitor/tasks/demo/logs/export.ndjson',
+      backup: 'node D:/skill/scripts/mcs.mjs backup --user',
+      cleanupDryRun: 'node D:/skill/scripts/mcs.mjs cleanup --user --scope logs',
+    });
+    for (const text of Object.values(instanceCommands(user))) {
+      expect(text).not.toContain('--task');
+      expect(text).not.toContain('--repo');
+    }
+  });
+
+  it('builds the task commands for kind task, and for no kind at all', () => {
+    expect(instanceCommands({ ...PLAIN, kind: 'task' })).toEqual(instanceCommands(PLAIN));
+    expect(instanceCommands(PLAIN).status).toContain('--task demo --repo');
+  });
+
   it('is a valid InstanceInfo.commands object', () => {
     const shape = InstanceInfoSchema.shape.commands;
     expect(shape.safeParse(instanceCommands(PLAIN)).success).toBe(true);
     expect(shape.safeParse(instanceCommands(SPACED)).success).toBe(true);
+    expect(shape.safeParse(instanceCommands({ ...PLAIN, kind: 'user' })).success).toBe(true);
   });
 });

@@ -2,6 +2,7 @@
 // measurement surface of 06 8.2: runtime resources, child-process counters and panel counters.
 import { z } from 'zod';
 
+import { InstanceKindSchema } from '../files/instance.ts';
 import { AlertItemSchema } from './entities.ts';
 import { CountSchema, InstanceIdSchema, EpochSchema } from './ids.ts';
 import { ChildKindSchema, ChildKindStatsSchema, PanelStatsSchema } from './panels.ts';
@@ -126,6 +127,16 @@ export const InstanceInfoSchema = z.strictObject({
   dbSchemaVersion: CountSchema,
   headSeq: CountSchema,
   epoch: EpochSchema,
+  /**
+   * `user` for the user-wide instance (the terminal host), `task` for a task instance. Absent from the reply of a server that
+   * predates the key, which then reads as `task` (06 1.7: an older server is reported outdated, never invalid).
+   */
+  kind: InstanceKindSchema.default('task'),
+  /**
+   * How the workspace presents itself: `app.name` is the config key `app.name` for the user instance, `null` for a task
+   * instance (and for a server that predates the key).
+   */
+  app: z.strictObject({ name: z.string() }).nullable().default(null),
   /**
    * What the instance reads: `repo` is the one repository, `all` every project folder under the Claude home. The effective
    * value (the config key `projects.scope` may say `auto`, which is resolved by the kind of the instance); absent from an
