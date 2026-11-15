@@ -1034,3 +1034,15 @@ export {
 export type { AppCheckDeps, AppSettings } from './ops/app-checks.ts';
 export type { StopPurpose } from './ops/lifecycle.ts';
 // @wp-end CAW-23
+
+// @wp-begin CAW-29
+export { FOLDER_LIST_MAX, mergeFolders } from './folders/merge.ts';
+export type { MergeInput } from './folders/merge.ts';
+export { FOLDER_EXISTS_RECHECK_MS, createFolderService } from './folders/service.ts';
+export type { FolderService, FolderServiceContext, FolderServiceDeps } from './folders/service.ts';
+export { FolderError, createUserFolders } from './folders/user-folders.ts';
+export type { FolderErrorCode, FolderErrorIssue, UserFolder, UserFolders } from './folders/user-folders.ts';
+export { createDaMemoryReader, defaultDaMemoryDir } from './folders/da-memory.ts';
+export type { DaFolder, DaMemoryReader, DaMemoryResult } from './folders/da-memory.ts';
+export { effectivePanels } from './projects/scope.ts';
+// @wp-end CAW-29
