@@ -21,25 +21,29 @@ import {
 import { RUNTIME_VERSION, type TerminalCapabilities, type TerminalLink, type TerminalSessionInfo } from '@mcs/shared';
 import { FakeClock, allocatePort, assertPortClosed, makeTempDir, type TempDir } from '@mcs/testkit';
 
-import { createApp, createHttpServer } from '../../../src/app.ts';
+import { createApp, createHttpServer, type ServerTiming } from '../../../src/app.ts';
 import { createAccessVerifier } from '../../../src/http/access-guard.ts';
 import { createAuthRoutes } from '../../../src/routes/auth.ts';
 import { readLegacyTask } from '../../../src/routes/meta.ts';
 import { createTerminalRoutes } from '../../../src/routes/terminal.ts';
+import { createTerminalSocketRoutes } from '../../../src/routes/terminal-socket.ts';
 import {
   createTerminalEventsRoutes,
   type TerminalEventLimits,
   type TerminalEvents,
 } from '../../../src/terminal/events.ts';
+import { createTerminalGateway, type TerminalSocketLimits } from '../../../src/terminal/gateway.ts';
 import type {
   FolderPickerPort,
   TerminalAttachment,
   TerminalExit,
+  TerminalGateway,
   TerminalPorts,
   TerminalSessionPort,
   TerminalSessionsPort,
   TerminalViewer,
 } from '../../../src/terminal/ports.ts';
+import { createUpgradeRegistry } from '../../../src/terminal/upgrade.ts';
 
 // FIXTURE: invented data for tests
 export const FAKE_CREATED_AT = '2026-10-11T14:05:07.000Z';
@@ -349,6 +353,10 @@ export interface TerminalApp {
   readonly logFile: string;
   /** The feed of the event route, once mounted. */
   readonly events: () => TerminalEvents;
+  /** The HTTP server (a test looks at its connections). */
+  readonly server: Server;
+  /** The socket gateway; present when the app was started with the `socket` option. */
+  readonly gateway: TerminalGateway | null;
 }
 
 export interface TerminalAppOptions {
@@ -356,9 +364,24 @@ export interface TerminalAppOptions {
   readonly ports?: FakeTerminalPorts | null;
   /** Shorter limits of the event feed. */
   readonly eventLimits?: Partial<TerminalEventLimits>;
+  /**
+   * Mounts the socket route, creates the gateway and wires the `upgrade` listener of the server, as the boot code does for a
+   * user instance (CAW-25). `limits` shortens the limits and intervals of the gateway. Without it no socket exists.
+   */
+  readonly socket?: { readonly limits?: Partial<TerminalSocketLimits> };
+  /** `server.requestTimeoutMs` of the HTTP server; default the configured one. */
+  readonly requestTimeoutMs?: number;
+  /** Shortened timings of the HTTP server (the headers and keep-alive timeouts and the check interval). */
+  readonly timing?: ServerTiming;
 }
 
-const running: { server: Server; ctx: InstanceContext; port: number; temp: TempDir }[] = [];
+const running: {
+  server: Server;
+  ctx: InstanceContext;
+  port: number;
+  temp: TempDir;
+  gateway: TerminalGateway | null;
+}[] = [];
 
 /** Starts one user instance with the access, terminal and event routes. */
 export async function startTerminalApp(options: TerminalAppOptions = {}): Promise<TerminalApp> {
@@ -389,6 +412,15 @@ export async function startTerminalApp(options: TerminalAppOptions = {}): Promis
   const access = createAccessService({ clock });
   const port = await allocatePort();
   let events: TerminalEvents | undefined;
+  const upgrades = createUpgradeRegistry();
+  const gateway =
+    options.socket === undefined
+      ? null
+      : createTerminalGateway({
+          access,
+          logger: ctx.logger,
+          ...(options.socket.limits === undefined ? {} : { limits: options.socket.limits }),
+        });
   const app = createApp({
     ctx,
     port: () => port,
@@ -408,15 +440,21 @@ export async function startTerminalApp(options: TerminalAppOptions = {}): Promis
           events = created;
         },
       }),
+      ...(gateway === null ? [] : [createTerminalSocketRoutes({ ports, gateway, upgrades })]),
     ],
   });
-  const server = createHttpServer(app, ctx.config.runtime.server.requestTimeoutMs);
+  const server = createHttpServer(
+    app,
+    options.requestTimeoutMs ?? ctx.config.runtime.server.requestTimeoutMs,
+    options.timing,
+  );
+  if (gateway !== null) server.on('upgrade', upgrades.listener(app));
   await new Promise<void>((resolve) => {
     server.listen(port, '127.0.0.1', () => {
       resolve();
     });
   });
-  running.push({ server, ctx, port, temp });
+  running.push({ server, ctx, port, temp, gateway });
   return {
     port,
     ctx,
@@ -424,6 +462,8 @@ export async function startTerminalApp(options: TerminalAppOptions = {}): Promis
     access,
     ports,
     logFile,
+    server,
+    gateway,
     events: () => {
       if (events === undefined) throw new Error('the event routes are not mounted');
       return events;
@@ -433,7 +473,9 @@ export async function startTerminalApp(options: TerminalAppOptions = {}): Promis
 
 /** Closes every app `startTerminalApp` started (call it in `afterEach`). */
 export async function stopTerminalApps(): Promise<void> {
-  for (const { server, ctx, port, temp } of running.splice(0)) {
+  for (const { server, ctx, port, temp, gateway } of running.splice(0)) {
+    // `closeAllConnections` does not know an upgraded socket: the gateway closes its own first (design 02 5.5)
+    await gateway?.closeAll(1001, 'shutting_down');
     await new Promise<void>((resolve) => {
       server.closeAllConnections();
       server.close(() => {
