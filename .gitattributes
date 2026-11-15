@@ -5,3 +5,6 @@ skills/*/bundle/** linguist-generated=true
 skills/*/bundle/native/**/*.node -text
 skills/*/bundle/native/**/*.dll -text
 skills/*/bundle/native/**/*.exe -text
+# Batch files need CRLF line endings: an LF-only file can break `goto` labels (ADR 0095). These rules come after the catch-all above.
+*.bat text eol=crlf
+*.cmd text eol=crlf

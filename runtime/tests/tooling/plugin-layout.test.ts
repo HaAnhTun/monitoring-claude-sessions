@@ -51,6 +51,9 @@ const CLI_COMMANDS = [
   'instances',
   'doctor',
   'migrate-workspace',
+  'open',
+  'autostart',
+  'config',
 ];
 
 const PLUGIN_KEYS = ['name', 'displayName', 'version', 'description', 'author', 'repository', 'license', 'keywords'];

@@ -106,6 +106,23 @@ vi.mock('./commands/inspect.ts', () => ({
   } satisfies CommandDefinition,
 }));
 
+// A command of the app only (open, autostart *, config get|set): it has no task option, so --task is an unknown option, and
+// --repo and --root, which select a task, are refused by the kernel (06 2.2).
+vi.mock('./commands/open.ts', () => ({
+  command: {
+    name: 'open',
+    summary: 'fake open',
+    synopsis: '',
+    defaultScope: 'user',
+    userOnly: true,
+    options: { print: { type: 'boolean', description: 'print' } },
+    run: (ctx) => {
+      probe.contexts.push(ctx);
+      return Promise.resolve({ data: { scope: ctx.scope ?? null }, text: ['ran'] });
+    },
+  } satisfies CommandDefinition,
+}));
+
 // A command whose operation refuses because terminals are live (06 3.3), the way the guarded stop does.
 vi.mock('./commands/restart.ts', async () => {
   const { McsError } = await import('@mcs/shared');
@@ -393,6 +410,101 @@ describe('main: options of one scope', () => {
     expect(ran.lines[0]).toBe('ERROR: --window cannot be combined with --tab');
     expect((await run(['status', '--window'])).code).toBe(0);
     expect((await run(['status', '--tab'])).code).toBe(0);
+  });
+});
+
+describe('main: commands of the app only (06 2.3)', () => {
+  it('runs in the scope of the app with no selector, and with --user', async () => {
+    for (const argv of [
+      ['open', '--json'],
+      ['open', '--user', '--json'],
+    ]) {
+      const ran = await run(argv);
+      expect(ran.code).toBe(0);
+      expect(dataOf(ran)).toEqual({ scope: 'user' });
+    }
+    expect(probe.contexts.map((c) => c.op.root)).toEqual([userRootOf(process.env), userRootOf(process.env)]);
+  });
+
+  it('refuses --repo and --root, which would select a task, and names what it acts on', async () => {
+    for (const other of [
+      ['--repo', REPO],
+      ['--root', REPO],
+    ]) {
+      const ran = await run(['open', ...other]);
+      expect(ran.code).toBe(2);
+      expect(ran.lines[0]).toBe(
+        'ERROR: open acts on the app instance only; it cannot be combined with --repo or --root',
+      );
+      expect(ran.lines[1]).toMatch(/^hint: usage: .*open/);
+    }
+    expect(probe.contexts).toEqual([]);
+  });
+
+  it('refuses --task: the command has no such option', async () => {
+    const ran = await run(['open', '--task', 'demo']);
+    expect(ran.code).toBe(2);
+    expect(ran.lines[0]).toMatch(/^ERROR: unknown option '--task'/);
+    expect(probe.contexts).toEqual([]);
+  });
+
+  it('a refusal is an envelope with the code USAGE in --json mode', async () => {
+    const ran = await run(['open', '--repo', REPO, '--json']);
+    expect(ran.code).toBe(2);
+    expect(JSON.parse(ran.out)).toMatchObject({ ok: false, exitCode: 2, error: { code: 'USAGE' } });
+  });
+
+  it('--help still works with a selector', async () => {
+    const ran = await run(['open', '--repo', REPO, '--help']);
+    expect(ran.code).toBe(0);
+  });
+});
+
+describe('main: the registry of the commands of CAW-34', () => {
+  it('lists open, the three autostart commands and config get and set next to config migrate, each once', async () => {
+    const ran = await run(['help', '--json']);
+    expect(ran.code).toBe(0);
+    const names = JSON.stringify(dataOf(ran));
+    for (const name of [
+      'open',
+      'autostart enable',
+      'autostart disable',
+      'autostart status',
+      'config get',
+      'config set',
+      'config migrate',
+    ]) {
+      expect(names.split(JSON.stringify(name)).length - 1, name).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('finds the commands by their words, the longest match first', async () => {
+    for (const words of [
+      ['autostart', 'status'],
+      ['autostart', 'enable'],
+      ['autostart', 'disable'],
+      ['config', 'get'],
+      ['config', 'set'],
+    ]) {
+      const ran = await run([...words, '--help']);
+      expect(ran.code, words.join(' ')).toBe(0);
+      expect(ran.out).toContain(CLI_NAME + ' ' + words.join(' '));
+    }
+  });
+
+  it('has no task option and no positional arguments on the three autostart commands: an extra word is a usage error', async () => {
+    const ran = await run(['autostart', 'status', 'now']);
+    expect(ran.code).toBe(2);
+    expect(ran.lines[0]).toBe("ERROR: unexpected argument 'now'");
+  });
+
+  it('config get takes at most one key and config set two words', async () => {
+    const get = await run(['config', 'get', 'a', 'b']);
+    expect(get.code).toBe(2);
+    expect(get.lines[0]).toBe("ERROR: unexpected argument 'b'");
+    const set = await run(['config', 'set', 'a', 'b', 'c']);
+    expect(set.code).toBe(2);
+    expect(set.lines[0]).toBe("ERROR: unexpected argument 'c'");
   });
 });
 

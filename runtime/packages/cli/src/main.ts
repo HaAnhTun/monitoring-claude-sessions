@@ -176,6 +176,12 @@ export interface CommandDefinition {
    * (`start`, `stop`, `restart`, `status`, `serve`, `verify`, `doctor`, `check`) says `user`: without a selector they act on the app.
    */
   readonly defaultScope?: Scope;
+  /**
+   * The command acts on the app instance and on nothing else (`open`, `autostart *`, `config get|set`, 06 2.3). It has no `task`
+   * option, so `--task` is an unknown option; the kernel refuses `--repo` and `--root`, which would select a task. Set it together
+   * with `defaultScope: 'user'`.
+   */
+  readonly userOnly?: boolean;
   run(ctx: CommandContext): Promise<CommandResult>;
 }
 
@@ -385,6 +391,26 @@ const REGISTRY: readonly RegistryEntry[] = [
   // the app.* checks of `caw doctor` and `caw check` (06 2.6): each answers `null` outside the app, so a task never sees them
   { deps: () => ({ extraChecks: appCheckProviders() }) },
   // @wp-end CAW-33
+
+  // @wp-begin CAW-34
+  // the commands of the app only (06 2.3): open the browser at a login URL, the Startup shortcut, and the seven settings a person
+  // changes by name
+  { names: ['open'], load: () => import('./commands/open.ts') },
+  {
+    names: ['autostart enable'],
+    load: async () => ({ command: (await import('./commands/autostart.ts')).enableCommand }),
+  },
+  {
+    names: ['autostart disable'],
+    load: async () => ({ command: (await import('./commands/autostart.ts')).disableCommand }),
+  },
+  {
+    names: ['autostart status'],
+    load: async () => ({ command: (await import('./commands/autostart.ts')).statusCommand }),
+  },
+  { names: ['config get'], load: async () => ({ command: (await import('./commands/config-user.ts')).getCommand }) },
+  { names: ['config set'], load: async () => ({ command: (await import('./commands/config-user.ts')).setCommand }) },
+  // @wp-end CAW-34
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
@@ -600,6 +626,9 @@ function parseCommandArgs(def: CommandDefinition, rest: readonly string[]): Pars
     { user: typed.flag('user'), task: typed.string('task'), repo: typed.string('repo'), root: typed.string('root') },
     usageHint(def),
   );
+  if (def.userOnly === true && resolution.scope === 'task') {
+    throw usageError(def, `${def.name} acts on the app instance only; it cannot be combined with --repo or --root`);
+  }
   const effective: ParsedValues =
     resolution.scope === 'user' && Object.hasOwn(def.options, 'task') ? { ...values, task: USER_TASK } : values;
   const args = viewOf(effective, positionals);

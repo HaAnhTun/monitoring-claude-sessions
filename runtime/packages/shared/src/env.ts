@@ -25,6 +25,7 @@ export interface DocumentedEnvVar {
 
 const TEST_HOOKS = 'runtime/packages/engine/src/runtime/test-hooks.ts';
 const AUTOSTART = 'runtime/packages/engine/src/ops/autostart.ts';
+const BATCH_FILES = ['start.bat', 'stop.bat', 'install-skill.bat'];
 const QA_CONFIG = 'runtime/packages/web/e2e/qa/global-setup.ts';
 const QA_PLAYWRIGHT = 'runtime/packages/web/e2e/qa/playwright.config.ts';
 
@@ -69,6 +70,10 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'CAW_LNK_ARGS', scope: 'runtime', readers: [AUTOSTART] },
   { name: 'CAW_LNK_WORKDIR', scope: 'runtime', readers: [AUTOSTART] },
   { name: 'CAW_LNK_DESC', scope: 'runtime', readers: [AUTOSTART] },
+  // The batch files at the repository root (06 4): the Node to run instead of the one found on PATH, and no pause or prompt
+  // (scripts and tests; stop.bat then exits 3 when terminals are live).
+  { name: 'CAW_NODE_PATH', scope: 'runtime', readers: BATCH_FILES },
+  { name: 'CAW_NO_PROMPT', scope: 'runtime', readers: BATCH_FILES },
   // Not a production hook: the number of generated cases per scenario template (default 500) of the lifecycle property tests;
   // 1 replays one failing seed together with MCS_TEST_SEED. Only that test file reads it.
   { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },

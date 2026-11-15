@@ -102,6 +102,14 @@ Unknown keys and values out of range are refused, and nothing is written.
 
 The `terminal`, `app` and `projects` sections belong to the user-wide workspace instance; a task instance never reads them. A change needs a restart of the instance.
 
+### The app settings from the command line
+
+`caw config get [KEY]` shows the effective value of a setting and where it comes from (`default`, `skill`, `runtime`, `env`, `cli`); without a key it shows all of them. `caw config set KEY VALUE` changes one. These two commands act on the app instance only (they refuse `--task`, `--repo` and `--root`) and know seven keys: `terminal.command`, `terminal.args`, `terminal.maxSessions`, `app.name`, `app.openAppWindow`, `server.port` and `server.portScan`. Any other key goes through `caw configure --user`.
+
+`VALUE` is read as JSON, and when it is not JSON it is taken as the plain text, so `caw config set terminal.command claude` and `caw config set app.openAppWindow true` need no quotes. A list needs JSON: `caw config set terminal.args '["--model","opus"]'`. The whole result is validated before anything is written, the write is atomic and audited, and a running app keeps the old value until `caw restart` (the command says so). `caw config get` and `caw config set` make the app's workspace on first use, so a setting can be changed before the first start.
+
+`caw autostart enable|disable|status` manages the optional Windows Startup shortcut that runs `caw start --no-open` at sign-in (minimized, no browser, no login code). `start.bat`, `stop.bat` and `install-skill.bat` at the repository root run `caw start`, `caw stop` and `node install.mjs --force` for people who do not use a terminal.
+
 ## Regular expressions
 
 `session_rules[].match`, `attempts.start` and `attempts.end` are **JavaScript** regular expressions. They are compiled with
@@ -169,6 +177,8 @@ in the repository's `.claude/` folder, which is normally git-ignored (`doctor --
 | `MCS_LOG_LEVEL` | log level of the server (`error`, `warn`, `info`, `debug`) |
 | `MCS_LAUNCHER_MODE` | `bundle` or `dev`: forces the launcher's runtime (default: the bundle when it exists, else a checkout build) |
 | `MCS_DEBUG` | `1` adds stacks to launcher and CLI errors |
+| `CAW_NODE_PATH` | the `node.exe` that `start.bat`, `stop.bat` and `install-skill.bat` run instead of the one they find on PATH or in the usual install folders |
+| `CAW_NO_PROMPT` | any value: the batch files never pause or ask a question (`stop.bat` then exits 3 when terminal sessions are live) |
 
 ## Safe change procedure (for an agent)
 
