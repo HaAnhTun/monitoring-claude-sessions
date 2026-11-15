@@ -1,4 +1,5 @@
-// Bundle budget and index.html scan (04-ui.md section 12.3, ADR 0039). Run after `vite build` (the vite config calls it).
+// Bundle budget and index.html scan (04-ui.md section 12.3, ADR 0039; the terminal row and the xterm check: ADR 0097).
+// Run after `vite build` (the vite config calls it).
 // Usage: node scripts/check-bundle-budget.mjs [--dist <dir>]   (default: ../dist next to this script)
 // Exit 0 within budget, 1 over budget or malformed output, 2 when dist is missing.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -9,10 +10,27 @@ import { gzipSync } from 'node:zlib';
 const KB = 1000;
 export const LIMITS = {
   initialJs: 200 * KB,
-  // ADR 0071 decision 12: all chunks, both locales, seven pages and one hand-drawn chart
-  allJs: 340 * KB,
-  css: 25 * KB,
+  // ADR 0071 decision 12 set 340 kB for all chunks, both locales, seven pages and one hand-drawn chart; ADR 0097 raises it to 420 for
+  // the Workspace page and the lazy terminal chunk (xterm 6.0.0 and its two addons are about 85 kB of it)
+  allJs: 420 * KB,
+  // The terminal chunk (every file the terminal page and its loader reach that is not in the initial set): 85.3 kB on a fresh build
+  // of xterm 6.0.0, `@xterm/addon-fit`, `@xterm/addon-web-links`, the loader and its shims, plus 10 percent (ADR 0097)
+  terminalJs: 94 * KB,
+  // ADR 0097 raises it from 25 kB: xterm.css is in the initial CSS
+  css: 30 * KB,
 };
+
+/**
+ * The manifest keys of the files that open the terminal chunk: the terminal page (loaded lazily by the Workspace page) and the
+ * loader (the only file that imports xterm). The page does not exist in a build that predates it; the loader then stands alone.
+ */
+export const TERMINAL_ENTRIES = ['src/terminal/TerminalView.tsx', 'src/terminal/xterm-loader.ts'];
+
+/** A text that only xterm's own code carries (the class prefix of its DOM renderer): a chunk that holds it holds xterm. */
+export const XTERM_MARKER = 'xterm-dom-renderer-owner';
+
+/** What the server replaces with the style nonce of each HTML response (design 02 section 7, ADR 0086). */
+const NONCE_PLACEHOLDER = '__CSP_NONCE__';
 
 function gzipSize(file) {
   return gzipSync(readFileSync(file), { level: 9 }).length;
@@ -28,7 +46,7 @@ function walk(dir) {
   return out;
 }
 
-/** Problems found in a built (or source) index.html text: inline script bodies, external URLs, script count. */
+/** Problems found in a built (or source) index.html text: inline script bodies, external URLs, script count, the nonce tag. */
 export function auditHtml(html) {
   const problems = [];
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
@@ -41,11 +59,17 @@ export function auditHtml(html) {
     problems.push('index.html must have exactly one classic script, /theme-init.js');
   }
   if (/https?:\/\//i.test(html)) problems.push('index.html contains an http:// or https:// URL');
+  // Without the tag the server has no place to put the nonce, xterm's style elements are blocked and the terminal draws unstyled.
+  const nonceTags = [...html.matchAll(/<meta\b[^>]*>/gi)].filter((m) => /\bname\s*=\s*["']csp-nonce["']/i.test(m[0]));
+  const placeholder = new RegExp(`\\bcontent\\s*=\\s*["']${NONCE_PLACEHOLDER}["']`, 'i');
+  if (nonceTags.length !== 1 || !placeholder.test(nonceTags[0][0])) {
+    problems.push(`index.html must carry <meta name="csp-nonce" content="${NONCE_PLACEHOLDER}"> exactly once`);
+  }
   return problems;
 }
 
 /** Entry chunk plus its static imports (not the dynamic ones), as manifest keys. */
-function initialChunks(manifest) {
+function initialKeys(manifest) {
   const seen = new Set();
   const visit = (key) => {
     if (seen.has(key) || manifest[key] === undefined) return;
@@ -55,7 +79,24 @@ function initialChunks(manifest) {
   for (const [key, chunk] of Object.entries(manifest)) {
     if (chunk.isEntry === true) visit(key);
   }
-  return [...seen].map((key) => manifest[key].file).filter((file) => file.endsWith('.js'));
+  return seen;
+}
+
+/** The files of manifest keys, JavaScript only. */
+function jsFiles(manifest, keys) {
+  return [...keys].map((key) => manifest[key].file).filter((file) => file.endsWith('.js'));
+}
+
+/** Every manifest key reachable from `roots` through static and dynamic imports (the graph of what loading them can ever fetch). */
+function reachableKeys(manifest, roots) {
+  const seen = new Set();
+  const visit = (key) => {
+    if (seen.has(key) || manifest[key] === undefined) return;
+    seen.add(key);
+    for (const next of [...(manifest[key].imports ?? []), ...(manifest[key].dynamicImports ?? [])]) visit(next);
+  };
+  for (const root of roots) visit(root);
+  return seen;
 }
 
 export function checkBudget(distDir) {
@@ -66,9 +107,19 @@ export function checkBudget(distDir) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const files = walk(dist).map((file) => relative(dist, file).split(sep).join('/'));
 
-  const initialJs = initialChunks(manifest).reduce((sum, file) => sum + gzipSize(join(dist, file)), 0);
+  const initialSet = initialKeys(manifest);
+  const initialFiles = jsFiles(manifest, initialSet);
+  const initialJs = initialFiles.reduce((sum, file) => sum + gzipSize(join(dist, file)), 0);
   const allJs = files.filter((f) => f.endsWith('.js')).reduce((sum, f) => sum + gzipSize(join(dist, f)), 0);
   const css = files.filter((f) => f.endsWith('.css')).reduce((sum, f) => sum + gzipSize(join(dist, f)), 0);
+
+  // The terminal chunk: what the terminal page and the loader can fetch, less what the first load fetches anyway.
+  const terminalRoots = TERMINAL_ENTRIES.filter((key) => manifest[key] !== undefined);
+  const initialFileSet = new Set(initialFiles);
+  const terminalFiles = jsFiles(manifest, reachableKeys(manifest, terminalRoots)).filter(
+    (file) => !initialFileSet.has(file),
+  );
+  const terminalJs = terminalFiles.reduce((sum, file) => sum + gzipSize(join(dist, file)), 0);
 
   const problems = [];
   const indexPath = join(dist, 'index.html');
@@ -76,9 +127,22 @@ export function checkBudget(distDir) {
   else problems.push('dist/index.html is missing');
   for (const map of files.filter((f) => f.endsWith('.map'))) problems.push(`source map in dist: ${map}`);
 
+  // xterm in the first load: a terminal entry among the initial chunks, or an initial chunk that holds xterm's code
+  const inInitial = new Set(terminalRoots.filter((key) => initialSet.has(key)).map((key) => manifest[key].file));
+  for (const file of initialFiles) {
+    if (readFileSync(join(dist, file), 'utf8').includes(XTERM_MARKER)) inInitial.add(file);
+  }
+  for (const file of [...inInitial].sort()) problems.push(`xterm is in the initial chunks: ${file}`);
+
   const rows = [
     { name: 'Initial JS (gzip)', size: initialJs, limit: LIMITS.initialJs },
     { name: 'All JS (gzip)', size: allJs, limit: LIMITS.allJs },
+    {
+      name: 'Terminal chunk (gzip)',
+      size: terminalJs,
+      limit: LIMITS.terminalJs,
+      ...(terminalRoots.length === 0 ? { note: 'no terminal entry in this build' } : {}),
+    },
     { name: 'CSS total (gzip)', size: css, limit: LIMITS.css },
   ].map((row) => ({ ...row, ok: row.size <= row.limit }));
 
@@ -98,14 +162,29 @@ function main() {
   const { exitCode, rows, problems } = checkBudget(dist);
   for (const row of rows) {
     console.log(
-      `${row.ok ? 'ok  ' : 'FAIL'} ${row.name.padEnd(20)} ${formatKb(row.size).padStart(10)} / ${formatKb(row.limit)}`,
+      `${row.ok ? 'ok  ' : 'FAIL'} ${row.name.padEnd(22)} ${formatKb(row.size).padStart(10)} / ${formatKb(row.limit)}${
+        row.note === undefined ? '' : `  (${row.note})`
+      }`,
     );
   }
   for (const problem of problems) console.log(`FAIL ${problem}`);
   if (exitCode !== 2) {
     writeFileSync(
       join(dist, 'build-report.json'),
-      `${JSON.stringify({ rows: rows.map(({ name, size, limit, ok }) => ({ name, size, limit, ok })), problems }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          rows: rows.map(({ name, size, limit, ok, note }) => ({
+            name,
+            size,
+            limit,
+            ok,
+            ...(note === undefined ? {} : { note }),
+          })),
+          problems,
+        },
+        null,
+        2,
+      )}\n`,
     );
   }
   process.exit(exitCode);

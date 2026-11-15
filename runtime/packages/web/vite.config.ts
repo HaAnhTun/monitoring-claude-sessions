@@ -59,9 +59,16 @@ export default defineConfig(({ mode }) => {
           target: api,
           // Host must match the server's guard (03 5.2 step 2).
           changeOrigin: true,
+          // The terminal socket (`/api/v3/terminal/sessions/:name/socket`, ADR 0087) is a WebSocket upgrade under /api.
+          ws: true,
           configure: (proxy) => {
             // Origin guard (03 5.2 step 3): present the target origin, as a same-origin browser would.
             proxy.on('proxyReq', (req) => {
+              if (req.getHeader('origin') !== undefined) req.setHeader('origin', api);
+            });
+            // The same for the upgrade request: the server compares the Origin of a handshake with its own (ADR 0087), and the
+            // browser's is the dev server's. A handshake without an Origin (not a browser) is left as it is.
+            proxy.on('proxyReqWs', (req) => {
               if (req.getHeader('origin') !== undefined) req.setHeader('origin', api);
             });
           },

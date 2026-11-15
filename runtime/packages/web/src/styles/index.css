@@ -11,10 +11,13 @@
 @import './lists.css' layer(components);
 @import './transcript.css' layer(components);
 @import './panels.css' layer(components);
+/* xterm.js (ADR 0097): the one import of a package file. It sits in the components layer so that the pages layer can override it. */
+@import '@xterm/xterm/css/xterm.css' layer(components);
 @import './shell.css' layer(pages);
 @import './sessions.css' layer(pages);
 @import './session-detail.css' layer(pages);
 @import './session-tabs.css' layer(pages);
+@import './terminal.css' layer(pages);
 /* Page stylesheets: each work package adds its own import inside its block, in the pages layer. */
 /* @wp-begin WP-53 */
 @import './activity.css' layer(pages);

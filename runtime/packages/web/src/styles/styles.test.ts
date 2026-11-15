@@ -34,6 +34,7 @@ const EXPECTED_LAYER: Record<string, (typeof LAYERS)[number]> = {
   'overview.css': 'pages',
   'settings.css': 'pages',
   'search.css': 'pages',
+  'terminal.css': 'pages',
 };
 
 /** Marked blocks that index.css keeps for the work packages that add a page stylesheet. */
@@ -103,6 +104,21 @@ function importsOf(index: string): Import[] {
   }));
 }
 
+/** Imports of a package file (`@import '@scope/pkg/file.css' layer(x)`): the path and the layer. */
+function packageImportsOf(index: string): Import[] {
+  return [...stripComments(index).matchAll(/@import\s+'(@?[a-z][a-z0-9-]*\/[^':]*)'\s+layer\(([a-z]+)\)\s*;/g)].map(
+    (m) => ({
+      file: m[1] ?? '',
+      layer: m[2] ?? '',
+    }),
+  );
+}
+
+/** Selectors of a file that are not a `.terminal-*` class (alone or with descendants and states): terminal.css restyles nothing else. */
+function foreignSelectors(css: string): string[] {
+  return selectorsOf(css).filter((selector) => !/^\.terminal-[a-z0-9-]+(?![a-z0-9-])/.test(selector));
+}
+
 /** Selectors defined by more than one file, as `selector: fileA, fileB`. */
 function duplicateSelectors(sources: Record<string, string>): string[] {
   const owners = new Map<string, Set<string>>();
@@ -131,6 +147,7 @@ const OWNERS: [RegExp, string][] = [
   [/^\.(?:session-header|detail|audit-refs)/, 'session-detail.css'],
   [/^\.(?:session-tabs|agent-|timeline|session-tokens)/, 'session-tabs.css'],
   [/^\.(?:tv|tr|tu|hide-result|md)(?![a-z0-9])/, 'transcript.css'],
+  [/^\.terminal(?![a-z0-9])/, 'terminal.css'],
 ];
 
 function misplaced(sources: Record<string, string>): string[] {
@@ -202,6 +219,18 @@ describe('style architecture (ADR 0071 decision 10)', () => {
     expect(misplaced(sources)).toEqual([]);
   });
 
+  it('imports the xterm style sheet once, in the components layer, so the rules of the pages layer can override it (ADR 0097)', () => {
+    expect(packageImportsOf(index)).toEqual([{ file: '@xterm/xterm/css/xterm.css', layer: 'components' }]);
+  });
+
+  it('keeps terminal.css to `.terminal-*` selectors, in the pages layer after xterm.css', () => {
+    expect(foreignSelectors(sources['terminal.css'] ?? '')).toEqual([]);
+    expect(EXPECTED_LAYER['terminal.css']).toBe('pages');
+    expect(selectorsOf(sources['terminal.css'] ?? '')).toEqual(
+      expect.arrayContaining(['.terminal-region', '.terminal-host', '.terminal-latest', '.terminal-hint']),
+    );
+  });
+
   it('declares the reduced-motion rule once in base.css', () => {
     expect(sources['base.css']).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
@@ -219,6 +248,25 @@ describe('style architecture (ADR 0071 decision 10)', () => {
     it('finds a rule in the wrong file', () => {
       expect(misplaced({ 'components.css': '.sidebar-row { color: red }' })).toHaveLength(1);
       expect(misplaced({ 'shell.css': '.sidebar-row { color: red }' })).toEqual([]);
+    });
+
+    it('finds the package imports and nothing else', () => {
+      expect(
+        packageImportsOf(
+          ["@import './base.css' layer(base);", "@import '@xterm/xterm/css/xterm.css' layer(components);"].join('\n'),
+        ),
+      ).toEqual([{ file: '@xterm/xterm/css/xterm.css', layer: 'components' }]);
+      expect(packageImportsOf("/* @import '@x/y.css' layer(base); */ @import './a.css' layer(base);")).toEqual([]);
+      expect(packageImportsOf("@import 'https://example.invalid/a.css' layer(base);")).toEqual([]);
+    });
+
+    it('finds a selector of terminal.css that is not a terminal class', () => {
+      expect(
+        foreignSelectors(
+          '.terminal-host .xterm, .terminal-host:focus-within { a: b } .xterm { c: d } .terminals { e: f }',
+        ),
+      ).toEqual(['.xterm', '.terminals']);
+      expect(foreignSelectors('.terminal-region { a: b } .terminal-host .xterm-viewport { c: d }')).toEqual([]);
     });
 
     it('reads selector lists with attribute selectors and ignores keyframe steps', () => {

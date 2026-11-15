@@ -1,0 +1,66 @@
+/* The terminal pane (design 04 section 10, ADR 0097): layout only. Every colour is a token (`--term-bg`, the surface and text tokens);
+   the cell colours and the font come from the terminal options the view builds from the tokens (`lib/term-theme.ts`), never from here.
+   `xterm.css` is imported before this file in the components layer, so a plain rule below beats it and no `!important` is needed. */
+
+/* the box the pane gives the terminal; the host fills it, so the terminal is sized by the box and never sizes it */
+.terminal-region {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--term-bg);
+}
+
+.terminal-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 6px 0 0 10px;
+  background: var(--term-bg);
+}
+
+/* the terminal has the keyboard: a one pixel line in the focus colour inside the edge (the text area of xterm is the focus target) */
+.terminal-host:focus-within {
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.terminal-host .xterm {
+  height: 100%;
+}
+
+/* xterm.css paints the scroll area black; the terminal background is the page's */
+.terminal-host .xterm-viewport {
+  background: var(--term-bg);
+}
+
+/* the pill that jumps back to the newest output while the history is scrolled up; it floats over the lower right corner */
+.terminal-latest {
+  position: absolute;
+  right: var(--sp-5);
+  bottom: var(--sp-4);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--ctl-h-inline);
+  padding: 0 var(--sp-4);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  cursor: pointer;
+}
+
+.terminal-latest:hover {
+  background: var(--surface-2);
+}
+
+/* the line beside the pane that names the way out of the keyboard trap (WCAG 2.1.2) */
+.terminal-hint {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
