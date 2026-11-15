@@ -242,3 +242,50 @@
   padding: var(--sp-3) var(--sp-5);
   border-top: var(--border-w) solid var(--border);
 }
+/* The question dialogs of the Workspace (`ConfirmDialog`, `ActionDialogs`): the subject (a name with its path under it), a note, an
+   alert for a failure, a field, and the danger tone of an action that stops something. The box takes the focus itself only while a
+   request runs and its Cancel button is disabled. */
+.dialog:focus {
+  outline: none;
+}
+.dialog__body > * + * {
+  margin-top: var(--sp-3);
+}
+.dialog__subject {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.dialog__name {
+  color: var(--strong);
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+.dialog__path {
+  overflow-wrap: anywhere;
+}
+.dialog__note {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.dialog__error {
+  color: var(--failed-fg);
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+.dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.dialog__field .input {
+  width: 100%;
+}
+.dialog--danger .btn-primary,
+.dialog--danger .btn-primary:hover,
+.dialog--danger .btn-primary:active {
+  background: var(--state-failed-fg);
+  border-color: var(--state-failed-fg);
+  color: var(--accent-contrast);
+}

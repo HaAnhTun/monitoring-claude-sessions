@@ -80,7 +80,10 @@
   gap: var(--sp-2);
   margin-inline-start: auto;
 }
-.session-header > :not(.session-header__title, .session-header__state, .copy-btn) {
+.session-header > .session-header__resume {
+  flex: none;
+}
+.session-header > :not(.session-header__title, .session-header__state, .copy-btn, .session-header__resume) {
   flex: 1 1 100%;
 }
 
@@ -360,12 +363,14 @@
 }
 @media (max-width: 699px) {
   .session-header__copy-text {
+    /* The visually hidden pattern of .sr-only, with a box as tall as one line: a 1 px box would cut the line and read as a vertical clip. */
     position: absolute;
     width: 1px;
-    height: 1px;
+    height: var(--lh-md);
     margin: -1px;
     overflow: hidden;
     clip: rect(0 0 0 0);
+    line-height: var(--lh-md);
     white-space: nowrap;
   }
 }

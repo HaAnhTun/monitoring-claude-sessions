@@ -12,6 +12,7 @@ import { TagBadge } from '../../components/TagBadge.tsx';
 import { useT } from '../../i18n/context.ts';
 import { ServerText } from '../../i18n/ServerText.tsx';
 import { stateEvidence } from '../../lib/state-evidence.ts';
+import { ResumeInTerminalButton } from './ResumeInTerminalButton.tsx';
 
 export interface SessionHeaderProps {
   session: SessionDetail;
@@ -50,7 +51,7 @@ function EvidencePanel({ session }: { session: SessionDetail }) {
 
 /**
  * The top of the session page (ADR 0073 decision 8): a way back to the list, the title, the state as a dot and a word with the
- * one-line evidence behind it, and the link of the view. The whole id and the other fields are in `SessionDetails`. Every value is
+ * one-line evidence behind it, the link of the view and, on the user instance, the way into a terminal that runs the session. The whole id and the other fields are in `SessionDetails`. Every value is
  * text; nothing from a transcript or an audit file is interpreted as markup.
  */
 export function SessionHeader({ session, agent, headingRef, children }: SessionHeaderProps) {
@@ -90,6 +91,7 @@ export function SessionHeader({ session, agent, headingRef, children }: SessionH
         <Icon name="link" />
         <span className="session-header__copy-text">{t('detail.copyLink')}</span>
       </CopyButton>
+      <ResumeInTerminalButton sessionId={session.id} />
       {children}
     </header>
   );

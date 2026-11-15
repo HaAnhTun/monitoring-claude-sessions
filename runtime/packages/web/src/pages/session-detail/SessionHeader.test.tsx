@@ -2,7 +2,19 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { FIXTURE_NOW_MS, iso, makeAgent, makeSessionDetail, makeState, sessionId } from '../../test/fixtures/index.ts';
+import { createFakeApi } from '../../test/fake-api.ts';
+import {
+  FIXTURE_NOW_MS,
+  iso,
+  makeAgent,
+  makeAuthSession,
+  makeInstance,
+  makeLinkedTerminalSession,
+  makeSessionDetail,
+  makeState,
+  makeTerminalState,
+  sessionId,
+} from '../../test/fixtures/index.ts';
 import { msg } from '../../test/msg.ts';
 import { renderWithIntl } from '../../test/render.tsx';
 import { SessionHeader } from './SessionHeader.tsx';
@@ -148,5 +160,51 @@ describe('SessionHeader', () => {
     expect(screen.getByRole('link', { name: msg('detail.back', undefined, 'vi') })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: msg('detail.copyLink', undefined, 'vi') })).toBeInTheDocument();
     expect(screen.getByText(msg('detail.notInList', undefined, 'vi'))).toBeInTheDocument();
+  });
+});
+
+describe('SessionHeader resume action', () => {
+  function terminalPage(kind: 'user' | 'task', sessions = makeTerminalState()) {
+    const instance = makeInstance({ kind });
+    const api = createFakeApi({
+      instance: () => instance,
+      authSession: () => makeAuthSession(true),
+      terminalState: () => sessions,
+    });
+    return { api, instance };
+  }
+
+  it('offers Resume in terminal for the session of the page on a user instance', async () => {
+    const { api, instance } = terminalPage('user');
+    renderWithIntl(<SessionHeader session={makeSessionDetail({ id: sessionId(1) })} agent={null} />, {
+      api,
+      instance,
+    });
+    const button = await screen.findByRole('button', { name: msg('detail.resume.action') });
+    expect(document.querySelector('.session-header')?.contains(button)).toBe(true);
+    expect(screen.getByRole('button', { name: msg('detail.copyLink') })).toBeInTheDocument();
+  });
+
+  it('says Open its terminal when a terminal of this app already runs the session', async () => {
+    const { api, instance } = terminalPage('user', makeTerminalState([makeLinkedTerminalSession(1)]));
+    renderWithIntl(<SessionHeader session={makeSessionDetail({ id: sessionId(1) })} agent={null} />, {
+      api,
+      instance,
+    });
+    expect(await screen.findByRole('link', { name: msg('detail.resume.open') })).toHaveAttribute(
+      'href',
+      '/?session=fixture-term-1',
+    );
+  });
+
+  it('has no resume action on a task instance, and asks nothing for it', async () => {
+    const { api, instance } = terminalPage('task');
+    renderWithIntl(<SessionHeader session={makeSessionDetail({ id: sessionId(1) })} agent={null} />, {
+      api,
+      instance,
+    });
+    await Promise.resolve();
+    expect(screen.queryByRole('button', { name: msg('detail.resume.action') })).toBeNull();
+    expect(api.callsTo('terminalState')).toHaveLength(0);
   });
 });

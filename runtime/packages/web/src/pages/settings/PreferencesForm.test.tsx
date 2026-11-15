@@ -124,6 +124,47 @@ describe('PreferencesForm', () => {
     });
   });
 
+  it('TC-UI-11 offers the terminal screen reader mode, off by default, with its hint', () => {
+    setup();
+    const box = screen.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.screenReader')) });
+    expect(box).not.toBeChecked();
+    expect(screen.getByText(msg('settings.prefs.screenReaderHint'))).toBeInTheDocument();
+  });
+
+  it('TC-UI-11 keeps the screen reader mode in the preferences and shows the stored value', async () => {
+    const { user, prefsStore } = setup();
+    const box = screen.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.screenReader')) });
+    await user.click(box);
+    expect(prefsStore.getSnapshot().terminalScreenReader).toBe(true);
+    expect(box).toBeChecked();
+    await user.click(box);
+    expect(prefsStore.getSnapshot().terminalScreenReader).toBe(false);
+    expect(box).not.toBeChecked();
+  });
+
+  it('shows the screen reader mode as set when the browser stored it, in both languages', () => {
+    const storage = new MemoryStorage();
+    storage.items.set(PREFS_KEY, JSON.stringify({ terminalScreenReader: true }));
+    const { unmount } = setup(storage);
+    expect(screen.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.screenReader')) })).toBeChecked();
+    unmount();
+    setup(storage, 'vi');
+    expect(
+      screen.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.screenReader', undefined, 'vi')) }),
+    ).toBeChecked();
+  });
+
+  it('forgets the screen reader mode with the other display preferences', async () => {
+    const storage = new MemoryStorage();
+    storage.items.set(PREFS_KEY, JSON.stringify({ terminalScreenReader: true }));
+    const { user, prefsStore } = setup(storage);
+    await user.click(screen.getByRole('button', { name: msg('settings.prefs.reset') }));
+    expect(prefsStore.getSnapshot().terminalScreenReader).toBeUndefined();
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.screenReader')) })).not.toBeChecked();
+    });
+  });
+
   it('says so when this browser cannot store preferences, and not otherwise', () => {
     const { unmount } = setup(null);
     expect(screen.getByText(msg('settings.prefs.memoryOnly'))).toBeInTheDocument();

@@ -1,5 +1,5 @@
 // Display preferences (04-ui.md 4.4.7, ADR 0073 decision 6): the same theme, density and language as the user menu, and the
-// transcript options the menu does not have. Every choice is applied at once and kept in this browser (`mcs.ui.v3`); nothing is
+// transcript options the menu does not have, and the screen reader mode of the terminal. Every choice is applied at once and kept in this browser (`mcs.ui.v3`); nothing is
 // sent anywhere. "Reset display preferences" forgets what this browser stored and touches nothing else.
 import { ENTRY_KINDS, type EntryKind } from '@mcs/shared';
 import { useId, type ReactNode } from 'react';
@@ -48,6 +48,9 @@ const DEFAULT_KINDS: Readonly<Record<EntryKind, boolean>> = {
 /** A transcript opens with the newest entry first until a person chooses otherwise. */
 const DEFAULT_NEWEST_FIRST = true;
 
+/** The terminal is drawn for sighted use until a person asks xterm for its screen reader mode (slower on large outputs). */
+const DEFAULT_SCREEN_READER = false;
+
 interface ChoiceProps {
   name: string;
   value: string;
@@ -73,6 +76,7 @@ export function PreferencesForm() {
   const groupId = useId();
   const { theme, density } = resolveDisplay(prefs, useInstance().data?.ui);
   const newestFirst = prefs.newestFirst ?? DEFAULT_NEWEST_FIRST;
+  const screenReader = prefs.terminalScreenReader ?? DEFAULT_SCREEN_READER;
   const kinds = { ...DEFAULT_KINDS, ...prefs.kinds };
 
   const languages: readonly { value: LocalePreference; label: string }[] = [
@@ -142,6 +146,19 @@ export function PreferencesForm() {
               ))}
             </div>
           </fieldset>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={screenReader}
+              onChange={(event) => {
+                setPref('terminalScreenReader', event.target.checked);
+              }}
+            />
+            <span>
+              {t('settings.prefs.screenReader')}
+              <span className="settings-check__hint muted small">{t('settings.prefs.screenReaderHint')}</span>
+            </span>
+          </label>
         </SettingsCard>
         <SettingsCard title={t('settings.prefs.transcript')}>
           <label className="settings-check">
