@@ -33,6 +33,7 @@ import {
   routes,
   type ErrorCode,
   type Folder,
+  type ResumeEligibility,
 } from '@mcs/shared';
 import {
   CANARY,
@@ -44,6 +45,7 @@ import {
   makeTempDir,
   scanFilesFor,
   writeDaMemory,
+  writeRegistryEntry,
   type TempDir,
 } from '@mcs/testkit';
 import express from 'express';
@@ -59,6 +61,7 @@ import { panelRoutes } from '../src/routes/panels.ts';
 import { mintAndExchange, pageOrigin, writeHeaders } from './terminal/helpers/auth.ts';
 
 type HttpReply = Awaited<ReturnType<typeof httpRequest>>;
+type FolderServiceForRoutes = Pick<FolderService, 'list' | 'add' | 'remove' | 'resumeEligibility'>;
 
 // FIXTURE: invented data for tests
 const INSTANCE_ID = '22222222-2222-4222-8222-222222222222';
@@ -78,6 +81,10 @@ interface App {
   readonly freshFolder: string;
   readonly stateFile: string;
   readonly root: string;
+  /** The Claude home of the instance (the registry is its `sessions` folder). */
+  readonly claudeHome: string;
+  /** A folder the DA memory names and that does not exist. */
+  readonly daOnlyFolder: string;
 }
 
 const running: { server: Server; ctx: InstanceContext; port: number; temp: TempDir; service: FolderService | null }[] =
@@ -103,7 +110,9 @@ interface StartOptions {
   /** `userFoldersMax` of the state file (default 200). */
   readonly max?: number;
   /** A service of the test instead of the real one. */
-  readonly folders?: Pick<FolderService, 'list' | 'add' | 'remove'>;
+  readonly folders?: FolderServiceForRoutes;
+  /** The terminals of the app, for the real service: which session a terminal holds. Default: none. */
+  readonly linker?: { sessionOwner(sessionId: string): string | null; ownedPids(): ReadonlySet<number> };
 }
 
 async function start(options: StartOptions = {}): Promise<App> {
@@ -178,6 +187,7 @@ async function start(options: StartOptions = {}): Promise<App> {
             ...(options.max === undefined ? {} : { max: options.max }),
           }),
           homeDir: root,
+          ...(options.linker === undefined ? {} : { linker: options.linker }),
         })
       : null;
   await real?.start();
@@ -202,7 +212,7 @@ async function start(options: StartOptions = {}): Promise<App> {
   });
   running.push({ server, ctx, port, temp, service: real });
   const cookie = await mintAndExchange(port, access);
-  return { port, ctx, access, cookie, logFile, sharedFolder, freshFolder, stateFile, root };
+  return { port, ctx, access, cookie, logFile, sharedFolder, freshFolder, stateFile, root, claudeHome, daOnlyFolder };
 }
 
 function codeOf(reply: HttpReply): ErrorCode | undefined {
@@ -414,11 +424,222 @@ describe('remove', () => {
   });
 });
 
+function getResume(app: App, sessionId: string, cookie: string | null = app.cookie): Promise<HttpReply> {
+  return httpRequest(app.port, routes.sessionResume.path.replace(':sessionId', sessionId), {
+    ...(cookie === null ? {} : { headers: { Cookie: cookie } }),
+  });
+}
+
+interface SeededSession {
+  readonly uid: string;
+  /** The folder the project lives in: gives the project key and the folder name below the Claude home. */
+  readonly folder: string;
+  readonly root?: string | null;
+  readonly cwd?: string | null;
+  /** The state of the main transcript file; `null`: the session has no file. Default `active`. */
+  readonly fileState?: 'active' | 'missing' | 'retired' | null;
+  readonly continuedIn?: string | null;
+}
+
+/** Writes what the ingestion would have written (a project, a session, its main file), with plain SQL: the route reads the facts. */
+function seedSession(app: App, s: SeededSession): void {
+  const put = (table: string, row: Record<string, string | number | null>): number => {
+    const columns = Object.keys(row);
+    return app.ctx.db.driver
+      .prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map((c) => `:${c}`).join(', ')})`)
+      .run(row).lastInsertRowid;
+  };
+  const dirName = projectFolderName(s.folder).name;
+  const key = dirName.toLowerCase();
+  const existing = app.ctx.db.driver
+    .prepare<{ id: number }>('SELECT id FROM projects WHERE project_key = :key')
+    .get({ key });
+  const project =
+    existing?.id ??
+    put('projects', {
+      project_key: key,
+      dir_name: dirName,
+      root_path: s.root === undefined ? s.folder : s.root,
+      first_seen_at: START,
+      last_activity_at: START,
+    });
+  put('sessions', {
+    session_uid: s.uid,
+    project_id: project,
+    first_seen_at: START,
+    started_at: START,
+    last_activity_at: START,
+    state: 'completed',
+    cwd: s.cwd === undefined ? s.folder : s.cwd,
+    entrypoint: 'cli',
+    continued_in: s.continuedIn ?? null,
+    updated_at: START,
+  });
+  if (s.fileState === null) return;
+  const file = path.join(app.claudeHome, 'projects', dirName, `${s.uid}.jsonl`);
+  put('transcript_files', {
+    path: file,
+    path_key: file.toLowerCase(),
+    kind: 'session',
+    session_uid: s.uid,
+    state: s.fileState ?? 'active',
+    discovered_at: START,
+    updated_at: START,
+  });
+}
+
+describe('sessionResume: whether a session may be resumed in a terminal (CAW-30, ADR 0090)', () => {
+  const RESUMABLE = '55555555-5555-4555-8555-555555555555';
+  const MISSING_FOLDER = '66666666-6666-4666-8666-666666666666';
+  const GONE = '77777777-7777-4777-8777-777777777777';
+  const RETIRED = '88888888-8888-4888-8888-888888888888';
+  const NEWER = '99999999-9999-4999-8999-999999999999';
+
+  const eligibilityOf = (reply: HttpReply): ResumeEligibility => {
+    expect(reply.status).toBe(200);
+    expect(reply.headers['content-type']).toBe('application/json; charset=utf-8');
+    expect(reply.headers['cache-control']).toBe('no-store');
+    return routes.sessionResume.response.parse(JSON.parse(reply.body));
+  };
+
+  it('a session of a folder that exists is allowed, and so is a copy; the answer names the folder', async () => {
+    const app = await start();
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder });
+    const decision = eligibilityOf(await getResume(app, RESUMABLE));
+    expect(decision).toMatchObject({
+      sessionId: RESUMABLE,
+      allowed: true,
+      forkAllowed: true,
+      reason: null,
+      liveElsewhere: false,
+      liveTerminal: null,
+      redirectTo: null,
+    });
+    expect(decision.folder?.key).toBe(projectFolderName(app.sharedFolder).name.toLowerCase());
+    expect(decision.folder?.path.toLowerCase()).toBe(app.sharedFolder.toLowerCase());
+  });
+
+  it('a transcript that is missing or retired cannot be resumed, nor copied', async () => {
+    const app = await start();
+    seedSession(app, { uid: GONE, folder: app.sharedFolder, fileState: 'missing' });
+    seedSession(app, { uid: RETIRED, folder: app.sharedFolder, fileState: 'retired' });
+    for (const uid of [GONE, RETIRED]) {
+      expect(eligibilityOf(await getResume(app, uid))).toMatchObject({
+        allowed: false,
+        forkAllowed: false,
+        reason: 'transcript_gone',
+        folder: null,
+      });
+    }
+  });
+
+  it('a project folder that is gone from the disk is folder_missing', async () => {
+    const app = await start();
+    seedSession(app, { uid: MISSING_FOLDER, folder: app.daOnlyFolder });
+    expect(eligibilityOf(await getResume(app, MISSING_FOLDER))).toMatchObject({
+      allowed: false,
+      forkAllowed: false,
+      reason: 'folder_missing',
+      folder: null,
+    });
+  });
+
+  it('a session that a terminal of the app holds is live_in_terminal, with the name of the terminal', async () => {
+    const app = await start({
+      linker: { sessionOwner: (id) => (id === RESUMABLE ? 'app-1' : null), ownedPids: () => new Set() },
+    });
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder });
+    expect(eligibilityOf(await getResume(app, RESUMABLE))).toMatchObject({
+      allowed: false,
+      forkAllowed: false,
+      reason: 'live_in_terminal',
+      liveTerminal: 'app-1',
+      liveElsewhere: false,
+    });
+  });
+
+  it('a live process of the Claude registry that no terminal of the app owns is live_elsewhere: refused, a copy allowed', async () => {
+    const app = await start();
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder });
+    // the process of this test is alive; the real liveness check of the platform sees it
+    writeRegistryEntry(app.claudeHome, {
+      pid: process.pid,
+      sessionId: RESUMABLE,
+      cwd: app.sharedFolder,
+      status: 'busy',
+    });
+    expect(eligibilityOf(await getResume(app, RESUMABLE))).toMatchObject({
+      allowed: false,
+      forkAllowed: true,
+      reason: 'live_elsewhere',
+      liveElsewhere: true,
+    });
+  });
+
+  it('the same entry belongs to the app when a terminal of the app owns that process', async () => {
+    const app = await start({ linker: { sessionOwner: () => null, ownedPids: () => new Set([process.pid]) } });
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder });
+    writeRegistryEntry(app.claudeHome, { pid: process.pid, sessionId: RESUMABLE, cwd: app.sharedFolder });
+    expect(eligibilityOf(await getResume(app, RESUMABLE))).toMatchObject({ allowed: true, reason: null });
+  });
+
+  it('redirectTo names the session that carried this one on, once the database knows that session', async () => {
+    const app = await start();
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder, continuedIn: NEWER });
+    expect(eligibilityOf(await getResume(app, RESUMABLE)).redirectTo).toBeNull();
+    seedSession(app, { uid: NEWER, folder: app.sharedFolder });
+    expect(eligibilityOf(await getResume(app, RESUMABLE))).toMatchObject({ allowed: true, redirectTo: NEWER });
+  });
+
+  it('a session nobody knows is 404 session_not_found, and the answer does not repeat the id', async () => {
+    const app = await start();
+    const reply = await getResume(app, RESUMABLE);
+    expect(reply.status).toBe(404);
+    expect(codeOf(reply)).toBe('session_not_found');
+    expect(reply.body).not.toContain(RESUMABLE);
+  });
+
+  it('a path that is no session id is a validation failure, not a lookup', async () => {
+    const app = await start();
+    for (const id of ['not-a-session-id', 'UPPER-CASE', '1234']) {
+      const reply = await getResume(app, id);
+      expect(reply.status, id).toBe(400);
+      expect(codeOf(reply), id).toBe('validation_failed');
+    }
+  });
+
+  it('needs the session cookie: no cookie, a garbage cookie and the cookie of another instance are 401', async () => {
+    const app = await start();
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder });
+    const other = app.cookie.replace(/^caw_[0-9a-f]+=/, 'caw_33333333=');
+    for (const cookie of [null, 'caw_11111111=not-a-credential', other]) {
+      const reply = await getResume(app, RESUMABLE, cookie);
+      expect(reply.status).toBe(401);
+      expect(codeOf(reply)).toBe('access_required');
+      expect(reply.body).not.toContain(app.sharedFolder);
+    }
+  });
+
+  it('never lets the DA memory files that hold prompts into an answer or the log', async () => {
+    const app = await start();
+    seedSession(app, { uid: RESUMABLE, folder: app.sharedFolder });
+    seedSession(app, { uid: MISSING_FOLDER, folder: app.daOnlyFolder });
+    seedSession(app, { uid: GONE, folder: app.sharedFolder, fileState: 'missing' });
+    const bodies = [RESUMABLE, MISSING_FOLDER, GONE, NEWER].map(async (id) => (await getResume(app, id)).body);
+    for (const body of await Promise.all(bodies)) {
+      for (const canary of ALL_CANARIES) expect(body).not.toContain(canary);
+    }
+    await app.ctx.logger.close();
+    expect(scanFilesFor([app.logFile], ALL_CANARIES)).toEqual([]);
+  });
+});
+
 describe('what the service throws', () => {
-  const failing = (error: Error): Pick<FolderService, 'list' | 'add' | 'remove'> => ({
+  const failing = (error: Error): FolderServiceForRoutes => ({
     list: () => Promise.reject(error),
     add: () => Promise.reject(error),
     remove: () => Promise.reject(error),
+    resumeEligibility: () => Promise.reject(error),
   });
 
   it('state_unwritable is an internal error with the fixed sentence, never the path', async () => {
@@ -445,12 +666,31 @@ describe('what the service throws', () => {
       list: () => Promise.resolve({ folders: [{ key: 'UPPER' }] }),
       add: () => Promise.resolve({ key: 'UPPER' }),
       remove: () => Promise.resolve(),
-    } as unknown as Pick<FolderService, 'list' | 'add' | 'remove'>;
+      resumeEligibility: () => Promise.resolve({ sessionId: 'UPPER' }),
+    } as unknown as FolderServiceForRoutes;
     const app = await start({ folders: broken });
     const reply = await get(app);
     expect(reply.status).toBe(500);
     expect(codeOf(reply)).toBe('internal_error');
     expect(reply.body).not.toContain('UPPER');
+    const resume = await getResume(app, SESSION_ID);
+    expect(resume.status).toBe(500);
+    expect(codeOf(resume)).toBe('internal_error');
+    expect(resume.body).not.toContain('UPPER');
+  });
+
+  it('a ResumeRefusal for a session nobody knows is 404, any other refusal is an internal error: the route never answers a refusal as data', async () => {
+    const refusal = (code: string): Error =>
+      Object.assign(new Error('resume refused: ' + code), { name: 'ResumeRefusal', code });
+    const unknown = await start({ folders: failing(refusal('session_not_found')) });
+    const notFound = await getResume(unknown, SESSION_ID);
+    expect(notFound.status).toBe(404);
+    expect(codeOf(notFound)).toBe('session_not_found');
+
+    const other = await start({ folders: failing(refusal('live_in_terminal')) });
+    const broken = await getResume(other, SESSION_ID);
+    expect(broken.status).toBe(500);
+    expect(codeOf(broken)).toBe('internal_error');
   });
 });
 

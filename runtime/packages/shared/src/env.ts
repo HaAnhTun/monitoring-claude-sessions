@@ -28,6 +28,7 @@ const AUTOSTART = 'runtime/packages/engine/src/ops/autostart.ts';
 const BATCH_FILES = ['start.bat', 'stop.bat', 'install-skill.bat'];
 const QA_CONFIG = 'runtime/packages/web/e2e/qa/global-setup.ts';
 const QA_PLAYWRIGHT = 'runtime/packages/web/e2e/qa/playwright.config.ts';
+const LINK_PROBE = 'runtime/packages/engine/test/link-real-claude.live.test.ts';
 
 export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_LOG_LEVEL', scope: 'runtime', readers: ['runtime/packages/engine/src/config/resolve.ts'] },
@@ -79,6 +80,12 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },
   { name: 'MCS_PERF_FACTOR', scope: 'test', readers: ['runtime/packages/cli/test/hook.int.test.ts'] },
   { name: 'MCS_E2E_CLAUDE', scope: 'test', readers: ['runtime/packages/engine/test/real-provider.int.test.ts'] },
+  // The opt-in probe of the real `claude` and its registry entry (ADR 0090; never in CI, skipped unless the first is `1`): `CAW_REAL_CLAUDE`
+  // runs it, `CAW_REAL_CLAUDE_PROMPT` also sends one tiny prompt (a few tokens are billed), `CAW_REAL_CLAUDE_TRUST` presses Enter at the start
+  // of each session to accept the trust question of a folder Claude Code has never seen. Only that test file reads them.
+  { name: 'CAW_REAL_CLAUDE', scope: 'test', readers: [LINK_PROBE] },
+  { name: 'CAW_REAL_CLAUDE_PROMPT', scope: 'test', readers: [LINK_PROBE] },
+  { name: 'CAW_REAL_CLAUDE_TRUST', scope: 'test', readers: [LINK_PROBE] },
   // The visual QA tool (WP-122): where the PNGs and index.json go (never inside the repository), the views, viewports, themes,
   // languages and mode to shoot, and the browser channel (default: the installed Chrome; an empty value uses the bundled one).
   { name: 'MCS_SHOTS_DIR', scope: 'test', readers: [QA_CONFIG] },

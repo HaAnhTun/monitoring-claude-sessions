@@ -705,6 +705,9 @@ from `allocatePort([18500, 18599])` (04 11.4, 05 4.5) and the config has no `web
 | `MCS_TEST_CASES` | test | lifecycle property tests (`engine/src/lifecycle/properties.test.ts`) | cases per scenario template, default 500; 1 replays one failing seed together with `MCS_TEST_SEED` | LF-3 |
 | `MCS_PERF_FACTOR` | test | performance tests | budget multiplier (default 1) | 01 2.10, 02 2.10 |
 | `MCS_E2E_CLAUDE` | test | optional real-provider E2E | `1` enables | 02 3.7 |
+| `CAW_REAL_CLAUDE` | test | opt-in probe of the real claude (`engine/test/link-real-claude.live.test.ts`) | `1` runs it (never in CI): the real registry entry, the pid relation to the root, `/clear`; one line of structure on stdout | CAW-30, ADR 0090 |
+| `CAW_REAL_CLAUDE_PROMPT` | test | same probe | `1` also sends one tiny prompt (a few tokens are billed) and resumes the session | CAW-30, ADR 0090 |
+| `CAW_REAL_CLAUDE_TRUST` | test | same probe | `1` presses Enter once at the start of each session to accept the trust question of a folder Claude Code has never seen (writes the throw-away folder into the Claude configuration) | CAW-30, ADR 0090 |
 | `MCS_SHOTS_DIR` | test | visual QA tool (`web/e2e/qa/global-setup.ts`) | folder for the PNGs and `index.json` (never inside the repository) | WP-122 |
 | `MCS_SHOTS_VIEWS` | test | visual QA tool | views to shoot | WP-122 |
 | `MCS_SHOTS_VIEWPORTS` | test | visual QA tool | viewport widths to shoot | WP-122 |

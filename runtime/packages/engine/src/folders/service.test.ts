@@ -2,13 +2,15 @@
 // are replaced, the user folder state is the real module over an in-memory file. What is proved: the list is the merge of the
 // sources with the status of each, the caches (one existence check per path in its window, a stale catalog refreshes behind the
 // answer, never in front of it), add and remove with the errors of the state file, and that start and stop own the catalog timer.
-import { FolderListResponseSchema } from '@mcs/shared';
+import { FolderListResponseSchema, ResumeEligibilitySchema } from '@mcs/shared';
 import { FakeClock } from '@mcs/testkit';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ProjectStat } from '../query/projects.ts';
+import type { RegistryEntry, RegistryListing } from '../external/registry.ts';
+import type { ProjectStat, ResumeFacts } from '../query/projects.ts';
 import type { CatalogEntry, CatalogStatus, ProjectCatalog } from './catalog.ts';
 import type { DaFolder, DaMemoryReader, DaMemoryResult } from './da-memory.ts';
+import { ResumeRefusal } from './resume.ts';
 import { createFolderService, type FolderServiceContext, type FolderServiceDeps } from './service.ts';
 import { FolderError, createUserFolders, type UserFolders, type UserFoldersFs } from './user-folders.ts';
 
@@ -128,6 +130,7 @@ interface Harness {
   readonly stats: { rows: ProjectStat[]; calls: { windowFromMs: number | null }[] };
   readonly checks: string[];
   readonly missing: Set<string>;
+  readonly facts: Map<string, ResumeFacts>;
 }
 
 function build(o: { max?: number; deps?: Partial<FolderServiceDeps> } = {}): Harness {
@@ -145,8 +148,9 @@ function build(o: { max?: number; deps?: Partial<FolderServiceDeps> } = {}): Har
   const stats = { rows: [] as ProjectStat[], calls: [] as { windowFromMs: number | null }[] };
   const checks: string[] = [];
   const missing = new Set<string>();
+  const facts = new Map<string, ResumeFacts>();
   const ctx: FolderServiceContext = {
-    claudeHome: 'claude-home',
+    claudeHome: 'Z:\\no-such-claude-home',
     instanceDir: 'instance-dir',
     clock,
     scope: { instanceId: 'fixture' },
@@ -155,6 +159,7 @@ function build(o: { max?: number; deps?: Partial<FolderServiceDeps> } = {}): Har
         stats.calls.push(q);
         return stats.rows;
       },
+      resumeFacts: (_scope, id) => facts.get(id) ?? null,
     },
     config: {
       monitor: { window_hours: 24 },
@@ -175,7 +180,7 @@ function build(o: { max?: number; deps?: Partial<FolderServiceDeps> } = {}): Har
     win32: true,
     ...o.deps,
   });
-  return { service, clock, da, catalog, userFolders, file, stats, checks, missing };
+  return { service, clock, da, catalog, userFolders, file, stats, checks, missing, facts };
 }
 
 describe('list: the merge of the sources and what each one said', () => {
@@ -372,7 +377,7 @@ describe('add and remove', () => {
         instanceDir: 'i',
         clock: h.clock,
         scope: { instanceId: 'x' },
-        queries: { projectStats: () => [] },
+        queries: { projectStats: () => [], resumeFacts: () => null },
         config: {
           monitor: { window_hours: 24 },
           runtime: { projects: { daMemoryDir: null, daCacheMs: 3000, catalogIntervalMs: 30_000, userFoldersMax: 200 } },
@@ -403,7 +408,7 @@ describe('start, stop and refresh', () => {
         instanceDir: 'i',
         clock: h.clock,
         scope: { instanceId: 'x' },
-        queries: { projectStats: () => [] },
+        queries: { projectStats: () => [], resumeFacts: () => null },
         config: {
           monitor: { window_hours: 24 },
           runtime: { projects: { daMemoryDir: null, daCacheMs: 3000, catalogIntervalMs: 30_000, userFoldersMax: 200 } },
@@ -436,5 +441,243 @@ describe('start, stop and refresh', () => {
     h.da.folders = [daFolder('D:\\work\\app')];
     const list = await h.service.list();
     expect(list.folders[0]).toMatchObject({ exists: null, canStart: true });
+  });
+});
+
+// ---- resume (CAW-30: design 03 section 6) ----------------------------------------------------------------------------------------
+// The decision itself is proved in `resume.test.ts`. What is proved here is the wiring: the facts come from the query layer, the folder
+// is checked at the moment of the call, the root of the catalog is a candidate, the linker and the registry decide the two live rows,
+// and the plan (not the eligibility) asks the file system for the transcript.
+
+const SESSION = 'dddddddd-0000-4000-8000-000000000001';
+const OTHER_SESSION = 'dddddddd-0000-4000-8000-000000000002';
+const APP = 'D:\\work\\app';
+const APP_KEY = 'd--work-app';
+const TRANSCRIPT = 'C:\\claude\\projects\\D--work-app\\one.jsonl';
+
+function sessionFacts(over: Partial<ResumeFacts> = {}): ResumeFacts {
+  return {
+    sessionId: SESSION,
+    projectKey: APP_KEY,
+    dirName: 'D--work-app',
+    rootPath: APP,
+    sessionCwd: APP,
+    entrypoint: 'cli',
+    continuedIn: null,
+    mainFile: { path: TRANSCRIPT, state: 'active' },
+    ...over,
+  };
+}
+
+function registryEntry(pid: number, over: Partial<RegistryEntry> = {}): RegistryEntry {
+  return {
+    pid,
+    sessionId: SESSION,
+    status: 'idle',
+    waitingFor: null,
+    cwd: APP,
+    startedAtMs: NOW,
+    updatedAtMs: NOW,
+    kind: 'interactive',
+    entrypoint: 'cli',
+    alive: true,
+    ...over,
+  };
+}
+
+class FakeRegistry {
+  entries: RegistryEntry[] = [];
+  failure: Error | null = null;
+  reads = 0;
+
+  read(): Promise<RegistryListing> {
+    this.reads += 1;
+    if (this.failure !== null) return Promise.reject(this.failure);
+    return Promise.resolve({ entries: this.entries, readFailures: 0 });
+  }
+}
+
+function withSession(deps: Partial<FolderServiceDeps> = {}, facts: ResumeFacts = sessionFacts()): Harness {
+  const h = build({ deps });
+  h.facts.set(facts.sessionId, facts);
+  return h;
+}
+
+describe('resumeEligibility', () => {
+  it('a known session in a folder that exists may be resumed, and the answer is the wire shape', async () => {
+    const h = withSession();
+    const decision = await h.service.resumeEligibility(SESSION);
+    expect(ResumeEligibilitySchema.safeParse(decision).success).toBe(true);
+    expect(decision).toEqual({
+      sessionId: SESSION,
+      allowed: true,
+      forkAllowed: true,
+      reason: null,
+      folder: { key: APP_KEY, path: APP },
+      liveElsewhere: false,
+      liveTerminal: null,
+      redirectTo: null,
+    });
+  });
+
+  it('a session the database does not know is a refusal that the route turns into 404', async () => {
+    const h = withSession();
+    const error = await h.service.resumeEligibility(OTHER_SESSION).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ResumeRefusal);
+    expect(error).toMatchObject({ code: 'session_not_found' });
+  });
+
+  it('the folder is looked at when the question is asked, not taken from the cache of the list', async () => {
+    const h = withSession();
+    await h.service.resumeEligibility(SESSION);
+    h.missing.add(APP.toLowerCase());
+    const gone = await h.service.resumeEligibility(SESSION);
+    expect(gone).toMatchObject({ allowed: false, reason: 'folder_missing', folder: null });
+    expect(h.checks).toEqual([APP, APP]);
+  });
+
+  it('the root of the catalog is a candidate when the project reported none', async () => {
+    const h = withSession({}, sessionFacts({ rootPath: null, sessionCwd: null }));
+    h.catalog.entriesNow = [catalogEntry('D:\\work-app', { key: APP_KEY, dirName: 'D--work-app' })];
+    const decision = await h.service.resumeEligibility(SESSION);
+    expect(decision).toMatchObject({ allowed: true, folder: { key: APP_KEY, path: 'D:\\work-app' } });
+  });
+
+  it('scans the catalog first when nobody did, and not again', async () => {
+    const h = withSession({}, sessionFacts({ rootPath: null, sessionCwd: null }));
+    h.catalog.entriesNow = [catalogEntry('D:\\work-app', { key: APP_KEY, dirName: 'D--work-app' })];
+    await h.service.resumeEligibility(SESSION);
+    await h.service.resumeEligibility(SESSION);
+    expect(h.catalog.refreshes).toBe(1);
+  });
+
+  it('redirectTo names the session that carried this one on when the database has it', async () => {
+    const h = withSession({}, sessionFacts({ continuedIn: OTHER_SESSION }));
+    expect((await h.service.resumeEligibility(SESSION)).redirectTo).toBeNull();
+    h.facts.set(OTHER_SESSION, sessionFacts({ sessionId: OTHER_SESSION }));
+    expect((await h.service.resumeEligibility(SESSION)).redirectTo).toBe(OTHER_SESSION);
+  });
+});
+
+describe('the linker and the registry', () => {
+  it('a session that a terminal of this app holds is live_in_terminal, with the name of the terminal', async () => {
+    const h = withSession({
+      linker: { sessionOwner: (id) => (id === SESSION ? 'app-1' : null), ownedPids: () => new Set() },
+    });
+    expect(await h.service.resumeEligibility(SESSION)).toMatchObject({
+      allowed: false,
+      forkAllowed: false,
+      reason: 'live_in_terminal',
+      liveTerminal: 'app-1',
+    });
+  });
+
+  it('a live registry entry that no terminal of this app owns is live_elsewhere, and a copy is allowed', async () => {
+    const registry = new FakeRegistry();
+    registry.entries = [registryEntry(10)];
+    const h = withSession({ registry });
+    expect(await h.service.resumeEligibility(SESSION)).toMatchObject({
+      allowed: false,
+      forkAllowed: true,
+      reason: 'live_elsewhere',
+      liveElsewhere: true,
+    });
+  });
+
+  it('the process of a terminal of this app is not elsewhere', async () => {
+    const registry = new FakeRegistry();
+    registry.entries = [registryEntry(10)];
+    const h = withSession({
+      registry,
+      linker: { sessionOwner: () => null, ownedPids: () => new Set([10]) },
+    });
+    expect(await h.service.resumeEligibility(SESSION)).toMatchObject({ allowed: true, reason: null });
+  });
+
+  it('a registry that cannot be read says nothing is live: the decision still comes', async () => {
+    const registry = new FakeRegistry();
+    registry.failure = new Error('EACCES');
+    const h = withSession({ registry });
+    expect(await h.service.resumeEligibility(SESSION)).toMatchObject({ allowed: true, reason: null });
+    expect(registry.reads).toBe(1);
+  });
+
+  it('with no linker and no registry given, nothing owns the session and the Claude home has no entry', async () => {
+    const h = withSession();
+    expect(await h.service.resumeEligibility(SESSION)).toMatchObject({ allowed: true, liveElsewhere: false });
+  });
+});
+
+describe('planResume', () => {
+  it('a resume: the same session, in the folder of the project, with the arguments of claude', async () => {
+    const h = withSession({ fileExists: () => Promise.resolve(true) });
+    expect(await h.service.planResume(SESSION)).toEqual({
+      sessionId: SESSION,
+      folderPath: APP,
+      folderKey: APP_KEY,
+      args: ['--resume', SESSION],
+      mode: 'resume',
+      expectsSameId: true,
+      redirectTo: null,
+    });
+  });
+
+  it('a copy: --fork-session and a new id expected', async () => {
+    const h = withSession({ fileExists: () => Promise.resolve(true) });
+    expect(await h.service.planResume(SESSION, { fork: true })).toMatchObject({
+      args: ['--resume', SESSION, '--fork-session'],
+      mode: 'fork',
+      expectsSameId: false,
+    });
+    expect(await h.service.planResume(SESSION, { fork: false })).toMatchObject({ mode: 'resume' });
+  });
+
+  it('asks the file system for the transcript, which the eligibility does not: a file that was cleaned away refuses the plan', async () => {
+    const asked: string[] = [];
+    const h = withSession({
+      fileExists: (file) => {
+        asked.push(file);
+        return Promise.resolve(false);
+      },
+    });
+    expect(await h.service.resumeEligibility(SESSION)).toMatchObject({ allowed: true });
+    expect(asked).toEqual([]);
+    await expect(h.service.planResume(SESSION)).rejects.toMatchObject({
+      name: 'ResumeRefusal',
+      code: 'transcript_gone',
+    });
+    expect(asked).toEqual([TRANSCRIPT]);
+  });
+
+  it('a session live elsewhere: refused as a resume, planned as a copy', async () => {
+    const registry = new FakeRegistry();
+    registry.entries = [registryEntry(10)];
+    const h = withSession({ registry, fileExists: () => Promise.resolve(true) });
+    await expect(h.service.planResume(SESSION)).rejects.toMatchObject({ code: 'live_elsewhere' });
+    expect(await h.service.planResume(SESSION, { fork: true })).toMatchObject({ mode: 'fork' });
+  });
+
+  it('a session live in a terminal is refused either way and the refusal carries the terminal', async () => {
+    const h = withSession({
+      fileExists: () => Promise.resolve(true),
+      linker: { sessionOwner: () => 'app-2', ownedPids: () => new Set() },
+    });
+    for (const fork of [false, true]) {
+      await expect(h.service.planResume(SESSION, { fork })).rejects.toMatchObject({
+        code: 'live_in_terminal',
+        liveTerminal: 'app-2',
+      });
+    }
+  });
+
+  it('a session the database does not know is session_not_found', async () => {
+    const h = withSession();
+    await expect(h.service.planResume(OTHER_SESSION)).rejects.toMatchObject({ code: 'session_not_found' });
+  });
+
+  it('a folder that is gone is refused at the moment of the plan', async () => {
+    const h = withSession({ fileExists: () => Promise.resolve(true) });
+    h.missing.add(APP.toLowerCase());
+    await expect(h.service.planResume(SESSION)).rejects.toMatchObject({ code: 'folder_missing' });
   });
 });

@@ -34,6 +34,9 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_TEST_CASES', 'test'],
   ['MCS_PERF_FACTOR', 'test'],
   ['MCS_E2E_CLAUDE', 'test'],
+  ['CAW_REAL_CLAUDE', 'test'],
+  ['CAW_REAL_CLAUDE_PROMPT', 'test'],
+  ['CAW_REAL_CLAUDE_TRUST', 'test'],
   ['MCS_SHOTS_DIR', 'test'],
   ['MCS_SHOTS_VIEWS', 'test'],
   ['MCS_SHOTS_VIEWPORTS', 'test'],
@@ -291,12 +294,12 @@ describe('DOCUMENTED_ENV_VARS', () => {
     const names = new Set<string>();
     for (const line of registry.slice(start, end).split('\n')) {
       const m = /^\| `([A-Z][A-Z0-9_]*)` \| (runtime|test|dev)\b/.exec(line);
-      if (m?.[1] !== undefined && (m[1].startsWith('MCS_') || m[1] === 'CLAUDE_CONFIG_DIR')) names.add(m[1]);
+      if (m?.[1] !== undefined && (/^(?:MCS|CAW)_/.test(m[1]) || m[1] === 'CLAUDE_CONFIG_DIR')) names.add(m[1]);
     }
     // the LNK_* names are set by the runtime for one child process (autostart, 06 2.7): nobody sets them, so the registry of
     // variables a person can set does not list them. The two names of the batch files at the repository root (CAW_NODE_PATH,
     // CAW_NO_PROMPT, 06 4) are read by `.bat` files only and are documented in docs/configuration.md; the registry lists the
-    // variables of the runtime and of the tests.
+    // variables of the runtime and of the tests, under either prefix (the opt-in probe of the real claude is `CAW_REAL_CLAUDE*`).
     const batchOnly = (v: DocumentedEnvVar): boolean => v.readers.every((reader) => reader.endsWith('.bat'));
     const settable = DOCUMENTED_ENV_VARS.filter((v) => !v.name.startsWith('CAW_LNK_') && !batchOnly(v));
     expect([...names].sort()).toEqual(settable.map((v) => v.name).sort());

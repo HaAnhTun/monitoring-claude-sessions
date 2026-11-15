@@ -10,23 +10,37 @@
 //     `state_unwritable`) and never a path.
 //   - Nothing is logged here: a path, a summary or a key is private to the person.
 //
-// The resume decision of the design (section 6) is another work package and extends this service; the linker is not needed here.
+//   - `resumeEligibility` and `planResume` (CAW-30, design 03 section 6, `resume.ts`) answer whether a session may be resumed in a
+//     terminal. They read the database through the query layer (`resumeFacts`), the registry through a snapshot, and the linker for
+//     the sessions that a terminal of this app holds; the folder is looked at when the question is asked, never from the caches of the
+//     list, and only the plan asks whether the transcript is still on disk.
 import { stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { folderPathKey, isoMsZ, type Folder, type FolderListResponse, windowsFolderPath } from '@mcs/shared';
+import {
+  folderPathKey,
+  isoMsZ,
+  type Folder,
+  type FolderListResponse,
+  type ResumeEligibility,
+  windowsFolderPath,
+} from '@mcs/shared';
 
 import type { RepoContext } from '../db/open.ts';
+import { createRegistrySnapshot, type RegistryEntry, type RegistrySnapshot } from '../external/registry.ts';
 import { errorCodeOf } from '../ingest/tail/file-identity.ts';
 import { mapLimit, nodeDiscoveryFs, type DiscoveryFs } from '../ingest/transcripts/discovery.ts';
+import type { TerminalLinker } from '../link/types.ts';
 import { hostPlatform } from '../platform/host.ts';
+import { pidAlive } from '../platform/process.ts';
 import { folderKeyOfPath } from '../projects/folder-key.ts';
 import { projectsRootOf } from '../projects/scope.ts';
-import type { ProjectStat } from '../query/projects.ts';
+import type { ProjectStat, ResumeFacts } from '../query/projects.ts';
 import { createProjectCatalog, type ProjectCatalog } from './catalog.ts';
 import { createDaMemoryReader, defaultDaMemoryDir, type DaFs, type DaMemoryReader } from './da-memory.ts';
 import { mergeFolders } from './merge.ts';
+import { decideResume, resumePlanOf, type ResumeEnvironment, type ResumePlan } from './resume.ts';
 import { createUserFolders, type UserFolders } from './user-folders.ts';
 
 /** How long "this path is a folder" is trusted. */
@@ -45,6 +59,8 @@ export interface FolderServiceContext {
   readonly scope: RepoContext;
   readonly queries: {
     projectStats(ctx: RepoContext, o: { readonly windowFromMs: number | null }): ProjectStat[];
+    /** The facts of one session, or null when the database does not know it (CAW design 03 2.8). */
+    resumeFacts(ctx: RepoContext, sessionId: string): ResumeFacts | null;
   };
   readonly config: {
     readonly monitor: { readonly window_hours: number };
@@ -73,6 +89,12 @@ export interface FolderServiceDeps {
   /** Which spelling of a path is valid (default: the host). */
   readonly win32?: boolean;
   readonly existsRecheckMs?: number;
+  /** The terminals of this app (`TerminalLinker`); default: no terminal owns anything. */
+  readonly linker?: Pick<TerminalLinker, 'sessionOwner' | 'ownedPids'>;
+  /** The registry of the Claude home; default: a snapshot over `ctx.claudeHome`. */
+  readonly registry?: Pick<RegistrySnapshot, 'read'>;
+  /** Whether a transcript file is on disk (the plan asks); default: `stat`, a file. */
+  readonly fileExists?: (file: string) => Promise<boolean>;
 }
 
 export interface FolderService {
@@ -88,6 +110,16 @@ export interface FolderService {
   remove(key: string): Promise<void>;
   /** Reads the state file and scans the catalog again, and forgets what is known about the paths. Never rejects. */
   refresh(): Promise<void>;
+  /**
+   * May this session be resumed in a terminal, may a copy be, and why not (design 03 section 6). A session the database does not
+   * know is a `ResumeRefusal('session_not_found')`; every other answer is a value.
+   */
+  resumeEligibility(sessionId: string): Promise<ResumeEligibility>;
+  /**
+   * The plan of a resume (`fork` false or absent) or of a copy (`fork` true), asked again when the terminal is created, with a look at
+   * the transcript file. Throws `ResumeRefusal` with the code of the first check that failed.
+   */
+  planResume(sessionId: string, options?: { readonly fork?: boolean }): Promise<ResumePlan>;
 }
 
 /** The default check: a directory, links followed; only "gone" counts as false, any other failure is "not known". */
@@ -99,6 +131,21 @@ async function nodeIsDirectory(target: string): Promise<boolean | null> {
     return code === 'ENOENT' || code === 'ENOTDIR' ? false : null;
   }
 }
+
+/** The default check for a transcript file: a file, links followed. */
+async function nodeFileExists(file: string): Promise<boolean> {
+  try {
+    return (await stat(file)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Without a terminal host nothing is owned by a terminal. */
+const NO_TERMINALS: Pick<TerminalLinker, 'sessionOwner' | 'ownedPids'> = {
+  sessionOwner: () => null,
+  ownedPids: () => new Set<number>(),
+};
 
 interface Checked {
   readonly value: boolean;
@@ -136,6 +183,10 @@ export function createFolderService(ctx: FolderServiceContext, deps: FolderServi
       win32,
     });
   const homeDir = deps.homeDir === undefined ? os.homedir() : deps.homeDir;
+  const linker = deps.linker ?? NO_TERMINALS;
+  const registry =
+    deps.registry ?? createRegistrySnapshot({ claudeHome: ctx.claudeHome, pidAlive, now: () => ctx.clock.now() });
+  const fileExists = deps.fileExists ?? nodeFileExists;
 
   const known = new Map<string, Checked>();
   let loading: Promise<void> | null = null;
@@ -243,6 +294,38 @@ export function createFolderService(ctx: FolderServiceContext, deps: FolderServi
     };
   }
 
+  /**
+   * What the resume decision reads, gathered now: the facts of the session, the root of its project in the catalog (scanned first
+   * when nobody did), the registry (an unreadable one is an empty list: nothing is shown live that cannot be proved) and the linker.
+   */
+  async function resumeEnvironment(sessionId: string, withTranscript: boolean): Promise<ResumeEnvironment> {
+    const facts = ctx.queries.resumeFacts(ctx.scope, sessionId);
+    let catalogRoot: string | null = null;
+    let entries: readonly RegistryEntry[] = [];
+    if (facts !== null) {
+      if (facts.projectKey !== null) {
+        if (catalog.status().scannedAt === null) await catalog.refresh();
+        catalogRoot = catalog.entries().find((entry) => entry.key === facts.projectKey)?.root ?? null;
+      }
+      try {
+        entries = (await registry.read()).entries;
+      } catch {
+        entries = [];
+      }
+    }
+    return {
+      facts,
+      catalogRoot,
+      registry: entries,
+      sessionOwner: (id) => linker.sessionOwner(id),
+      ownedPids: linker.ownedPids(),
+      isDirectory: check,
+      transcriptExists: withTranscript ? fileExists : null,
+      knowsSession: (id) => ctx.queries.resumeFacts(ctx.scope, id) !== null,
+      win32,
+    };
+  }
+
   return {
     async start() {
       if (started) return;
@@ -290,6 +373,13 @@ export function createFolderService(ctx: FolderServiceContext, deps: FolderServi
       known.clear();
       await userFolders.load();
       await catalog.refresh();
+    },
+    async resumeEligibility(sessionId) {
+      return decideResume(sessionId, await resumeEnvironment(sessionId, false));
+    },
+    async planResume(sessionId, options) {
+      const decision = await decideResume(sessionId, await resumeEnvironment(sessionId, true));
+      return resumePlanOf(decision, options?.fork === true);
     },
   };
 }
