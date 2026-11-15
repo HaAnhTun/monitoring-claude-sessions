@@ -38,10 +38,17 @@
   align-items: center;
   gap: var(--sp-3);
 }
-/* "Attention first" is a toggle: pressed, it takes the accent border like the tiles and the filter toggles. */
+/* "Attention first" is a toggle: pressed, it takes the --selected fill and the accent border like the filter toggles. */
 .explorer__tools .btn[aria-pressed='true'] {
-  background: var(--surface-2);
+  background: var(--selected);
   border-color: var(--accent);
+  color: var(--strong);
+}
+@media (forced-colors: active) {
+  .explorer__tools .btn[aria-pressed='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 /* The strip sits close to the title and is a little lower than on the pages that use it as a hero. */
 .explorer .summary-tile {

@@ -208,6 +208,29 @@
   white-space: nowrap;
 }
 
+/* On a phone the five columns share 600 px with Vietnamese headings: the padding shrinks, a heading may wrap onto a second line and the
+   session column gives up some width, so that no column is cut by the card (the table keeps its own scroll as a last resort). */
+@media (max-width: 699px) {
+  .overview-table th,
+  .overview-table td {
+    padding-inline: var(--sp-2);
+  }
+  .overview-table th:first-child,
+  .overview-table td:first-child {
+    padding-inline-start: var(--sp-4);
+  }
+  .overview-table th:last-child,
+  .overview-table td:last-child {
+    padding-inline-end: var(--sp-4);
+  }
+  .overview-table thead th {
+    white-space: normal;
+  }
+  .overview-table__session {
+    min-width: 5rem;
+  }
+}
+
 /* ---- figures ---- */
 .overview-figures {
   display: flex;

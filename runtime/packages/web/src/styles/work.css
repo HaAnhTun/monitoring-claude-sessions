@@ -105,6 +105,9 @@
   line-height: var(--lh-xs);
   text-align: start;
 }
+.board__example code {
+  font-family: var(--mono);
+}
 .board__skeleton-head {
   block-size: 1.5rem;
 }
@@ -304,13 +307,13 @@
   block-size: 6px;
   overflow: hidden;
   background: var(--surface-2);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 .mag__fill {
   display: block;
   block-size: 100%;
   background: var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 .usage-total {
   display: inline-flex;
@@ -391,7 +394,7 @@
     var(--accent) 0 2px,
     color-mix(in srgb, var(--accent) 18%, var(--surface)) 2px 5px
   );
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 .chart {
   --chart-h: 8.75rem;

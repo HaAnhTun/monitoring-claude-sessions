@@ -47,11 +47,18 @@
   color: var(--text);
   text-decoration: none;
 }
+/* The current section is the selected row of the shell: the --selected fill, a 2 px accent bar and the strong text. */
 .settings-nav__link[aria-current='page'] {
-  background: var(--surface);
-  box-shadow: var(--elev-1);
-  color: var(--text);
+  background: var(--selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--strong);
   font-weight: var(--fw-semibold);
+}
+@media (forced-colors: active) {
+  .settings-nav__link[aria-current='page'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 /* The section list is a column only where the content is wide enough for it (from 1200 px, where the sidebar is open); below that it is a row. */
 @media (min-width: 1200px) {
@@ -288,6 +295,10 @@
 }
 .settings-config-table th:nth-child(3) {
   width: 7.5rem;
+}
+/* A bare <code> would take the user agent's monospace family: every value of this page is the page font. */
+.settings__layout code {
+  font-family: var(--mono);
 }
 .settings-key,
 .settings-value {
