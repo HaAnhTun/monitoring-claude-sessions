@@ -64,9 +64,12 @@ function buildOf(release: string): number | null {
 }
 
 /**
- * `<install>/node_modules/@lydell/node-pty-<target>` as seen from the module `from` (a file URL; default: this module), or null
- * when it is not installed. The package's `exports` is a plain string (`./lib/index.js`), so `require.resolve` of its
- * `package.json` fails with ERR_PACKAGE_PATH_NOT_EXPORTED; `findPackageJSON` reads the folder without going through `exports`.
+ * The folder of the installed platform package of the addon for `target` (a package of the install's dependency folder, named
+ * after `NODE_PTY_PACKAGE` and the target) as seen from the module `from` (a file URL; default: this module), or null
+ * when it is not installed. The comment spells out no install path and no platform package name on purpose: the bundle
+ * keeps comments, and the bundle test rejects both in any `.mjs`. The package's `exports` is a plain string
+ * (`./lib/index.js`), so `require.resolve` of its `package.json` fails with ERR_PACKAGE_PATH_NOT_EXPORTED;
+ * `findPackageJSON` reads the folder without going through `exports`.
  */
 export function installedPackageDir(target: NativeTarget, from: string = import.meta.url): string | null {
   try {

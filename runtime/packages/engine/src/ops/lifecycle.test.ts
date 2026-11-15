@@ -2,7 +2,7 @@
 // scripted control channel and scripted HTTP, over a real workspace in a temp folder. What a real runtime does with these
 // calls is proven by the integration and resilience tests (T-LC-01, 02, 06, 08, 09, 13, 15).
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -24,6 +24,7 @@ import { createLogger, type Logger } from '../log/logger.ts';
 import { readRouteFile, routeFilePath } from '../ingest/routes-file.ts';
 import { resolveWorkspace, type WorkspaceRef } from '../workspace/paths.ts';
 import {
+  readToken,
   restart,
   serveForeground,
   start,
@@ -100,6 +101,8 @@ interface World {
   probes: ProbeResult[];
   /** What the control channel answers to `shutdown` (default: yes, and the process then exits). */
   controlAnswer: (message: ControlRequest) => ControlAttempt;
+  /** What the control channel answers to `terminals` (default: no live terminal). */
+  terminalsAnswer: (message: ControlRequest) => ControlAttempt;
   exitOnShutdown: boolean;
   /** The pid survives `forceKill` (a process that cannot be killed). */
   stubborn: boolean;
@@ -110,6 +113,8 @@ interface World {
   readonly alive: Set<number>;
   readonly commandLines: Map<number, string | null>;
   readonly killed: number[];
+  /** The pids that `forceKillTree` ended (the whole tree). */
+  readonly killedTree: number[];
   readonly requests: ControlRequest[];
   readonly spawns: SpawnCall[];
   readonly foreground: SpawnCall[];
@@ -166,6 +171,7 @@ function world(o: Options = {}): World {
     log: events,
     probes: [],
     controlAnswer: () => ({ kind: 'reply', response: { v: 1, ok: true, op: 'shutdown', phase: 'stopping' } }),
+    terminalsAnswer: () => terminalsReply(0),
     exitOnShutdown: true,
     stubborn: false,
     httpRoutes: new Map(),
@@ -174,6 +180,7 @@ function world(o: Options = {}): World {
     alive: new Set(),
     commandLines: new Map(),
     killed: [],
+    killedTree: [],
     requests: [],
     spawns: [],
     foreground: [],
@@ -189,6 +196,11 @@ function world(o: Options = {}): World {
     commandLineOf: (pid) => Promise.resolve(w.commandLines.get(pid) ?? null),
     forceKill: (pid) => {
       w.killed.push(pid);
+      if (!w.stubborn) w.alive.delete(pid);
+      return Promise.resolve();
+    },
+    forceKillTree: (pid) => {
+      w.killedTree.push(pid);
       if (!w.stubborn) w.alive.delete(pid);
       return Promise.resolve();
     },
@@ -208,7 +220,7 @@ function world(o: Options = {}): World {
     processes,
     control: (_address, message) => {
       w.requests.push(message);
-      const answer = w.controlAnswer(message);
+      const answer = message.op === 'terminals' ? w.terminalsAnswer(message) : w.controlAnswer(message);
       if (answer.kind === 'reply' && message.op === 'shutdown' && w.exitOnShutdown) w.alive.delete(SERVER_PID);
       return Promise.resolve(answer);
     },
@@ -244,6 +256,21 @@ function world(o: Options = {}): World {
 }
 
 // ---- builders --------------------------------------------------------------------------------------------------------------------
+
+/** The `terminals` reply of a user instance: `live` sessions, of which `names` are listed (oldest first). */
+function terminalsReply(live: number, names: readonly string[] = [], max = 8): ControlAttempt {
+  return {
+    kind: 'reply',
+    response: {
+      v: 1,
+      ok: true,
+      op: 'terminals',
+      live,
+      max,
+      sessions: names.map((name, index) => ({ name, startedAt: `2026-11-14T10:0${String(index)}:00.000Z` })),
+    },
+  };
+}
 
 function identity(over: Partial<IdentifyResponse> = {}): IdentifyResponse {
   return {
@@ -1869,5 +1896,421 @@ describe('serveForeground (01 4.10)', () => {
     expect(w.opened).toEqual([URL_OF(PORT)]);
     w.foreground[0]?.child.emit('exit', 0, null);
     await done;
+  });
+});
+
+// ---- the terminal guard of a user instance (06 3, ADR 0093) -------------------------------------------------------------------------
+
+const userWorld = (o: Options = {}): World => world({ ...o, instance: { kind: 'user' } });
+
+/** A user instance that runs: token, state file, a live pid with the marker on its command line. */
+function liveUser(w: World, probe: ProbeResult = running()): void {
+  writeToken(w);
+  writeState(w, stateFileOf(SERVER_PID));
+  w.alive.add(SERVER_PID);
+  w.commandLines.set(SERVER_PID, markerLine(w));
+  w.probes = [probe];
+}
+
+const TERMINALS_REQUEST: ControlRequest = { v: 1, op: 'terminals', instanceId: ID, token: TOKEN };
+const shutdownRequest = (force: boolean): ControlRequest => ({
+  v: 1,
+  op: 'shutdown',
+  instanceId: ID,
+  token: TOKEN,
+  reason: 'stop',
+  ...(force ? { force: true as const } : {}),
+});
+
+describe('stop: the terminal guard of a user instance (06 3.2)', () => {
+  it('asks the census first and refuses while terminals are live: TERMINALS_LIVE, nothing is sent, killed or deleted', async () => {
+    const w = userWorld();
+    liveUser(w);
+    w.terminalsAnswer = () => terminalsReply(2, ['api-1', 'web-1']);
+    const error = await failure(stop(w.ctx, { task: 'demo' }, w.deps));
+    expectCode(error, 'TERMINALS_LIVE');
+    expect(error.message).toBe('2 terminal sessions are live (api-1, web-1); stopping would end them');
+    expect(error.hint).toBe('close them in the app, or run `caw stop --force` to end them now');
+    expect(error.details).toEqual({ live: 2, sessions: ['api-1', 'web-1'] });
+    expect(w.requests).toEqual([TERMINALS_REQUEST]);
+    expect(w.killed).toEqual([]);
+    expect(w.killedTree).toEqual([]);
+    expect(w.alive.has(SERVER_PID)).toBe(true);
+    expect(existsSync(fileOf(w, 'state.json'))).toBe(true);
+    expect(existsSync(fileOf(w, 'run', 'control.token'))).toBe(true);
+    expect(JSON.stringify([error.message, error.hint, error.details])).not.toContain(TOKEN);
+  });
+
+  it('says it in the singular for one session, and names at most five of many', async () => {
+    const one = userWorld();
+    liveUser(one);
+    one.terminalsAnswer = () => terminalsReply(1, ['api-1']);
+    expect((await failure(stop(one.ctx, { task: 'demo' }, one.deps))).message).toBe(
+      '1 terminal session is live (api-1); stopping would end it',
+    );
+    const many = userWorld();
+    liveUser(many);
+    many.terminalsAnswer = () => terminalsReply(8, ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6', 'a-7', 'a-8']);
+    const error = await failure(stop(many.ctx, { task: 'demo' }, many.deps));
+    expect(error.message).toBe(
+      '8 terminal sessions are live (a-1, a-2, a-3, a-4, a-5, +3 more); stopping would end them',
+    );
+    expect(error.details?.['sessions']).toHaveLength(8);
+  });
+
+  it('the count is the one of the server, not the length of the list (a session that starts or is lost has no name)', async () => {
+    const w = userWorld();
+    liveUser(w);
+    w.terminalsAnswer = () => terminalsReply(3, ['api-1']);
+    const error = await failure(stop(w.ctx, { task: 'demo' }, w.deps));
+    expect(error.message).toBe('3 terminal sessions are live (api-1); stopping would end them');
+    expect(error.details).toEqual({ live: 3, sessions: ['api-1'] });
+  });
+
+  it('no live terminal: the shutdown is sent without a force key and terminalsEnded is 0', async () => {
+    const w = userWorld();
+    liveUser(w);
+    const result = await stop(w.ctx, { task: 'demo' }, w.deps);
+    expect(result).toMatchObject({ outcome: 'stopped', forced: false, terminalsEnded: 0, exitCode: 0 });
+    expect(result.message).toEqual([`stopped runtime pid ${String(SERVER_PID)} (${URL_OF(PORT)})`]);
+    expect(w.requests).toEqual([TERMINALS_REQUEST, shutdownRequest(false)]);
+    expect(Object.hasOwn(w.requests[1] ?? {}, 'force')).toBe(false);
+  });
+
+  it('--force with live terminals: the shutdown carries force, terminalsEnded counts them and a line says so', async () => {
+    const w = userWorld();
+    liveUser(w);
+    w.terminalsAnswer = () => terminalsReply(2, ['api-1', 'web-1']);
+    const result = await stop(w.ctx, { task: 'demo', force: true }, w.deps);
+    expect(result).toMatchObject({ outcome: 'stopped', forced: false, terminalsEnded: 2, exitCode: 0 });
+    expect(result.message).toEqual([
+      `stopped runtime pid ${String(SERVER_PID)} (${URL_OF(PORT)})`,
+      'ended 2 terminal sessions',
+    ]);
+    expect(w.requests).toEqual([TERMINALS_REQUEST, shutdownRequest(true)]);
+    expect(w.killed).toEqual([]);
+  });
+
+  it('--force with one live terminal says "ended 1 terminal session"', async () => {
+    const w = userWorld();
+    liveUser(w);
+    w.terminalsAnswer = () => terminalsReply(1, ['api-1']);
+    const result = await stop(w.ctx, { task: 'demo', force: true }, w.deps);
+    expect(result.message.at(-1)).toBe('ended 1 terminal session');
+    expect(result.terminalsEnded).toBe(1);
+  });
+
+  it('--force with no live terminal still sends force (the server decides) and ends nothing', async () => {
+    const w = userWorld();
+    liveUser(w);
+    const result = await stop(w.ctx, { task: 'demo', force: true }, w.deps);
+    expect(result.terminalsEnded).toBe(0);
+    expect(result.message).toHaveLength(1);
+    expect(w.requests).toEqual([TERMINALS_REQUEST, shutdownRequest(true)]);
+  });
+
+  it('an older server (BAD_REQUEST or UNSUPPORTED for `terminals`) counts as no live terminal', async () => {
+    for (const error of ['BAD_REQUEST', 'UNSUPPORTED'] as const) {
+      const w = userWorld();
+      liveUser(w);
+      w.terminalsAnswer = () => ({ kind: 'refusal', error });
+      const result = await stop(w.ctx, { task: 'demo' }, w.deps);
+      expect(result, error).toMatchObject({ outcome: 'stopped', terminalsEnded: 0 });
+      expect(w.requests, error).toEqual([TERMINALS_REQUEST, shutdownRequest(false)]);
+    }
+  });
+
+  it('a census that cannot be had is "cannot tell": refused without --force, nothing is sent after the query', async () => {
+    const answers: Record<string, () => ControlAttempt> = {
+      silent: () => ({ kind: 'silent', reason: 'timeout' }),
+      absent: () => ({ kind: 'absent' }),
+      forbidden: () => ({ kind: 'refusal', error: 'FORBIDDEN' }),
+      internal: () => ({ kind: 'refusal', error: 'INTERNAL' }),
+      wrongReply: () => ({ kind: 'reply', response: { v: 1, ok: true, op: 'shutdown', phase: 'stopping' } }),
+    };
+    for (const [name, answer] of Object.entries(answers)) {
+      const w = userWorld();
+      liveUser(w);
+      w.terminalsAnswer = answer;
+      const error = await failure(stop(w.ctx, { task: 'demo' }, w.deps));
+      expectCode(error, 'TERMINALS_LIVE');
+      expect(error.message, name).toBe(
+        'the app does not answer, so its terminal sessions cannot be counted; stopping may end live terminals',
+      );
+      expect(error.hint, name).toBe('run `caw stop --force` to kill it (the process is verified first)');
+      expect(error.details, name).toEqual({ live: null, sessions: [] });
+      expect(w.requests, name).toEqual([TERMINALS_REQUEST]);
+      expect(w.killed, name).toEqual([]);
+      expect(w.killedTree, name).toEqual([]);
+    }
+  });
+
+  it('with --force an unknown census does not stop the stop: shutdown with force, terminalsEnded 0', async () => {
+    const w = userWorld();
+    liveUser(w);
+    w.terminalsAnswer = () => ({ kind: 'silent', reason: 'timeout' });
+    const result = await stop(w.ctx, { task: 'demo', force: true }, w.deps);
+    expect(result).toMatchObject({ outcome: 'stopped', terminalsEnded: 0 });
+    expect(w.requests).toEqual([TERMINALS_REQUEST, shutdownRequest(true)]);
+  });
+
+  it('without a control token the census cannot be had: refused without --force, forced stop with it', async () => {
+    const refused = userWorld();
+    liveUser(refused);
+    rmSync(fileOf(refused, 'run', 'control.token'));
+    const error = await failure(stop(refused.ctx, { task: 'demo' }, refused.deps));
+    expectCode(error, 'TERMINALS_LIVE');
+    expect(error.details).toEqual({ live: null, sessions: [] });
+    expect(refused.requests).toEqual([]);
+    expect(refused.killedTree).toEqual([]);
+
+    const forced = userWorld();
+    liveUser(forced);
+    rmSync(fileOf(forced, 'run', 'control.token'));
+    const result = await stop(forced.ctx, { task: 'demo', force: true }, forced.deps);
+    expect(result).toMatchObject({ outcome: 'stopped-forced', forced: true, reason: 'there is no control token' });
+    expect(forced.requests).toEqual([]);
+    expect(forced.killedTree).toEqual([SERVER_PID]);
+  });
+
+  it('a hung instance without an identity needs --force, and a forced stop of it kills the whole tree', async () => {
+    const refused = userWorld();
+    liveUser(refused, hungProbe(SERVER_PID));
+    const error = await failure(stop(refused.ctx, { task: 'demo' }, refused.deps));
+    expectCode(error, 'TERMINALS_LIVE');
+    expect(error.details).toEqual({ live: null, sessions: [] });
+    expect(refused.requests).toEqual([]);
+    expect(refused.killed).toEqual([]);
+    expect(refused.killedTree).toEqual([]);
+
+    const forced = userWorld();
+    liveUser(forced, hungProbe(SERVER_PID));
+    const result = await stop(forced.ctx, { task: 'demo', force: true }, forced.deps);
+    expect(result).toMatchObject({ outcome: 'stopped-forced', forced: true, terminalsEnded: 0 });
+    expect(forced.requests).toEqual([]);
+    expect(forced.killedTree).toEqual([SERVER_PID]);
+    expect(forced.killed).toEqual([]);
+  });
+
+  it('a hung instance that answers its control channel (an identity, no HTTP) is counted like a running one', async () => {
+    const w = userWorld();
+    liveUser(w, probeOf('unhealthy', { engine: 'node', pid: SERVER_PID, identity: identity() }));
+    w.terminalsAnswer = () => terminalsReply(1, ['api-1']);
+    expectCode(await failure(stop(w.ctx, { task: 'demo' }, w.deps)), 'TERMINALS_LIVE');
+    expect(w.requests).toEqual([TERMINALS_REQUEST]);
+  });
+
+  it('a runtime that is starting skips the census (no terminal can exist yet); one that is stopping is only waited for', async () => {
+    const starting = userWorld();
+    liveUser(
+      starting,
+      probeOf('starting', { engine: 'node', pid: SERVER_PID, identity: identity({ phase: 'starting' }) }),
+    );
+    const result = await stop(starting.ctx, { task: 'demo' }, starting.deps);
+    expect(result.outcome).toBe('stopped');
+    expect(starting.requests).toEqual([shutdownRequest(false)]);
+
+    const stopping = userWorld();
+    liveUser(
+      stopping,
+      probeOf('stopping', { engine: 'node', pid: SERVER_PID, identity: identity({ phase: 'stopping' }) }),
+    );
+    stopping.alive.delete(SERVER_PID); // it is on its way out: the wait ends at once
+    expect((await stop(stopping.ctx, { task: 'demo' }, stopping.deps)).outcome).toBe('stopped');
+    expect(stopping.requests).toEqual([]);
+  });
+
+  it('a late TERMINALS_LIVE refusal (a session appeared meanwhile) asks again, refuses with the fresh census and never kills', async () => {
+    const w = userWorld();
+    liveUser(w);
+    const census = [terminalsReply(0), terminalsReply(1, ['api-1'])];
+    w.terminalsAnswer = () => census.shift() ?? terminalsReply(1, ['api-1']);
+    w.controlAnswer = () => ({ kind: 'refusal', error: 'TERMINALS_LIVE' });
+    const error = await failure(stop(w.ctx, { task: 'demo' }, w.deps));
+    expectCode(error, 'TERMINALS_LIVE');
+    expect(error.message).toBe('1 terminal session is live (api-1); stopping would end it');
+    expect(error.details).toEqual({ live: 1, sessions: ['api-1'] });
+    expect(w.requests).toEqual([TERMINALS_REQUEST, shutdownRequest(false), TERMINALS_REQUEST]);
+    expect(w.killed).toEqual([]);
+    expect(w.killedTree).toEqual([]);
+    expect(w.alive.has(SERVER_PID)).toBe(true);
+    expect(existsSync(fileOf(w, 'state.json'))).toBe(true);
+  });
+
+  it('a late refusal whose second census fails still refuses, without a count', async () => {
+    const w = userWorld();
+    liveUser(w);
+    const census = [terminalsReply(0), { kind: 'silent', reason: 'timeout' } satisfies ControlAttempt];
+    w.terminalsAnswer = () => census.shift() ?? { kind: 'absent' };
+    w.controlAnswer = () => ({ kind: 'refusal', error: 'TERMINALS_LIVE' });
+    const error = await failure(stop(w.ctx, { task: 'demo' }, w.deps));
+    expectCode(error, 'TERMINALS_LIVE');
+    expect(error.message).toBe('terminal sessions are live; stopping would end them');
+    expect(error.details).toEqual({ live: null, sessions: [] });
+    expect(w.killedTree).toEqual([]);
+  });
+
+  it('a forced stop of a user instance ends the tree (forceKillTree), after the marker check', async () => {
+    const w = userWorld();
+    liveUser(w);
+    w.controlAnswer = () => ({ kind: 'refusal', error: 'FORBIDDEN' });
+    const result = await stop(w.ctx, { task: 'demo', force: true }, w.deps);
+    expect(result).toMatchObject({ outcome: 'stopped-forced', forced: true });
+    expect(w.killedTree).toEqual([SERVER_PID]);
+    expect(w.killed).toEqual([]);
+    expect(existsSync(fileOf(w, 'run', 'control.token'))).toBe(false);
+  });
+
+  it('a forced stop of a user instance still never kills a pid without the marker', async () => {
+    const w = userWorld();
+    liveUser(w, hungProbe(SERVER_PID));
+    w.commandLines.set(SERVER_PID, '"node.exe" -e "setInterval(()=>{},60000)"');
+    expectCode(await failure(stop(w.ctx, { task: 'demo', force: true }, w.deps)), 'NOT_OUR_PROCESS');
+    expect(w.killed).toEqual([]);
+    expect(w.killedTree).toEqual([]);
+  });
+
+  it('restart and upgrade say restarting and upgrading, and name their own command', async () => {
+    const restarting = userWorld();
+    liveUser(restarting);
+    restarting.terminalsAnswer = () => terminalsReply(2, ['api-1', 'web-1']);
+    const r = await failure(stop(restarting.ctx, { task: 'demo', purpose: 'restart' }, restarting.deps));
+    expect(r.message).toBe('2 terminal sessions are live (api-1, web-1); restarting would end them');
+    expect(r.hint).toBe('close them in the app, or run `caw restart --force` to end them now');
+
+    const upgrading = userWorld();
+    liveUser(upgrading);
+    upgrading.terminalsAnswer = () => terminalsReply(1, ['api-1']);
+    const u = await failure(stop(upgrading.ctx, { task: 'demo', purpose: 'upgrade' }, upgrading.deps));
+    expect(u.message).toBe('1 terminal session is live (api-1); upgrading would end it');
+    expect(u.hint).toBe('close it in the app, or run `caw upgrade --user --yes --restart --force` to end it now');
+
+    const unknown = userWorld();
+    liveUser(unknown);
+    unknown.terminalsAnswer = () => ({ kind: 'absent' });
+    const k = await failure(stop(unknown.ctx, { task: 'demo', purpose: 'restart' }, unknown.deps));
+    expect(k.message).toBe(
+      'the app does not answer, so its terminal sessions cannot be counted; restarting may end live terminals',
+    );
+    expect(k.hint).toBe('run `caw restart --force` to kill it (the process is verified first)');
+  });
+
+  it('the purpose does not change what is sent: the control reason stays stop', async () => {
+    const w = userWorld();
+    liveUser(w);
+    await stop(w.ctx, { task: 'demo', purpose: 'upgrade' }, w.deps);
+    expect(w.requests.at(-1)).toEqual(shutdownRequest(false));
+  });
+});
+
+describe('stop: a task instance is never asked about terminals (06 3.1 rule 4)', () => {
+  it('sends no `terminals` and no force, even when asked to force; a forced stop is the plain forceKill', async () => {
+    const w = world();
+    writeToken(w);
+    writeState(w, stateFileOf(SERVER_PID));
+    w.alive.add(SERVER_PID);
+    w.probes = [running()];
+    const result = await stop(w.ctx, { task: 'demo', force: true }, w.deps);
+    expect(result).toMatchObject({ outcome: 'stopped', terminalsEnded: 0 });
+    expect(w.requests).toEqual([shutdownRequest(false)]);
+
+    const refused = world();
+    writeToken(refused);
+    refused.alive.add(SERVER_PID);
+    refused.commandLines.set(SERVER_PID, markerLine(refused));
+    refused.controlAnswer = () => ({ kind: 'refusal', error: 'FORBIDDEN' });
+    refused.probes = [running()];
+    await stop(refused.ctx, { task: 'demo', force: true }, refused.deps);
+    expect(refused.killed).toEqual([SERVER_PID]);
+    expect(refused.killedTree).toEqual([]);
+  });
+
+  it('a hung task instance needs no --force and is killed without the tree', async () => {
+    const w = world();
+    w.alive.add(SERVER_PID);
+    w.commandLines.set(SERVER_PID, markerLine(w));
+    w.probes = [hungProbe(SERVER_PID)];
+    const result = await stop(w.ctx, { task: 'demo' }, w.deps);
+    expect(result.outcome).toBe('stopped-forced');
+    expect(w.killed).toEqual([SERVER_PID]);
+    expect(w.killedTree).toEqual([]);
+  });
+
+  it('a workspace without instance.json (before 4.0) is a task instance', async () => {
+    const w = world({ instance: false });
+    writeToken(w);
+    w.alive.add(SERVER_PID);
+    w.probes = [running()];
+    const result = await stop(w.ctx, { task: 'demo' }, w.deps);
+    expect(result.outcome).toBe('stopped');
+    expect(w.requests.map((request) => request.op)).toEqual(['shutdown']);
+  });
+
+  it('terminalsEnded is 0 on every other result of stop', async () => {
+    const none = world();
+    none.probes = [stopped()];
+    expect(await stop(none.ctx, { task: 'demo' }, none.deps)).toMatchObject({
+      outcome: 'nothing-to-stop',
+      terminalsEnded: 0,
+    });
+    const stale = world();
+    stale.probes = [probeOf('stale', { engine: 'node', pid: 999 })];
+    expect(await stop(stale.ctx, { task: 'demo' }, stale.deps)).toMatchObject({
+      outcome: 'stale-removed',
+      terminalsEnded: 0,
+    });
+  });
+});
+
+describe('the environment of the server process (06 1.7)', () => {
+  const withHookDisable = (w: World): OpContext => ({ ...w.ctx, env: { ...w.ctx.env, MCS_HOOK_DISABLE: '1' } });
+
+  it('a user instance is started without MCS_HOOK_DISABLE, even when the caller has it', async () => {
+    const w = userWorld();
+    bootsOk(w);
+    await start(withHookDisable(w), { task: 'demo' }, w.deps);
+    expect(w.spawns).toHaveLength(1);
+    expect(Object.hasOwn(w.spawns[0]?.env ?? {}, 'MCS_HOOK_DISABLE')).toBe(false);
+    expect(w.spawns[0]?.env['MCS_HOME']).toBe(w.ctx.env['MCS_HOME']);
+  });
+
+  it('a task instance still gets MCS_HOOK_DISABLE=1, whatever the caller has', async () => {
+    const w = world();
+    bootsOk(w);
+    await start(withHookDisable(w), { task: 'demo' }, w.deps);
+    expect(w.spawns[0]?.env['MCS_HOOK_DISABLE']).toBe('1');
+    const x = world();
+    bootsOk(x);
+    await start(x.ctx, { task: 'demo' }, x.deps);
+    expect(x.spawns[0]?.env['MCS_HOOK_DISABLE']).toBe('1');
+  });
+
+  it('the foreground server of a user instance is started without it as well', async () => {
+    const w = userWorld();
+    w.probes = [stopped()];
+    const done = serveForeground(withHookDisable(w), { task: 'demo' }, w.deps);
+    const child = await waitFor(() => w.foreground[0]?.child ?? null, { what: 'the foreground server' });
+    expect(Object.hasOwn(w.foreground[0]?.env ?? {}, 'MCS_HOOK_DISABLE')).toBe(false);
+    child.emit('exit', 0, null);
+    await done;
+
+    const task = world();
+    task.probes = [stopped()];
+    const taskDone = serveForeground(withHookDisable(task), { task: 'demo' }, task.deps);
+    const taskChild = await waitFor(() => task.foreground[0]?.child ?? null, { what: 'the foreground server' });
+    expect(task.foreground[0]?.env['MCS_HOOK_DISABLE']).toBe('1');
+    taskChild.emit('exit', 0, null);
+    await taskDone;
+  });
+});
+
+describe('readToken', () => {
+  it('reads run/control.token when it holds 64 hex digits, and is null for anything else', async () => {
+    const w = world();
+    expect(await readToken(w.ws)).toBeNull();
+    writeToken(w);
+    expect(await readToken(w.ws)).toBe(TOKEN);
+    writeFileSync(path.join(w.ws.dir, 'run', 'control.token'), 'not a token' + LF);
+    expect(await readToken(w.ws)).toBeNull();
   });
 });

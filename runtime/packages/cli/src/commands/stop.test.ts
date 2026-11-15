@@ -42,6 +42,7 @@ const RESULT: StopResult = {
   url: 'http://127.0.0.1:18000',
   forced: false,
   reason: null,
+  terminalsEnded: 0,
   exitCode: 0,
   message: ['stopped runtime pid 42 (http://127.0.0.1:18000)'],
 };

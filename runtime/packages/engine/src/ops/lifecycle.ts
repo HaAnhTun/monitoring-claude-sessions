@@ -18,11 +18,13 @@ import { setTimeout as sleepMs } from 'node:timers/promises';
 import {
   McsError,
   SERVER_EXIT_CODES,
+  instanceKindOf,
   queryString,
   routes,
   serverExitNameOf,
   toQuery,
   type InstanceFile,
+  type InstanceKind,
   type LegacyState,
   type StateFile,
 } from '@mcs/shared';
@@ -38,7 +40,7 @@ import { atomicWriteFile, readSmallFile, tailLines } from '../platform/fsx.ts';
 import { hostPlatform } from '../platform/host.ts';
 import { layoutOfRuntimeDir, type RuntimeLayout } from '../platform/layout.ts';
 import { hasRuntimeMarker } from '../platform/markers.ts';
-import { commandLineOf, forceKill, isValidPid, pidAlive, waitForExit } from '../platform/process.ts';
+import { commandLineOf, forceKill, forceKillTree, isValidPid, pidAlive, waitForExit } from '../platform/process.ts';
 import { adoptWorkspace, ensureWorkspaceDir, readInstanceFile } from '../workspace/adopt.ts';
 import { assertNotLink, compareAndDelete } from '../workspace/fsio.ts';
 import { listWorkspaceSlugs } from '../workspace/list.ts';
@@ -86,6 +88,8 @@ export interface ProcessApi {
   pidAlive(pid: number): boolean;
   commandLineOf(pid: number): Promise<string | null>;
   forceKill(pid: number): Promise<void>;
+  /** `forceKill` for the process and everything it started: the one tree kill of the engine (06 3.5). */
+  forceKillTree(pid: number): Promise<void>;
   waitForExit(pid: number, timeoutMs: number, pollMs?: number): Promise<boolean>;
 }
 
@@ -122,7 +126,7 @@ interface Effects {
   readonly signals: Pick<NodeJS.Process, 'on' | 'off'>;
 }
 
-const REAL_PROCESSES: ProcessApi = { pidAlive, commandLineOf, forceKill, waitForExit };
+const REAL_PROCESSES: ProcessApi = { pidAlive, commandLineOf, forceKill, forceKillTree, waitForExit };
 
 async function openInBrowser(url: string): Promise<boolean> {
   if (!isLoopbackBase(url)) return false;
@@ -201,9 +205,19 @@ export interface StartResult {
   readonly warnings: readonly string[];
 }
 
+/** What the stop is for; it only changes the words of a refusal (`restarting`, `upgrading`). The control reason stays `stop`. */
+export type StopPurpose = 'stop' | 'restart' | 'upgrade';
+
 export interface StopInput extends TargetInput {
   /** Overrides `process.stopTimeoutMs`. */
   readonly timeoutMs?: number;
+  /**
+   * User instance only (06 3): stop although terminals are live, or although they cannot be counted. A task instance has no
+   * terminals: it is never asked and never sent `force` (a server that predates the key would read the request as invalid).
+   */
+  readonly force?: boolean;
+  /** Default `stop`. */
+  readonly purpose?: StopPurpose;
 }
 
 export type StopOutcome = 'nothing-to-stop' | 'stale-removed' | 'stopped' | 'stopped-forced';
@@ -216,6 +230,8 @@ export interface StopResult {
   readonly forced: boolean;
   /** Why the graceful path was given up (forced stops only). */
   readonly reason: string | null;
+  /** The live terminal sessions that this stop ended (the census before it): 0 for a task instance and when none could be counted. */
+  readonly terminalsEnded: number;
   readonly exitCode: 0 | 1;
   readonly message: readonly string[];
 }
@@ -315,10 +331,16 @@ function secondsText(ms: number): string {
   return String(Math.round(ms / 100) / 10);
 }
 
-function childEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+/**
+ * The environment of the server process. A task instance runs with `MCS_HOOK_DISABLE=1` (its own hooks must not feed back
+ * into it); a user instance runs without it, whatever the caller has set, because the `claude` processes of its terminal
+ * descend from the server and their hooks are the person's (06 1.7).
+ */
+function childEnv(env: Readonly<Record<string, string | undefined>>, kind: InstanceKind): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(env)) if (value !== undefined) out[name] = value;
-  out['MCS_HOOK_DISABLE'] = '1';
+  if (kind === 'user') delete out['MCS_HOOK_DISABLE'];
+  else out['MCS_HOOK_DISABLE'] = '1';
   return out;
 }
 
@@ -419,7 +441,7 @@ async function configOrNull(ctx: OpContext, ws: WorkspaceRef): Promise<ResolvedC
 }
 
 /** The token of `run/control.token` (64 hex digits), or `null`. Never logged, never returned to a caller. */
-async function readToken(ws: WorkspaceRef): Promise<string | null> {
+export async function readToken(ws: WorkspaceRef): Promise<string | null> {
   const file = workspacePath(ws, 'run', 'control.token');
   try {
     assertNotLink(file);
@@ -612,7 +634,7 @@ export async function start(ctx: OpContext, input: StartInput = {}, deps: Lifecy
     });
   }
 
-  return launch(ctx, e, ws, base, message, warnings, input, startTimeoutMs);
+  return launch(ctx, e, ws, base, message, warnings, input, startTimeoutMs, instanceKindOf(instance));
 }
 
 interface Exit {
@@ -630,6 +652,7 @@ async function launch(
   warnings: string[],
   input: StartInput,
   timeoutMs: number,
+  kind: InstanceKind,
 ): Promise<StartResult> {
   const main = serverMainOf(ctx);
   const fd = await openBootLog(ws);
@@ -638,7 +661,7 @@ async function launch(
   try {
     child = e.spawnDetached(process.execPath, serveArgv(main, ws, base.instanceId, input), {
       cwd: ws.dir,
-      env: childEnv(ctx.env),
+      env: childEnv(ctx.env, kind),
       stdoutFd: fd,
       stderrFd: fd,
     });
@@ -776,8 +799,9 @@ function stopResult(
   outcome: StopOutcome,
   probe: ProbeResult | null,
   message: string,
-  extra: { forced?: boolean; reason?: string } = {},
+  extra: { forced?: boolean; reason?: string; ended?: number } = {},
 ): StopResult {
+  const ended = extra.ended ?? 0;
   return {
     outcome,
     slug: base.slug,
@@ -785,10 +809,13 @@ function stopResult(
     url: probe?.url ?? null,
     forced: extra.forced ?? false,
     reason: extra.reason ?? null,
+    terminalsEnded: ended,
     exitCode: 0,
-    message: [message],
+    message: ended > 0 ? [message, endedLine(ended)] : [message],
   };
 }
+
+const endedLine = (count: number): string => `ended ${String(count)} terminal session${count === 1 ? '' : 's'}`;
 
 const staleMessage = (pid: number | null): string =>
   `pid ${pid === null ? '?' : String(pid)} is not this instance's runtime (already stopped or pid reused); removed the stale state file, nothing was killed`;
@@ -798,11 +825,106 @@ async function removeStaleState(ws: WorkspaceRef, probe: ProbeResult): Promise<v
   if (probe.stateFileBytes !== null) await compareAndDelete(workspacePath(ws, 'state.json'), probe.stateFileBytes);
 }
 
+// ---- the terminal guard (06 3, ADR 0093) -----------------------------------------------------------------------------------------
+
+/** What the stop is told about the instance: its kind decides whether anyone asks about terminals at all. */
+interface StopGuard {
+  readonly kind: InstanceKind;
+  readonly force: boolean;
+  readonly purpose: StopPurpose;
+}
+
+/**
+ * The terminal sessions of a user instance as the control op `terminals` reported them. `live` is `null` when nobody could say
+ * (no token, a silent or hung channel, a refusal that is not the answer of an older server). Names stay on the person's own
+ * terminal (the refusal text and its details): they are never logged.
+ */
+interface Census {
+  readonly live: number | null;
+  readonly sessions: readonly string[];
+}
+
+const UNKNOWN_CENSUS: Census = { live: null, sessions: [] };
+const NO_TERMINALS: Census = { live: 0, sessions: [] };
+const NAMES_SHOWN = 5;
+
+const PURPOSE_WORDS: Readonly<Record<StopPurpose, { readonly gerund: string; readonly command: string }>> = {
+  stop: { gerund: 'stopping', command: 'caw stop --force' },
+  restart: { gerund: 'restarting', command: 'caw restart --force' },
+  upgrade: { gerund: 'upgrading', command: 'caw upgrade --user --yes --restart --force' },
+};
+
+/**
+ * Asks the instance how many terminals it holds (`terminals`, token required, works in every phase). An older server that does
+ * not know the op answers `BAD_REQUEST` or `UNSUPPORTED`: it has no terminals, so that is zero live. Anything else that is not a
+ * `terminals` reply is unknown.
+ */
+async function queryCensus(e: Effects, instanceId: string, token: string): Promise<Census> {
+  const attempt = await e.control(
+    controlAddressOf(instanceId),
+    { v: 1, op: 'terminals', instanceId, token },
+    { timeoutMs: CONTROL_TIMEOUT_MS },
+  );
+  switch (attempt.kind) {
+    case 'reply': {
+      const reply = attempt.response;
+      return reply.op === 'terminals'
+        ? { live: reply.live, sessions: reply.sessions.map((session) => session.name) }
+        : UNKNOWN_CENSUS;
+    }
+    case 'refusal':
+      return attempt.error === 'BAD_REQUEST' || attempt.error === 'UNSUPPORTED' ? NO_TERMINALS : UNKNOWN_CENSUS;
+    case 'absent':
+    case 'silent':
+      return UNKNOWN_CENSUS;
+  }
+}
+
+function namesText(names: readonly string[]): string {
+  const shown = names.slice(0, NAMES_SHOWN).join(', ');
+  return names.length > NAMES_SHOWN ? `${shown}, +${String(names.length - NAMES_SHOWN)} more` : shown;
+}
+
+/**
+ * The refusal of a stop that would end terminals (exit 3). `unknown`: the count could not be had; `late`: the server refused a
+ * shutdown that the census had allowed, and the second census could not name a count. The wording follows 06 3.3.
+ */
+function terminalsRefusal(census: Census, purpose: StopPurpose, cause: 'counted' | 'unknown' | 'late'): McsError {
+  const { gerund, command } = PURPOSE_WORDS[purpose];
+  const details = { live: census.live, sessions: [...census.sessions] };
+  if (cause === 'late') {
+    return new McsError('TERMINALS_LIVE', `terminal sessions are live; ${gerund} would end them`, {
+      hint: `close them in the app, or run \`${command}\` to end them now`,
+      details,
+    });
+  }
+  if (cause === 'unknown' || census.live === null) {
+    return new McsError(
+      'TERMINALS_LIVE',
+      `the app does not answer, so its terminal sessions cannot be counted; ${gerund} may end live terminals`,
+      { hint: `run \`${command}\` to kill it (the process is verified first)`, details },
+    );
+  }
+  const live = census.live;
+  const sessions = live === 1 ? 'terminal session is' : 'terminal sessions are';
+  const names = census.sessions.length === 0 ? '' : ` (${namesText(census.sessions)})`;
+  const them = live === 1 ? 'it' : 'them';
+  return new McsError('TERMINALS_LIVE', `${String(live)} ${sessions} live${names}; ${gerund} would end ${them}`, {
+    hint: `close ${them} in the app, or run \`${command}\` to end ${them} now`,
+    details,
+  });
+}
+
 /**
  * `ops.lifecycle.stop` (01 4.9). Graceful first (control `shutdown` with the token of the instance, then a wait for the
  * exit). The forced path is the only one that kills: the command line of the pid must carry the runtime marker of this
  * instance (`hasRuntimeMarker`); a pid without that proof is never killed. A monitor that this runtime did not start
  * (`unmanaged-running`) is refused with `NOT_OUR_PROCESS` and never signalled (ADR 0066).
+ *
+ * A user instance (instance.json `kind: user`, 06 3.2) is asked first how many terminals it holds: any live terminal, or a count
+ * that cannot be had, refuses the stop with `TERMINALS_LIVE` (exit 3) unless `force` is set, and the shutdown carries `force`.
+ * The server decides in the end (a late refusal asks again and never kills), a forced kill ends the whole process tree, and a
+ * task instance is neither asked nor sent anything new.
  */
 export async function stop(ctx: OpContext, input: StopInput = {}, deps: LifecycleDeps = {}): Promise<StopResult> {
   const e = effects(deps);
@@ -811,6 +933,11 @@ export async function stop(ctx: OpContext, input: StopInput = {}, deps: Lifecycl
   const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
   const config = await configOrNull(ctx, ws);
   const waitMs = input.timeoutMs ?? config?.runtime.process.stopTimeoutMs ?? FALLBACK_STOP_TIMEOUT_MS;
+  const guard: StopGuard = {
+    kind: instance === null ? 'task' : instanceKindOf(instance),
+    force: input.force === true,
+    purpose: input.purpose ?? 'stop',
+  };
 
   switch (probe.state) {
     case 'stopped':
@@ -837,7 +964,7 @@ export async function stop(ctx: OpContext, input: StopInput = {}, deps: Lifecycl
     case 'starting':
     case 'stopping':
     case 'unhealthy':
-      return stopRuntime(ctx, e, ws, instance, probe, waitMs, config);
+      return stopRuntime(ctx, e, ws, instance, probe, waitMs, config, guard);
   }
 }
 
@@ -862,6 +989,7 @@ async function stopRuntime(
   probe: ProbeResult,
   waitMs: number,
   config: ResolvedConfig | null,
+  guard: StopGuard,
 ): Promise<StopResult> {
   const pid = probe.pid;
   if (pid === null || !isValidPid(pid)) {
@@ -876,32 +1004,59 @@ async function stopRuntime(
     });
   }
 
+  const user = guard.kind === 'user';
+  let census: Census = NO_TERMINALS;
   let forcedReason: string | null = null;
   if (probe.state === 'unhealthy' && probe.identity === null) {
-    // a hung runtime goes straight to the forced path (01 4.9)
+    // a hung runtime goes straight to the forced path (01 4.9); of a user instance nobody can say what it holds
+    if (user && !guard.force) throw terminalsRefusal(UNKNOWN_CENSUS, guard.purpose, 'unknown');
+    if (user) census = UNKNOWN_CENSUS;
     forcedReason = 'the runtime holds the control channel but does not answer';
   } else if (probe.state !== 'stopping') {
     const token = await readToken(ws);
+    // `starting`: no terminal can exist yet; `stopping`: it is going down already (06 3.2)
+    if (user && (probe.state === 'running' || probe.state === 'unhealthy')) {
+      census = token === null ? UNKNOWN_CENSUS : await queryCensus(e, instanceId, token);
+      if (!guard.force) {
+        if (census.live === null) throw terminalsRefusal(census, guard.purpose, 'unknown');
+        if (census.live > 0) throw terminalsRefusal(census, guard.purpose, 'counted');
+      }
+    }
     if (token === null) {
       forcedReason = 'there is no control token';
     } else {
       const attempt = await e.control(
         controlAddressOf(instanceId),
-        { v: 1, op: 'shutdown', instanceId, token, reason: 'stop' },
+        {
+          v: 1,
+          op: 'shutdown',
+          instanceId,
+          token,
+          reason: 'stop',
+          ...(user && guard.force ? { force: true as const } : {}),
+        },
         { timeoutMs: CONTROL_TIMEOUT_MS },
       );
+      if (user && attempt.kind === 'refusal' && attempt.error === 'TERMINALS_LIVE') {
+        // a session appeared between the census and the shutdown: the server decided, so it is never killed over this
+        const fresh = await queryCensus(e, instanceId, token);
+        throw fresh.live !== null && fresh.live > 0
+          ? terminalsRefusal(fresh, guard.purpose, 'counted')
+          : terminalsRefusal(UNKNOWN_CENSUS, guard.purpose, 'late');
+      }
       // an `absent` channel may be a runtime that is already on its way out: the wait below decides
       forcedReason = attempt.kind === 'absent' ? null : forcedReasonOf(attempt);
     }
   }
+  const ended = census.live ?? 0;
   if (forcedReason === null) {
     if (await e.processes.waitForExit(pid, waitMs)) {
       await removeStateOf(ws, pid);
-      return stopResult(ws, 'stopped', probe, `stopped runtime pid ${String(pid)} (${probe.url ?? '?'})`);
+      return stopResult(ws, 'stopped', probe, `stopped runtime pid ${String(pid)} (${probe.url ?? '?'})`, { ended });
     }
     forcedReason = `still alive after ${String(waitMs)} ms`;
   }
-  return forceStop(ctx, e, ws, instanceId, probe, pid, forcedReason, config);
+  return forceStop(ctx, e, ws, instanceId, probe, pid, forcedReason, config, { tree: user, ended });
 }
 
 async function forceStop(
@@ -913,6 +1068,7 @@ async function forceStop(
   pid: number,
   reason: string,
   config: ResolvedConfig | null,
+  kill: { readonly tree: boolean; readonly ended: number },
 ): Promise<StopResult> {
   const line = await e.processes.commandLineOf(pid);
   if (line === null) {
@@ -933,7 +1089,8 @@ async function forceStop(
       },
     );
   }
-  await e.processes.forceKill(pid);
+  // the marker proves the pid; the terminals are its descendants, so they go with it (06 3.5, the one tree kill of the engine)
+  await (kill.tree ? e.processes.forceKillTree(pid) : e.processes.forceKill(pid));
   if (!(await e.processes.waitForExit(pid, FORCED_KILL_WAIT_MS))) {
     throw new McsError('STOP_FAILED', `pid ${String(pid)} still alive after stop request`);
   }
@@ -948,6 +1105,7 @@ async function forceStop(
     {
       forced: true,
       reason,
+      ended: kill.ended,
     },
   );
 }
@@ -1327,7 +1485,7 @@ export async function serveForeground(
   const main = serverMainOf(ctx);
   const child = e.spawnForeground(process.execPath, serveArgv(main, ws, instance.instanceId, input), {
     cwd: ws.dir,
-    env: childEnv(ctx.env),
+    env: childEnv(ctx.env, instanceKindOf(instance)),
   });
 
   const ended = new Promise<Exit | { readonly failure: string }>((resolve) => {

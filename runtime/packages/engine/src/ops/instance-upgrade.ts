@@ -216,6 +216,11 @@ export interface UpgradeInput {
   readonly dryRun?: boolean;
   /** `--restart`: stop the running server before the backup and start it again at the end. */
   readonly restart?: boolean;
+  /**
+   * `--force` (user instance, 06 3): the stop of `--restart` ends live terminals instead of refusing with `TERMINALS_LIVE`.
+   * Without `--restart` it changes nothing: a live monitor is still refused.
+   */
+  readonly force?: boolean;
 }
 
 interface Applied {
@@ -249,11 +254,22 @@ function assertNotDowngrade(instance: InstanceFile): void {
 }
 
 /** Stops the server for `--restart`: ours is stopped, one of another runtime is refused, anything else is just left. */
-async function stopForRestart(ctx: OpContext, ws: WorkspaceRef, deps: UpgradeDeps, restart: boolean): Promise<boolean> {
+async function stopForRestart(
+  ctx: OpContext,
+  ws: WorkspaceRef,
+  deps: UpgradeDeps,
+  restart: boolean,
+  force: boolean,
+): Promise<boolean> {
   const probe = await probeOf(ctx, ws, deps);
   if (!isLiveState(probe.state)) return false;
   if (!restart || probe.state === 'unmanaged-running') throw liveError(ws, probe, probe.state !== 'unmanaged-running');
-  const stopped = await (deps.lifecycle?.stop ?? stop)(ctx, { task: ws.slug });
+  // a user instance refuses while terminals are live unless forced; that refusal ends the upgrade before anything is written
+  const stopped = await (deps.lifecycle?.stop ?? stop)(ctx, {
+    task: ws.slug,
+    purpose: 'upgrade',
+    ...(force ? { force: true } : {}),
+  });
   if (stopped.exitCode !== 0) {
     throw new McsError('STOP_FAILED', `the server could not be stopped: ${stopped.message.join(' ')}`, {
       hint: `mcs stop --task ${ws.slug}`,
@@ -286,7 +302,7 @@ async function applyUpgrade(
   deps: UpgradeDeps,
 ): Promise<Applied> {
   const restart = input.restart === true;
-  const stopped = await stopForRestart(ctx, ws, deps, restart);
+  const stopped = await stopForRestart(ctx, ws, deps, restart, input.force === true);
   const migrated = (plan.db?.steps.length ?? 0) > 0;
   try {
     let backup: MadeBackup;

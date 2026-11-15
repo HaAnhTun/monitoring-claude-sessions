@@ -37,7 +37,7 @@ import {
   type UpgradeDeps,
   type UpgradeStep,
 } from './instance-upgrade.ts';
-import type { StartResult, StopResult } from './lifecycle.ts';
+import type { StartResult, StopInput, StopResult } from './lifecycle.ts';
 import type { ProbeResult, ProbeState } from './probe.ts';
 import type { OpContext } from './workspace.ts';
 
@@ -198,8 +198,13 @@ function leaveStaleWal(f: Fixture, marker: string): void {
 }
 
 /** Scripted `stop` and `start` of `--restart`, and a probe that follows them. */
-function scriptedLifecycle(initial: ProbeState, o: { startExit?: 0 | 1; startFails?: McsError } = {}) {
+function scriptedLifecycle(
+  initial: ProbeState,
+  o: { startExit?: 0 | 1; startFails?: McsError; stopFails?: McsError } = {},
+) {
   const calls: string[] = [];
+  /** What `--restart` asked `stop` to do, one entry per call. */
+  const stops: StopInput[] = [];
   let state: ProbeState = initial;
   const stopResult: StopResult = {
     outcome: 'stopped',
@@ -208,14 +213,17 @@ function scriptedLifecycle(initial: ProbeState, o: { startExit?: 0 | 1; startFai
     url: null,
     forced: false,
     reason: null,
+    terminalsEnded: 0,
     exitCode: 0,
     message: ['stopped runtime pid 4242'],
   };
   const deps: UpgradeDeps = {
     probe: () => Promise.resolve(probeResult(state)),
     lifecycle: {
-      stop: () => {
+      stop: (_ctx, input) => {
         calls.push('stop');
+        stops.push(input ?? {});
+        if (o.stopFails !== undefined) return Promise.reject(o.stopFails);
         state = 'stopped';
         return Promise.resolve(stopResult);
       },
@@ -244,7 +252,7 @@ function scriptedLifecycle(initial: ProbeState, o: { startExit?: 0 | 1; startFai
       calls.push(`step:${step}`);
     },
   };
-  return { calls, deps };
+  return { calls, deps, stops };
 }
 
 describe('compareSemver', () => {
@@ -604,6 +612,44 @@ describe('upgrade', () => {
       expect(runLines(result)).toEqual(
         expect.arrayContaining(['stopped the running server first', 'started: http://127.0.0.1:18002 (pid 5151)']),
       );
+    });
+
+    it('--force passes through to the stop of --restart, and without it the stop is not told to force', async () => {
+      const forced = setup();
+      const scripted = scriptedLifecycle('running');
+      await run(
+        forced.ctx,
+        { task: 'demo', yes: true, restart: true, force: true },
+        { ...scripted.deps, migrations: migrationsWith(STEP_2) },
+      );
+      expect(scripted.stops).toEqual([{ task: 'demo', force: true, purpose: 'upgrade' }]);
+
+      const plain = setup();
+      const plainScript = scriptedLifecycle('running');
+      await run(plain.ctx, { task: 'demo', yes: true, restart: true }, plainScript.deps);
+      expect(plainScript.stops).toEqual([{ task: 'demo', purpose: 'upgrade' }]);
+      expect(Object.hasOwn(plainScript.stops[0] ?? {}, 'force')).toBe(false);
+    });
+
+    it('a refusal of the stop (terminals are live) ends the upgrade before the backup: nothing is written, the refusal is the error', async () => {
+      const f = setup();
+      const before = snap(f.dir);
+      const refusal = new McsError('TERMINALS_LIVE', '1 terminal session is live (api-1); upgrading would end it', {
+        details: { live: 1, sessions: ['api-1'] },
+      });
+      const { deps, calls } = scriptedLifecycle('running', { stopFails: refusal });
+      const error = await failureOf(() => run(f.ctx, { task: 'demo', yes: true, restart: true }, deps));
+      expect(error).toBe(refusal);
+      expect(calls).toEqual(['stop']);
+      expect(snap(f.dir)).toBe(before);
+    });
+
+    it('--force without --restart changes nothing: a live monitor is still INSTANCE_RUNNING', async () => {
+      const f = setup();
+      const { deps, calls } = scriptedLifecycle('running');
+      const error = await failureOf(() => run(f.ctx, { task: 'demo', yes: true, force: true }, deps));
+      expect(error.code).toBe('INSTANCE_RUNNING');
+      expect(calls).toEqual([]);
     });
 
     it('--restart on a stopped task still starts it at the end (the old database made start fail with DB_UPGRADE_REQUIRED)', async () => {

@@ -1005,3 +1005,32 @@ export type {
   UserServices,
 } from './runtime/user-services.ts';
 // @wp-end CAW-22
+
+// @wp-begin CAW-23
+export * as opsApp from './ops/app.ts';
+export type {
+  UserDeps,
+  UserLifecycle,
+  UserLogin,
+  UserOpenInput,
+  UserOpenResult,
+  UserRestartResult,
+  UserServeInput,
+  UserSettings,
+  UserStartInput,
+  UserStartResult,
+  UserStatusReport,
+  UserStatusResult,
+  UserStopInput,
+  UserStopResult,
+} from './ops/app.ts';
+export {
+  APP_CHECK_IDS,
+  appCheckProviders,
+  claudeVersionOf,
+  openRunFolderGroups,
+  userCheckIds,
+} from './ops/app-checks.ts';
+export type { AppCheckDeps, AppSettings } from './ops/app-checks.ts';
+export type { StopPurpose } from './ops/lifecycle.ts';
+// @wp-end CAW-23
