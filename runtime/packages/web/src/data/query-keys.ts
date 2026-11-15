@@ -25,4 +25,15 @@ export const qk = {
     ['mcs', iid, 'analytics', kind, q] as const,
   config: (iid: string) => ['mcs', iid, 'config'] as const,
   panel: (iid: string, key: PanelKey) => ['mcs', iid, 'panel', key] as const,
+  // ---- access, terminal, folders and resume (ADR 0099, design 04 4.2) ---------------------------------------------------
+  /** `GET /auth/session`: whether this browser holds the session cookie. Set to `false` by `markLocked`. */
+  authSession: (iid: string) => ['mcs', iid, 'auth'] as const,
+  terminalState: (iid: string) => ['mcs', iid, 'terminal'] as const,
+  folders: (iid: string) => ['mcs', iid, 'folders'] as const,
+  /** The monitor rows of the live terminals (`ids`: the sorted session ids, comma-joined). Under `sessions`: the stream patches them in place. */
+  linkedSessions: (iid: string, ids: string) => ['mcs', iid, 'sessions', { linked: true, ids }] as const,
+  /** The recent sessions of one folder row (`folderKey`: the project key). Under `sessions`, like `linkedSessions`. */
+  folderSessions: (iid: string, folderKey: string) =>
+    ['mcs', iid, 'sessions', { recent: true, folder: folderKey }] as const,
+  resumeEligibility: (iid: string, sid: string) => ['mcs', iid, 'resume', sid] as const,
 };

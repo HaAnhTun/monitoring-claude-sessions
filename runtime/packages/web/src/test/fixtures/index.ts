@@ -10,5 +10,6 @@ export * from './overview.ts';
 export * from './pages.ts';
 export * from './panels.ts';
 export * from './sessions.ts';
+export * from './terminal.ts';
 export * from './transcript.ts';
 export * from './work-items.ts';

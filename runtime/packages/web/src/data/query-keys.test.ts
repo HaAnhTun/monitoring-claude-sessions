@@ -6,6 +6,7 @@ import {
   SeriesQuerySchema,
   SessionListQuerySchema,
   UsageQuerySchema,
+  WRITE_ROUTE_IDS,
   fromQuery,
   routes,
   toQuery,
@@ -19,10 +20,12 @@ import {
   type AnalyticsUrlState,
   type SessionsUrlState,
 } from '../lib/url-state.ts';
+import { ApiError } from './api-errors.ts';
 import {
   ENDPOINT_NAMES,
   ENDPOINT_ROUTE,
   panelEndpoint,
+  pathFor,
   toAnalyticsSeriesFilter,
   toAnalyticsToolsFilter,
   toAnalyticsUsageFilter,
@@ -146,8 +149,124 @@ describe('endpoints: names and routes', () => {
     for (const key of PANEL_KEYS) expect(ENDPOINT_ROUTE[panelEndpoint(key)]).toBe('panel');
   });
 
-  it('uses routes that exist and that are GET', () => {
-    for (const name of ENDPOINT_NAMES) expect(routes[ENDPOINT_ROUTE[name]].method).toBe('GET');
+  it('maps the access, terminal, folder and resume endpoints to the routes of the registry (ADR 0099)', () => {
+    expect(ENDPOINT_ROUTE).toMatchObject({
+      authSession: 'authSession',
+      authExchange: 'authExchange',
+      authLogout: 'authLogout',
+      terminalState: 'terminalState',
+      terminalCreateSession: 'terminalCreateSession',
+      terminalKillSession: 'terminalKillSession',
+      terminalPickFolder: 'terminalPickFolder',
+      terminalResume: 'terminalResume',
+      folders: 'listFolders',
+      addFolder: 'addFolder',
+      sessionResume: 'sessionResume',
+    });
+  });
+
+  it('uses routes that exist; a route is a POST exactly when the registry lists it as a write', () => {
+    for (const name of ENDPOINT_NAMES) {
+      const id = ENDPOINT_ROUTE[name];
+      expect(routes[id].method, name).toBe(WRITE_ROUTE_IDS.includes(id) ? 'POST' : 'GET');
+    }
+  });
+
+  it('calls exactly the seven write routes of the UI with a POST and keeps the rest GET', () => {
+    const posts = ENDPOINT_NAMES.filter((name) => routes[ENDPOINT_ROUTE[name]].method === 'POST');
+    expect([...posts].sort()).toEqual(
+      [
+        'authExchange',
+        'authLogout',
+        'terminalCreateSession',
+        'terminalKillSession',
+        'terminalPickFolder',
+        'terminalResume',
+        'addFolder',
+      ].sort(),
+    );
+  });
+
+  it('builds the kill path from a terminal name and answers not-found without a request for an invalid one', () => {
+    expect(pathFor('terminalKillSession', routes.terminalKillSession, { name: 'repo-1' })).toBe(
+      '/api/v3/terminal/sessions/repo-1/kill',
+    );
+    for (const name of ['', 'a b', 'a/b', '..', 'x'.repeat(65)]) {
+      expect(() => pathFor('terminalKillSession', routes.terminalKillSession, { name }), JSON.stringify(name)).toThrow(
+        ApiError,
+      );
+    }
+  });
+
+  it('builds the resume eligibility path from a session id only', () => {
+    expect(pathFor('sessionResume', routes.sessionResume, { sessionId: SID })).toBe(`/api/v3/sessions/${SID}/resume`);
+    expect(() => pathFor('sessionResume', routes.sessionResume, { sessionId: 'not-an-id' })).toThrow(ApiError);
+  });
+});
+
+describe('qk: access, terminal, folder and resume keys (ADR 0099)', () => {
+  it('starts every one with the instance id', () => {
+    const keys = [
+      qk.authSession(IID_A),
+      qk.terminalState(IID_A),
+      qk.folders(IID_A),
+      qk.linkedSessions(IID_A, SID),
+      qk.folderSessions(IID_A, 'folder-key'),
+      qk.resumeEligibility(IID_A, SID),
+    ];
+    for (const key of keys) expect(key.slice(0, 2)).toEqual(['mcs', IID_A]);
+  });
+
+  it('uses the shapes of design 04 4.2', () => {
+    expect(qk.authSession(IID_A)).toEqual(['mcs', IID_A, 'auth']);
+    expect(qk.terminalState(IID_A)).toEqual(['mcs', IID_A, 'terminal']);
+    expect(qk.folders(IID_A)).toEqual(['mcs', IID_A, 'folders']);
+    expect(qk.resumeEligibility(IID_A, SID)).toEqual(['mcs', IID_A, 'resume', SID]);
+    expect(qk.linkedSessions(IID_A, 'a,b')).toEqual(['mcs', IID_A, 'sessions', { linked: true, ids: 'a,b' }]);
+    expect(qk.folderSessions(IID_A, 'k')).toEqual(['mcs', IID_A, 'sessions', { recent: true, folder: 'k' }]);
+  });
+
+  it('keeps the linked and folder keys under the sessions prefix, so the stream patches their rows', () => {
+    const prefix = ['mcs', IID_A, 'sessions'];
+    expect(qk.linkedSessions(IID_A, 'a').slice(0, 3)).toEqual(prefix);
+    expect(qk.folderSessions(IID_A, 'k').slice(0, 3)).toEqual(prefix);
+    expect(qk.sessions(IID_A, {}).slice(0, 3)).toEqual(prefix);
+  });
+
+  it('keeps those two lists apart from each other, from the explorer and from the sidebar', () => {
+    const hashes = [
+      hashKey(qk.linkedSessions(IID_A, 'a')),
+      hashKey(qk.linkedSessions(IID_A, 'b')),
+      hashKey(qk.folderSessions(IID_A, 'a')),
+      hashKey(qk.folderSessions(IID_A, 'b')),
+      hashKey(qk.sessions(IID_A, {})),
+      hashKey(qk.sidebarSessions(IID_A, false)),
+    ];
+    expect(new Set(hashes).size).toBe(hashes.length);
+    // the sidebar special case of the reconciler keys on `sidebar`: neither new key carries it
+    expect(qk.linkedSessions(IID_A, 'a')[3]).not.toHaveProperty('sidebar');
+    expect(qk.folderSessions(IID_A, 'a')[3]).not.toHaveProperty('sidebar');
+  });
+
+  it('keeps the auth, terminal, folder and resume entries apart, per instance and per session', () => {
+    const hashes = [
+      hashKey(qk.authSession(IID_A)),
+      hashKey(qk.terminalState(IID_A)),
+      hashKey(qk.folders(IID_A)),
+      hashKey(qk.resumeEligibility(IID_A, SID)),
+      hashKey(qk.session(IID_A, SID)),
+    ];
+    expect(new Set(hashes).size).toBe(hashes.length);
+    expect(hashKey(qk.terminalState(IID_A))).not.toBe(hashKey(qk.terminalState(IID_B)));
+    expect(hashKey(qk.authSession(IID_A))).not.toBe(hashKey(qk.authSession(IID_B)));
+    expect(hashKey(qk.resumeEligibility(IID_A, SID))).not.toBe(hashKey(qk.resumeEligibility(IID_A, 'other')));
+  });
+
+  it('the terminal prefix removes the terminal state and nothing else of the instance', () => {
+    const terminal = qk.terminalState(IID_A);
+    for (const other of [qk.authSession(IID_A), qk.folders(IID_A), qk.health(IID_A), qk.sessions(IID_A, {})]) {
+      expect(other.slice(0, terminal.length)).not.toEqual([...terminal]);
+    }
   });
 });
 

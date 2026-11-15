@@ -23,6 +23,8 @@ export interface ApiErrorInfo {
   retryAfterMs?: number;
   /** A timeout only: how long the request waited, in milliseconds. */
   timeoutMs?: number;
+  /** Set to `'POST'` by `ApiClient.post` and absent for a read, so a failed write can be told from a failed read (ADR 0099). */
+  method?: 'POST';
 }
 
 export class ApiError extends Error {
@@ -68,6 +70,45 @@ function say<K extends MessageKey>(messageKey: K, ...args: ArgsTuple<K>): ApiErr
   return { messageKey, args: args[0], text: (t) => t(messageKey, ...args) };
 }
 
+/** The codes of the terminal area whose words take no argument. */
+const PLAIN_CODE_KEYS = {
+  access_code_invalid: 'error.handling.accessInvalid',
+  terminal_unavailable: 'error.handling.terminalUnavailable',
+  claude_not_found: 'error.handling.claudeNotFound',
+  folder_invalid: 'error.handling.folderInvalid',
+  folder_not_found: 'error.handling.folderInvalid',
+  terminal_not_found: 'error.handling.terminalNotFound',
+  terminal_limit: 'error.handling.terminalLimit',
+  resume_unavailable: 'error.handling.notResumable',
+  picker_busy: 'error.handling.pickerBusy',
+  folder_limit: 'error.handling.folderLimit',
+} as const satisfies Partial<Record<ErrorCode, MessageKey>>;
+
+function isPlainCode(code: ErrorCode): code is keyof typeof PLAIN_CODE_KEYS {
+  return Object.hasOwn(PLAIN_CODE_KEYS, code);
+}
+
+/**
+ * The words of the codes of the access and terminal area (ADR 0099), `null` for any other failure. They come from the catalogue
+ * and never from the server text, so a message cannot echo what the person typed or pasted. `access_required` reads by what it
+ * was: a read the page could not show (the locked view, "Access link needed") or a write that was refused.
+ */
+function codedMessage(error: ApiError): ApiErrorMessage | null {
+  const { status, code, retryAfterMs, method } = error.info;
+  if (code === null) return null;
+  if (code === 'access_required') {
+    return status === 401
+      ? say(method === 'POST' ? 'error.handling.accessRequired' : 'error.handling.accessLocked')
+      : null;
+  }
+  if (code === 'access_rate_limited') {
+    return retryAfterMs === undefined
+      ? say('error.handling.busy')
+      : say('error.handling.accessRateLimited', { seconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) });
+  }
+  return isPlainCode(code) ? say(PLAIN_CODE_KEYS[code]) : null;
+}
+
 /**
  * What a failure says, as a catalogue key and arguments. It is derived from `ApiError.info` only (kind, status, the envelope
  * message and the timeout), never from the English text in `ApiError.message`.
@@ -91,6 +132,8 @@ export function apiErrorMessage(error: ApiError): ApiErrorMessage {
     case 'http':
       break;
   }
+  const coded = codedMessage(error);
+  if (coded !== null) return coded;
   if (status === 403) return say('error.api.forbidden');
   if (status === 404) return detail === '' ? say('error.api.notFound') : say('error.api.notFoundDetail', { detail });
   if (status >= 500) {
@@ -124,6 +167,19 @@ export type ErrorAction =
   | 'refused-address'
   /** The not-found states of 3.4. */
   | 'not-found'
+  /**
+   * A read answered `access_required`: the page keeps its frame and the view says "Access link needed" (ADR 0099). The
+   * session is marked locked by `useAuthSession`.
+   */
+  | 'locked'
+  /** A write answered `access_required`, or `access_code_invalid`: the dialog closes, the locked state shows. */
+  | 'access-required'
+  /** `access_rate_limited` (429): the locked state says "try again in N s" from `retryAfterMs`. */
+  | 'access-rate-limited'
+  /** `terminal_limit` (429): a toast. */
+  | 'terminal-limit'
+  /** `terminal_unavailable` or `claude_not_found` (503): the pane notice by the capability reason. */
+  | 'terminal-unavailable'
   /** The panel is removed from the workspace panels (4.4.1). */
   | 'panel-removed'
   /** The transcript `gone` state. */
@@ -159,7 +215,14 @@ const REJECTED_FILTER_CODES: readonly ErrorCode[] = [
   'filter_requires_scope',
   'query_too_short',
 ];
-const REFUSED_ADDRESS_CODES: readonly ErrorCode[] = ['host_not_allowed', 'origin_not_allowed', 'cross_site_request'];
+const REFUSED_ADDRESS_CODES: readonly ErrorCode[] = [
+  'host_not_allowed',
+  'origin_not_allowed',
+  'cross_site_request',
+  'csrf_rejected',
+];
+/** Codes of the terminal area that are known and complete: no note for the health details (ADR 0099). */
+const KNOWN_OTHER_CODES: readonly ErrorCode[] = ['resume_unavailable', 'picker_busy', 'folder_limit'];
 const NOT_FOUND_CODES: readonly ErrorCode[] = [
   'session_not_found',
   'agent_not_found',
@@ -182,6 +245,29 @@ function handling(
   return { action, retry, messageKey: message.messageKey, args: message.args, text: message.text, healthNote };
 }
 
+/**
+ * The codes of ADR 0099, decided before the generic groups: a 429 or a 503 of these codes is not "busy" or "unavailable" (a
+ * retry would not help, and the words differ). `null` for any other failure.
+ */
+function accessHandling(error: ApiError, generic: ApiErrorMessage): ErrorHandling | null {
+  const { status, code, method } = error.info;
+  if (status === 401 && code === 'access_required') {
+    return handling(method === 'POST' ? 'access-required' : 'locked', 'no', generic);
+  }
+  if (status === 401 && code === 'access_code_invalid') return handling('access-required', 'no', generic);
+  // The retry plans below are the ones of the query client, which treats every 429 as "once" and every 503 as "backoff"
+  // (`shouldRetry`, kept in step by a test); they matter to reads only: a write never retries (ADR 0099).
+  if (status === 429 && code === 'access_rate_limited') return handling('access-rate-limited', 'once', generic);
+  if (status === 429 && code === 'terminal_limit') return handling('terminal-limit', 'once', generic);
+  if (status === 503 && (code === 'terminal_unavailable' || code === 'claude_not_found')) {
+    return handling('terminal-unavailable', 'backoff', generic);
+  }
+  if ((status === 400 && code === 'folder_invalid') || (status === 404 && code === 'folder_not_found')) {
+    return handling('rejected-filter', 'no', generic);
+  }
+  return null;
+}
+
 /** What the UI does for a failure, by status first and by code only where 04 5.1 lists one. */
 export function handlingFor(error: ApiError): ErrorHandling {
   const { kind, status, code } = error.info;
@@ -189,6 +275,9 @@ export function handlingFor(error: ApiError): ErrorHandling {
   if (kind === 'aborted') return handling('aborted', 'no', generic);
   if (kind === 'contract') return handling('contract', 'no', generic);
   if (kind !== 'http') return handling('transport', 'backoff', generic);
+
+  const access = accessHandling(error, generic);
+  if (access !== null) return access;
 
   if (status === 400 && code === 'cursor_invalid') {
     return handling('restart-list', 'no', say('error.handling.listChanged'));
@@ -205,6 +294,7 @@ export function handlingFor(error: ApiError): ErrorHandling {
     return handling('refused-address', 'no', say('error.handling.refusedAddress'));
   }
   if (status === 404 && code === 'panel_disabled') return handling('panel-removed', 'no', generic);
+  if (status === 404 && code === 'terminal_not_found') return handling('not-found', 'no', generic);
   if (status === 404 && has(NOT_FOUND_CODES, code)) return handling('not-found', 'no', generic);
   if (status === 410 && code === 'transcript_gone') {
     return handling('transcript-gone', 'no', say('error.handling.transcriptGone'));
@@ -226,6 +316,6 @@ export function handlingFor(error: ApiError): ErrorHandling {
     'other',
     status >= 500 ? 'backoff' : 'no',
     generic,
-    code === null ? null : say('error.handling.unknownCode', { code }),
+    code === null || has(KNOWN_OTHER_CODES, code) ? null : say('error.handling.unknownCode', { code }),
   );
 }

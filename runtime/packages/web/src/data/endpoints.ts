@@ -45,6 +45,18 @@ export const ENDPOINT_NAMES = [
   'panel.ledger',
   'panel.chainLog',
   'panel.logs',
+  // access, terminal, folders and resume (ADR 0099): the writes are the POST routes of the registry
+  'authSession',
+  'authExchange',
+  'authLogout',
+  'terminalState',
+  'terminalCreateSession',
+  'terminalKillSession',
+  'terminalPickFolder',
+  'terminalResume',
+  'folders',
+  'addFolder',
+  'sessionResume',
 ] as const;
 
 export type EndpointName = (typeof ENDPOINT_NAMES)[number];
@@ -75,6 +87,17 @@ export const ENDPOINT_ROUTE = {
   'panel.ledger': 'panel',
   'panel.chainLog': 'panel',
   'panel.logs': 'panel',
+  authSession: 'authSession',
+  authExchange: 'authExchange',
+  authLogout: 'authLogout',
+  terminalState: 'terminalState',
+  terminalCreateSession: 'terminalCreateSession',
+  terminalKillSession: 'terminalKillSession',
+  terminalPickFolder: 'terminalPickFolder',
+  terminalResume: 'terminalResume',
+  folders: 'listFolders',
+  addFolder: 'addFolder',
+  sessionResume: 'sessionResume',
 } as const satisfies Record<EndpointName, RouteId>;
 
 export function panelEndpoint(key: PanelKey): EndpointName {

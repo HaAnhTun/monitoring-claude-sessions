@@ -1,6 +1,7 @@
 // The one place that calls `fetch` (04-ui.md 5.1, ESLint rule `no-restricted-globals`). Port of the legacy `createApi.get`:
-// timeout, readable errors and per-endpoint tracking, extended with response validation against the shared route schemas.
-// Retries belong to TanStack Query, not to the client.
+// timeout, readable errors and per-endpoint tracking, extended with response validation against the shared route schemas, and
+// `post` for the writes of the terminal area (ADR 0099). Retries belong to TanStack Query, not to the client; a write is never
+// retried by anyone.
 import { ErrorEnvelopeSchema, queryString, toQuery } from '@mcs/shared';
 
 import { ApiError, describeFailure, type ApiErrorKind } from './api-errors.ts';
@@ -28,9 +29,21 @@ export interface GetOptions {
   timeoutMs?: number;
 }
 
+export interface PostOptions {
+  signal?: AbortSignal;
+  /** Overrides the client default for this call (a folder dialog waits for a person: 600 s). */
+  timeoutMs?: number;
+}
+
 export interface ApiClient {
   /** `path` is the registry path with its parameters filled in (`buildPath`); the client adds the base URL and the query. */
   get<T>(name: EndpointName, path: string, schema: ResponseSchema<T>, opts?: GetOptions): Promise<T>;
+  /**
+   * POSTs a JSON body (`Content-Type: application/json` and `X-MCS-Request: 1`, ADR 0045 and 0099) and validates the answer
+   * like `get`. Never retried. A body over 4096 UTF-8 bytes, or one with no JSON form, is a programming error: it throws a
+   * `TypeError` before any request (the server refuses over 4 KiB). Failures are `ApiError`s whose `info.method` is `'POST'`.
+   */
+  post<T>(name: EndpointName, path: string, body: unknown, schema: ResponseSchema<T>, opts?: PostOptions): Promise<T>;
   readonly tracker: EndpointTracker;
 }
 
@@ -45,6 +58,34 @@ export interface ApiClientOptions {
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const RETRY_AFTER_CAP_MS = 30_000;
+/** The body limit of the server for a write (ADR 0084: 4 KiB). */
+const MAX_BODY_BYTES = 4096;
+
+interface RequestSpec {
+  method: 'GET' | 'POST';
+  name: EndpointName;
+  /** The URL path with the query already appended. */
+  target: string;
+  /** The serialized JSON body of a POST. */
+  body?: string;
+  signal?: AbortSignal | undefined;
+  timeoutMs: number;
+}
+
+/** `JSON.stringify` as it really behaves: `undefined` for a value with no JSON form (its declared type says `string`). */
+function jsonText(value: unknown): string | undefined {
+  return JSON.stringify(value);
+}
+
+/** The JSON text of a write body, or a `TypeError` that never repeats the body (it can hold a folder path or a code). */
+function serializeBody(body: unknown): string {
+  const text = jsonText(body);
+  if (text === undefined) throw new TypeError('A request body must have a JSON form');
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) {
+    throw new TypeError(`A request body is at most ${String(MAX_BODY_BYTES)} bytes`);
+  }
+  return text;
+}
 
 /** `null`, `undefined`, `''`, `false` and empty lists are left out; `true` is `1`; lists are comma-joined; keys are sorted. */
 function buildQuery(query: Readonly<Record<string, QueryValue>> | undefined): string {
@@ -84,15 +125,9 @@ export function createApiClient(o: ApiClientOptions = {}): ApiClient {
   const doFetch: typeof fetch = o.fetchImpl ?? ((input, init) => fetch(input, init));
   const tracker = createEndpointTracker();
 
-  async function get<T>(
-    name: EndpointName,
-    path: string,
-    schema: ResponseSchema<T>,
-    opts: GetOptions = {},
-  ): Promise<T> {
-    const timeoutMs = opts.timeoutMs ?? defaultTimeout;
-    const query = buildQuery(opts.query);
-    const url = `${baseUrl}${path}${query === '' ? '' : `?${query}`}`;
+  async function request<T>(spec: RequestSpec, schema: ResponseSchema<T>): Promise<T> {
+    const { name, method, timeoutMs } = spec;
+    const url = `${baseUrl}${spec.target}`;
 
     function fail(
       kind: ApiErrorKind,
@@ -107,12 +142,13 @@ export function createApiClient(o: ApiClientOptions = {}): ApiClient {
         code: null,
         endpoint: name,
         requestId: null,
+        ...(method === 'POST' ? { method } : {}),
         ...(serverMessage === '' ? {} : { serverMessage }),
         ...extra,
       });
     }
 
-    const callerAborted = (): boolean => opts.signal?.aborted === true;
+    const callerAborted = (): boolean => spec.signal?.aborted === true;
     if (callerAborted()) throw fail('aborted', 0, '');
 
     tracker.begin(name);
@@ -122,7 +158,7 @@ export function createApiClient(o: ApiClientOptions = {}): ApiClient {
     const onCallerAbort = (): void => {
       ctrl.abort();
     };
-    opts.signal?.addEventListener('abort', onCallerAbort, { once: true });
+    spec.signal?.addEventListener('abort', onCallerAbort, { once: true });
     const timer = setTimeout(() => {
       timeout.fired = true;
       ctrl.abort();
@@ -134,7 +170,13 @@ export function createApiClient(o: ApiClientOptions = {}): ApiClient {
       try {
         response = await doFetch(url, {
           signal: ctrl.signal,
-          headers: { Accept: 'application/json' },
+          ...(method === 'POST'
+            ? {
+                method,
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-MCS-Request': '1' },
+                body: spec.body ?? '',
+              }
+            : { headers: { Accept: 'application/json' } }),
           cache: 'no-store',
           credentials: 'same-origin',
         });
@@ -182,9 +224,45 @@ export function createApiClient(o: ApiClientOptions = {}): ApiClient {
       throw err;
     } finally {
       clearTimeout(timer);
-      opts.signal?.removeEventListener('abort', onCallerAbort);
+      spec.signal?.removeEventListener('abort', onCallerAbort);
     }
   }
 
-  return { get, tracker };
+  function get<T>(name: EndpointName, path: string, schema: ResponseSchema<T>, opts: GetOptions = {}): Promise<T> {
+    const query = buildQuery(opts.query);
+    return request(
+      {
+        method: 'GET',
+        name,
+        target: `${path}${query === '' ? '' : `?${query}`}`,
+        signal: opts.signal,
+        timeoutMs: opts.timeoutMs ?? defaultTimeout,
+      },
+      schema,
+    );
+  }
+
+  async function post<T>(
+    name: EndpointName,
+    path: string,
+    body: unknown,
+    schema: ResponseSchema<T>,
+    opts: PostOptions = {},
+  ): Promise<T> {
+    // A programming error, not a failure of the request: it rejects before anything is tracked or sent.
+    const text = serializeBody(body);
+    return request(
+      {
+        method: 'POST',
+        name,
+        target: path,
+        body: text,
+        signal: opts.signal,
+        timeoutMs: opts.timeoutMs ?? defaultTimeout,
+      },
+      schema,
+    );
+  }
+
+  return { get, post, tracker };
 }

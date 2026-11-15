@@ -289,6 +289,182 @@ describe('createApiClient: failures', () => {
   });
 });
 
+describe('createApiClient: post (ADR 0099)', () => {
+  const POST = '/api/v3/terminal/sessions';
+
+  it('TC-UI-02: sends a JSON body with the content type and the X-MCS-Request header, no-store, same-origin', async () => {
+    const { client, fetchImpl } = clientWith(() => Promise.resolve(json({ n: 2 })));
+    expect(await client.post(endpoint('terminalCreateSession'), POST, { path: 'FIXTURE-folder' }, thingSchema)).toEqual(
+      {
+        n: 2,
+      },
+    );
+    const [input, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(urlOf(input)).toBe(POST);
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(JSON.stringify({ path: 'FIXTURE-folder' }));
+    expect(init?.headers).toEqual({
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-MCS-Request': '1',
+    });
+    expect(init?.cache).toBe('no-store');
+    expect(init?.credentials).toBe('same-origin');
+  });
+
+  it('prepends the base url and sends an empty object body as {}', async () => {
+    const { client, fetchImpl } = clientWith(() => Promise.resolve(json({ n: 1 })), { baseUrl: 'http://h.invalid:1' });
+    await client.post(endpoint('authLogout'), '/api/v3/auth/logout', {}, thingSchema);
+    expect(urlOf(fetchImpl.mock.calls[0]?.[0])).toBe('http://h.invalid:1/api/v3/auth/logout');
+    expect(fetchImpl.mock.calls[0]?.[1]?.body).toBe('{}');
+  });
+
+  it('accepts a body of exactly 4096 bytes and refuses one byte more with a TypeError, before any request', async () => {
+    const { client, fetchImpl } = clientWith(() => Promise.resolve(json({ n: 1 })));
+    const overhead = JSON.stringify({ text: '' }).length;
+    const exact = { text: 'a'.repeat(4096 - overhead) };
+    await client.post(endpoint('addFolder'), '/api/v3/folders', exact, thingSchema);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    const tooBig = { text: 'a'.repeat(4096 - overhead + 1) };
+    await expect(client.post(endpoint('addFolder'), '/api/v3/folders', tooBig, thingSchema)).rejects.toBeInstanceOf(
+      TypeError,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(client.tracker.get('addFolder')).toMatchObject({ inFlight: 0, failures: 0 });
+  });
+
+  it('measures the guard in UTF-8 bytes, not characters', async () => {
+    const { client, fetchImpl } = clientWith(() => Promise.resolve(json({ n: 1 })));
+    // 1500 three-byte characters are 4500 bytes but only 1500 characters.
+    const wide = { text: '€'.repeat(1500) };
+    await expect(client.post(endpoint('addFolder'), '/api/v3/folders', wide, thingSchema)).rejects.toBeInstanceOf(
+      TypeError,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('never repeats the body in the guard error', async () => {
+    const { client } = clientWith(() => Promise.resolve(json({ n: 1 })));
+    const marker = 'FIXTURE-body-marker';
+    const error: unknown = await client
+      .post(endpoint('addFolder'), '/api/v3/folders', { text: marker + 'a'.repeat(5000) }, thingSchema)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(TypeError);
+    expect((error as TypeError).message).not.toContain(marker);
+  });
+
+  it('refuses a body that has no JSON form with a TypeError', async () => {
+    const { client, fetchImpl } = clientWith(() => Promise.resolve(json({ n: 1 })));
+    await expect(client.post(endpoint('authLogout'), '/x', undefined, thingSchema)).rejects.toBeInstanceOf(TypeError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not retry: one fetch for a 500, a 503 and a network failure', async () => {
+    for (const make of [
+      () => Promise.resolve(envelope('internal_error', 'kaput', 500)),
+      () => Promise.resolve(envelope('terminal_unavailable', 'no', 503)),
+      () => Promise.reject(new TypeError('down')),
+    ]) {
+      const { client, fetchImpl } = clientWith(make);
+      await failureOf(client.post(endpoint('terminalCreateSession'), POST, { path: 'p' }, thingSchema));
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('keeps the error kinds of get: http with the envelope, network, parse and contract', async () => {
+    const http = clientWith(() => Promise.resolve(envelope('folder_invalid', 'Bad folder', 400)));
+    const failed = await failureOf(
+      http.client.post(endpoint('addFolder'), '/api/v3/folders', { path: 'p' }, thingSchema),
+    );
+    expect(failed.info).toMatchObject({
+      kind: 'http',
+      status: 400,
+      code: 'folder_invalid',
+      endpoint: 'addFolder',
+      requestId: 'r-0123456789ab',
+      serverMessage: 'Bad folder',
+      method: 'POST',
+    });
+
+    const network = clientWith(() => Promise.reject(new TypeError('down')));
+    expect((await failureOf(network.client.post(endpoint('authLogout'), '/x', {}, thingSchema))).info).toMatchObject({
+      kind: 'network',
+      method: 'POST',
+    });
+
+    const parse = clientWith(() => Promise.resolve(new Response('not json', { status: 200 })));
+    expect((await failureOf(parse.client.post(endpoint('authLogout'), '/x', {}, thingSchema))).info.kind).toBe('parse');
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const contract = clientWith(() => Promise.resolve(json({ n: 'x' })));
+    expect((await failureOf(contract.client.post(endpoint('authLogout'), '/x', {}, thingSchema))).info).toMatchObject({
+      kind: 'contract',
+    });
+    warn.mockRestore();
+  });
+
+  it('leaves the info of a failed get without a method, so the two stay distinguishable', async () => {
+    const { client } = clientWith(() => Promise.resolve(envelope('access_required', 'Sign in', 401)));
+    const error = await failureOf(client.get('terminalState', '/api/v3/terminal/state', thingSchema));
+    expect(Object.hasOwn(error.info, 'method')).toBe(false);
+  });
+
+  it('reads Retry-After from a 429 of a write', async () => {
+    const { client } = clientWith(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ error: { code: 'access_rate_limited', message: 'slow', requestId: 'r-0123456789ab' } }),
+          { status: 429, headers: { 'Retry-After': '12' } },
+        ),
+      ),
+    );
+    const error = await failureOf(client.post(endpoint('authExchange'), '/api/v3/auth/exchange', {}, thingSchema));
+    expect(error.info).toMatchObject({ status: 429, code: 'access_rate_limited', retryAfterMs: 12_000 });
+  });
+
+  it('times out after the default and honours the per-call timeout and the caller abort', async () => {
+    vi.useFakeTimers();
+    const slow = clientWith(hangingFetch(), { timeoutMs: 8000 });
+    const first = failureOf(slow.client.post(endpoint('terminalCreateSession'), POST, { path: 'p' }, thingSchema));
+    await vi.advanceTimersByTimeAsync(8000);
+    expect((await first).info).toMatchObject({ kind: 'timeout', timeoutMs: 8000, method: 'POST' });
+
+    const longer = clientWith(hangingFetch(), { timeoutMs: 8000 });
+    const second = failureOf(
+      longer.client.post(endpoint('terminalPickFolder'), '/x', {}, thingSchema, { timeoutMs: 600_000 }),
+    );
+    await vi.advanceTimersByTimeAsync(599_000);
+    expect(longer.client.tracker.get('terminalPickFolder')?.inFlight).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await second).info).toMatchObject({ kind: 'timeout', timeoutMs: 600_000 });
+
+    const ctrl = new AbortController();
+    const aborting = clientWith(hangingFetch());
+    const third = failureOf(
+      aborting.client.post(endpoint('terminalPickFolder'), '/x', {}, thingSchema, { signal: ctrl.signal }),
+    );
+    ctrl.abort();
+    expect((await third).info.kind).toBe('aborted');
+    expect(aborting.client.tracker.get('terminalPickFolder')).toMatchObject({ failures: 0, inFlight: 0 });
+  });
+
+  it('does not start a request when the signal was already aborted', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const { client, fetchImpl } = clientWith(() => Promise.resolve(json({ n: 1 })));
+    const error = await failureOf(client.post(endpoint('authLogout'), '/x', {}, thingSchema, { signal: ctrl.signal }));
+    expect(error.info.kind).toBe('aborted');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('tracks a write under its endpoint name like a read', async () => {
+    const { client } = clientWith(() => Promise.resolve(json({ n: 1 })), { now: () => 500 });
+    await client.post(endpoint('terminalKillSession'), '/x', {}, thingSchema);
+    expect(client.tracker.get('terminalKillSession')).toMatchObject({ lastSuccess: 500, failures: 0, inFlight: 0 });
+  });
+});
+
 describe('endpoint tracker', () => {
   it('counts concurrent in-flight requests per endpoint', async () => {
     const releases: (() => void)[] = [];

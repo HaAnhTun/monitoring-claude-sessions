@@ -114,6 +114,210 @@ describe('describeApiError', () => {
   });
 });
 
+/** A failed write: `ApiClient.post` marks its errors with the method. */
+function write(
+  status: number,
+  code: ErrorCode | null,
+  extra: Partial<ApiError['info']> = {},
+  endpoint: ApiError['info']['endpoint'] = 'terminalCreateSession',
+): ApiError {
+  return new ApiError('diagnostic', {
+    kind: 'http',
+    status,
+    code,
+    endpoint,
+    requestId: 'r-0123456789ab',
+    serverMessage: 'server text',
+    method: 'POST',
+    ...extra,
+  });
+}
+
+describe('apiErrorMessage: the access and terminal codes (ADR 0099)', () => {
+  it('names access_required by what it was: the locked read of a GET, the missing link of a write', () => {
+    expect(apiErrorMessage(http(401, 'access_required'))).toMatchObject({
+      messageKey: 'error.handling.accessLocked',
+      args: undefined,
+    });
+    expect(apiErrorMessage(write(401, 'access_required'))).toMatchObject({
+      messageKey: 'error.handling.accessRequired',
+    });
+  });
+
+  it('TC-UI-10: the locked read renders as "Access link needed" in both languages, with no page change', () => {
+    const error = http(401, 'access_required');
+    expect(describeApiError(error, tEn)).toContain('Access link needed');
+    expect(describeApiError(error, tEn)).toBe(msg('error.handling.accessLocked').replace(/[. ]+$/u, ''));
+    expect(describeApiError(error, tVi)).toBe(
+      msg('error.handling.accessLocked', undefined, 'vi').replace(/[. ]+$/u, ''),
+    );
+  });
+
+  it('never puts the server text of an access failure on screen', () => {
+    for (const code of ['access_required', 'access_code_invalid'] as const) {
+      const message = apiErrorMessage(write(401, code, { serverMessage: 'FIXTURE-server-words' }));
+      expect(JSON.stringify([message.messageKey, message.args])).not.toContain('FIXTURE-server-words');
+      expect(message.text(tEn)).not.toContain('FIXTURE-server-words');
+    }
+  });
+
+  it('says how long to wait after access_rate_limited, rounded up to whole seconds', () => {
+    expect(apiErrorMessage(write(429, 'access_rate_limited', { retryAfterMs: 12_000 }))).toMatchObject({
+      messageKey: 'error.handling.accessRateLimited',
+      args: { seconds: 12 },
+    });
+    expect(apiErrorMessage(write(429, 'access_rate_limited', { retryAfterMs: 1500 })).args).toEqual({ seconds: 2 });
+    expect(apiErrorMessage(write(429, 'access_rate_limited', { retryAfterMs: 0 })).args).toEqual({ seconds: 1 });
+  });
+
+  it('falls back to the plain busy text when a rate limit carries no Retry-After', () => {
+    expect(apiErrorMessage(write(429, 'access_rate_limited'))).toMatchObject({ messageKey: 'error.handling.busy' });
+  });
+
+  it.each([
+    [401, 'access_code_invalid', 'error.handling.accessInvalid'],
+    [503, 'terminal_unavailable', 'error.handling.terminalUnavailable'],
+    [503, 'claude_not_found', 'error.handling.claudeNotFound'],
+    [400, 'folder_invalid', 'error.handling.folderInvalid'],
+    [404, 'folder_not_found', 'error.handling.folderInvalid'],
+    [404, 'terminal_not_found', 'error.handling.terminalNotFound'],
+    [429, 'terminal_limit', 'error.handling.terminalLimit'],
+    [409, 'resume_unavailable', 'error.handling.notResumable'],
+    [409, 'picker_busy', 'error.handling.pickerBusy'],
+    [409, 'folder_limit', 'error.handling.folderLimit'],
+  ] as const)('%s %s says %s', (status, code, key) => {
+    expect(apiErrorMessage(write(status, code))).toMatchObject({ messageKey: key, args: undefined });
+    expect(Object.hasOwn(enMessages, key)).toBe(true);
+    expect(Object.hasOwn(viMessages, key)).toBe(true);
+  });
+});
+
+describe('error-code table of ADR 0099 (handlingFor)', () => {
+  it('access_required on a GET is the locked action: the page keeps its frame and the view says "Access link needed"', () => {
+    expect(handlingFor(http(401, 'access_required'))).toMatchObject({
+      action: 'locked',
+      retry: 'no',
+      messageKey: 'error.handling.accessLocked',
+      healthNote: null,
+    });
+  });
+
+  it('access_required on a write is access-required, not retried', () => {
+    expect(handlingFor(write(401, 'access_required'))).toMatchObject({
+      action: 'access-required',
+      retry: 'no',
+      messageKey: 'error.handling.accessRequired',
+      healthNote: null,
+    });
+  });
+
+  it('access_code_invalid is access-required with its own words, not retried', () => {
+    expect(handlingFor(write(401, 'access_code_invalid', {}, 'authExchange'))).toMatchObject({
+      action: 'access-required',
+      retry: 'no',
+      messageKey: 'error.handling.accessInvalid',
+    });
+  });
+
+  it('access_rate_limited is decided by its code before the generic 429 (the query plan stays "once")', () => {
+    expect(handlingFor(write(429, 'access_rate_limited', { retryAfterMs: 9000 }, 'authExchange'))).toMatchObject({
+      action: 'access-rate-limited',
+      retry: 'once',
+      messageKey: 'error.handling.accessRateLimited',
+      args: { seconds: 9 },
+    });
+  });
+
+  it('terminal_limit is decided by its code before the generic 429 (the query plan stays "once")', () => {
+    expect(handlingFor(write(429, 'terminal_limit'))).toMatchObject({
+      action: 'terminal-limit',
+      retry: 'once',
+      messageKey: 'error.handling.terminalLimit',
+    });
+  });
+
+  it('keeps the generic 429 for the other codes: busy, retried once', () => {
+    expect(handlingFor(http(429, 'search_busy'))).toMatchObject({ action: 'busy', retry: 'once' });
+    expect(handlingFor(http(429, null))).toMatchObject({ action: 'busy', retry: 'once' });
+  });
+
+  it.each([
+    ['terminal_unavailable', 'error.handling.terminalUnavailable'],
+    ['claude_not_found', 'error.handling.claudeNotFound'],
+  ] as const)(
+    '%s (503) is decided by its code before the generic 503 group (the query plan stays "backoff")',
+    (code, key) => {
+      expect(handlingFor(write(503, code))).toMatchObject({
+        action: 'terminal-unavailable',
+        retry: 'backoff',
+        messageKey: key,
+        healthNote: null,
+      });
+    },
+  );
+
+  it('keeps the generic 503 group for the other codes: unavailable, retried with backoff', () => {
+    expect(handlingFor(http(503, 'db_busy'))).toMatchObject({ action: 'unavailable', retry: 'backoff' });
+    expect(handlingFor(http(503, null))).toMatchObject({ action: 'other', retry: 'backoff' });
+  });
+
+  it.each([
+    [400, 'folder_invalid'],
+    [404, 'folder_not_found'],
+  ] as const)('%s %s is an inline folder rejection, not retried', (status, code) => {
+    expect(handlingFor(write(status, code))).toMatchObject({
+      action: 'rejected-filter',
+      retry: 'no',
+      messageKey: 'error.handling.folderInvalid',
+    });
+  });
+
+  it('terminal_not_found is a not-found the caller decides on (a kill counts it as done)', () => {
+    expect(handlingFor(write(404, 'terminal_not_found', {}, 'terminalKillSession'))).toMatchObject({
+      action: 'not-found',
+      retry: 'no',
+      messageKey: 'error.handling.terminalNotFound',
+    });
+  });
+
+  it.each([
+    ['resume_unavailable', 'error.handling.notResumable'],
+    ['picker_busy', 'error.handling.pickerBusy'],
+    ['folder_limit', 'error.handling.folderLimit'],
+  ] as const)('%s (409) is other with its own words and no unknown-code note', (code, key) => {
+    expect(handlingFor(write(409, code))).toMatchObject({
+      action: 'other',
+      retry: 'no',
+      messageKey: key,
+      healthNote: null,
+    });
+  });
+
+  it('csrf_rejected is the full-page refusal of the address, like the other 403 guards', () => {
+    expect(handlingFor(write(403, 'csrf_rejected'))).toMatchObject({
+      action: 'refused-address',
+      retry: 'no',
+      messageKey: 'error.handling.refusedAddress',
+    });
+  });
+
+  it('a write that never got an answer is a transport failure (mutations never retry on their own)', () => {
+    const network = new ApiError('diagnostic', {
+      kind: 'network',
+      status: 0,
+      code: null,
+      endpoint: 'terminalCreateSession',
+      requestId: null,
+      method: 'POST',
+    });
+    expect(handlingFor(network)).toMatchObject({ action: 'transport' });
+  });
+
+  it('a 401 without an envelope stays an unknown failure of its group', () => {
+    expect(handlingFor(http(401, null))).toMatchObject({ action: 'other', retry: 'no' });
+  });
+});
+
 describe('error-code table of 04 5.1 (handlingFor)', () => {
   it('cursor_invalid restarts the infinite list and is not retried', () => {
     expect(handlingFor(http(400, 'cursor_invalid'))).toMatchObject({
