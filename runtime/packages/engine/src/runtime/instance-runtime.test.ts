@@ -229,6 +229,7 @@ function makeFakes(): Fakes {
       m.ingestNudge();
     },
     replay: (from) => m.ingestReplay(from),
+    hintSession: () => undefined,
     stats: () => m.ingestStats(),
   };
   const sweeper: Sweeper = {

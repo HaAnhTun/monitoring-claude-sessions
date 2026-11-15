@@ -117,6 +117,7 @@ function ingestWith(stop: () => Promise<void>): ReturnType<RuntimeFactories['cre
     untilIdle: () => Promise.resolve(),
     nudge: () => undefined,
     replay: () => Promise.resolve({ segmentsReset: 0 }),
+    hintSession: () => undefined,
     stats: () => ({
       queued: 0,
       queuedBytes: 0,

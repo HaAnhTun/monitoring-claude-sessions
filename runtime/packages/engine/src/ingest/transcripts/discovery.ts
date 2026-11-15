@@ -157,7 +157,7 @@ function isPlain(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 /** The `cwd` of the first record with a truthy one within the first 61 lines of a file ('' when there is none). */
-async function firstCwd(fs: DiscoveryFs, file: string): Promise<string> {
+export async function firstCwd(fs: DiscoveryFs, file: string): Promise<string> {
   const head = await fs.readHead(file, FIRST_CWD_BYTES);
   if (head === null) return '';
   const lines = head.toString('utf8').split('\n').slice(0, FIRST_CWD_LINES);
@@ -177,7 +177,7 @@ async function firstCwd(fs: DiscoveryFs, file: string): Promise<string> {
 }
 
 /** The entries of a folder with their stat, `.key` names left out; null when the folder cannot be listed. */
-async function listNamed(fs: DiscoveryFs, dir: string): Promise<{ name: string; stat: EntryStat }[] | null> {
+export async function listNamed(fs: DiscoveryFs, dir: string): Promise<{ name: string; stat: EntryStat }[] | null> {
   let names: readonly string[];
   try {
     names = await fs.readdir(dir);
@@ -312,6 +312,37 @@ function over(counters: DiscoveryCounters): boolean {
   if (counters.entries < MAX_ENTRIES) return false;
   counters.truncated = true;
   return true;
+}
+
+/**
+ * `fn` over `items`, at most `limit` calls at a time; the results are in the order of the items. The first failure rejects the
+ * call and no further item is started. `limit` must be a whole number of at least 1.
+ */
+export async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new RangeError(`mapLimit: limit must be a whole number of at least 1, got ${String(limit)}`);
+  }
+  const results = new Array<R>(items.length);
+  // one iterator shared by the workers: each takes the next item, and none takes another after a failure
+  const queue = items.entries();
+  let failed = false;
+  async function worker(): Promise<void> {
+    for (const [index, item] of queue) {
+      if (failed) return;
+      try {
+        results[index] = await fn(item, index);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 function fileOf(
@@ -460,21 +491,38 @@ async function scanSessionFolder(
   return title;
 }
 
-/** The main transcript `<tdir>/<sid>.jsonl`: a regular file, never a link. */
+/** What a look at the main transcript `<tdir>/<sid>.jsonl` found: a regular file, or nothing; a link is reported, never used. */
+interface MainLookup {
+  readonly file: DiscoveredFile | null;
+  readonly link: boolean;
+}
+
+async function lookupMain(fs: DiscoveryFs, tdir: string, sessionId: string): Promise<MainLookup> {
+  const full = path.join(tdir, `${sessionId}.jsonl`);
+  const stat = await fs.lstat(full);
+  if (stat === null) return { file: null, link: false };
+  if (stat.kind === 'link') return { file: null, link: true };
+  return { file: stat.kind === 'file' ? fileOf(full, 'session', sessionId, {}, stat) : null, link: false };
+}
+
+/** The main transcript `<tdir>/<sid>.jsonl`: a regular file, never a link (a link is counted). */
 async function mainFile(
   fs: DiscoveryFs,
   tdir: string,
   sessionId: string,
   counters: DiscoveryCounters,
 ): Promise<DiscoveredFile | null> {
-  const full = path.join(tdir, `${sessionId}.jsonl`);
-  const stat = await fs.lstat(full);
-  if (stat === null) return null;
-  if (stat.kind === 'link') {
-    counters.symlinksSkipped += 1;
-    return null;
-  }
-  return stat.kind === 'file' ? fileOf(full, 'session', sessionId, {}, stat) : null;
+  const { file, link } = await lookupMain(fs, tdir, sessionId);
+  if (link) counters.symlinksSkipped += 1;
+  return file;
+}
+
+export interface DiscoverOptions {
+  /**
+   * How many main files are looked at in parallel (default 1: one look after the other, the order of every call as it always
+   * was). The sessions, their order and the counters do not depend on it; a sweep of many old sessions is much faster with 32.
+   */
+  readonly concurrency?: number;
 }
 
 /**
@@ -485,6 +533,7 @@ export async function discoverTranscripts(
   tdir: string,
   policy: DiscoveryPolicy,
   fs: DiscoveryFs = nodeDiscoveryFs,
+  options: DiscoverOptions = {},
 ): Promise<DiscoveryResult> {
   const counters = freshCounters();
   let names: readonly string[];
@@ -500,15 +549,25 @@ export async function discoverTranscripts(
     if (SID_RE.test(id)) candidates.add(id);
   }
   const sessions: DiscoveredSession[] = [];
-  for (const sessionId of [...candidates].sort()) {
-    if (over(counters)) break;
-    counters.entries += 1;
-    const main = await mainFile(fs, tdir, sessionId, counters);
-    const recent = main !== null && main.mtimeMs >= policy.nowMs - policy.lookbackMs;
-    if (!(recent || policy.pinned.has(sessionId) || policy.isKnown(sessionId))) continue;
-    const files: DiscoveredFile[] = main === null ? [] : [main];
-    const customTitlePath = await scanSessionFolder(fs, tdir, sessionId, counters, files);
-    if (files.length > 0 || customTitlePath !== null) sessions.push({ sessionId, files, customTitlePath });
+  const ids = [...candidates].sort();
+  const batch = options.concurrency ?? 1;
+  for (let start = 0; start < ids.length; start += batch) {
+    const slice = ids.slice(start, start + batch);
+    // the main files of one batch are looked at together; each session is then decided in order, so nothing else changes
+    const mains = await mapLimit(slice, batch, (sessionId) => lookupMain(fs, tdir, sessionId));
+    for (const [at, sessionId] of slice.entries()) {
+      if (over(counters)) return { sessions, counters, missing: false };
+      counters.entries += 1;
+      const looked = mains[at];
+      if (looked === undefined) continue;
+      const { file: main, link } = looked;
+      if (link) counters.symlinksSkipped += 1;
+      const recent = main !== null && main.mtimeMs >= policy.nowMs - policy.lookbackMs;
+      if (!(recent || policy.pinned.has(sessionId) || policy.isKnown(sessionId))) continue;
+      const files: DiscoveredFile[] = main === null ? [] : [main];
+      const customTitlePath = await scanSessionFolder(fs, tdir, sessionId, counters, files);
+      if (files.length > 0 || customTitlePath !== null) sessions.push({ sessionId, files, customTitlePath });
+    }
   }
   return { sessions, counters, missing: false };
 }

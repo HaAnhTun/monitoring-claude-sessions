@@ -6,10 +6,11 @@ import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 
-import type { DoctorCheck } from '@mcs/shared';
+import type { DoctorCheck, InstanceFile } from '@mcs/shared';
 import { FakeClock, allocatePort, buildRepo, buildTaskWorkspace, useTempDirs } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
+import { defaultSkillDir } from '../config/defaults.ts';
 import { openSqlite } from '../db/driver.ts';
 import type { Logger } from '../log/logger.ts';
 import { hostPlatform } from '../platform/host.ts';
@@ -446,6 +447,174 @@ describe('workspace checks', () => {
       ok: false,
       level: 'warn',
       detail: 'not installed or not checked',
+    });
+  });
+});
+
+describe('an instance that reads every project (CAW design 03 2.3)', () => {
+  interface Scene {
+    readonly f: Fixture;
+    readonly projects: string;
+    /** The check environment of the workspace, with the real defaults of the skill so that its configuration resolves. */
+    env(seams?: Partial<DoctorSeams>, over?: { ws?: WorkspaceRef | null }): CheckEnv;
+  }
+
+  /** A workspace with the given `runtime.json` and `instance.json` keys, in a Claude home of its own. */
+  function scene(o: { runtime?: Record<string, unknown>; instance?: Partial<InstanceFile> } = {}): Scene {
+    const root = makeTemp('doctor-scope').path;
+    const { repo, tasksRoot } = buildRepo(path.join(root, 'repo'));
+    buildTaskWorkspace(repo, {
+      slug: 'demo',
+      config: { title: 'Demo' },
+      instance: { slug: 'demo', ...o.instance },
+      ...(o.runtime === undefined ? {} : { runtime: o.runtime }),
+    });
+    const claudeHome = path.join(root, 'claude-home');
+    const ctx: OpContext = {
+      repo,
+      root: tasksRoot,
+      skillDir: defaultSkillDir(),
+      runtimeDir: path.join(root, 'skill', 'runtime'),
+      launcherPath: path.join(root, 'skill', 'scripts', 'mcs.mjs'),
+      env: { CLAUDE_CONFIG_DIR: claudeHome, MCS_HOME: path.join(root, 'mcs-home') },
+      clock: new FakeClock(NOW),
+      log: silent,
+    };
+    const f: Fixture = { ctx, ws: resolveWorkspace(tasksRoot, 'demo'), root };
+    return {
+      f,
+      projects: path.join(claudeHome, 'projects'),
+      env: (seams = {}, over = {}) => envOf(f, seams, { ws: over.ws === undefined ? f.ws : over.ws }),
+    };
+  }
+
+  const ALL = { projects: { scope: 'all' } };
+  const USER: Partial<InstanceFile> = { kind: 'user' };
+  const HOOKS_ON: Partial<InstanceFile> = { hooks: { enabled: true } };
+
+  describe('transcripts.dir', () => {
+    it('passes when the projects folder of the Claude home exists, for the user instance and for a key that says all', async () => {
+      for (const o of [{ instance: USER }, { runtime: ALL }]) {
+        const s = scene(o);
+        const e = s.env({ exists: (p) => Promise.resolve(p === s.projects) });
+        const check = await checks.transcriptsDir(e);
+        expect(check.ok).toBe(true);
+        expect(check.detail).toContain('every project');
+      }
+    });
+
+    it('warns when that folder is missing, and says so for the Claude home, not for a repository', async () => {
+      const s = scene({ instance: USER });
+      const check = await checks.transcriptsDir(s.env({ exists: () => Promise.resolve(false) }));
+      expectFail(check, 'warn', /Claude Code once/);
+      expect(check.detail).not.toContain('repository');
+    });
+
+    it('does not look for the folder of a repository in this scope', async () => {
+      const s = scene({ instance: USER });
+      // the folder named like the repository does not exist, and the check still passes
+      expect((await checks.transcriptsDir(s.env({ exists: (p) => Promise.resolve(p === s.projects) }))).ok).toBe(true);
+    });
+
+    it('stays as it was for a task instance and for a user instance pinned to its repository', async () => {
+      for (const o of [{}, { instance: USER, runtime: { projects: { scope: 'repo' } } }]) {
+        const s = scene(o);
+        expectFail(
+          await checks.transcriptsDir(s.env({ exists: (p) => Promise.resolve(p === s.projects) })),
+          'warn',
+          /mcs configure/,
+        );
+      }
+    });
+
+    it('stays as it was without a task, or when the configuration does not resolve', async () => {
+      const s = scene({ instance: USER });
+      expectFail(await checks.transcriptsDir(s.env({}, { ws: null })), 'warn', /mcs configure/);
+      const broken: CheckEnv = { ...s.env(), ctx: { ...s.f.ctx, skillDir: path.join(s.f.root, 'no-skill') } };
+      expectFail(await checks.transcriptsDir(broken), 'warn', /mcs configure/);
+    });
+  });
+
+  describe('transcripts.parse', () => {
+    const lines = '{"a":1}\n{"b":2}\n';
+    const seams = (projects: string, newest: string | null): Partial<DoctorSeams> => ({
+      newestFiles: (dir, extension) => {
+        if (dir === projects && extension === '') return Promise.resolve(newest === null ? [] : [newest]);
+        const listed = newest !== null && dir === newest && extension === '.jsonl';
+        return Promise.resolve(listed ? [path.join(dir, 'a.jsonl')] : []);
+      },
+      readTail: () => Promise.resolve({ text: lines, truncated: false }),
+    });
+
+    it('reads the newest files of the newest project folder', async () => {
+      const s = scene({ instance: USER });
+      const newest = path.join(s.projects, 'D--work-alpha');
+      const check = await checks.transcriptsParse(s.env(seams(s.projects, newest)));
+      expect(check).toMatchObject({ ok: true, detail: '1 files, 2 lines, 0 unreadable' });
+    });
+
+    it('passes with nothing to read while there is no project folder yet, or when the folder cannot be listed', async () => {
+      const s = scene({ instance: USER });
+      expect(await checks.transcriptsParse(s.env(seams(s.projects, null)))).toMatchObject({
+        ok: true,
+        detail: '0 files, 0 lines, 0 unreadable',
+      });
+      const failing = s.env({ newestFiles: () => Promise.reject(new Error('ENOTDIR')) });
+      expect((await checks.transcriptsParse(failing)).ok).toBe(true);
+    });
+
+    it('is the legacy check for a task instance: the newest files of the folder itself', async () => {
+      const s = scene();
+      const asked: [string, string][] = [];
+      const e = s.env({
+        newestFiles: (dir, extension) => {
+          asked.push([dir, extension]);
+          return Promise.resolve([]);
+        },
+      });
+      await checks.transcriptsParse(e);
+      expect(asked.every(([, extension]) => extension !== '')).toBe(true);
+    });
+  });
+
+  describe('hooks.scope', () => {
+    it('warns when hooks are enabled and the instance reads every project, and names the way out', async () => {
+      const s = scene({ instance: { ...USER, ...HOOKS_ON } });
+      const check = await checks.hooksScope(s.env());
+      expectFail(check, 'warn', /hooks disable --task demo/);
+      expect(check.id).toBe('hooks.scope');
+    });
+
+    it('is quiet for the other combinations', async () => {
+      for (const o of [
+        { instance: USER },
+        { instance: HOOKS_ON },
+        { instance: { ...HOOKS_ON, ...USER }, runtime: { projects: { scope: 'repo' } } },
+      ]) {
+        const check = await checks.hooksScope(scene(o).env());
+        expect(check, JSON.stringify(o)).toMatchObject({ id: 'hooks.scope', ok: true });
+      }
+    });
+
+    it('warns for a task instance whose key says all and whose hooks are on', async () => {
+      const s = scene({ runtime: ALL, instance: HOOKS_ON });
+      expect((await checks.hooksScope(s.env())).ok).toBe(false);
+    });
+
+    it('is skipped without a task, and quiet when the configuration does not resolve', async () => {
+      const s = scene({ instance: { ...USER, ...HOOKS_ON } });
+      const skipped = await checks.hooksScope(s.env({}, { ws: null }));
+      expect(skipped.ok).toBe(true);
+      expect(skipped.detail).toContain('skipped');
+      const withoutSkill: CheckEnv = { ...s.env(), ctx: { ...s.f.ctx, skillDir: path.join(s.f.root, 'no-skill') } };
+      expect((await checks.hooksScope(withoutSkill)).ok).toBe(true);
+    });
+
+    it('is a built-in check before the hooks line, which an extra check replaces and which stays last', () => {
+      const ids = checks.BUILTIN_CHECKS.map(([id]) => id);
+      expect(ids).toContain('hooks.scope');
+      expect(ids.indexOf('hooks.scope')).toBeLessThan(ids.indexOf('hooks'));
+      expect(ids.at(-1)).toBe('hooks');
     });
   });
 });

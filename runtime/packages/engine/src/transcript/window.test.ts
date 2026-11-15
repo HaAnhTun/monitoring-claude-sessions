@@ -4,18 +4,24 @@ import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { FIXTURE_EPOCH_MS, FakeClock, useTempDirs } from '@mcs/testkit';
-import type { TranscriptEntry } from '@mcs/shared';
+import { sanitizeProjectName } from '@mcs/shared/protocol';
+import type { InstanceKind, TranscriptEntry } from '@mcs/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { defaultSkillDir } from '../config/defaults.ts';
+import { resolveConfig, type ResolvedConfig } from '../config/resolve.ts';
 import { DbError } from '../db/errors.ts';
 import { openInstanceDb, type InstanceDb, type RepoContext } from '../db/open.ts';
 import { SessionsRepo } from '../db/repos/sessions.ts';
 import { withWriteTx } from '../db/write.ts';
+import type { QueryDeps } from '../runtime/context.ts';
+import { initWorkspace } from '../workspace/init.ts';
 import { displayEntries } from './entries.ts';
 import { createEntryIndexService } from './index-service.ts';
 import {
   TranscriptError,
   createTranscriptWindowService,
+  transcriptRootOptionsOf,
   type TranscriptLocateRequest,
   type TranscriptWindowRequest,
   type TranscriptWindowService,
@@ -613,5 +619,103 @@ describe('locate (03 7.3)', () => {
     await f.service.locate(CTX, locateQuery({ i: 0 }), live());
     writeFileSync(f.mainPath, text(sessionLines(10, 2000)));
     expect(await refusal(f.service.locate(CTX, locateQuery({ i: 0 }), live()))).toBe('event_not_found');
+  });
+});
+
+describe('the containment root of the instance (CAW design 03 2.3)', () => {
+  interface Scene {
+    readonly deps: QueryDeps;
+    readonly repo: string;
+    /** Where Claude Code keeps the transcripts of this scene. */
+    readonly claudeHome: string;
+    readonly env: Record<string, string>;
+  }
+
+  /** A workspace of the given kind, its resolved configuration, and a Claude home that is a folder of its own. */
+  async function scene(kind: InstanceKind, scopeKey?: 'repo' | 'all'): Promise<Scene> {
+    const root = tempDir('window-scope').path;
+    const repo = join(root, 'repo');
+    mkdirSync(repo);
+    const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock: new FakeClock(T0), kind });
+    const resolved = await resolveConfig({ workspace: ws, env: {}, cli: {}, skillDir: defaultSkillDir() });
+    const config: ResolvedConfig =
+      scopeKey === undefined
+        ? resolved
+        : {
+            ...resolved,
+            runtime: { ...resolved.runtime, projects: { ...resolved.runtime.projects, scope: scopeKey } },
+          };
+    const claudeHome = join(root, 'claude-home');
+    mkdirSync(join(claudeHome, 'projects'), { recursive: true });
+    return {
+      deps: { config, now: () => T0, audit: { entriesBetween: () => Promise.resolve([]) } },
+      repo,
+      claudeHome,
+      env: { CLAUDE_CONFIG_DIR: claudeHome },
+    };
+  }
+
+  it('is the folder that holds every project for the user instance, with no lookup of a repository folder', async () => {
+    const s = await scene('user');
+    expect(transcriptRootOptionsOf(s.deps, s.env)).toEqual({ transcriptsDir: join(s.claudeHome, 'projects') });
+  });
+
+  it('is the same on a task instance whose key says all, and stays on the repository when it says repo', async () => {
+    const forced = await scene('task', 'all');
+    expect(transcriptRootOptionsOf(forced.deps, forced.env)).toEqual({
+      transcriptsDir: join(forced.claudeHome, 'projects'),
+    });
+    const pinned = await scene('user', 'repo');
+    const options = transcriptRootOptionsOf(pinned.deps, pinned.env);
+    expect(options.transcriptsDir).toBe(pinned.deps.config.monitor.transcripts_dir);
+    expect(typeof options.discoverRoot).toBe('function');
+  });
+
+  it('keeps a task instance on the folder of its repository as it always was', async () => {
+    const s = await scene('task');
+    const options = transcriptRootOptionsOf(s.deps, s.env);
+    expect(typeof options.discoverRoot).toBe('function');
+    const folder = join(s.claudeHome, 'projects', sanitizeProjectName(s.repo));
+    mkdirSync(folder);
+    expect(await options.discoverRoot?.()).toBe(folder);
+  });
+
+  /** A session whose transcript lies in a project folder that is not the folder of the repository. */
+  function serviceFor(s: Scene): { read: () => Promise<unknown>; f: Fixture } {
+    const f = fixture();
+    const other = join(s.claudeHome, 'projects', 'D--work-other', `${OTHER_SESSION}.jsonl`);
+    mkdirSync(dirname(other), { recursive: true });
+    writeFileSync(other, text(sessionLines(5)));
+    withWriteTx(f.db, CTX, (tx) => {
+      new SessionsRepo(f.db).ensure(CTX, tx, { sessionUid: OTHER_SESSION, projectId: null, startedAt: T0 });
+    });
+    f.track(OTHER_SESSION, other, 'session', null);
+    const service = createTranscriptWindowService(f.db, {
+      ...transcriptRootOptionsOf(s.deps, s.env),
+      defaultTextChars: TEXT_CHARS,
+    });
+    return {
+      f,
+      read: () => service.read(CTX, windowQuery({ sessionId: OTHER_SESSION }), live()),
+    };
+  }
+
+  it('lets the user instance read a transcript of any project, and refuses a file outside the projects folder', async () => {
+    const s = await scene('user');
+    const { read, f } = serviceFor(s);
+    expect(((await read()) as { total: number }).total).toBeGreaterThan(0);
+    // the same session, with its file moved out of the Claude home
+    const outside = join(f.dir, 'elsewhere', `${OTHER_SESSION}.jsonl`);
+    mkdirSync(dirname(outside), { recursive: true });
+    writeFileSync(outside, text(sessionLines(5)));
+    f.db.driver.prepare('UPDATE transcript_files SET path = ? WHERE session_uid = ?').run([outside, OTHER_SESSION]);
+    expect(await refusal(read())).toBe('transcript_gone');
+  });
+
+  it('refuses a transcript of another project on a task instance that found the folder of its repository', async () => {
+    const s = await scene('task');
+    mkdirSync(join(s.claudeHome, 'projects', sanitizeProjectName(s.repo)));
+    const { read } = serviceFor(s);
+    expect(await refusal(read())).toBe('transcript_gone');
   });
 });

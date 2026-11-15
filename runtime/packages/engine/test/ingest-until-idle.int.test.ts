@@ -120,6 +120,7 @@ class SimulatedIngest {
       },
       nudge: () => undefined,
       replay: () => Promise.resolve({ segmentsReset: 0 }),
+      hintSession: () => undefined,
       stats: () => stats(this.pending),
     };
   }

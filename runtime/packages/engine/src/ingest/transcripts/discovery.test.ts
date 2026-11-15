@@ -14,6 +14,9 @@ import {
   detectTranscriptsDir,
   discoverSession,
   discoverTranscripts,
+  firstCwd,
+  listNamed,
+  mapLimit,
   nodeDiscoveryFs,
   projectFolderName,
   projectsRoot,
@@ -647,5 +650,45 @@ describe('projectFolderName and the folder of a working directory on every OS', 
     expect(await detectTranscriptsDir('/home/me/repo', MEM_ROOT, fs)).toBe(path.join(MEM_ROOT, 'good'));
     const dangling = memoryFs({ '-home-me-repo': { kind: 'link' }, locked: { kind: 'dir', unreadable: true } });
     expect(await detectTranscriptsDir('/home/me/repo', MEM_ROOT, dangling)).toBeNull();
+  });
+});
+
+describe('firstCwd and listNamed, which the folder catalog shares with the detection of a repository folder', () => {
+  it('firstCwd gives the cwd of the first record that has one among the first 61 lines, and an empty text otherwise', async () => {
+    const fs = memoryFs({
+      [`${S1}.jsonl`]: {
+        kind: 'file',
+        text: lines({ type: 'system' }, { cwd: '' }, { cwd: '/home/me/repo' }, { cwd: '/other' }),
+      },
+      [`${S2}.jsonl`]: { kind: 'file', text: lines({ type: 'system' }, 'not an object', { cwd: 7 }) },
+      [`${S3}.jsonl`]: {
+        kind: 'file',
+        text: lines(...Array.from({ length: 61 }, () => ({ type: 'system' })), { cwd: '/too/late' }),
+      },
+    });
+    expect(await firstCwd(fs, path.join(MEM_ROOT, `${S1}.jsonl`))).toBe('/home/me/repo');
+    expect(await firstCwd(fs, path.join(MEM_ROOT, `${S2}.jsonl`))).toBe('');
+    expect(await firstCwd(fs, path.join(MEM_ROOT, `${S3}.jsonl`))).toBe('');
+    expect(await firstCwd(fs, path.join(MEM_ROOT, 'missing.jsonl'))).toBe('');
+  });
+
+  it('listNamed gives the entries of a folder with their stat, leaves out the names that end in .key, and answers null for a folder it cannot list', async () => {
+    const fs = memoryFs({
+      a: { kind: 'dir', mtimeMs: NOW - HOUR },
+      'b.jsonl': { kind: 'file', text: 'x' },
+      'secret.key': { kind: 'file', text: 'FIXTURE' },
+      locked: { kind: 'dir', unreadable: true },
+    });
+    const listed = await listNamed(fs, MEM_ROOT);
+    expect(listed?.map((entry) => [entry.name, entry.stat.kind]).sort()).toEqual([
+      ['a', 'dir'],
+      ['b.jsonl', 'file'],
+      ['locked', 'dir'],
+    ]);
+    expect(await listNamed(fs, path.join(MEM_ROOT, 'locked'))).toBeNull();
+  });
+
+  it('mapLimit is the one parallel helper of discovery (discover-projects.ts re-exports it)', async () => {
+    expect(await mapLimit([1, 2, 3], 2, (n) => Promise.resolve(n + 1))).toEqual([2, 3, 4]);
   });
 });

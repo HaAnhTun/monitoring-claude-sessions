@@ -11,6 +11,7 @@ import {
   TranscriptBuilder,
   bigTranscript,
   buildClaudeHome,
+  makeJunction,
   useTempDirs,
   type SessionSpec,
 } from '@mcs/testkit';
@@ -25,10 +26,12 @@ import { SessionsRepo } from '../../db/repos/sessions.ts';
 import { onCommitted, withWriteTx, type WriteTx } from '../../db/write.ts';
 import { TranscriptFilesRepo, type TranscriptFileRow } from '../../db/repos/transcript-files.ts';
 import { UsageRepo } from '../../db/repos/usage.ts';
+import type { Logger } from '../../log/logger.ts';
 import { aggregateInstance, aggregateSession } from '../../tokens/aggregate.ts';
 import { legacyFileUsage } from '../../tokens/legacy-projection.ts';
 import { createIngestWriter, type IngestBatch, type IngestWriterHandle } from '../writer.ts';
 import type { SessionRule } from './classify.ts';
+import { nodeDiscoveryFs, type DiscoveryFs } from './discovery.ts';
 import {
   createTranscriptImporter,
   type ImportPhase,
@@ -75,6 +78,13 @@ interface RigOptions {
   readonly accept?: () => boolean;
   /** The writer's test seam: called inside each writer transaction before COMMIT. */
   readonly beforeCommit?: (tx: WriteTx, batches: readonly IngestBatch[]) => void;
+  /** `all`: the importer reads every folder below `<home>/projects` (CAW design 03 2.2); the default is the one folder `p1`. */
+  readonly projectScope?: 'all';
+  readonly fullSweepIntervalMs?: number;
+  readonly coldStatIntervalMs?: number;
+  /** The file system the importer looks through (a recorder, a fake). */
+  readonly fs?: DiscoveryFs;
+  readonly logger?: Logger;
 }
 
 const dbs = new Set<InstanceDb>();
@@ -164,7 +174,14 @@ function rig(o: RigOptions = {}): Rig {
     scope: SCOPE,
     writer,
     clock,
-    transcriptsDir: tdir,
+    transcriptsDir: o.projectScope === 'all' ? null : tdir,
+    ...(o.projectScope === undefined
+      ? {}
+      : { projectScope: o.projectScope, projectsRoot: path.join(home, 'projects') }),
+    ...(o.fullSweepIntervalMs === undefined ? {} : { fullSweepIntervalMs: o.fullSweepIntervalMs }),
+    ...(o.coldStatIntervalMs === undefined ? {} : { coldStatIntervalMs: o.coldStatIntervalMs }),
+    ...(o.fs === undefined ? {} : { fs: o.fs }),
+    ...(o.logger === undefined ? {} : { logger: o.logger }),
     settings: o.settings ?? {},
     rules: o.rules ?? [],
     pinned: o.pinned ?? [],
@@ -1160,5 +1177,410 @@ describe('usage rides in the batch of its slice (WP-98, ADR 0015)', () => {
     await drain(second);
     expect(tokens(second.db)).toEqual(expected);
     expect(new UsageRepo(second.db).verifyRollups(SCOPE)).toEqual([]);
+  });
+});
+
+// ---- scope all: every project folder below the Claude home (CAW design 03 2.2 to 2.4) -------------------------------------------
+
+describe('scope all', () => {
+  const ALPHA = 'D--work-alpha';
+  const BETA = 'D--work-beta';
+  const GAMMA = 'D--work-gamma';
+  const ALPHA_CWD = 'D:/work/alpha';
+  const BETA_CWD = 'D:/work/beta';
+  const GAMMA_CWD = 'D:/work/gamma';
+  const S4 = '44444444-4444-4444-8444-444444444444';
+  const S5 = '55555555-5555-4555-8555-555555555555';
+  const MIN = 60_000;
+
+  const session = (id: string, project: string, cwd: string, mtimeAgeMs: number, prompt = 'a prompt'): SessionSpec => ({
+    id,
+    project,
+    cwd,
+    mtimeAgeMs,
+    build: (b) => void b.user(prompt).assistant({ messageId: `msg_${id.slice(0, 4)}` }),
+  });
+
+  /** Three projects: a recent session in alpha and beta, and in gamma one that is older than the look-back window. */
+  function threeProjects(o: RigOptions = {}): Rig {
+    return rig({
+      projectScope: 'all',
+      sessions: [
+        session(S1, ALPHA, ALPHA_CWD, HOUR),
+        session(S2, BETA, BETA_CWD, 2 * HOUR),
+        session(S3, GAMMA, GAMMA_CWD, 30 * HOUR),
+      ],
+      ...o,
+    });
+  }
+
+  const projectDir = (r: Rig, name: string): string => path.join(r.home, 'projects', name);
+
+  /** A directory modification time that two looks read as the same number (a plain millisecond value). */
+  function pinDir(dir: string, ms: number): void {
+    utimesSync(dir, new Date(ms), new Date(ms));
+  }
+
+  function addSession(r: Rig, project: string, id: string, cwd: string, ageMs = HOUR): string {
+    const target = path.join(projectDir(r, project), `${id}.jsonl`);
+    new TranscriptBuilder({ sessionId: id, cwd, startMs: NOW - ageMs - MIN })
+      .user('a new prompt')
+      .assistant({ messageId: `msg_${id.slice(0, 4)}` })
+      .write(target);
+    touch(target, ageMs);
+    return target;
+  }
+
+  const tracked = (r: Rig, id: string): number => count(r.db, 'transcript_files', `session_uid = '${id}'`);
+
+  /** A file system that notes the folders it was asked to list and every path it was asked about. */
+  function recorder(): { fs: DiscoveryFs; listed: string[]; touched: string[] } {
+    const listed: string[] = [];
+    const touched: string[] = [];
+    const fs: DiscoveryFs = {
+      readdir: (dir) => {
+        listed.push(dir);
+        touched.push(dir);
+        return nodeDiscoveryFs.readdir(dir);
+      },
+      lstat: (file) => {
+        touched.push(file);
+        return nodeDiscoveryFs.lstat(file);
+      },
+      readText: (file, max) => nodeDiscoveryFs.readText(file, max),
+      readHead: (file, max) => nodeDiscoveryFs.readHead(file, max),
+    };
+    return { fs, listed, touched };
+  }
+
+  it('tracks the sessions inside the window of every project and not the older one, and reports what it looked at', async () => {
+    const r = threeProjects();
+    const summary = await r.importer.discover();
+    expect(summary).toMatchObject({
+      sessions: 2,
+      newFiles: 2,
+      missingDir: false,
+      folders: 3,
+      truncatedFolders: 0,
+      symlinksSkipped: 0,
+    });
+    expect([tracked(r, S1), tracked(r, S2), tracked(r, S3)]).toEqual([1, 1, 0]);
+  });
+
+  it('imports the sessions of every project, with their own working directories and labels', async () => {
+    const r = threeProjects();
+    await drain(r);
+    expect(sessionRow(r, S1)).toMatchObject({ label: 'a prompt', labelSource: 'first_prompt' });
+    expect(sessionRow(r, S1).cwd).toBe(ALPHA_CWD);
+    expect(sessionRow(r, S2).cwd).toBe(BETA_CWD);
+  });
+
+  it('looks into the folders newest first', async () => {
+    const r = rig({
+      projectScope: 'all',
+      sessions: [
+        session(S1, ALPHA, ALPHA_CWD, HOUR),
+        session(S2, BETA, BETA_CWD, HOUR),
+        session(S3, GAMMA, GAMMA_CWD, HOUR),
+      ],
+    });
+    pinDir(projectDir(r, ALPHA), NOW - 3 * HOUR);
+    pinDir(projectDir(r, BETA), NOW - MIN);
+    pinDir(projectDir(r, GAMMA), NOW - HOUR);
+    await r.importer.discover();
+    const order = rows(r.db, 'SELECT session_uid FROM transcript_files ORDER BY id').map((row) => row['session_uid']);
+    expect(order).toEqual([S2, S3, S1]);
+  });
+
+  it('on a quiet tick looks only into the folders that hold an active file, and the root', async () => {
+    const spy = recorder();
+    const r = threeProjects({ fs: spy.fs });
+    await r.importer.discover();
+    spy.listed.length = 0;
+    await r.importer.discover();
+    expect(spy.listed).toContain(path.join(r.home, 'projects'));
+    expect(spy.listed).toContain(projectDir(r, ALPHA));
+    expect(spy.listed).toContain(projectDir(r, BETA));
+    // gamma holds only a session older than the window: nothing in it is tracked, so it is not hot
+    expect(spy.listed).not.toContain(projectDir(r, GAMMA));
+  });
+
+  it('finds a new session file in a quiet folder within one tick, because the folder changed', async () => {
+    const r = threeProjects();
+    pinDir(projectDir(r, GAMMA), NOW - 40 * HOUR);
+    await r.importer.discover();
+    addSession(r, GAMMA, S4, GAMMA_CWD);
+    pinDir(projectDir(r, GAMMA), NOW - HOUR);
+    expect(await r.importer.discover()).toMatchObject({ newFiles: 1 });
+    expect(tracked(r, S4)).toBe(1);
+  });
+
+  it('finds a project folder that did not exist before within one tick', async () => {
+    const r = threeProjects();
+    await r.importer.discover();
+    mkdirSync(projectDir(r, 'D--work-delta'));
+    addSession(r, 'D--work-delta', S5, 'D:/work/delta');
+    const summary = await r.importer.discover();
+    expect(summary.newFiles).toBe(1);
+    expect(tracked(r, S5)).toBe(1);
+  });
+
+  it('finds an old file that grew only by the full sweep, which comes once per interval', async () => {
+    const r = threeProjects({ fullSweepIntervalMs: 60_000 });
+    const gamma = projectDir(r, GAMMA);
+    pinDir(gamma, NOW - 40 * HOUR);
+    await r.importer.discover();
+    expect(tracked(r, S3)).toBe(0);
+    // the session wakes up: its file is written, the modification time of its folder does not move
+    const file3 = path.join(gamma, `${S3}.jsonl`);
+    appendFileSync(file3, '{"type":"user"}\n');
+    touch(file3, MIN);
+    pinDir(gamma, NOW - 40 * HOUR);
+    await r.importer.discover();
+    expect(tracked(r, S3)).toBe(0);
+    r.clock.advance(59_999);
+    await r.importer.discover();
+    expect(tracked(r, S3)).toBe(0);
+    r.clock.advance(1);
+    await r.importer.discover();
+    expect(tracked(r, S3)).toBe(1);
+  });
+
+  it('says that the projects folder is missing, and finds it when it appears', async () => {
+    const r = threeProjects();
+    rmSync(path.join(r.home, 'projects'), { recursive: true });
+    expect(await r.importer.discover()).toMatchObject({ sessions: 0, missingDir: true, folders: 0 });
+    mkdirSync(projectDir(r, ALPHA), { recursive: true });
+    addSession(r, ALPHA, S4, ALPHA_CWD);
+    expect(await r.importer.discover()).toMatchObject({ missingDir: false, newFiles: 1 });
+  });
+
+  it('never enters a project folder that is a link, and counts it', async () => {
+    const r = threeProjects();
+    const outside = path.join(r.root, 'outside');
+    mkdirSync(outside);
+    new TranscriptBuilder({ sessionId: S4, cwd: 'D:/work/out', startMs: NOW - HOUR })
+      .user('outside')
+      .write(path.join(outside, `${S4}.jsonl`));
+    touch(path.join(outside, `${S4}.jsonl`));
+    makeJunction(projectDir(r, 'D--work-linked'), outside);
+    const summary = await r.importer.discover();
+    expect(summary.symlinksSkipped).toBe(1);
+    expect(tracked(r, S4)).toBe(0);
+  });
+
+  describe('a hint from the registry', () => {
+    it('finds a session of any age in the folder of its working directory without looking into another project', async () => {
+      const spy = recorder();
+      const r = threeProjects({ fs: spy.fs });
+      expect(await r.importer.discoverSession(S3, GAMMA_CWD)).toBe(true);
+      expect(tracked(r, S3)).toBe(1);
+      const elsewhere = spy.touched.filter(
+        (p) => p.startsWith(projectDir(r, ALPHA)) || p.startsWith(projectDir(r, BETA)),
+      );
+      expect(elsewhere).toEqual([]);
+    });
+
+    it('finds it in another folder when the working directory is no help, or is not given', async () => {
+      const r = threeProjects();
+      expect(await r.importer.discoverSession(S3, ALPHA_CWD)).toBe(true);
+      const again = threeProjects();
+      expect(await again.importer.discoverSession(S3)).toBe(true);
+      expect(await again.importer.discoverSession(S4)).toBe(false);
+      expect(await again.importer.discoverSession('not-a-session-id', ALPHA_CWD)).toBe(false);
+    });
+
+    it('makes the folder of an unknown session a folder to look into on the next tick, hot or not', async () => {
+      const spy = recorder();
+      const r = threeProjects({ fs: spy.fs });
+      await r.importer.discover();
+      spy.listed.length = 0;
+      expect(await r.importer.discoverSession(S4, GAMMA_CWD)).toBe(false);
+      await r.importer.discover();
+      expect(spy.listed).toContain(projectDir(r, GAMMA));
+      spy.listed.length = 0;
+      await r.importer.discover();
+      expect(spy.listed).not.toContain(projectDir(r, GAMMA));
+    });
+
+    it('ignores the working directory in scope repo: the one folder is the only place', async () => {
+      const r = rig({ sessions: [session(S1, 'p1', ALPHA_CWD, HOUR), session(S2, BETA, BETA_CWD, 30 * HOUR)] });
+      expect(await r.importer.discoverSession(S2, BETA_CWD)).toBe(false);
+      expect(await r.importer.discoverSession(S1, BETA_CWD)).toBe(true);
+    });
+  });
+
+  describe('which old sessions are known', () => {
+    it('keeps following a session it tracks after its file got older than the window, and takes up its new subagent file', async () => {
+      const r = threeProjects();
+      await r.importer.discover();
+      r.clock.advance(20 * HOUR);
+      const agentFile = path.join(projectDir(r, ALPHA), S1, 'subagents', 'agent-late0000000001.jsonl');
+      mkdirSync(path.dirname(agentFile), { recursive: true });
+      new TranscriptBuilder({ sessionId: S1, cwd: ALPHA_CWD, startMs: NOW, agentId: 'late0000000001' })
+        .user('late')
+        .write(agentFile);
+      touch(agentFile, -20 * HOUR + MIN);
+      await r.importer.discover();
+      expect(tracked(r, S1)).toBe(2);
+    });
+
+    it('does not follow an old session it never tracked', async () => {
+      const r = threeProjects();
+      await r.importer.discover();
+      const agentFile = path.join(projectDir(r, GAMMA), S3, 'subagents', 'agent-late0000000002.jsonl');
+      mkdirSync(path.dirname(agentFile), { recursive: true });
+      new TranscriptBuilder({ sessionId: S3, cwd: GAMMA_CWD, startMs: NOW, agentId: 'late0000000002' })
+        .user('late')
+        .write(agentFile);
+      touch(agentFile, MIN);
+      r.clock.advance(60_000);
+      await r.importer.discover();
+      r.clock.advance(60_000);
+      await r.importer.discover();
+      expect(tracked(r, S3)).toBe(0);
+    });
+
+    it('tracks an old session that has hook events, in either scope', async () => {
+      for (const scope of ['all', undefined] as const) {
+        const r = rig({
+          ...(scope === undefined ? {} : { projectScope: scope }),
+          sessions: [session(S3, scope === undefined ? 'p1' : GAMMA, GAMMA_CWD, 30 * HOUR)],
+        });
+        r.db.driver
+          .prepare(
+            'INSERT INTO sessions (session_uid, first_seen_at, started_at, last_activity_at, updated_at, last_hook_at) VALUES (?, ?, ?, ?, ?, ?)',
+          )
+          .run([S3, NOW, NOW, NOW, NOW, NOW]);
+        await r.importer.discover();
+        expect(tracked(r, S3)).toBe(1);
+      }
+    });
+  });
+
+  describe('the files that have not grown for five minutes', () => {
+    /** A session that is imported, whose file then grows by one line, and the importer is asked what is left to read. */
+    async function growAfterImport(r: Rig, ageMs: number): Promise<{ grow: () => void; behind: () => number }> {
+      await drain(r);
+      const target = String(
+        rows(r.db, `SELECT path FROM transcript_files WHERE session_uid = '${S1}' AND kind = 'session'`)[0]?.['path'],
+      );
+      return {
+        grow: () => {
+          appendFileSync(target, '{"type":"user"}\n');
+          touch(target, ageMs);
+        },
+        behind: () => r.importer.work().length,
+      };
+    }
+
+    it('are looked at every cold interval in scope all, and a file that is still warm at every tick', async () => {
+      const cold = threeProjects({ coldStatIntervalMs: 10_000 });
+      const idle = await growAfterImport(cold, HOUR);
+      await cold.importer.statTick();
+      idle.grow();
+      await cold.importer.statTick();
+      expect(idle.behind()).toBe(0);
+      cold.clock.advance(9_999);
+      await cold.importer.statTick();
+      expect(idle.behind()).toBe(0);
+      cold.clock.advance(1);
+      await cold.importer.statTick();
+      expect(idle.behind()).toBeGreaterThan(0);
+
+      const warm = threeProjects({ coldStatIntervalMs: 10_000, sessions: [session(S1, ALPHA, ALPHA_CWD, MIN)] });
+      const recent = await growAfterImport(warm, MIN);
+      await warm.importer.statTick();
+      recent.grow();
+      await warm.importer.statTick();
+      expect(recent.behind()).toBeGreaterThan(0);
+    });
+
+    it('are looked at every tick in scope repo, as they always were', async () => {
+      const r = rig({ sessions: [session(S1, 'p1', ALPHA_CWD, HOUR)] });
+      const idle = await growAfterImport(r, HOUR);
+      await r.importer.statTick();
+      idle.grow();
+      await r.importer.statTick();
+      expect(idle.behind()).toBeGreaterThan(0);
+    });
+  });
+
+  describe('a session id that lives under two folders', () => {
+    it('is never reported as copied from itself', async () => {
+      const original = (): TranscriptBuilder =>
+        new TranscriptBuilder({ sessionId: S1, cwd: ALPHA_CWD, startMs: NOW - 4 * HOUR, uuidSeed: 'twin' })
+          .user('the same prompt')
+          .assistant({ messageId: 'twin_1' });
+      const r = rig({ projectScope: 'all', sessions: [session(S2, ALPHA, ALPHA_CWD, HOUR)] });
+      const place = (project: string): void => {
+        const target = path.join(projectDir(r, project), `${S1}.jsonl`);
+        mkdirSync(path.dirname(target), { recursive: true });
+        original().write(target);
+        touch(target, HOUR);
+      };
+      // the session is imported where it began, and later it is resumed from another folder: the same records, a second file
+      place(ALPHA);
+      await drain(r);
+      place(BETA);
+      r.batches.length = 0;
+      await drain(r);
+      await r.importer.discover();
+      await r.writer.flushNow();
+      expect(tracked(r, S1)).toBe(2);
+      expect(count(r.db, 'reconciliations', `kind = 'copied_records' AND scope_key = '${S1}'`)).toBe(0);
+      const selfCopies = r.batches
+        .flatMap((b) => b.items)
+        .flatMap((item) => item.events)
+        .filter((e) => e.k === 'session.copied_from' && e.source === e.sessionId);
+      expect(selfCopies).toEqual([]);
+      expect(
+        r.db.driver
+          .prepare<{ copied_from: string | null }>('SELECT copied_from FROM sessions WHERE session_uid = ?')
+          .get([S1])?.copied_from,
+      ).toBeNull();
+    });
+  });
+
+  describe('a folder with more entries than the budget', () => {
+    it('is counted and logged once, without its name', async () => {
+      const ids = Array.from({ length: 50_010 }, (_, i) => `${String(i).padStart(8, '0')}-cccc-4ccc-8ccc-cccccccccccc`);
+      const root = path.join(path.resolve('/fixture-claude-home'), 'projects');
+      const folder = path.join(root, 'D--work-huge');
+      const fake: DiscoveryFs = {
+        readdir: (dir) => {
+          if (dir === root) return Promise.resolve(['D--work-huge']);
+          return dir === folder ? Promise.resolve(ids.map((id) => `${id}.jsonl`)) : Promise.reject(new Error('ENOENT'));
+        },
+        lstat: (file) =>
+          Promise.resolve(
+            file === folder
+              ? { kind: 'dir', size: 0, mtimeMs: NOW, birthMs: null }
+              : { kind: 'file', size: 1, mtimeMs: NOW - 100 * HOUR, birthMs: null },
+          ),
+        readText: () => Promise.resolve(null),
+        readHead: () => Promise.resolve(null),
+      };
+      const warnings: [string, unknown][] = [];
+      const logger: Logger = {
+        debug: () => undefined,
+        info: () => undefined,
+        warn: (event, fields) => void warnings.push([event, fields]),
+        error: () => undefined,
+        stats: { droppedFields: 0, rotations: 0, rotateFailures: 0, writeFailures: 0 },
+        close: () => Promise.resolve(),
+      };
+      const r = rig({ projectScope: 'all', fs: fake, logger, fullSweepIntervalMs: 5000 });
+      // the importer under test reads the fake root, not the one of the rig
+      r.importer.setProjectsRoot(root);
+      const first = await r.importer.discover();
+      expect(first).toMatchObject({ folders: 1, truncatedFolders: 1 });
+      r.clock.advance(5000);
+      const second = await r.importer.discover();
+      expect(second.truncatedFolders).toBe(1);
+      const truncated = warnings.filter(([event]) => event === 'discovery_truncated');
+      expect(truncated).toHaveLength(1);
+      expect(JSON.stringify(truncated)).not.toContain('huge');
+    });
   });
 });

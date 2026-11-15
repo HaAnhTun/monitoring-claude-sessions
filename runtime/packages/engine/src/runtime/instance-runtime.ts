@@ -111,6 +111,8 @@ export interface IngestService {
   untilIdle(o: { timeoutMs: number }): Promise<void>;
   nudge(): void;
   replay(fromSegment: string | null): Promise<{ segmentsReset: number }>;
+  /** CAW design 03 5.3: the importer looks for the transcript of a session that is known to be live, at once. */
+  hintSession(sessionId: string): void;
   stats(): IngestStats;
 }
 
@@ -171,6 +173,7 @@ export const STUB_FACTORIES: RuntimeFactories = {
     untilIdle: () => Promise.resolve(),
     nudge: () => undefined,
     replay: () => Promise.resolve({ segmentsReset: 0 }),
+    hintSession: () => undefined,
     stats: () => NO_STATS,
   }),
   createLifecycleSweeper: () => ({

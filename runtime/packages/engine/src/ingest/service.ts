@@ -29,6 +29,7 @@ import { DEFAULT_LIFECYCLE_CFG, type LifecycleCfg } from '../lifecycle/facts.ts'
 import { bindActivityFlush } from '../maintenance/schedule.ts';
 import { pidAlive as realPidAlive } from '../platform/process.ts';
 import { backfillProjects } from '../projects/backfill.ts';
+import { isAllScope, projectsRootOf } from '../projects/scope.ts';
 import type { InstanceContext } from '../runtime/context.ts';
 import { IngestWriterClosedError, ingestError } from './errors.ts';
 import type { LogicalEvent } from './event-row.ts';
@@ -85,6 +86,11 @@ export interface IngestService {
   nudge(): void;
   /** Control op `ingest-replay` (02 2.7): resets the cursors from `fromSegment` (all when null) and reads again. */
   replay(fromSegment: string | null): Promise<{ segmentsReset: number }>;
+  /**
+   * A session id that someone knows is live (the terminal link, CAW design 03 5.3): the importer looks for its transcript at
+   * once, whatever its age. Never waits; nothing before `start` and after `stop`; an id that is not a session id is ignored.
+   */
+  hintSession(sessionId: string): void;
   stats(): IngestStats;
 }
 
@@ -153,8 +159,20 @@ export function sessionRulesOf(config: ResolvedConfig): SessionRule[] {
 
 // ---- the transcripts folder and the route file (02 2.6.2, 5.1.1) --------------------------------------------------------------
 
-/** The folder of the transcripts: the configured one, or (`auto`, the shipped value, and null) the folder of the repository. */
+/**
+ * True when the instance reads every project below the Claude home (`projects.scope`, `auto` follows the kind of the instance,
+ * CAW design 03 2.1). Such an instance runs without hooks, so it has no route file.
+ */
+function readsAllProjects(ctx: InstanceContext): boolean {
+  return isAllScope(ctx.config.runtime.projects.scope, ctx.kind);
+}
+
+/**
+ * The folder of the transcripts: in scope `all` the folder that holds every project (no repository to detect); else the
+ * configured one, or (`auto`, the shipped value, and null) the folder of the repository.
+ */
 async function resolveTranscriptsDir(ctx: InstanceContext): Promise<string | null> {
+  if (readsAllProjects(ctx)) return projectsRootOf(ctx.claudeHome);
   const configured = ctx.config.monitor.transcripts_dir;
   if (configured !== null && configured !== '' && configured !== 'auto') return path.resolve(configured);
   return detectTranscriptsDir(ctx.config.monitor.repo, path.join(ctx.claudeHome, 'projects'));
@@ -178,6 +196,8 @@ function routeInstanceOf(ctx: InstanceContext, transcriptsDir: string | null): R
  * service wrote the same content at its own start; the write is idempotent.
  */
 export async function publishRouteFile(ctx: InstanceContext): Promise<void> {
+  // a route entry names at most eight folders and cannot name every project: the hooks are not supported in scope `all`
+  if (readsAllProjects(ctx)) return;
   const dir = await resolveTranscriptsDir(ctx);
   await writeRouteFile(routeInstanceOf(ctx, dir), { stoppedAt: null }, { now: ctx.clock.now() });
 }
@@ -217,6 +237,7 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
   const spoolDir = path.join(ctx.instanceDir, 'data', 'spool');
   const idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
   const sessions = new SessionsRepo(db);
+  const allProjects = readsAllProjects(ctx);
 
   // ---- the writer, with the commit duration of the health report measured around its transactions
   const commitDurations: number[] = [];
@@ -276,6 +297,14 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     writer,
     clock,
     transcriptsDir: null,
+    ...(allProjects
+      ? {
+          projectScope: 'all' as const,
+          projectsRoot: projectsRootOf(ctx.claudeHome),
+          fullSweepIntervalMs: ctx.config.runtime.projects.fullSweepIntervalMs,
+          coldStatIntervalMs: ctx.config.runtime.projects.coldStatIntervalMs,
+        }
+      : {}),
     settings: importSettingsOf(ctx.config),
     rules: sessionRulesOf(ctx.config),
     pinned: ctx.config.monitor.session_ids,
@@ -286,6 +315,7 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
   let transcriptsDir: string | null = null;
 
   async function writeRoute(state: { stoppedAt: number | null; spoolUntil?: number | null }): Promise<void> {
+    if (allProjects) return;
     try {
       await writeRouteFile(routeInstanceOf(ctx, transcriptsDir), state, { now: clock.now() });
     } catch (error) {
@@ -310,11 +340,18 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
   }
 
   // ---- the import scheduler (P1 to P3)
+  /** The working folder that a hint came with, kept until the scheduler asks the importer for that session (bounded). */
+  const hintedCwds = new Map<string, string>();
+  const HINTED_CWDS_MAX = 1000;
   const importerPort: ImporterPort = {
     work: () => importer.work(),
     runSlice: (work, deadline) => importer.runSlice(work, deadline),
     statTick: () => importer.statTick(),
-    discoverSession: (sessionId) => importer.discoverSession(sessionId),
+    discoverSession: (sessionId) => {
+      const cwd = hintedCwds.get(sessionId) ?? null;
+      hintedCwds.delete(sessionId);
+      return importer.discoverSession(sessionId, cwd);
+    },
     isIdle: () => importer.isIdle(),
     discover: async () => {
       await ensureTranscriptsDir();
@@ -330,6 +367,13 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     logger,
   });
 
+  /** Looks for the transcript of a session that is known to be live: the scheduler discovers it at once, whatever its age. */
+  function hint(sessionId: string, cwd: string | null): void {
+    if (!accepting) return;
+    if (cwd !== null && hintedCwds.size < HINTED_CWDS_MAX) hintedCwds.set(sessionId, cwd);
+    scheduler.hint(sessionId);
+  }
+
   // ---- the external pollers (02 7.10)
   const externalFs = options.externalFs ?? nodeExternalFs;
   const alive = options.pidAlive ?? realPidAlive;
@@ -340,6 +384,14 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     isKnownSession,
     pidAlive: alive,
     fs: externalFs,
+    // a live process of a session that has not been seen is looked for now, not at the next sweep (scope `all` only)
+    ...(allProjects
+      ? {
+          onUnknownSession: (sessionUid: string, cwd: string | null) => {
+            hint(sessionUid, cwd);
+          },
+        }
+      : {}),
   });
   const jobs = createJobsReader({ claudeHome: ctx.claudeHome, now: () => clock.now(), isKnownSession, fs: externalFs });
 
@@ -603,6 +655,9 @@ export function createIngestService(ctx: InstanceContext, options: IngestService
     replay: (fromSegment) => {
       if (!accepting) return Promise.reject(new IngestWriterClosedError());
       return drainer.replay(fromSegment);
+    },
+    hintSession: (sessionId) => {
+      if (SID_RE.test(sessionId)) hint(sessionId, null);
     },
     stats,
   };

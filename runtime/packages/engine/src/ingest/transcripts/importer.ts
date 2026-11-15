@@ -17,6 +17,7 @@
 import { performance } from 'node:perf_hooks';
 import { setImmediate as yieldToLoop, setTimeout as sleepFor } from 'node:timers/promises';
 import { stat as nodeStat } from 'node:fs/promises';
+import path from 'node:path';
 
 import type { Clock } from '@mcs/shared';
 import { redact, routeKey } from '@mcs/shared/protocol';
@@ -56,10 +57,12 @@ import {
   type HeadRecord,
   type SessionRule,
 } from './classify.ts';
+import { FOLDER_PARALLEL, discoverSessionAnywhere, listProjectFolders, selectFolders } from './discover-projects.ts';
 import {
   discoverSession as discoverOneSession,
   discoverTranscripts,
   nodeDiscoveryFs,
+  projectFolderName,
   readAgentMeta,
   readCustomTitle,
   readWorkflowStatus,
@@ -119,7 +122,12 @@ export interface DiscoverySummary {
   readonly sessions: number;
   readonly newFiles: number;
   readonly symlinksSkipped: number;
+  /** The folder (scope `repo`) or the projects folder (scope `all`) could not be listed. */
   readonly missingDir: boolean;
+  /** Folders that were looked into: one in scope `repo`, the chosen project folders in scope `all`. */
+  readonly folders: number;
+  /** Folders that used up their entry budget: part of them was not looked at. */
+  readonly truncatedFolders: number;
 }
 
 /** The aggregate of 02 5.9 (`ingest_health.transcripts`) that this module can fill. */
@@ -143,8 +151,20 @@ export interface TranscriptImporterOptions {
   readonly scope: RepoContext;
   readonly writer: Pick<IngestWriter, 'submit' | 'onDrain' | 'flushNow'>;
   readonly clock: Clock;
-  /** The project folder; null while it is not known (discovery retries, 02 5.1.1). */
+  /** The project folder; null while it is not known (discovery retries, 02 5.1.1). Scope `repo` only. */
   readonly transcriptsDir?: string | null;
+  /**
+   * `repo` (the default): the one folder of `transcriptsDir`. `all`: every folder below `projectsRoot`, the user instance
+   * (CAW design 03 2.2): the folders that are hot, changed or hinted at every discovery, a full sweep once per interval.
+   * (`scope` above is the database scope of the instance.)
+   */
+  readonly projectScope?: 'repo' | 'all';
+  /** `<claude home>/projects`, the folder that holds one folder per project; scope `all` only. */
+  readonly projectsRoot?: string | null;
+  /** Period of the full sweep over every project folder (scope `all`, default 60 s). */
+  readonly fullSweepIntervalMs?: number;
+  /** Period at which files without growth for five minutes are looked at (scope `all`, default 10 s). */
+  readonly coldStatIntervalMs?: number;
   readonly settings?: Partial<ImportSettings>;
   /** `session_rules` of the configuration. */
   readonly rules?: readonly SessionRule[];
@@ -160,12 +180,18 @@ export interface TranscriptImporterOptions {
 
 export interface TranscriptImporter {
   setTranscriptsDir(dir: string | null): void;
+  /** The folder that holds one folder per project (scope `all`); null while it is not known. */
+  setProjectsRoot(dir: string | null): void;
   /** Replaces the rules and the pinned ids: every session file is classified again. */
   setRules(rules: readonly SessionRule[], pinned: readonly string[]): void;
   /** Looks at the project folder once: tracks new files, refreshes small files, untracks idle ones. */
   discover(): Promise<DiscoverySummary>;
-  /** One session folder at once (a hint from a hook payload), whatever the age policy says. */
-  discoverSession(sessionId: string): Promise<boolean>;
+  /**
+   * One session at once (a hint from a hook payload or the registry), whatever the age policy says. In scope `all` the session
+   * is searched in the project folder of `cwd` first, then in every project folder; a session that is not there yet makes
+   * that folder one to look into at the next discovery.
+   */
+  discoverSession(sessionId: string, cwd?: string | null): Promise<boolean>;
   /** Async stat of the tracked files, 32 at a time: refreshes the sizes that mark work, notices missing files. */
   statTick(): Promise<void>;
   /** The runnable work, highest priority first, files in the order they were first seen. */
@@ -183,6 +209,10 @@ export interface TranscriptImporter {
 
 const DEFAULT_CHUNK_BYTES = 256 * 1024;
 const STAT_PARALLEL = 32;
+const DEFAULT_FULL_SWEEP_MS = 60_000;
+const DEFAULT_COLD_STAT_MS = 10_000;
+/** A file that has not grown for this long is cold: in scope `all` it is looked at every `coldStatIntervalMs` only. */
+const COLD_AFTER_MS = 5 * 60_000;
 const MAX_TRACKED_ROWS = 1_000_000;
 const TITLE_KIND = 'custom' as const;
 
@@ -321,6 +351,21 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     sliceFailures: 0,
   };
   let tdir: string | null = options.transcriptsDir ?? null;
+  const allProjects = options.projectScope === 'all';
+  let projectsRoot: string | null = options.projectsRoot ?? null;
+  const fullSweepIntervalMs = options.fullSweepIntervalMs ?? DEFAULT_FULL_SWEEP_MS;
+  const coldStatIntervalMs = options.coldStatIntervalMs ?? DEFAULT_COLD_STAT_MS;
+  // scope `all`: when the last full sweep began, the modification time of each project folder at the last look into it, the
+  // folders (lower case) a hint pointed at, and when the cold files were last looked at
+  let lastFullAt: number | null = null;
+  const folderMtimes = new Map<string, number>();
+  const hintedFolders = new Set<string>();
+  let lastColdStatAt: number | null = null;
+  let truncationLogged = false;
+  // the sessions that discovery treats as known whatever their age: those with a tracked file (counted per session, so that
+  // `isKnown` is one lookup) and those with hook events (read once per discovery)
+  const knownSessions = new Map<string, number>();
+  let hookKnown: ReadonlySet<string> = new Set();
   let rules: CompiledRule[] = compileSessionRules(options.rules ?? []);
   let pinned = new Set(options.pinned ?? []);
   let loaded = false;
@@ -429,6 +474,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
       if (row.kind === 'session') state.needsClassify = true;
       states.set(state.id, state);
       byKey.set(row.pathKey, state);
+      countKnown(state.sessionUid, state.state, 1);
     }
     // only after the whole read worked: a failed first read is tried again by the next call instead of leaving an empty set
     loaded = true;
@@ -450,11 +496,21 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     return file.observedSize !== file.checkedSize || file.observedMtimeMs !== file.checkedMtimeMs;
   }
 
+  /** A file that is not untracked keeps its session known (`delta` 1), until it is untracked (-1). */
+  function countKnown(sessionUid: string, state: TranscriptFileState, delta: 1 | -1): void {
+    if (state === 'untracked') return;
+    const next = (knownSessions.get(sessionUid) ?? 0) + delta;
+    if (next > 0) knownSessions.set(sessionUid, next);
+    else knownSessions.delete(sessionUid);
+  }
+
   function markState(file: FileState, next: TranscriptFileState): void {
     if (file.state === next) return;
     withWriteTx(db, scope, (tx) => {
       files.setState(scope, tx, file.id, next);
     });
+    countKnown(file.sessionUid, file.state, -1);
+    countKnown(file.sessionUid, next, 1);
     file.state = next;
   }
 
@@ -587,6 +643,8 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
       .all([file.id]);
     const items: IngestItem[] = [];
     for (const { source, n } of rows) {
+      // a session that lives in two folders is not a copy of itself (a resume from another folder keeps the id)
+      if (source === file.sessionUid) continue;
       if (file.copyReported.get(source) === n) continue;
       file.copyReported.set(source, n);
       items.push(
@@ -1187,11 +1245,17 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
   // ---- discovery -----------------------------------------------------------------------------------------------------------------
 
   function isKnown(sessionId: string): boolean {
-    for (const file of states.values()) {
-      if (file.sessionUid === sessionId && file.state !== 'untracked') return true;
-    }
-    const row = sessions.byUid(scope, sessionId);
-    return row !== undefined && row.lastHookAt !== null;
+    return knownSessions.has(sessionId) || hookKnown.has(sessionId);
+  }
+
+  /** The sessions with hook events, read once for one discovery call instead of one row per candidate. */
+  function loadHookKnown(): void {
+    hookKnown = new Set(
+      db.driver
+        .prepare<{ session_uid: string }>('SELECT session_uid FROM sessions WHERE last_hook_at IS NOT NULL')
+        .all()
+        .map((row) => row.session_uid),
+    );
   }
 
   function registerFile(d: DiscoveredFile): FileState {
@@ -1226,6 +1290,7 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     state.checkedMtimeMs = state.mtimeSeen;
     states.set(id, state);
     byKey.set(key, state);
+    countKnown(state.sessionUid, state.state, 1);
     return state;
   }
 
@@ -1334,40 +1399,147 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
     }
   }
 
+  /** Said once, as a count: a folder had more entries than the budget of one pass (never a path). */
+  function noteTruncated(truncatedFolders: number): void {
+    if (truncatedFolders === 0 || truncationLogged) return;
+    truncationLogged = true;
+    options.logger?.warn('discovery_truncated', { truncatedFolders });
+  }
+
+  /** What follows every discovery: idle files are untracked and the head records of new sessions are classified. */
+  async function afterDiscovery(now: number): Promise<void> {
+    untrackIdle(now);
+    for (const file of [...states.values()]) {
+      if (file.needsClassify && file.kind === 'session' && !file.busy && headDone(file) && active(file)) {
+        file.needsClassify = false;
+        await classifyFile(file);
+      }
+    }
+    stats.lastScanAt = clock.now();
+  }
+
+  /** The folders that hold a tracked file that is still active: their names below the projects folder. */
+  function hotFolders(root: string): Set<string> {
+    const hot = new Set<string>();
+    for (const file of states.values()) {
+      if (file.state !== 'active') continue;
+      const relative = path.relative(root, file.path);
+      if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) continue;
+      const name = relative.split(path.sep)[0];
+      if (name !== undefined && name !== '') hot.add(name);
+    }
+    return hot;
+  }
+
+  /** Scope `all`: the project folders that are hot, changed or hinted, or every folder when the full sweep is due. */
+  async function discoverAll(root: string): Promise<DiscoverySummary> {
+    const now = clock.now();
+    const list = await listProjectFolders(root, fsx);
+    if (list.missing) {
+      return { sessions: 0, newFiles: 0, symlinksSkipped: 0, missingDir: true, folders: 0, truncatedFolders: 0 };
+    }
+    const hinted = new Set(list.folders.filter((f) => hintedFolders.has(f.name.toLowerCase())).map((f) => f.name));
+    hintedFolders.clear();
+    const { chosen, full } = selectFolders(list.folders, { lastFullAt, mtimes: folderMtimes }, now, {
+      fullSweepIntervalMs,
+      hot: hotFolders(root),
+      hinted,
+    });
+    loadHookKnown();
+    const policy = { nowMs: now, lookbackMs: settings.lookbackHours * HOUR_MS, pinned, isKnown };
+    let sessionCount = 0;
+    let newFiles = 0;
+    let symlinksSkipped = list.linksSkipped;
+    let folders = 0;
+    let truncatedFolders = 0;
+    let finished = true;
+    for (const folder of chosen) {
+      if (closed) {
+        finished = false;
+        break;
+      }
+      const result = await discoverTranscripts(folder.dir, policy, fsx, { concurrency: FOLDER_PARALLEL });
+      if (!result.missing) {
+        newFiles += await trackSessions(result.sessions);
+        folders += 1;
+        sessionCount += result.sessions.length;
+        symlinksSkipped += result.counters.symlinksSkipped;
+        if (result.counters.truncated) truncatedFolders += 1;
+        // the time read before the look: a file that appears while the folder is read shows as a change at the next tick
+        folderMtimes.set(folder.name, folder.mtimeMs);
+      }
+      // HTTP and the event stream are served between two folders
+      await yieldToLoop();
+    }
+    if (full && finished) lastFullAt = now;
+    const present = new Set(list.folders.map((f) => f.name));
+    for (const name of [...folderMtimes.keys()]) if (!present.has(name)) folderMtimes.delete(name);
+    noteTruncated(truncatedFolders);
+    await afterDiscovery(now);
+    return { sessions: sessionCount, newFiles, symlinksSkipped, missingDir: false, folders, truncatedFolders };
+  }
+
   async function discover(): Promise<DiscoverySummary> {
     loadKnown();
-    if (tdir === null || closed) return { sessions: 0, newFiles: 0, symlinksSkipped: 0, missingDir: tdir === null };
+    const dir = allProjects ? projectsRoot : tdir;
+    if (dir === null || closed) {
+      return {
+        sessions: 0,
+        newFiles: 0,
+        symlinksSkipped: 0,
+        missingDir: dir === null,
+        folders: 0,
+        truncatedFolders: 0,
+      };
+    }
     discovering += 1;
     try {
+      if (allProjects) return await discoverAll(dir);
       const now = clock.now();
+      loadHookKnown();
       const result = await discoverTranscripts(
-        tdir,
+        dir,
         { nowMs: now, lookbackMs: settings.lookbackHours * HOUR_MS, pinned, isKnown },
         fsx,
       );
       const newFiles = await trackSessions(result.sessions);
-      untrackIdle(now);
-      for (const file of [...states.values()]) {
-        if (file.needsClassify && file.kind === 'session' && !file.busy && headDone(file) && active(file)) {
-          file.needsClassify = false;
-          await classifyFile(file);
-        }
-      }
-      stats.lastScanAt = clock.now();
+      const truncatedFolders = result.counters.truncated ? 1 : 0;
+      noteTruncated(truncatedFolders);
+      await afterDiscovery(now);
       return {
         sessions: result.sessions.length,
         newFiles,
         symlinksSkipped: result.counters.symlinksSkipped,
         missingDir: result.missing,
+        folders: result.missing ? 0 : 1,
+        truncatedFolders,
       };
     } finally {
       discovering -= 1;
     }
   }
 
-  async function discoverSession(sessionId: string): Promise<boolean> {
+  async function discoverSession(sessionId: string, cwd?: string | null): Promise<boolean> {
     loadKnown();
-    if (tdir === null || closed) return false;
+    if (closed) return false;
+    if (allProjects) {
+      if (projectsRoot === null) return false;
+      discovering += 1;
+      try {
+        const first = cwd === undefined || cwd === null || cwd === '' ? undefined : projectFolderName(cwd).name;
+        const found = await discoverSessionAnywhere(projectsRoot, sessionId, fsx, first);
+        if (found === null) {
+          // the transcript may only be written later: that folder is looked into at the next discovery
+          if (first !== undefined) hintedFolders.add(first.toLowerCase());
+          return false;
+        }
+        await trackSessions([found.session]);
+        return true;
+      } finally {
+        discovering -= 1;
+      }
+    }
+    if (tdir === null) return false;
     discovering += 1;
     try {
       const found = await discoverOneSession(tdir, sessionId, fsx);
@@ -1399,8 +1571,18 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
 
   async function statTick(): Promise<void> {
     loadKnown();
+    const now = clock.now();
+    // scope `all` tracks thousands of subagent files: those without growth for five minutes are looked at every cold interval
+    const coldDue = !allProjects || lastColdStatAt === null || now - lastColdStatAt >= coldStatIntervalMs;
+    if (allProjects && coldDue) lastColdStatAt = now;
+    const cold = (file: FileState): boolean =>
+      allProjects && now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) > COLD_AFTER_MS;
     const list = [...states.values()].filter(
-      (file) => file.state !== 'untracked' && file.state !== 'retired' && file.kind !== 'workflow_status',
+      (file) =>
+        file.state !== 'untracked' &&
+        file.state !== 'retired' &&
+        file.kind !== 'workflow_status' &&
+        (coldDue || !cold(file)),
     );
     for (let i = 0; i < list.length; i += STAT_PARALLEL) {
       await Promise.all(list.slice(i, i + STAT_PARALLEL).map(statOne));
@@ -1453,6 +1635,9 @@ export function createTranscriptImporter(options: TranscriptImporterOptions): Tr
   return {
     setTranscriptsDir(dir) {
       tdir = dir;
+    },
+    setProjectsRoot(dir) {
+      projectsRoot = dir;
     },
     setRules(next, nextPinned) {
       rules = compileSessionRules(next);

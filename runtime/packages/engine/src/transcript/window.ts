@@ -7,7 +7,8 @@
 // The file is re-checked with `realpath` containment (`security/paths.ts`) in the transcripts folder before it is opened: the
 // configured `transcripts_dir` when it is an absolute path; with `auto` the discovered project folder of the repository
 // (resolved lazily and kept for 10 seconds, CR-WP-33-4 part b); else (nothing discovered) the folder that holds the session's
-// main transcript.
+// main transcript. An instance that reads every project (`projects.scope`, CAW design 03 2.3) has the projects folder of the
+// Claude home as its root: the files of its sessions lie in many project folders, and none of them is the one folder.
 import path from 'node:path';
 
 import type {
@@ -24,6 +25,7 @@ import { CheckpointsRepo } from '../db/repos/checkpoints.ts';
 import { SessionsRepo } from '../db/repos/sessions.ts';
 import { TranscriptFilesRepo, type TranscriptFileRow } from '../db/repos/transcript-files.ts';
 import { readLines, type RawLine } from '../ingest/tail/jsonl-tailer.ts';
+import { instanceKindOfConfig, isAllScope, projectsRootOf } from '../projects/scope.ts';
 import type { QueryDeps } from '../runtime/context.ts';
 import { isContained } from '../security/paths.ts';
 import { countEntries, displayEntries, recordTimestamp } from './entries.ts';
@@ -130,16 +132,25 @@ export function createTranscriptRootResolver(options: TranscriptRootOptions): Tr
   return async (file, siblings) => configuredRoot ?? (await discoveredRoot()) ?? derivedRoot(file, siblings);
 }
 
-/** The root options of the instance: the configured folder, and with `auto` the discovery of the repository's project folder. */
-export function transcriptRootOptionsOf(deps: QueryDeps): TranscriptRootOptions {
+/**
+ * The root options of the instance: in scope `all` the projects folder of the Claude home; else the configured folder, and
+ * with `auto` the discovery of the repository's project folder. `env` names the Claude home (the server's own environment, as
+ * `buildInstanceContext` does).
+ */
+export function transcriptRootOptionsOf(
+  deps: QueryDeps,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): TranscriptRootOptions {
+  if (isAllScope(deps.config.runtime.projects.scope, instanceKindOfConfig(deps.config))) {
+    return { transcriptsDir: projectsRootOf(claudeHomeOf(env)) };
+  }
   const monitor = deps.config.monitor;
   const auto = monitor.transcripts_dir === null || monitor.transcripts_dir === '' || monitor.transcripts_dir === 'auto';
   return {
     transcriptsDir: monitor.transcripts_dir,
-    // the server's own environment names the Claude home, as `buildInstanceContext` does
     ...(auto
       ? {
-          discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(process.env), 'projects')),
+          discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(env), 'projects')),
           now: deps.now,
         }
       : {}),

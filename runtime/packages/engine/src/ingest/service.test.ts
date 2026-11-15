@@ -1,29 +1,41 @@
 // The pure parts of the ingest service (02 4.10): the error of `untilIdle`, and the mapping of the resolved configuration onto the
 // lifecycle thresholds, the import settings and the session rules, and the one thing `start` wires for the schedule (the flush of
 // the throttled announcements, CR-WP-35-1). The service over a real workspace is in `packages/engine/test/ingest-service.int.test.ts`.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { RUNTIME_VERSION } from '@mcs/shared';
-import { FakeClock, useTempDirs } from '@mcs/testkit';
+import { sanitizeProjectName } from '@mcs/shared/protocol';
+import {
+  FakeClock,
+  buildClaudeHome,
+  useTempDirs,
+  waitFor,
+  writeRegistryEntry,
+  type SessionSpec,
+  type TranscriptBuilder,
+} from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { defaultSkillDir } from '../config/defaults.ts';
 import { resolveConfig, type ResolvedConfig } from '../config/resolve.ts';
 import { SessionsRepo } from '../db/repos/sessions.ts';
 import { withWriteTx } from '../db/write.ts';
+import { nodeExternalFs } from '../external/fs.ts';
 import { DEFAULT_LIFECYCLE_CFG } from '../lifecycle/facts.ts';
 import type { Logger } from '../log/logger.ts';
 import { createDbSchedulerWith } from '../maintenance/schedule.ts';
 import { backfillProjects as realBackfill } from '../projects/backfill.ts';
 import { buildInstanceContext, type InstanceContext } from '../runtime/context.ts';
 import { initWorkspace } from '../workspace/init.ts';
+import { routeFilePath } from './routes-file.ts';
 import { DEFAULT_IMPORT_SETTINGS } from './transcripts/importer.ts';
 import {
   IngestIdleTimeoutError,
   createIngestService,
   importSettingsOf,
   lifecycleCfgOf,
+  publishRouteFile,
   sessionRulesOf,
   type IngestService,
   type IngestServiceOptions,
@@ -147,23 +159,37 @@ function silentLogger(): Logger {
   };
 }
 
+/** What a test may put in the instance it builds: runtime defaults, the sessions of the Claude home, the project folder of the repo. */
+interface InstanceExtras {
+  /** Merged into `runtime/defaults.json` of the skill folder (`{ projects: { scope: 'all' } }`). */
+  readonly runtimeDefaults?: Record<string, unknown>;
+  /** Built into the Claude home before the context is: `(repo) => sessions`. */
+  readonly sessions?: (repo: string) => SessionSpec[];
+}
+
 /** An instance with a fixed clock: the window of the throttle moves only when the test moves the clock. */
 async function instance(
   options: IngestServiceOptions = {},
-): Promise<{ ctx: InstanceContext; clock: FakeClock; service: IngestService }> {
+  extras: InstanceExtras = {},
+): Promise<{ ctx: InstanceContext; clock: FakeClock; service: IngestService; claudeHome: string; repo: string }> {
   const root = tempDir('ingest-service-bind').path;
   const skill = path.join(root, 'skill');
   mkdirSync(path.join(skill, 'config'), { recursive: true });
   mkdirSync(path.join(skill, 'runtime'), { recursive: true });
   writeFileSync(path.join(skill, 'config', 'defaults.json'), SHIPPED_DEFAULTS);
-  writeFileSync(path.join(skill, 'runtime', 'defaults.json'), '{"schema_version": 1}\n');
+  writeFileSync(
+    path.join(skill, 'runtime', 'defaults.json'),
+    `${JSON.stringify({ schema_version: 1, ...extras.runtimeDefaults })}\n`,
+  );
   const repo = path.join(root, 'repo');
   mkdirSync(repo);
   const clock = new FakeClock(NOW);
   const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock });
+  const claudeHome = path.join(root, 'claude-home');
+  if (extras.sessions !== undefined) buildClaudeHome(claudeHome, { nowMs: NOW, sessions: extras.sessions(repo) });
   const ctx = await buildInstanceContext({
     instanceDir: ws.dir,
-    env: { MCS_HOME: path.join(root, 'mcs-home'), CLAUDE_CONFIG_DIR: path.join(root, 'claude-home') },
+    env: { MCS_HOME: path.join(root, 'mcs-home'), CLAUDE_CONFIG_DIR: claudeHome },
     cli: {},
     skillDir: skill,
     runtimeDir: path.join(skill, 'runtime'),
@@ -173,7 +199,7 @@ async function instance(
   });
   const service = createIngestService(ctx, options);
   started.push({ ctx, service });
-  return { ctx, clock, service };
+  return { ctx, clock, service, claudeHome, repo };
 }
 
 describe('start binds the flush of the throttled announcements', () => {
@@ -265,5 +291,182 @@ describe('start gives the sessions that have no project their project', () => {
     seedOldSession(ctx, 'D--Work-App');
     await expect(service.start()).resolves.toBeUndefined();
     expect(projectOf(ctx)).toBeNull();
+  });
+});
+
+// ---- scope all: the user instance reads every project (CAW design 03 2.2, 2.3) -----------------------------------------------
+
+describe('the ingest service in scope all', () => {
+  const ALPHA = 'D--work-alpha';
+  const BETA = 'D--work-beta';
+  const RECENT_A = '11111111-1111-4111-8111-111111111111';
+  const RECENT_B = '33333333-3333-4333-8333-333333333333';
+  const OLD = '22222222-2222-4222-8222-222222222222';
+  const HOUR = 3_600_000;
+  const ALL = { projects: { scope: 'all' } };
+
+  const prompt = (b: TranscriptBuilder, text: string): void => {
+    b.user(text).assistant({ messageId: `msg_${text.replace(/\W/g, '')}` });
+  };
+
+  /** A recent session in two projects and one older than the window in the second. */
+  const threeSessions = (): SessionSpec[] => [
+    {
+      id: RECENT_A,
+      project: ALPHA,
+      cwd: 'D:/work/alpha',
+      mtimeAgeMs: HOUR,
+      build: (b) => {
+        prompt(b, 'alpha');
+      },
+    },
+    {
+      id: RECENT_B,
+      project: BETA,
+      cwd: 'D:/work/beta',
+      mtimeAgeMs: 2 * HOUR,
+      build: (b) => {
+        prompt(b, 'beta');
+      },
+    },
+    {
+      id: OLD,
+      project: BETA,
+      cwd: 'D:/work/beta',
+      mtimeAgeMs: 30 * HOUR,
+      build: (b) => {
+        prompt(b, 'old');
+      },
+    },
+  ];
+
+  const tracked = (ctx: InstanceContext, id: string): number =>
+    ctx.db.driver.prepare<{ n: number }>('SELECT count(*) AS n FROM transcript_files WHERE session_uid = ?').get([id])
+      ?.n ?? -1;
+
+  it('reads the sessions inside the window of every project folder, and writes no route file for the hooks', async () => {
+    const { ctx, clock, service } = await instance({}, { runtimeDefaults: ALL, sessions: threeSessions });
+    await service.start();
+    await service.untilIdle({ timeoutMs: 20_000 });
+    expect([tracked(ctx, RECENT_A), tracked(ctx, RECENT_B), tracked(ctx, OLD)]).toEqual([1, 1, 0]);
+    expect(existsSync(routeFilePath(ctx.mcsHome, ctx.instanceId))).toBe(false);
+    await service.stop(clock.now() + 2000);
+    expect(existsSync(routeFilePath(ctx.mcsHome, ctx.instanceId))).toBe(false);
+  });
+
+  it('keeps the route file in scope repo, where the hooks need it', async () => {
+    const { ctx, clock, service } = await instance({}, { sessions: threeSessions });
+    await service.start();
+    expect(existsSync(routeFilePath(ctx.mcsHome, ctx.instanceId))).toBe(true);
+    await service.stop(clock.now() + 2000);
+  });
+
+  it('publishRouteFile writes nothing in scope all and writes the file in scope repo', async () => {
+    const all = await instance({}, { runtimeDefaults: ALL });
+    await publishRouteFile(all.ctx);
+    expect(existsSync(routeFilePath(all.ctx.mcsHome, all.ctx.instanceId))).toBe(false);
+    const repo = await instance();
+    await publishRouteFile(repo.ctx);
+    expect(existsSync(routeFilePath(repo.ctx.mcsHome, repo.ctx.instanceId))).toBe(true);
+  });
+
+  describe('hintSession', () => {
+    it('does nothing before start, takes up an old session of another project after start, and ignores a bad id', async () => {
+      const { ctx, service } = await instance({}, { runtimeDefaults: ALL, sessions: threeSessions });
+      service.hintSession(OLD);
+      await service.start();
+      await service.untilIdle({ timeoutMs: 20_000 });
+      expect(tracked(ctx, OLD)).toBe(0);
+      service.hintSession('not-a-session-id');
+      service.hintSession(OLD);
+      await waitFor(() => tracked(ctx, OLD) > 0, { what: 'the hinted session to be tracked' });
+      expect(tracked(ctx, RECENT_A)).toBe(1);
+    });
+
+    it('does nothing after stop', async () => {
+      const { ctx, clock, service } = await instance({}, { runtimeDefaults: ALL, sessions: threeSessions });
+      await service.start();
+      await service.untilIdle({ timeoutMs: 20_000 });
+      await service.stop(clock.now() + 2000);
+      expect(() => {
+        service.hintSession(OLD);
+      }).not.toThrow();
+      expect(tracked(ctx, OLD)).toBe(0);
+    });
+
+    it('works in scope repo too: the session is taken up from the folder of the repository', async () => {
+      const { ctx, service } = await instance(
+        {},
+        {
+          sessions: (repo) => [
+            {
+              id: OLD,
+              project: sanitizeProjectName(repo),
+              cwd: repo,
+              mtimeAgeMs: 30 * HOUR,
+              build: (b) => {
+                prompt(b, 'old');
+              },
+            },
+          ],
+        },
+      );
+      await service.start();
+      await service.untilIdle({ timeoutMs: 20_000 });
+      expect(tracked(ctx, OLD)).toBe(0);
+      service.hintSession(OLD);
+      await waitFor(() => tracked(ctx, OLD) > 0, { what: 'the hinted session to be tracked' });
+    });
+  });
+
+  describe('a live process of a session this instance has not seen', () => {
+    /** A registry entry for `OLD` (a live process, as far as the instance can tell) before the service starts. */
+    function withRegistryEntry(claudeHome: string): void {
+      writeRegistryEntry(claudeHome, { pid: 4242, sessionId: OLD, cwd: 'D:/work/beta' });
+    }
+
+    it('is found at once through the registry in scope all, whatever the age of its file', async () => {
+      const { ctx, claudeHome, service } = await instance(
+        { pidAlive: () => true },
+        { runtimeDefaults: ALL, sessions: threeSessions },
+      );
+      withRegistryEntry(claudeHome);
+      await service.start();
+      await waitFor(() => tracked(ctx, OLD) > 0, { what: 'the session of the registry entry to be tracked' });
+    });
+
+    it('is not looked for in scope repo, where the registry only reports on the sessions that are known', async () => {
+      const reads: string[] = [];
+      const { ctx, claudeHome, service } = await instance(
+        {
+          pidAlive: () => true,
+          externalFs: {
+            readdir: (dir) => nodeExternalFs.readdir(dir),
+            readSmall: (file, max) => {
+              reads.push(path.basename(file));
+              return nodeExternalFs.readSmall(file, max);
+            },
+          },
+        },
+        {
+          sessions: (repo) => [
+            {
+              id: OLD,
+              project: sanitizeProjectName(repo),
+              cwd: repo,
+              mtimeAgeMs: 30 * HOUR,
+              build: (b) => {
+                prompt(b, 'old');
+              },
+            },
+          ],
+        },
+      );
+      withRegistryEntry(claudeHome);
+      await service.start();
+      await waitFor(() => reads.includes('4242.json'), { what: 'the registry poll to read the entry' });
+      await service.untilIdle({ timeoutMs: 20_000 });
+      expect(tracked(ctx, OLD)).toBe(0);
+    });
   });
 });

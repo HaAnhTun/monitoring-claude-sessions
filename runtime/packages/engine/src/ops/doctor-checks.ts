@@ -11,11 +11,13 @@ import path from 'node:path';
 import type { DoctorCheck } from '@mcs/shared';
 import { resolveMcsHome } from '@mcs/shared/protocol';
 
+import { resolveConfig } from '../config/resolve.ts';
 import { openSqlite } from '../db/driver.ts';
 import { claudeHomeOf, detectTranscriptsDir, projectsRoot } from '../ingest/transcripts/discovery.ts';
 import { execFileText, resolveExecutable, type ChildResult } from '../platform/exec.ts';
 import { hostPlatform, type HostPlatform } from '../platform/host.ts';
 import { layoutOfRuntimeDir, type RuntimeLayout } from '../platform/layout.ts';
+import { instanceKindOfConfig, isAllScope } from '../projects/scope.ts';
 import { readInstanceFile } from '../workspace/adopt.ts';
 import { workspacePath, type WorkspaceRef } from '../workspace/paths.ts';
 import { check as configCheck, type CheckDeps, type CheckResult } from './config.ts';
@@ -348,8 +350,55 @@ async function transcriptsDirOf(e: CheckEnv): Promise<string | null> {
   return detectTranscriptsDir(e.ctx.repo, projectsRoot(e.ctx.env));
 }
 
-export const transcriptsDir: BuiltinCheck = async (e) =>
-  (await transcriptsDirOf(e)) === null
+// ---- the scope of the instance (CAW design 03 2.3): one repository, or every project below the Claude home
+
+interface ScopeFacts {
+  /** The instance reads every project (`projects.scope`, `auto` follows the kind of the instance). */
+  readonly all: boolean;
+  /** `instance.json` says `hooks.enabled`. */
+  readonly hooksEnabled: boolean;
+}
+
+const scopeFactsOf = new WeakMap<CheckEnv, Promise<ScopeFacts>>();
+
+async function readScopeFacts(e: CheckEnv): Promise<ScopeFacts> {
+  const none: ScopeFacts = { all: false, hooksEnabled: false };
+  if (e.ws === null) return none;
+  try {
+    const resolved = await resolveConfig({ workspace: e.ws, env: e.ctx.env, cli: {}, skillDir: e.ctx.skillDir });
+    const instance = await readInstanceFile(e.ws);
+    return {
+      all: isAllScope(resolved.runtime.projects.scope, instanceKindOfConfig(resolved)),
+      hooksEnabled: instance?.hooks.enabled === true,
+    };
+  } catch {
+    // a broken configuration is the business of config.valid: the checks stay on the repository
+    return none;
+  }
+}
+
+/** What the workspace says about its scope and its hooks, read once per run of the checks. */
+function scopeOf(e: CheckEnv): Promise<ScopeFacts> {
+  let known = scopeFactsOf.get(e);
+  if (known === undefined) {
+    known = readScopeFacts(e);
+    scopeFactsOf.set(e, known);
+  }
+  return known;
+}
+
+export const transcriptsDir: BuiltinCheck = async (e) => {
+  if ((await scopeOf(e)).all) {
+    return (await e.seams.exists(projectsRoot(e.ctx.env)))
+      ? ok('transcripts.dir', 'projects folder of the Claude home found: every project is read')
+      : fail(
+          'transcripts.dir',
+          'warn',
+          'no projects folder in the Claude home',
+          'run Claude Code once, or set CLAUDE_CONFIG_DIR to its folder',
+        );
+  }
+  return (await transcriptsDirOf(e)) === null
     ? fail(
         'transcripts.dir',
         'warn',
@@ -357,13 +406,32 @@ export const transcriptsDir: BuiltinCheck = async (e) =>
         'run a Claude Code session in the repository, or set transcripts_dir with `mcs configure`',
       )
     : ok('transcripts.dir', 'transcripts folder found');
+};
+
+/** The files that the parse check reads for an instance of every project: the newest of the newest project folder. */
+async function newestOfNewestProject(e: CheckEnv, root: string): Promise<string[]> {
+  try {
+    const [newest] = await e.seams.newestFiles(root, '', 1);
+    return newest === undefined ? [] : await e.seams.newestFiles(newest, '.jsonl', TRANSCRIPTS_SAMPLE);
+  } catch {
+    // an entry that is no folder, or one that vanished: nothing to read this time
+    return [];
+  }
+}
 
 /** The legacy threshold (01 6.4): fine when no line is bad, or fewer than max(5, total / 100). */
 export const transcriptsParse: BuiltinCheck = async (e) => {
   const id = 'transcripts.parse';
-  const dir = await transcriptsDirOf(e);
-  if (dir === null) return fail(id, 'warn', 'no transcripts folder to read', 'see transcripts.dir');
-  const files = await e.seams.newestFiles(dir, '.jsonl', TRANSCRIPTS_SAMPLE);
+  let files: string[];
+  if ((await scopeOf(e)).all) {
+    const root = projectsRoot(e.ctx.env);
+    if (!(await e.seams.exists(root))) return fail(id, 'warn', 'no projects folder to read', 'see transcripts.dir');
+    files = await newestOfNewestProject(e, root);
+  } else {
+    const dir = await transcriptsDirOf(e);
+    if (dir === null) return fail(id, 'warn', 'no transcripts folder to read', 'see transcripts.dir');
+    files = await e.seams.newestFiles(dir, '.jsonl', TRANSCRIPTS_SAMPLE);
+  }
   let total = 0;
   let bad = 0;
   for (const file of files) {
@@ -571,6 +639,26 @@ export const workspacePermissions: BuiltinCheck = async (e) => {
     : fail(id, 'warn', `mode ${(mode & 0o777).toString(8)} lets other users write`, fix);
 };
 
+/**
+ * The hooks of an instance that reads every project cannot work: a route entry names at most eight folders, so the user instance
+ * runs from the transcripts and the registry and writes no route file (CAW design 03 2.3). Enabled hooks next to that scope are
+ * a setting that does nothing.
+ */
+export const hooksScope: BuiltinCheck = async (e) => {
+  const id = 'hooks.scope';
+  if (e.ws === null) return ok(id, 'no task selected (skipped)');
+  const facts = await scopeOf(e);
+  if (!facts.all) return ok(id, 'one repository: hooks and transcripts agree');
+  return facts.hooksEnabled
+    ? fail(
+        id,
+        'warn',
+        'hooks are enabled, but this instance reads every project and gets no hook events',
+        `turn the hooks off: mcs hooks disable --task ${e.ws.slug}`,
+      )
+    : ok(id, 'every project is read from the transcripts; hooks are off');
+};
+
 /** The default line of the hooks area until it contributes its own provider (`extraChecks.hooks`). */
 export const hooksDefault: BuiltinCheck = () =>
   Promise.resolve({
@@ -590,6 +678,7 @@ export const BUILTIN_CHECKS: readonly (readonly [id: string, run: BuiltinCheck])
   ['claude.home', claudeHome],
   ['transcripts.dir', transcriptsDir],
   ['transcripts.parse', transcriptsParse],
+  ['hooks.scope', hooksScope],
   ['config.valid', configValid],
   ['port.free', portFree],
   ['workspace.writable', workspaceWritable],
