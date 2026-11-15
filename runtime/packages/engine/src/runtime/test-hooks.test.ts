@@ -1,4 +1,5 @@
-// The test hooks of 01 2.10: inert unless MCS_TEST is exactly 1, and only the three documented hooks exist.
+// The test hooks of 01 2.10 and of the user instance (06 2.5): inert unless MCS_TEST is exactly 1, and only the documented
+// hooks exist.
 import { describe, expect, it, vi } from 'vitest';
 
 import { TEST_HOOK_NAMES, testHook } from './test-hooks.ts';
@@ -22,6 +23,19 @@ describe('testHook', () => {
     expect(testHook('IGNORE_CONTROL')).toBe('1');
     expect(testHook('BOOT_HANG')).toBe('1');
     expect(testHook('INIT_CRASH')).toBe('before-rename');
+  });
+
+  it('OPEN_FILE (the recorder that replaces opening a page in the shell) follows the same rules', () => {
+    vi.stubEnv('MCS_TEST', '');
+    vi.stubEnv('MCS_TEST_OPEN_FILE', '/some/recorder.txt');
+    expect(testHook('OPEN_FILE')).toBeUndefined();
+    vi.stubEnv('MCS_TEST', '1');
+    expect(testHook('OPEN_FILE')).toBe('/some/recorder.txt');
+    expect(testHook('MCS_TEST_OPEN_FILE')).toBe('/some/recorder.txt');
+    vi.stubEnv('MCS_TEST_OPEN_FILE', '');
+    expect(testHook('OPEN_FILE')).toBeUndefined();
+    expect(testHook('OPEN_FILE', { MCS_TEST: '1', MCS_TEST_OPEN_FILE: '/x' })).toBe('/x');
+    expect(testHook('OPEN_FILE', { MCS_TEST_OPEN_FILE: '/x' })).toBeUndefined();
   });
 
   it('answers undefined for a hook that is not set or is empty', () => {
@@ -54,7 +68,7 @@ describe('testHook', () => {
     expect(testHook('BOOT_HANG', { MCS_TEST_BOOT_HANG: '1' })).toBeUndefined();
   });
 
-  it('documents exactly the hooks of 01 2.10', () => {
-    expect([...TEST_HOOK_NAMES].sort()).toEqual(['BOOT_HANG', 'IGNORE_CONTROL', 'INIT_CRASH']);
+  it('documents exactly the hooks of 01 2.10 and the open-file recorder', () => {
+    expect([...TEST_HOOK_NAMES].sort()).toEqual(['BOOT_HANG', 'IGNORE_CONTROL', 'INIT_CRASH', 'OPEN_FILE']);
   });
 });

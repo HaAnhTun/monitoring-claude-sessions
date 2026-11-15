@@ -476,6 +476,29 @@ describe('environment variables of the repository (01 section 2.10)', () => {
     expect(report.hookLeaks).toEqual([]);
   });
 
+  it('keeps the child-only variables of the autostart shortcut (the LNK family) in ops/autostart.ts alone', () => {
+    const reader = 'runtime/packages/engine/src/ops/autostart.ts';
+    const family = DOCUMENTED_ENV_VARS.filter((v) => v.name.startsWith(caw('LNK_')));
+    expect(family.map((v) => v.name).sort()).toEqual(
+      ['ARGS', 'DESC', 'PATH', 'TARGET', 'WORKDIR'].map((rest) => caw(`LNK_${rest}`)),
+    );
+    for (const v of family) {
+      expect(v.scope, v.name).toBe('runtime');
+      expect(v.legacyName, v.name).toBeUndefined();
+      expect(v.readers, v.name).toEqual([reader]);
+    }
+    // a value of the shortcut must not reach any other production file, nor be read from the environment of the runtime
+    const offenders: string[] = [];
+    for (const file of sourceFiles(SKILL)) {
+      if (!isProduction(file) || file === reader || file === DECLARATION) continue;
+      for (const name of allNamesIn(SKILL, file)) {
+        if (name.startsWith(caw('LNK_'))) offenders.push(`${file}: ${name}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    expect(new RegExp(READ_FORM.source).test(readFileSync(join(SKILL, reader), 'utf8'))).toBe(false);
+  });
+
   it('prints the documented names that have no reader yet (zero is required at the Phase 6 gate)', () => {
     process.stdout.write(`env-vars: ${report.pending.length} pending: ${report.pending.join(', ')}
 `);

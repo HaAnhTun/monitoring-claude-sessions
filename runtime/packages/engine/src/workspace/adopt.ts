@@ -12,6 +12,7 @@ import {
   systemClock,
   type Clock,
   type InstanceFile,
+  type InstanceKind,
 } from '@mcs/shared';
 
 import { appendChange, type ChangeEntry } from '../audit/writer.ts';
@@ -28,6 +29,8 @@ export interface NewInstanceOptions {
   readonly instanceId?: string;
   /** Default `RUNTIME_VERSION`. */
   readonly runtimeVersion?: string;
+  /** `user` for the user-wide instance (06 1.3). The key is written for `user` only: a task file stays byte-identical. */
+  readonly kind?: InstanceKind;
 }
 
 /** The instance file of a new instance, with the creation defaults of 01 1.5. */
@@ -42,6 +45,7 @@ export function newInstanceFile(slug: string, o: NewInstanceOptions): InstanceFi
     runtimeVersion,
     dbSchemaVersion: 0,
     engine: 'node',
+    ...(o.kind === 'user' ? { kind: o.kind } : {}),
     hooks: { enabled: false },
     upgradedAt: null,
   };
@@ -63,6 +67,7 @@ export function instanceFileToDoc(file: InstanceFile): JsonDoc {
     runtimeVersion: f.runtimeVersion,
     dbSchemaVersion: f.dbSchemaVersion,
     engine: f.engine,
+    ...(f.kind === undefined ? {} : { kind: f.kind }),
     hooks: { enabled: f.hooks.enabled },
     upgradedAt: f.upgradedAt,
   });
@@ -169,6 +174,8 @@ export interface AdoptOptions {
   readonly clock?: Clock;
   /** Test seam: the instance id. */
   readonly newId?: () => string;
+  /** The kind of the identity file a legacy workspace gains; an existing `instance.json` is never changed. */
+  readonly kind?: InstanceKind;
 }
 
 export interface AdoptResult {
@@ -203,6 +210,7 @@ export function adoptWorkspace(ws: WorkspaceRef, o: AdoptOptions = {}): Promise<
     const instance = newInstanceFile(ws.slug, {
       nowMs,
       ...(o.newId === undefined ? {} : { instanceId: o.newId() }),
+      ...(o.kind === undefined ? {} : { kind: o.kind }),
     });
     for (const folder of ['audit', 'data', 'logs']) await ensureWorkspaceDir(ws, folder);
     await writeInstanceFile(ws, instance);

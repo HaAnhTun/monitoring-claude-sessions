@@ -258,3 +258,33 @@ describe('applyRepair', () => {
     expect(second.oldInstanceId).toBe(NEW_ID);
   });
 });
+
+describe('applyRepair keeps the kind (06 1.3)', () => {
+  it('a repaired user instance is still a user instance, with the kind line in its place', async () => {
+    const { repo, tasksRoot } = buildRepo(makeTemp('repair-kind').path);
+    const a = buildTaskWorkspace(repo, {
+      slug: 'a',
+      config: { title: 'A' },
+      instance: { instanceId: OLD_ID, engine: 'node', kind: 'user' },
+    });
+    const c = path.join(tasksRoot, 'c');
+    cpSync(a, c, { recursive: true });
+    writeFileSync(
+      path.join(c, 'task.json'),
+      readFileSync(path.join(c, 'task.json'), 'utf8').replace('"id": "a"', '"id": "c"'),
+    );
+    const copy = resolveWorkspace(tasksRoot, 'c');
+    await applyRepair(copy, await planRepair(copy, options()), options());
+    const instance = await readInstanceFile(copy);
+    expect(instance).toMatchObject({ instanceId: NEW_ID, slug: 'c', kind: 'user' });
+    expect(readFileSync(path.join(copy.dir, 'instance.json'), 'utf8')).toContain(
+      '  "engine": "node",\n  "kind": "user",\n  "hooks": {',
+    );
+  });
+
+  it('a repaired task has no kind key', async () => {
+    const { copy } = copiedWorkspace();
+    await applyRepair(copy, await planRepair(copy, options()), options());
+    expect(readFileSync(path.join(copy.dir, 'instance.json'), 'utf8')).not.toContain('kind');
+  });
+});

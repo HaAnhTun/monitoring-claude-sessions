@@ -2,7 +2,8 @@
 //   - `execFileText(spec)`: short-lived children with a timeout, an output cap, a minimal environment, a 2-slot
 //     semaphore with a queue of 8, and per-kind statistics. It never throws and never rejects.
 //   - `spawnDetached` / `spawnForeground`: long-lived children (the server, legacy delegation), not counted in the statistics.
-// Every spawn passes `shell: false` and `windowsHide: true`; a `.cmd` or `.bat` (which would need a shell) is refused.
+// Every spawn passes `shell: false` and `windowsHide: true`, except `spawnDetachedVisible` (the browser app window of the
+// login, which has to show); a `.cmd` or `.bat` (which would need a shell) is refused.
 // `node:child_process` is imported here and nowhere else in the engine (lint rule and the T-LC-16 test).
 import { spawn, type ChildProcess } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
@@ -436,6 +437,30 @@ export function spawnDetached(
     cwd: o.cwd,
     env: o.env,
     stdio: ['ignore', o.stdoutFd, o.stderrFd],
+  });
+  child.unref();
+  return child;
+}
+
+/**
+ * Starts `file` detached and with a visible window (`windowsHide: false`: the one spawn that shows its window), no stdio,
+ * then `unref()`s it. For the Edge or Chrome app window of the login (06 2.5), nothing else: the caller has validated every
+ * argument. Same refusals and same missing-file behavior as `spawnDetached`: the caller must attach `child.on('error', ...)`
+ * in the same tick. Not counted in the statistics.
+ */
+export function spawnDetachedVisible(
+  file: string,
+  args: readonly string[],
+  o: { env: Record<string, string>; cwd?: string },
+): ChildProcess {
+  assertSpawnable(file);
+  const child = spawn(file, [...args], {
+    shell: false,
+    windowsHide: false,
+    detached: true,
+    env: o.env,
+    stdio: 'ignore',
+    ...(o.cwd === undefined ? {} : { cwd: o.cwd }),
   });
   child.unref();
   return child;

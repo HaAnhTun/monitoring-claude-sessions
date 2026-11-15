@@ -269,3 +269,46 @@ describe('adoptWorkspace (T-LC-12, unit part)', () => {
     expect(result.adopted).toBe(true);
   });
 });
+
+describe('kind of an instance (06 1.3)', () => {
+  it('newInstanceFile writes kind only for a user instance, after engine and before hooks', () => {
+    const user = newInstanceFile('user', { nowMs: NOW, instanceId: ID, kind: 'user' });
+    expect(user.kind).toBe('user');
+    expect(InstanceFileSchema.safeParse(user).success).toBe(true);
+    expect(Object.keys(user)).toEqual(Object.keys(InstanceFileSchema.shape));
+    // a task never carries the key: asked for explicitly or not at all, the file is the same bytes
+    const task = newInstanceFile('demo', { nowMs: NOW, instanceId: ID, kind: 'task' });
+    expect('kind' in task).toBe(false);
+    expect(task).toEqual(newInstanceFile('demo', { nowMs: NOW, instanceId: ID }));
+  });
+
+  it('the file of a user instance has the kind line after the engine line; the file of a task is byte-identical to before', async () => {
+    const root = tasksRoot();
+    const userWs = legacyWorkspace(root, 'user');
+    await writeInstanceFile(userWs, newInstanceFile('user', { nowMs: NOW, instanceId: ID, kind: 'user' }));
+    expect(read(userWs, 'instance.json')).toContain('  "engine": "node",\n  "kind": "user",\n  "hooks": {');
+    expect(await readInstanceFile(userWs)).toMatchObject({ kind: 'user' });
+
+    const taskWs = legacyWorkspace(root, 'task-one');
+    await writeInstanceFile(taskWs, newInstanceFile('task-one', { nowMs: NOW, instanceId: ID, kind: 'task' }));
+    expect(read(taskWs, 'instance.json')).not.toContain('kind');
+  });
+
+  it('adoptWorkspace gives an adopted workspace the requested kind, and leaves an existing file alone', async () => {
+    const root = tasksRoot();
+    const ws = legacyWorkspace(root);
+    const adopted = await adoptWorkspace(ws, { clock: new FakeClock(NOW), newId: () => ID, kind: 'user' });
+    expect(adopted.adopted).toBe(true);
+    expect(adopted.instance.kind).toBe('user');
+    expect(read(ws, 'instance.json')).toContain('"kind": "user"');
+    // a second call, even with another kind, changes nothing (the identity file is never rewritten by an adoption)
+    const again = await adoptWorkspace(ws, { clock: new FakeClock(NOW + 1000), newId: () => ID2, kind: 'task' });
+    expect(again).toEqual({ adopted: false, instance: adopted.instance });
+  });
+
+  it('adoptWorkspace without a kind writes a task file with no kind key', async () => {
+    const ws = legacyWorkspace(tasksRoot());
+    await adoptWorkspace(ws, { clock: new FakeClock(NOW), newId: () => ID });
+    expect(read(ws, 'instance.json')).not.toContain('kind');
+  });
+});

@@ -24,6 +24,7 @@ export interface DocumentedEnvVar {
 }
 
 const TEST_HOOKS = 'runtime/packages/engine/src/runtime/test-hooks.ts';
+const AUTOSTART = 'runtime/packages/engine/src/ops/autostart.ts';
 const QA_CONFIG = 'runtime/packages/web/e2e/qa/global-setup.ts';
 const QA_PLAYWRIGHT = 'runtime/packages/web/e2e/qa/playwright.config.ts';
 
@@ -61,6 +62,13 @@ export const DOCUMENTED_ENV_VARS: readonly DocumentedEnvVar[] = [
   { name: 'MCS_TEST_FAKE_TERMINALS', scope: 'test', readers: [TEST_HOOKS] },
   { name: 'MCS_TEST_OPEN_FILE', scope: 'test', readers: [TEST_HOOKS] },
   { name: 'MCS_TEST_FOLDER_PICKER', scope: 'test', readers: [TEST_HOOKS] },
+  // Child-only: the values of the autostart shortcut, set in the environment of the one PowerShell child that makes or reads the
+  // `.lnk` (06 2.7). The scripts are constants and read these names; nothing reads them from the environment of the runtime.
+  { name: 'CAW_LNK_PATH', scope: 'runtime', readers: [AUTOSTART] },
+  { name: 'CAW_LNK_TARGET', scope: 'runtime', readers: [AUTOSTART] },
+  { name: 'CAW_LNK_ARGS', scope: 'runtime', readers: [AUTOSTART] },
+  { name: 'CAW_LNK_WORKDIR', scope: 'runtime', readers: [AUTOSTART] },
+  { name: 'CAW_LNK_DESC', scope: 'runtime', readers: [AUTOSTART] },
   // Not a production hook: the number of generated cases per scenario template (default 500) of the lifecycle property tests;
   // 1 replays one failing seed together with MCS_TEST_SEED. Only that test file reads it.
   { name: 'MCS_TEST_CASES', scope: 'test', readers: ['runtime/packages/engine/src/lifecycle/properties.test.ts'] },

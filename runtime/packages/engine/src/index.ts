@@ -966,3 +966,30 @@ export type {
 export { createControlTokenSource } from './ops/probe.ts';
 export type { ControlTokenSource } from './ops/probe.ts';
 // @wp-end CAW-18
+
+// @wp-begin CAW-21
+export { spawnDetachedVisible } from './platform/exec.ts';
+export { appWindowArgs, findAppBrowser, openLoginUrl } from './platform/browser.ts';
+export type { AppBrowser, BrowserKind, BrowserSeams, OpenFailure, OpenOutcome } from './platform/browser.ts';
+export {
+  USER_DEFAULT_PORT,
+  USER_INSTANCE_NAME,
+  USER_INSTANCE_SLUG,
+  USER_ROOT_DIRNAME,
+  isUserRoot,
+  userBrowserProfileDirOf,
+  userInstanceDirOf,
+  userOpContext,
+  userRootOf,
+} from './user-instance/paths.ts';
+export { ensureUserInstance } from './user-instance/ensure.ts';
+export type { EnsureUserInstanceDeps, EnsureUserInstanceResult } from './user-instance/ensure.ts';
+export {
+  AUTOSTART_SHORTCUT_NAME,
+  autostartStatus,
+  disableAutostart,
+  enableAutostart,
+  refreshAutostartIfEnabled,
+} from './ops/autostart.ts';
+export type { AutostartDeps, AutostartRefresh, AutostartTarget } from './ops/autostart.ts';
+// @wp-end CAW-21

@@ -6,7 +6,7 @@ import { lstat, mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 
-import { McsError, isoSecondsZ, systemClock, type Clock, type InstanceFile } from '@mcs/shared';
+import { McsError, isoSecondsZ, systemClock, type Clock, type InstanceFile, type InstanceKind } from '@mcs/shared';
 import { z } from 'zod';
 
 import { CHANGES_HEADER, changeEntryText } from '../audit/writer.ts';
@@ -48,6 +48,8 @@ export interface InitOptions {
   readonly port?: number;
   /** `--config FILE`: a seed of legacy (L) keys for `config.json`. */
   readonly seedConfig?: string;
+  /** `user` makes the user-wide instance (06 1.3); absent or `task`: a task workspace, with no `kind` key in its identity file. */
+  readonly kind?: InstanceKind;
   readonly clock?: Clock;
   /** Test seam: the instance id. */
   readonly newId?: () => string;
@@ -253,6 +255,7 @@ async function buildStaging(
   const instance = newInstanceFile(ws.slug, {
     nowMs,
     ...(o.newId === undefined ? {} : { instanceId: o.newId() }),
+    ...(o.kind === undefined ? {} : { kind: o.kind }),
   });
   await mkdir(staging);
   const there = { dir: staging };
@@ -373,6 +376,7 @@ async function reuse(ws: WorkspaceRef, request: Request, o: InitOptions, clock: 
   const adoption = await adoptWorkspace(ws, {
     clock,
     ...(o.newId === undefined ? {} : { newId: o.newId }),
+    ...(o.kind === undefined ? {} : { kind: o.kind }),
   });
   return { created: false, adopted: adoption.adopted, ws, instance: adoption.instance };
 }

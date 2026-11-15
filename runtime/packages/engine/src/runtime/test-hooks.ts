@@ -1,13 +1,16 @@
 // The test hooks of 01 2.10 (I-27): production code reads the test variables only through `testHook(name)`, and the
-// function answers `undefined` unless the process runs in test mode (`MCS_TEST` is exactly `1`). The names of the three
+// function answers `undefined` unless the process runs in test mode (`MCS_TEST` is exactly `1`). The names of the
 // hooks live here and nowhere else, so a scan of the production sources for them finds only this file.
 //
 // Registered for the terminal and the user instance (CAW-06) and wired into `TEST_HOOK_NAMES` by the packages that read
-// them: MCS_TEST_FAKE_TERMINALS (scripted terminal sessions), MCS_TEST_OPEN_FILE (records the open-in-shell target) and
-// MCS_TEST_FOLDER_PICKER (a fixed answer for the folder dialog).
+// them: MCS_TEST_OPEN_FILE (records the login URL instead of opening a browser; `platform/browser.ts`, wired), and still to
+// come MCS_TEST_FAKE_TERMINALS (scripted terminal sessions) and MCS_TEST_FOLDER_PICKER (a fixed answer for the folder dialog).
 
-/** The documented hooks by their short name: T-LC-06 (control ignored), T-LC-08 (boot hangs), T-LC-10 (init crash). */
-export const TEST_HOOK_NAMES = ['IGNORE_CONTROL', 'BOOT_HANG', 'INIT_CRASH'] as const;
+/**
+ * The documented hooks by their short name: T-LC-06 (control ignored), T-LC-08 (boot hangs), T-LC-10 (init crash) and
+ * `OPEN_FILE` (the login URL is appended to that file instead of being opened, 06 2.5).
+ */
+export const TEST_HOOK_NAMES = ['IGNORE_CONTROL', 'BOOT_HANG', 'INIT_CRASH', 'OPEN_FILE'] as const;
 
 export type TestHookName = (typeof TEST_HOOK_NAMES)[number];
 
@@ -16,6 +19,7 @@ export const TEST_HOOK_VARIABLES: Readonly<Record<TestHookName, string>> = {
   IGNORE_CONTROL: 'MCS_TEST_IGNORE_CONTROL',
   BOOT_HANG: 'MCS_TEST_BOOT_HANG',
   INIT_CRASH: 'MCS_TEST_INIT_CRASH',
+  OPEN_FILE: 'MCS_TEST_OPEN_FILE',
 };
 
 function variableOf(name: string): string | undefined {
@@ -28,7 +32,7 @@ function variableOf(name: string): string | undefined {
 
 /**
  * The value of the hook `name` (the short name such as `'BOOT_HANG'`, or the full variable name), or `undefined` when test
- * mode is off, the hook is not one of the documented three, or the variable is unset or empty. `env` defaults to the
+ * mode is off, the hook is not a documented one, or the variable is unset or empty. `env` defaults to the
  * process environment.
  */
 export function testHook(

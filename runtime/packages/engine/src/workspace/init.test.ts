@@ -522,3 +522,53 @@ describe('initWorkspace: the staging folder and the rename', () => {
     expect(leftovers(repo)).toEqual([]);
   });
 });
+
+describe('initWorkspace: kind (06 1.3)', () => {
+  it('writes kind "user" after the engine line for a user instance and nothing for a task', async () => {
+    const repo = bareRepo();
+    const user = await initWorkspace(opts(repo, { slug: 'user', kind: 'user', port: 7690 }));
+    expect(user.created).toBe(true);
+    expect(user.instance.kind).toBe('user');
+    expect(read(repo, 'user', 'instance.json')).toContain('  "engine": "node",\n  "kind": "user",\n  "hooks": {');
+    expect(await readInstanceFile(resolveWorkspace(tasksRootOf(repo), 'user'))).toMatchObject({ kind: 'user' });
+
+    const task = await initWorkspace(opts(repo, { slug: 'plain' }));
+    expect(task.instance.kind).toBeUndefined();
+    expect(read(repo, 'plain', 'instance.json')).not.toContain('kind');
+    const explicitTask = await initWorkspace(opts(repo, { slug: 'plain-two', kind: 'task' }));
+    expect(explicitTask.instance.kind).toBeUndefined();
+    expect(read(repo, 'plain-two', 'instance.json')).not.toContain('kind');
+  });
+
+  it('a task workspace of an init without kind is byte-identical to one that asks for kind task', async () => {
+    const repo = bareRepo();
+    await initWorkspace(opts(repo, { slug: 'one' }));
+    await initWorkspace(opts(repo, { slug: 'one-b', kind: 'task' }));
+    for (const file of ['instance.json', 'task.json', 'config.json']) {
+      expect(read(repo, 'one-b', file).replaceAll('one-b', 'one')).toBe(read(repo, 'one', file));
+    }
+  });
+
+  it('adopts an existing legacy workspace with the requested kind', async () => {
+    const repo = bareRepo();
+    const dir = wsDir(repo, 'user');
+    cpSync(FIXTURE, dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'task.json'),
+      readFileSync(path.join(dir, 'task.json'), 'utf8').replace(/"id": "[^"]*"/, '"id": "user"'),
+    );
+    const result = await initWorkspace(opts(repo, { slug: 'user', kind: 'user' }));
+    expect(result.created).toBe(false);
+    expect(result.adopted).toBe(true);
+    expect(result.instance.kind).toBe('user');
+  });
+
+  it('reuses an existing user instance without rewriting its identity', async () => {
+    const repo = bareRepo();
+    await initWorkspace(opts(repo, { slug: 'user', kind: 'user' }));
+    const before = read(repo, 'user', 'instance.json');
+    const again = await initWorkspace(opts(repo, { slug: 'user', kind: 'user', newId: () => 'ignored' }));
+    expect(again.created).toBe(false);
+    expect(read(repo, 'user', 'instance.json')).toBe(before);
+  });
+});

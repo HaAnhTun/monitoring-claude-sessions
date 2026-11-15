@@ -24,6 +24,11 @@ const EXPECTED: readonly (readonly [string, 'runtime' | 'test' | 'dev'])[] = [
   ['MCS_TEST_FAKE_TERMINALS', 'test'],
   ['MCS_TEST_OPEN_FILE', 'test'],
   ['MCS_TEST_FOLDER_PICKER', 'test'],
+  ['CAW_LNK_PATH', 'runtime'],
+  ['CAW_LNK_TARGET', 'runtime'],
+  ['CAW_LNK_ARGS', 'runtime'],
+  ['CAW_LNK_WORKDIR', 'runtime'],
+  ['CAW_LNK_DESC', 'runtime'],
   ['MCS_TEST_CASES', 'test'],
   ['MCS_PERF_FACTOR', 'test'],
   ['MCS_E2E_CLAUDE', 'test'],
@@ -286,6 +291,9 @@ describe('DOCUMENTED_ENV_VARS', () => {
       const m = /^\| `([A-Z][A-Z0-9_]*)` \| (runtime|test|dev)\b/.exec(line);
       if (m?.[1] !== undefined && (m[1].startsWith('MCS_') || m[1] === 'CLAUDE_CONFIG_DIR')) names.add(m[1]);
     }
-    expect([...names].sort()).toEqual(DOCUMENTED_ENV_VARS.map((v) => v.name).sort());
+    // the LNK_* names are set by the runtime for one child process (autostart, 06 2.7): nobody sets them, so the registry of
+    // variables a person can set does not list them
+    const settable = DOCUMENTED_ENV_VARS.filter((v) => !v.name.startsWith('CAW_LNK_'));
+    expect([...names].sort()).toEqual(settable.map((v) => v.name).sort());
   });
 });

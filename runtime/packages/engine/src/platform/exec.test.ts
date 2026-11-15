@@ -20,6 +20,7 @@ import {
   resolveExecutable,
   setChildLogSink,
   spawnDetached,
+  spawnDetachedVisible,
   spawnErrorCode,
   spawnForeground,
   spawnRefusal,
@@ -873,6 +874,49 @@ describe('spawnDetached and spawnForeground', () => {
     }
   });
 
+  it('spawnDetachedVisible starts the program detached with the given environment and no stdio (the browser window of the login)', async () => {
+    const dir = makeTemp('exec').path;
+    const out = path.join(dir, 'visible.txt');
+    const child = spawnDetachedVisible(
+      NODE,
+      ['-e', 'require("node:fs").writeFileSync(process.env.SAMPLE_OUT, "hello " + process.env.SAMPLE_VALUE)'],
+      { env: { ...baseEnv(), SAMPLE_OUT: out } },
+    );
+    expect(typeof child.pid).toBe('number');
+    expect(child.stdin).toBeNull();
+    expect(child.stdout).toBeNull();
+    expect(child.stderr).toBeNull();
+    await once(child, 'exit');
+    expect(readFileSync(out, 'utf8')).toBe('hello probe-value');
+  });
+
+  it('spawnDetachedVisible refuses a relative file, a .cmd and a NUL character before spawning anything', () => {
+    expect(() => spawnDetachedVisible('node', [], { env: baseEnv() })).toThrow(TypeError);
+    expect(() => spawnDetachedVisible('', [], { env: baseEnv() })).toThrow(TypeError);
+    expect(() => spawnDetachedVisible(`${NODE}\u0000`, [], { env: baseEnv() })).toThrow(TypeError);
+    if (isWin) {
+      expect(() => spawnDetachedVisible(path.join(makeTemp('exec').path, 'x.cmd'), [], { env: baseEnv() })).toThrow(
+        TypeError,
+      );
+    }
+  });
+
+  it('spawnDetachedVisible on a missing program is no throw: no pid and an error event', async () => {
+    const dir = makeTemp('exec').path;
+    const child = spawnDetachedVisible(path.join(dir, 'no-such-program.exe'), [], { env: baseEnv() });
+    const failure = new Promise<Error>((resolve) => child.once('error', resolve));
+    expect(child.pid).toBeUndefined();
+    expect(await failure).toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('spawnDetachedVisible does not use the statistics of execFileText', async () => {
+    const before = childStats();
+    const dir = makeTemp('exec').path;
+    const child = spawnDetachedVisible(NODE, ['-e', '0'], { env: baseEnv(), cwd: dir });
+    await once(child, 'exit');
+    expect(childStats()).toEqual(before);
+  });
+
   it('spawnForeground runs with inherited stdio and reports the exit code', async () => {
     const dir = makeTemp('exec').path;
     const child = spawnForeground(NODE, ['-e', 'process.exit(7)'], { cwd: dir, env: baseEnv() });
@@ -882,7 +926,7 @@ describe('spawnDetached and spawnForeground', () => {
   });
 });
 
-describe('T-LC-16: only exec.ts imports node:child_process, and every spawn passes windowsHide: true', () => {
+describe('T-LC-16: only exec.ts imports node:child_process, and every spawn passes windowsHide: true (but the one of the app window)', () => {
   const packagesDir = fileURLToPath(new URL('../../../', import.meta.url));
   const CHILD_MODULES = new Set(['node:child_process', 'child_process']);
   const SPAWN_LIKE = new Set(['spawn', 'spawnSync', 'execFile', 'execFileSync', 'fork']);
@@ -950,7 +994,7 @@ describe('T-LC-16: only exec.ts imports node:child_process, and every spawn pass
     expect(offenders).toEqual(['engine/src/platform/exec.ts']);
   });
 
-  it('exec.ts never calls exec or execSync, never sets shell: true, and every spawn passes windowsHide: true', () => {
+  it('exec.ts never calls exec or execSync, never sets shell: true, and every spawn passes windowsHide: true except the app window of spawnDetachedVisible', () => {
     const entry = sources().find((candidate) => candidate.rel === 'engine/src/platform/exec.ts');
     expect(entry).toBeDefined();
     const spawnCalls: ts.CallExpression[] = [];
@@ -974,7 +1018,17 @@ describe('T-LC-16: only exec.ts imports node:child_process, and every spawn pass
     if (entry !== undefined) visit(entry.sf);
     expect(shellCalls).toEqual([]);
     expect(shellTrue).toEqual([]);
-    expect(spawnCalls.length).toBeGreaterThanOrEqual(3);
+    expect(spawnCalls.length).toBeGreaterThanOrEqual(4);
+    /** The function that holds a call: the one place that may show a window is `spawnDetachedVisible` (06 2.5). */
+    const enclosingFunction = (node: ts.Node): string | null => {
+      let current: ts.Node = node;
+      while (!ts.isSourceFile(current)) {
+        current = current.parent;
+        if (ts.isFunctionDeclaration(current) && current.name !== undefined) return current.name.text;
+      }
+      return null;
+    };
+    const visible: string[] = [];
     for (const call of spawnCalls) {
       const options = call.arguments[call.arguments.length - 1];
       expect(options !== undefined && ts.isObjectLiteralExpression(options)).toBe(true);
@@ -987,7 +1041,14 @@ describe('T-LC-16: only exec.ts imports node:child_process, and every spawn pass
                 property.name.text === 'windowsHide',
             )
           : undefined;
-      expect(hide?.initializer.kind).toBe(ts.SyntaxKind.TrueKeyword);
+      if (enclosingFunction(call) === 'spawnDetachedVisible') {
+        visible.push('spawnDetachedVisible');
+        expect(hide?.initializer.kind).toBe(ts.SyntaxKind.FalseKeyword);
+      } else {
+        expect(hide?.initializer.kind).toBe(ts.SyntaxKind.TrueKeyword);
+      }
     }
+    // exactly one call shows a window, the one of the browser app window; every other spawn stays hidden
+    expect(visible).toEqual(['spawnDetachedVisible']);
   });
 });
