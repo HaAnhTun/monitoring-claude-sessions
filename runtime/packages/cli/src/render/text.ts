@@ -1,6 +1,6 @@
 // Text renderer (01 6.1, 6.2): result lines on stdout, `ERROR:` / `hint:` / `warning:` lines on stderr, and the help pages that
 // are generated from the option tables. Every line goes through `io/terminal.ts`, which escapes untrusted text (ADR 0046).
-import type { CliError } from '@mcs/shared';
+import { CLI_NAME, PRODUCT_NAME, type CliError } from '@mcs/shared';
 
 import { printErrorLine, printLine } from '../io/terminal.ts';
 import type { CommandDefinition, OptionSpec, OptionTable } from '../main.ts';
@@ -34,15 +34,16 @@ function optionLines(table: OptionTable): string[] {
     const note = [
       spec.multiple === true ? 'repeatable' : null,
       spec.choices === undefined ? null : `one of ${spec.choices.join(', ')}`,
+      spec.scope === undefined ? null : spec.scope === 'user' ? 'app instance only' : 'task only',
     ].filter((n): n is string => n !== null);
     const text = note.length === 0 ? spec.description : `${spec.description} (${note.join('; ')})`;
     return `  ${optionLabel(name, spec).padEnd(width)}  ${text}`;
   });
 }
 
-/** `mcs <name> <synopsis>`: the usage line of a command. */
+/** `<cli> <name> <synopsis>`: the usage line of a command; the name of the program is `CLI_NAME`. */
 export function usageLine(def: CommandDefinition): string {
-  return def.synopsis === '' ? `mcs ${def.name}` : `mcs ${def.name} ${def.synopsis}`;
+  return def.synopsis === '' ? `${CLI_NAME} ${def.name}` : `${CLI_NAME} ${def.name} ${def.synopsis}`;
 }
 
 /** The help page of one command: usage, summary, its options, then the options every command takes. */
@@ -58,13 +59,16 @@ export function commandHelpLines(def: CommandDefinition, globals: OptionTable): 
 export function generalHelpLines(defs: readonly CommandDefinition[], globals: OptionTable): string[] {
   const width = Math.max(0, ...defs.map((d) => d.name.length));
   return [
-    'mcs: monitor Claude Code sessions (reads transcripts in place, serves a loopback dashboard).',
+    `${CLI_NAME}: ${PRODUCT_NAME} (monitors Claude Code sessions: reads transcripts in place, serves a loopback dashboard).`,
     '',
-    'usage: mcs <command> [options]',
-    '       mcs help <command>',
+    `usage: ${CLI_NAME} <command> [options]`,
+    `       ${CLI_NAME} help <command>`,
     '',
     'commands:',
     ...defs.map((d) => `  ${d.name.padEnd(width)}  ${d.summary}`),
+    '',
+    'scope: start, stop, restart, status, serve, verify, doctor and check act on the app instance unless --task, --repo or --root',
+    'select a task; every other command acts on a task, and on the app with --user.',
     '',
     'common options (every command):',
     ...optionLines(globals),

@@ -3,7 +3,14 @@
 // words, loads the command module, parses its options with `node:util` `parseArgs` against the command's option table,
 // builds the `OpContext`, runs the command and renders its result: legacy text, legacy JSON or the `mcs.cli/1` envelope.
 // Commands (`commands/<name>.ts`) hold an option table and call one engine operation; they print nothing themselves. Every
-// byte of output goes through `io/terminal.ts`. Exit codes: 0 success, 1 failure or problems found, 2 usage error, 130 Ctrl+C.
+// byte of output goes through `io/terminal.ts`. Exit codes: 0 success, 1 failure or problems found, 2 usage error, 3 refused because
+// terminals are live (06 3), 130 Ctrl+C.
+//
+// The scope rule (06 2.2, ADR 0092, `scope.ts`): a call acts on the app instance (`--user`) or on a task (`--task`, `--repo`, `--root`);
+// a command that is given neither uses its `defaultScope`. For the app the kernel hands the command the user root as its context and
+// sets the task of the command to `user`, so a command reads `--task` the way it always did. The engine words its hints for that
+// task (`mcs start --task user`): the kernel words every text of an app call again (`scope.ts`, `appCommandText`), so no command
+// has to.
 //
 // The registry below is the one place that knows the commands. Later work packages add entries inside their own marked
 // block, in one of two forms (`RegistryEntry`): a command (`names` + a lazy loader of its module) or a provider of operation
@@ -15,9 +22,12 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
 
 import {
+  USER_INSTANCE_SLUG,
+  appCheckProviders,
   createLogger,
   tasksRootOf,
   testHook,
+  userOpContext,
   type CheckDeps,
   type ConfigureDeps,
   type DiscoverDeps,
@@ -28,7 +38,16 @@ import {
   type OpContext,
   type VersionDeps,
 } from '@mcs/engine';
-import { McsError, RUNTIME_VERSION, cliExitCode, systemClock, toCliError, type CliError } from '@mcs/shared';
+import {
+  CLI_NAME,
+  McsError,
+  PRODUCT_NAME,
+  RUNTIME_VERSION,
+  cliExitCode,
+  systemClock,
+  toCliError,
+  type CliError,
+} from '@mcs/shared';
 
 import { printErrorLine, printLine } from './io/terminal.ts';
 import { buildInfoOf, buildState, mainPathsOf } from './paths.ts';
@@ -42,6 +61,7 @@ import {
   renderWarnings,
   usageLine,
 } from './render/text.ts';
+import { appCommandText, appErrorOf, inAppScope, resolveScope, type Scope, type ScopeResolution } from './scope.ts';
 
 // ---- contract of a command
 
@@ -50,6 +70,11 @@ export interface MainPaths {
   readonly launcherPath: string;
   readonly skillDir: string;
   readonly runtimeDir: string;
+  /**
+   * The name the person typed to start the launcher (the launcher says it). `mcs` is the alias: it gets the one note about the
+   * new default scope (ADR 0092). Absent means `mcs`, which is what `node dist/main.js` is.
+   */
+  readonly program?: 'caw' | 'mcs';
 }
 
 export type OptionType = 'string' | 'boolean';
@@ -66,6 +91,10 @@ export interface OptionSpec {
   readonly valueName?: string;
   /** The only accepted values. */
   readonly choices?: readonly string[];
+  /** The option belongs to one scope: giving it to a call of the other scope is a usage error (`--force` is the app's). */
+  readonly scope?: Scope;
+  /** Options that cannot be given together with this one (usage error), by name. */
+  readonly conflictsWith?: readonly string[];
   /** An integer option: inclusive bounds. Read it with `ParsedArgs.int`. */
   readonly integer?: readonly [min: number, max: number];
   readonly description: string;
@@ -100,9 +129,14 @@ export interface CommandContext {
   readonly op: OpContext;
   readonly args: ParsedArgs;
   readonly deps: OpDeps;
+  /**
+   * The scope of the call (`scope.ts`): `user` acts on the app instance, `task` on a task. The kernel always sets it; a context
+   * built by hand (a unit test of a command that does not care) leaves it out, which means `task`.
+   */
+  readonly scope?: Scope;
   /** `--json` was given: the kernel prints the envelope; a command never branches on it except for its `data`. */
   readonly json: boolean;
-  /** The options every command takes (`--repo`, `--root`, `--json`, `--help`). */
+  /** The options every command takes (`--repo`, `--root`, `--user`, `--json`, `--help`). */
   readonly globalOptions: OptionTable;
   readonly catalog: CommandCatalog;
 }
@@ -137,6 +171,11 @@ export interface CommandDefinition {
    * the signal never touches the kernel's listeners; the kernel does not register one for it.
    */
   readonly interruptible?: 'kernel' | 'command';
+  /**
+   * The scope of a call that gives none of `--user`, `--task`, `--repo` and `--root` (default `task`). The lifecycle family
+   * (`start`, `stop`, `restart`, `status`, `serve`, `verify`, `doctor`, `check`) says `user`: without a selector they act on the app.
+   */
+  readonly defaultScope?: Scope;
   run(ctx: CommandContext): Promise<CommandResult>;
 }
 
@@ -341,6 +380,11 @@ const REGISTRY: readonly RegistryEntry[] = [
   // @wp-begin WP-141
   { names: ['diagnostics'], load: () => import('./commands/diagnostics.ts') },
   // @wp-end WP-141
+
+  // @wp-begin CAW-33
+  // the app.* checks of `caw doctor` and `caw check` (06 2.6): each answers `null` outside the app, so a task never sees them
+  { deps: () => ({ extraChecks: appCheckProviders() }) },
+  // @wp-end CAW-33
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
@@ -350,6 +394,10 @@ export const GLOBAL_OPTIONS: OptionTable = {
     type: 'string',
     valueName: 'PATH',
     description: 'tasks root (default: <repo>/.claude/monitor/tasks)',
+  },
+  user: {
+    type: 'boolean',
+    description: `act on the ${PRODUCT_NAME} app instance (the default of start, stop, restart, status, serve, verify, doctor and check)`,
   },
   json: { type: 'boolean', description: 'print one mcs.cli/1 JSON document instead of the default output' },
   help: { type: 'boolean', short: 'h', description: 'show this help' },
@@ -465,18 +513,39 @@ function viewOf(values: ParsedValues, positionals: readonly string[]): ParsedArg
 
 const INTEGER_RE = /^[+-]?[0-9]+$/;
 
-function usageError(def: CommandDefinition, message: string): McsError {
-  return new McsError('USAGE', message, { hint: `usage: ${usageLine(def)} (mcs help ${def.name})` });
+/** `usage: caw start [--port N] ... (caw help start)`: what follows a usage error. */
+function usageHint(def: CommandDefinition): string {
+  return `usage: ${usageLine(def)} (${CLI_NAME} help ${def.name})`;
 }
 
-/** Checks the values against the tables: required options, choices, integer bounds, positional count. */
-function validate(def: CommandDefinition, args: ParsedArgs, values: ParsedValues): void {
+function usageError(def: CommandDefinition, message: string): McsError {
+  return new McsError('USAGE', message, { hint: usageHint(def) });
+}
+
+/**
+ * Checks the values against the tables: the options of the other scope, options that exclude each other, required options,
+ * choices, integer bounds, positional count.
+ */
+function validate(def: CommandDefinition, args: ParsedArgs, values: ParsedValues, scope: Scope): void {
   if (def.positionals === undefined ? args.positionals.length > 0 : args.positionals.length > def.positionals.max) {
     const extra = args.positionals[def.positionals?.max ?? 0] ?? '';
     throw usageError(def, `unexpected argument '${extra}'`);
   }
   for (const [name, spec] of Object.entries(def.options)) {
     const value = values[name];
+    if (value !== undefined && spec.scope !== undefined && spec.scope !== scope) {
+      throw usageError(
+        def,
+        spec.scope === 'user'
+          ? `--${name} applies to the app instance, not to a task`
+          : `--${name} applies to a task (--task SLUG), not to the app instance`,
+      );
+    }
+    for (const other of spec.conflictsWith ?? []) {
+      if (value !== undefined && values[other] !== undefined) {
+        throw usageError(def, `--${name} cannot be combined with --${other}`);
+      }
+    }
     if (spec.required === true && value === undefined) {
       throw usageError(def, `${def.name} needs --${name} ${spec.valueName ?? 'VALUE'}`);
     }
@@ -498,10 +567,18 @@ function validate(def: CommandDefinition, args: ParsedArgs, values: ParsedValues
   }
 }
 
-function parseCommandArgs(
-  def: CommandDefinition,
-  rest: readonly string[],
-): { args: ParsedArgs; helpRequested: boolean } {
+/** The task of a command in the scope of the app: the slug of the one user instance (`ctx.args.string('task')` keeps working). */
+const USER_TASK = USER_INSTANCE_SLUG;
+
+type ParsedCall =
+  | { readonly args: ParsedArgs; readonly helpRequested: true }
+  | { readonly args: ParsedArgs; readonly helpRequested: false; readonly resolution: ScopeResolution };
+
+/**
+ * Parses and validates the options. The scope of the call is resolved before the validation: in the scope of the app a command
+ * that has a `task` option gets `task = user`, so a required `--task` is satisfied and every read of it works unchanged.
+ */
+function parseCommandArgs(def: CommandDefinition, rest: readonly string[]): ParsedCall {
   let values: ParsedValues;
   let positionals: string[];
   try {
@@ -516,22 +593,30 @@ function parseCommandArgs(
     if (message === null) throw error;
     throw usageError(def, message);
   }
-  const args = viewOf(values, positionals);
-  if (args.flag('help')) return { args, helpRequested: true };
-  validate(def, args, values);
-  return { args, helpRequested: false };
+  const typed = viewOf(values, positionals);
+  if (typed.flag('help')) return { args: typed, helpRequested: true };
+  const resolution = resolveScope(
+    def,
+    { user: typed.flag('user'), task: typed.string('task'), repo: typed.string('repo'), root: typed.string('root') },
+    usageHint(def),
+  );
+  const effective: ParsedValues =
+    resolution.scope === 'user' && Object.hasOwn(def.options, 'task') ? { ...values, task: USER_TASK } : values;
+  const args = viewOf(effective, positionals);
+  validate(def, args, effective, resolution.scope);
+  return { args, helpRequested: false, resolution };
 }
 
 // ---- operation context and dependencies
 
-function opContextOf(args: ParsedArgs, paths: MainPaths): OpContext {
-  const repo = path.resolve(args.string('repo') ?? '.');
-  const rootArg = args.string('root');
+/**
+ * The context of an operation. For the app (scope `user`) it is the user root, whatever the working directory is: `--repo` and
+ * `--root` cannot be given in that scope. For a task it is the repository (`--repo` or the working directory) and its tasks root.
+ */
+function opContextOf(args: ParsedArgs, paths: MainPaths, scope: Scope): OpContext {
   // CLI logs reach stderr only at debug level (01 6.1): `MCS_DEBUG=1` turns them on.
   const level = process.env['MCS_DEBUG'] === '1' ? 'debug' : 'warn';
-  return {
-    repo,
-    root: rootArg === undefined ? tasksRootOf(repo) : path.resolve(rootArg),
+  const base = {
     skillDir: paths.skillDir,
     runtimeDir: paths.runtimeDir,
     launcherPath: paths.launcherPath,
@@ -539,6 +624,10 @@ function opContextOf(args: ParsedArgs, paths: MainPaths): OpContext {
     clock: systemClock,
     log: createLogger({ file: null, level, rotate: false, clock: systemClock }),
   };
+  if (scope === 'user') return userOpContext(base);
+  const repo = path.resolve(args.string('repo') ?? '.');
+  const rootArg = args.string('root');
+  return { ...base, repo, root: rootArg === undefined ? tasksRootOf(repo) : path.resolve(rootArg) };
 }
 
 /** What the kernel itself can provide: the build state of the runtime and the crash hook of `init` (01 2.10). */
@@ -612,12 +701,15 @@ interface RunState {
   command: string;
   json: boolean;
   log: Logger | null;
+  /** The scope of the call once it is known (`null` before: a usage error is worded for no scope). */
+  scope: Scope | null;
   /** Takes the kernel's Ctrl+C listener off (for a command that owns the signal). */
   releaseInterrupt: () => void;
 }
 
 function reportFailure(run: RunState, error: unknown): number {
-  const cli = cliErrorOf(error);
+  const raw = cliErrorOf(error);
+  const cli = run.scope === 'user' ? appErrorOf(raw) : raw;
   if (run.json) {
     renderEnvelope(errorEnvelope(run.command === '' ? 'mcs' : run.command, cli));
   } else {
@@ -627,6 +719,17 @@ function reportFailure(run: RunState, error: unknown): number {
     }
   }
   return cliExitCode(cli.code);
+}
+
+/** The result of an app call worded for the person of the app: every text, the warnings and the data (`appCommandText`). */
+function appResultOf(result: CommandResult): CommandResult {
+  return {
+    ...result,
+    data: inAppScope(result.data),
+    ...(result.text === undefined ? {} : { text: result.text.map(appCommandText) }),
+    ...(result.legacy === undefined ? {} : { legacy: inAppScope(result.legacy) }),
+    ...(result.warnings === undefined ? {} : { warnings: result.warnings.map(appCommandText) }),
+  };
 }
 
 function renderResult(def: CommandDefinition, json: boolean, result: CommandResult): number {
@@ -644,7 +747,25 @@ function renderResult(def: CommandDefinition, json: boolean, result: CommandResu
 
 function unknownCommand(words: readonly string[], argv: readonly string[]): McsError {
   const typed = words[0] ?? argv[0] ?? '';
-  return new McsError('USAGE', `unknown command '${typed}'`, { hint: "run 'mcs help' for the list of commands" });
+  return new McsError('USAGE', `unknown command '${typed}'`, { hint: helpHint() });
+}
+
+function helpHint(): string {
+  return `run '${CLI_NAME} help' for the list of commands`;
+}
+
+/**
+ * The one note for people who still type `mcs` (06 2.2, ADR 0092): before the app existed, `mcs start`, `stop`, `status` and the rest
+ * without a selector acted on the task `default`. The note ships in 4.1.0 and is shown by two releases (4.1 and 4.2): REMOVE it, its
+ * use in `withScopeNote` and its tests in `main.test.ts` in 4.3.0 (the removal date of ADR 0092).
+ */
+const LEGACY_NAME_NOTE = `without --task, --repo or --root this command now acts on the ${PRODUCT_NAME} app (before it acted on the task 'default'); pass --task default to keep the old behaviour`;
+
+/** The result with the note appended to its warnings, when the program is `mcs` and nobody chose the app: the default did. */
+function withScopeNote(result: CommandResult, resolution: ScopeResolution, paths: MainPaths): CommandResult {
+  const program = paths.program ?? 'mcs';
+  if (program !== 'mcs' || resolution.scope !== 'user' || !resolution.defaulted) return result;
+  return { ...result, warnings: [...(result.warnings ?? []), LEGACY_NAME_NOTE] };
 }
 
 async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState): Promise<number> {
@@ -655,39 +776,42 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
   }
   if (first === '-h' || first === '--help') return dispatch(['help', ...argv.slice(1)], paths, run);
   if (first === '--version') {
-    printLine(`mcs ${RUNTIME_VERSION}`);
+    printLine(`${CLI_NAME} ${RUNTIME_VERSION}`);
     return 0;
   }
   const found = findEntry(argv);
   if (found === null) {
     if (first.startsWith('-')) {
-      throw new McsError('USAGE', `expected a command, got option '${first}'`, {
-        hint: "run 'mcs help' for the list of commands",
-      });
+      throw new McsError('USAGE', `expected a command, got option '${first}'`, { hint: helpHint() });
     }
     throw unknownCommand(leadingWords(argv), argv);
   }
   const def = await loadCommand(found.entry);
   run.command = def.name;
   if (def.interruptible === 'command') run.releaseInterrupt();
-  const { args, helpRequested } = parseCommandArgs(def, argv.slice(found.consumed));
+  const parsed = parseCommandArgs(def, argv.slice(found.consumed));
+  const { args } = parsed;
   run.json = args.flag('json');
-  if (helpRequested) {
+  if (parsed.helpRequested) {
     if (run.json) renderEnvelope(resultEnvelope(def.name, { data: describeCommand(def, GLOBAL_OPTIONS) }));
     else renderLines(commandHelpLines(def, GLOBAL_OPTIONS));
     return 0;
   }
-  const op = opContextOf(args, paths);
+  const { resolution } = parsed;
+  run.scope = resolution.scope;
+  const op = opContextOf(args, paths, resolution.scope);
   run.log = op.log;
   const result = await def.run({
     op,
     args,
+    scope: resolution.scope,
     deps: depsOf(op),
     json: run.json,
     globalOptions: GLOBAL_OPTIONS,
     catalog,
   });
-  return renderResult(def, run.json, result);
+  const worded = resolution.scope === 'user' ? appResultOf(result) : result;
+  return renderResult(def, run.json, withScopeNote(worded, resolution, paths));
 }
 
 /**
@@ -702,6 +826,7 @@ export async function main(argv: readonly string[], paths: MainPaths): Promise<n
     command: leadingWords(argv)[0] ?? '',
     json: wantsJson(argv),
     log: null,
+    scope: null,
     releaseInterrupt: () => {
       process.off('SIGINT', onInterrupt);
     },
