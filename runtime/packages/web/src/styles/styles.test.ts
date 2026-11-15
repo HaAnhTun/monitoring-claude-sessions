@@ -35,6 +35,7 @@ const EXPECTED_LAYER: Record<string, (typeof LAYERS)[number]> = {
   'settings.css': 'pages',
   'search.css': 'pages',
   'terminal.css': 'pages',
+  'workspace.css': 'pages',
 };
 
 /** Marked blocks that index.css keeps for the work packages that add a page stylesheet. */
@@ -112,6 +113,11 @@ function packageImportsOf(index: string): Import[] {
       layer: m[2] ?? '',
     }),
   );
+}
+
+/** Selectors of a file that are not a `.workspace` class (alone or with a suffix, descendants and states): workspace.css restyles nothing else. */
+function nonWorkspaceSelectors(css: string): string[] {
+  return selectorsOf(css).filter((selector) => !/^\.workspace(?![a-z0-9])/.test(selector));
 }
 
 /** Selectors of a file that are not a `.terminal-*` class (alone or with descendants and states): terminal.css restyles nothing else. */
@@ -207,6 +213,8 @@ const OWNERS: [RegExp, string][] = [
   [/^\.(?:session-tabs|agent-|timeline|session-tokens)/, 'session-tabs.css'],
   [/^\.(?:tv|tr|tu|hide-result|md)(?![a-z0-9])/, 'transcript.css'],
   [/^\.terminal(?![a-z0-9])/, 'terminal.css'],
+  // `.workspace-panels` is the monitor's own panel strip (panels.css), not the Workspace page
+  [/^\.workspace(?![a-z0-9])(?!-panels)/, 'workspace.css'],
 ];
 
 /**
@@ -300,6 +308,19 @@ describe('style architecture (ADR 0071 decision 10)', () => {
     );
   });
 
+  it('keeps workspace.css to `.workspace` selectors, in the pages layer', () => {
+    expect(nonWorkspaceSelectors(sources['workspace.css'] ?? '')).toEqual([]);
+    expect(EXPECTED_LAYER['workspace.css']).toBe('pages');
+    expect(selectorsOf(sources['workspace.css'] ?? '')).toEqual(
+      expect.arrayContaining([
+        '.workspace',
+        '.workspace-sidebar',
+        '.workspace-folder__head',
+        '.workspace-session__link',
+      ]),
+    );
+  });
+
   it('declares the reduced-motion rule once in base.css', () => {
     expect(sources['base.css']).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
@@ -362,6 +383,8 @@ describe('style architecture (ADR 0071 decision 10)', () => {
       expect(declared('shell.css', '.sidebar-nav__link', 'min-height')).toBe('var(--row-h-list)');
       expect(declared('shell.css', '.sidebar-switcher__row', 'min-height')).toBe('var(--row-h-list)');
       expect(declared('topbar.css', '.menu__item', 'min-height')).toBe('var(--row-h-list)');
+      expect(declared('workspace.css', '.workspace-folder__head', 'min-height')).toBe('var(--row-h-list)');
+      expect(declared('workspace.css', '.workspace-session__link', 'min-height')).toBe('var(--row-h-list)');
     });
 
     /** Selected states: the --selected fill and the accent (2 px bar at the start, or the accent border of a toggle). */
@@ -373,6 +396,7 @@ describe('style architecture (ADR 0071 decision 10)', () => {
       { file: 'lists.css', selector: '.filter-bar__toggle:has(input:checked)', accent: 'border' },
       { file: 'lists.css', selector: "button.summary-tile[aria-pressed='true']", accent: 'bar' },
       { file: 'transcript.css', selector: '.tv-chip.is-on', accent: 'border' },
+      { file: 'workspace.css', selector: ".workspace-session__link[aria-current='true']", accent: 'bar' },
     ];
 
     for (const { file, selector, accent } of SELECTED) {
@@ -393,6 +417,72 @@ describe('style architecture (ADR 0071 decision 10)', () => {
       expect(declared('lists.css', '.data-card--link:hover', 'background')).toBe('var(--surface-2)');
       expect(declared('shell.css', '.sidebar-nav__link:hover', 'background')).toBe('var(--surface-2)');
       expect(declared('transcript.css', '.tv-chip:hover', 'background')).toBe('var(--surface-2)');
+      expect(declared('workspace.css', '.workspace-session__link:hover', 'background')).toBe('var(--surface-2)');
+      expect(declared('workspace.css', '.workspace-folder__head:hover', 'background')).toBe('var(--surface-2)');
+    });
+
+    describe('the Workspace sidebar (design 04 2.4 and 10)', () => {
+      const workspace = (selector: string, property: string, media: string | null = null): string =>
+        declared('workspace.css', selector, property, media);
+
+      it('is a grid of the list column and the pane, the column from --list-w and 280 px from 1024 to 1279 px', () => {
+        expect(workspace('.workspace', 'display')).toBe('grid');
+        expect(workspace('.workspace', 'grid-template-columns')).toBe('var(--list-w) minmax(0, 1fr)');
+        expect(workspace('.workspace', 'grid-template-columns', '@media (max-width: 1279px)')).toBe(
+          'min(var(--list-w), 280px) minmax(0, 1fr)',
+        );
+      });
+
+      it('gives the pane the whole width below 1024 px and leaves the list as an overlay', () => {
+        const below = '@media (max-width: 1023px)';
+        expect(workspace('.workspace', 'grid-template-columns', below)).toBe('minmax(0, 1fr)');
+        expect(workspace(".workspace-sidebar[data-overlay='true']", 'position', below)).toBe('absolute');
+        expect(workspace(".workspace-sidebar[data-overlay='true']", 'width', below)).toBe('min(20rem, 100%)');
+        expect(workspace(".workspace-sidebar[data-overlay='true']", 'box-shadow', below)).toBe('var(--elev-2)');
+        expect(workspace('.workspace', 'position')).toBe('relative');
+      });
+
+      it('collapses the column from 1024 px on the data-list attribute', () => {
+        const wide = '@media (min-width: 1024px)';
+        expect(workspace(".workspace[data-list='collapsed']", 'grid-template-columns', wide)).toBe('minmax(0, 1fr)');
+        expect(workspace(".workspace[data-list='collapsed'] .workspace-sidebar", 'display', wide)).toBe('none');
+      });
+
+      it('draws the activity mark from the recency tokens: a disc, half a disc and a ring', () => {
+        expect(workspace(".workspace-mark[data-level='full']", 'background')).toBe('var(--recency-full)');
+        expect(workspace(".workspace-mark[data-level='half']", 'background')).toBe(
+          'linear-gradient(90deg, var(--recency-half) 50%, transparent 50%)',
+        );
+        expect(workspace(".workspace-mark[data-level='half']", 'border-color')).toBe('var(--recency-half)');
+        expect(workspace('.workspace-mark', 'border')).toContain('var(--recency-none)');
+        expect(workspace('.workspace-mark', 'background')).toBe('transparent');
+      });
+
+      it('keeps the mark a shape in forced colours', () => {
+        const forced = '@media (forced-colors: active)';
+        expect(workspace('.workspace-mark', 'forced-color-adjust', forced)).toBe('none');
+        expect(workspace(".workspace-mark[data-level='full']", 'background', forced)).toBe('CanvasText');
+        expect(workspace(".workspace-mark[data-level='half']", 'background', forced)).toBe(
+          'linear-gradient(90deg, CanvasText 50%, transparent 50%)',
+        );
+        expect(workspace(".workspace-mark[data-level='none']", 'background', forced)).toBe('transparent');
+        expect(workspace('.workspace-mark', 'border-color', forced)).toBe('CanvasText');
+      });
+
+      it('clips a long name with an ellipsis instead of growing the column', () => {
+        for (const selector of ['.workspace-folder__name', '.workspace-session__name']) {
+          expect(workspace(selector, 'overflow'), selector).toBe('hidden');
+          expect(workspace(selector, 'text-overflow'), selector).toBe('ellipsis');
+          expect(workspace(selector, 'min-width'), selector).toBe('0');
+        }
+        expect(workspace('.workspace-sidebar', 'min-width')).toBe('0');
+      });
+
+      it('scrolls the list alone between the filter and the footer', () => {
+        expect(workspace('.workspace-sidebar__list', 'overflow-y')).toBe('auto');
+        expect(workspace('.workspace-sidebar__list', 'flex')).toBe('1 1 auto');
+        expect(workspace('.workspace-sidebar__list', 'min-height')).toBe('0');
+      });
     });
 
     it('has the .brand mark in shell.css: the product name at 13 px and 600, the brand orange only as a shape', () => {
@@ -476,6 +566,14 @@ describe('style architecture (ADR 0071 decision 10)', () => {
       expect(misplaced({ 'components.css': '.dialog, .shortcuts-dialog { color: red }' })).toEqual([]);
       expect(misplaced({ 'shell.css': '.shortcuts-dialog { color: red }' })).toHaveLength(1);
       expect(misplaced({ 'components.css': '.shortcuts-dialog__title { color: red }' })).toHaveLength(1);
+    });
+
+    it('finds a selector of workspace.css that is not a workspace class', () => {
+      expect(
+        nonWorkspaceSelectors(
+          ".workspace-sidebar .btn, .workspace[data-list='collapsed'] { a: b } .sidebar { c: d } .workspaces { e: f }",
+        ),
+      ).toEqual(['.sidebar', '.workspaces']);
     });
 
     it('finds a selector of terminal.css that is not a terminal class', () => {

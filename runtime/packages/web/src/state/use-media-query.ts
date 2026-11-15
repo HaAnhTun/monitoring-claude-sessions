@@ -7,6 +7,8 @@ export const MQ_RAIL = '(max-width: 1199px)';
 export const MQ_SHEET = '(max-width: 899px)';
 /** Secondary table columns hide. */
 export const MQ_NARROW_TABLE = '(max-width: 1279px)';
+/** The project list of the Workspace is an overlay that a button opens, not a column (design 04 2.4). */
+export const MQ_LIST_OVERLAY = '(max-width: 1023px)';
 
 type MatchMedia = (query: string) => MediaQueryList;
 

@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MQ_NARROW_TABLE, MQ_RAIL, MQ_SHEET, useMediaQuery } from './use-media-query.ts';
+import { MQ_LIST_OVERLAY, MQ_NARROW_TABLE, MQ_RAIL, MQ_SHEET, useMediaQuery } from './use-media-query.ts';
 
 type Listener = (event: { matches: boolean }) => void;
 
@@ -41,6 +41,10 @@ describe('query constants (ADR 0071 decision 6)', () => {
     expect(MQ_RAIL).toBe('(max-width: 1199px)');
     expect(MQ_SHEET).toBe('(max-width: 899px)');
     expect(MQ_NARROW_TABLE).toBe('(max-width: 1279px)');
+  });
+
+  it('puts the project list of the Workspace in an overlay below 1024 px (design 04 2.4)', () => {
+    expect(MQ_LIST_OVERLAY).toBe('(max-width: 1023px)');
   });
 });
 

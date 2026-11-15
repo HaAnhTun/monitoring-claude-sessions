@@ -1,0 +1,327 @@
+/* The Workspace page (CAW design 04 sections 2.4, 6 and 10): the grid of the project column and the terminal pane, the project column
+   itself (filter, folders, live and recent sessions, footer) and the overlay it becomes below 1024 px. Every selector starts with
+   `.workspace`, every colour is a token (no colour literal: tokens-usage.test.ts), and nothing here restyles another file's classes.
+   The activity mark is a shape (disc, half disc, ring), never colour alone: its words are `sr-only` in the markup. */
+
+/* ---- the grid: list column and pane ---- */
+.workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--list-w) minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+/* 1024 to 1279 px: a narrower column; the wide column of --list-w is for 1280 px and up */
+@media (max-width: 1279px) {
+  .workspace {
+    grid-template-columns: min(var(--list-w), 280px) minmax(0, 1fr);
+  }
+}
+/* below 1024 px the pane has the whole width and the list is an overlay on top of it */
+@media (max-width: 1023px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* from 1024 px the person can fold the column away (the preference `workspaceCollapsed`) */
+@media (min-width: 1024px) {
+  .workspace[data-list='collapsed'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace[data-list='collapsed'] .workspace-sidebar {
+    display: none;
+  }
+}
+
+/* ---- the column ---- */
+.workspace-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  border-inline-end: var(--border-w) solid var(--border);
+}
+.workspace-sidebar__nav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* the skip link focuses the landmark; the ring belongs to the controls inside it */
+.workspace-sidebar__nav:focus {
+  outline: none;
+}
+@media (max-width: 1023px) {
+  .workspace-sidebar[data-overlay='true'] {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 10;
+    width: min(20rem, 100%);
+    border-inline-end: var(--border-w) solid var(--border-strong);
+    box-shadow: var(--elev-2);
+  }
+}
+.workspace-sidebar__heading {
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
+}
+.workspace-sidebar__filter {
+  display: block;
+  width: calc(100% - 2 * var(--sp-4));
+  margin: 0 var(--sp-4) var(--sp-3);
+}
+.workspace-sidebar__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-3);
+}
+.workspace-sidebar__status:empty {
+  display: none;
+}
+.workspace-sidebar__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 var(--sp-2);
+  overflow-y: auto;
+}
+.workspace-sidebar__none {
+  padding: var(--sp-3) var(--sp-4);
+}
+.workspace-sidebar__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+}
+.workspace-sidebar__note {
+  overflow-wrap: anywhere;
+}
+
+/* ---- the activity mark ---- */
+.workspace-mark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: transparent;
+  border: 1.5px solid var(--recency-none);
+  border-radius: 50%;
+}
+.workspace-mark[data-level='full'] {
+  background: var(--recency-full);
+  border-color: var(--recency-full);
+}
+.workspace-mark[data-level='half'] {
+  background: linear-gradient(90deg, var(--recency-half) 50%, transparent 50%);
+  border-color: var(--recency-half);
+}
+@media (forced-colors: active) {
+  .workspace-mark {
+    border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+  .workspace-mark[data-level='full'] {
+    background: CanvasText;
+  }
+  .workspace-mark[data-level='half'] {
+    background: linear-gradient(90deg, CanvasText 50%, transparent 50%);
+  }
+  .workspace-mark[data-level='none'] {
+    background: transparent;
+  }
+}
+.workspace-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.workspace-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* ---- a folder ---- */
+.workspace-folder + .workspace-folder {
+  margin-top: var(--sp-1);
+}
+.workspace-folder__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: var(--row-h-list);
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--strong);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-sm);
+  text-align: start;
+}
+.workspace-folder__head:hover {
+  background: var(--surface-2);
+}
+.workspace-folder__head:focus-visible,
+.workspace-session__link:focus-visible {
+  outline-offset: -2px;
+}
+.workspace-folder__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-folder__live {
+  flex: none;
+  padding: 0 var(--sp-2);
+  background: var(--running-bg);
+  border-radius: var(--radius-pill);
+  color: var(--running-fg);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.workspace-folder__time {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+}
+.workspace-folder__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-3) var(--sp-5);
+}
+.workspace-folder__summary {
+  padding: 0 var(--sp-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-folder__counts {
+  padding: 0 var(--sp-3);
+}
+.workspace-folder__new {
+  align-self: flex-start;
+}
+/* the plus of "+ New session" is decoration: an empty alternative keeps it out of the accessible name */
+.workspace-folder__new::before {
+  content: '+' / '';
+  margin-inline-end: var(--sp-2);
+}
+
+/* ---- a live session ---- */
+.workspace-session__link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-height: var(--row-h-list);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  text-decoration: none;
+}
+.workspace-session__link:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+.workspace-session__link[aria-current='true'] {
+  background: var(--selected);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+@media (forced-colors: active) {
+  .workspace-session__link[aria-current='true'] {
+    outline: 2px solid Highlight;
+  }
+}
+.workspace-session__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.workspace-session__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-session__detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.workspace-session__detail:empty {
+  display: none;
+}
+.workspace-session__note {
+  overflow-wrap: anywhere;
+}
+.workspace-session__errors {
+  color: var(--failed-fg);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- recent sessions ---- */
+.workspace-recent__toggle {
+  align-self: flex-start;
+  font-size: var(--fs-sm);
+}
+.workspace-recent__panel {
+  padding-inline-start: var(--sp-3);
+}
+.workspace-recent__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.workspace-recent__label {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-recent__time {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.workspace-recent__row .btn {
+  margin-inline-start: auto;
+}
+.workspace-recent__all {
+  display: inline-block;
+  padding: var(--sp-1) var(--sp-3);
+}

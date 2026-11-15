@@ -18,6 +18,7 @@
 @import './session-detail.css' layer(pages);
 @import './session-tabs.css' layer(pages);
 @import './terminal.css' layer(pages);
+@import './workspace.css' layer(pages);
 /* Page stylesheets: each work package adds its own import inside its block, in the pages layer. */
 /* @wp-begin WP-53 */
 @import './activity.css' layer(pages);
