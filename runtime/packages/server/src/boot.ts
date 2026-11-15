@@ -3,6 +3,10 @@
 // (4.5, `shutdown.ts`). `bootServer` is the whole sequence as a function that returns instead of exiting, so a test boots a
 // real instance in-process; `serveMain` adds the signals and returns the exit code that `main.ts` passes to `process.exit`.
 //
+// The kind of the instance (06 1.7) is read at step 2: a user instance must live in the reserved user root (exit 17 otherwise),
+// answers the control ops `terminals` and `access`, and may refuse a `shutdown` while terminals are live (`answerShutdown`); a
+// task instance boots exactly as before.
+//
 // Steps of 01 4.4, and what differs here:
 //   1 argv (exit 17)  2 identity (11)  3 control channel (12)  6 build stamp (18)  4+5+7 logger, configuration and database
 //   (10, 11, 14, 15, 16, 17) -- `buildInstanceContext` (WP-16) does these three in one call, in the order configuration,
@@ -24,8 +28,11 @@ import {
   compareAndDelete,
   createInstanceRuntime,
   DB_OPEN_EXIT_CODES,
+  EMPTY_CENSUS,
+  decideShutdown,
   ensureWorkspaceDir,
   isDbError,
+  isUserRoot,
   layoutOfRuntimeDir,
   readInstanceFile,
   readSmallFile,
@@ -35,6 +42,7 @@ import {
   SpoolSegmentNotFoundError,
   testHook,
   workspacePath,
+  type AccessMint,
   type InstanceContext,
   type ChildLogSink,
   type InstanceRuntime,
@@ -42,6 +50,7 @@ import {
   type Logger,
   type RuntimeFactories,
   type RuntimeLayoutMode,
+  type TerminalCensus,
   type WorkspaceRef,
   skillDirOfRuntimeDir,
 } from '@mcs/engine';
@@ -51,16 +60,18 @@ import {
   RUNTIME_VERSION,
   SERVER_EXIT_CODES,
   UUID_V4_RE,
+  instanceKindOf,
   isoMsZ,
   serverExitNameOf,
   systemClock,
   type CliErrorCode,
   type Clock,
+  type InstanceKind,
   type ServerExitCode,
   type ServerExitName,
   type ServerFailureCode,
 } from '@mcs/shared';
-import type { ControlPhase } from '@mcs/shared/protocol';
+import { CONTROL_TERMINAL_SESSIONS_MAX, type ControlPhase, type EnvLike } from '@mcs/shared/protocol';
 import { z } from 'zod';
 
 import { createApp, createHttpServer, loadStaticSite, type StaticSite } from './app.ts';
@@ -71,6 +82,8 @@ import {
   type BackupOutcome,
   type ControlChannel,
   type ReplayOutcome,
+  type ShutdownAnswer,
+  type TerminalsOutcome,
 } from './control-channel.ts';
 import { readLegacyTask } from './routes/meta.ts';
 import {
@@ -152,6 +165,60 @@ export async function ingestReplayOutcome(
     warn('ingest_replay_failed', { code: errorCodeOf(error) });
     return { ok: false, error: 'NOT_READY' };
   }
+}
+
+// ---- the user instance (06 1.3, 1.7, 1.8, 3.2) ------------------------------------------------------------------------------
+
+/**
+ * Step 2, second half: a `kind: "user"` workspace must be the one in the reserved user root, so that a hand-edited task cannot
+ * become a terminal host (ADR 0091 item 5). Any other place is `WORKSPACE_INVALID` (exit 17); a user instance whose home folder
+ * cannot be found is `CONFIG_INVALID` (exit 10). A task is never looked at. The message names no path.
+ */
+export function assertUserLocation(kind: InstanceKind, root: string, env: EnvLike): void {
+  if (kind !== 'user' || isUserRoot(root, env)) return;
+  throw new McsError(
+    'WORKSPACE_INVALID',
+    'this workspace is marked as the user instance but is not in the user folder: start it with `caw start`',
+  );
+}
+
+/** The census of the user services; the empty one while there is no runtime and for a task instance (the services are late-bound). */
+export function censusOf(runtime: Pick<InstanceRuntime, 'user'> | undefined): TerminalCensus {
+  return runtime?.user?.census ?? EMPTY_CENSUS;
+}
+
+/** A fresh access code of the user services, or `null` (the control op answers `UNSUPPORTED`): no runtime, a task, no minter. */
+export function mintOutcome(runtime: Pick<InstanceRuntime, 'user'> | undefined): AccessMint | null {
+  return runtime?.user?.access?.mint() ?? null;
+}
+
+/** The answer of the control op `terminals`: `live` is the count of starting, live and lost sessions, whatever the list shows. */
+export function terminalsOutcome(census: TerminalCensus, max: number): TerminalsOutcome {
+  return { live: census.count(), max, sessions: census.sessions(CONTROL_TERMINAL_SESSIONS_MAX) };
+}
+
+/** What the shutdown decision needs, read when the request arrives. */
+export interface ShutdownWiring {
+  readonly kind: InstanceKind;
+  readonly census: () => TerminalCensus;
+  /** True once a shutdown was accepted. */
+  readonly stopping: () => boolean;
+  /** `gate.request`: the first request wins. */
+  readonly trigger: (reason: ShutdownReason) => void;
+  readonly warn: (event: string, fields: Readonly<Record<string, unknown>>) => void;
+}
+
+/**
+ * The control op `shutdown` (06 3.2, ADR 0093): the server decides (`decideShutdown`), so the answer cannot race with the count the
+ * CLI read. A refusal changes nothing: no drain, no trigger. An allow decision has already started the drain of the census in the
+ * same call, and the trigger follows in the same tick, so no terminal can start between the decision and the stop.
+ */
+export function answerShutdown(w: ShutdownWiring, reason: ShutdownReason, force: boolean): ShutdownAnswer {
+  const decision = decideShutdown({ kind: w.kind, reason, force, stopping: w.stopping(), census: w.census() });
+  if (!decision.allow) return { ok: false, error: 'TERMINALS_LIVE' };
+  if (!decision.drained) w.warn('terminal_drain_failed', { phase: 'shutdown' });
+  w.trigger(reason);
+  return { ok: true };
 }
 
 /**
@@ -521,6 +588,7 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
 
   // 2. identity (01 3.2): the workspace, instance.json, task.json and the instance id of the command line agree
   let ws: WorkspaceRef;
+  let kind: InstanceKind = 'task';
   try {
     const dir = path.resolve(args.instanceDir);
     ws = resolveWorkspace(path.dirname(dir), path.basename(dir));
@@ -535,6 +603,9 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
     if (instance.instanceId !== args.instanceId) {
       throw new McsError('IDENTITY_MISMATCH', 'the instance id of the command line is not the one of instance.json');
     }
+    // the kind is read here, before the configuration: it decides what the control channel answers and what boots (06 1.3, 1.7)
+    kind = instanceKindOf(instance);
+    assertUserLocation(kind, ws.root, input.env);
   } catch (error) {
     return failFrom(error);
   }
@@ -573,9 +644,20 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
         url: port === null ? null : `http://${BIND_HOST}:${String(port)}`,
         startedAt: isoMsZ(startedAtMs),
       }),
-      onShutdown: (reason) => {
-        gate.request(reason);
-      },
+      onShutdown: (reason, { force }) =>
+        answerShutdown(
+          {
+            kind,
+            census: () => censusOf(res.runtime),
+            stopping: () => currentPhase() === 'stopping',
+            trigger: (r) => {
+              gate.request(r);
+            },
+            warn: lateLog('warn'),
+          },
+          reason,
+          force,
+        ),
       onBackup: async (dest): Promise<BackupOutcome> => {
         const ctx = res.ctx;
         if (ctx === undefined) return { ok: false, error: 'BACKUP_FAILED' };
@@ -590,6 +672,14 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
       },
       onIngestReplay: (fromSegment): Promise<ReplayOutcome> =>
         ingestReplayOutcome(res.runtime, fromSegment, lateLog('warn')),
+      // a task instance has no census and no access code: without these two the channel answers an empty census and UNSUPPORTED
+      ...(kind === 'user'
+        ? {
+            onTerminals: () =>
+              terminalsOutcome(censusOf(res.runtime), res.ctx?.config.runtime.terminal.maxSessions ?? 0),
+            onAccess: () => mintOutcome(res.runtime),
+          }
+        : {}),
       logger: { debug: lateLog('debug'), info: lateLog('info'), warn: lateLog('warn') },
       ignoreRequests: testHook('IGNORE_CONTROL', input.env) !== undefined,
     });

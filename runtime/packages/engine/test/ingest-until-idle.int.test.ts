@@ -12,7 +12,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { defaultSkillDir } from '../src/config/defaults.ts';
 import { initWorkspace } from '../src/workspace/init.ts';
 import { buildInstanceContext, type InstanceContext } from '../src/runtime/context.ts';
-import { createInstanceRuntime, type InstanceRuntime, type RuntimeFactories } from '../src/runtime/instance-runtime.ts';
+import {
+  STUB_FACTORIES,
+  createInstanceRuntime,
+  type InstanceRuntime,
+  type RuntimeFactories,
+} from '../src/runtime/instance-runtime.ts';
 
 const makeTemp = useTempDirs();
 const NOW = Date.UTC(2026, 9, 11, 14, 5, 7);
@@ -194,6 +199,7 @@ async function setup(o: { batch: number }): Promise<Setup> {
     }),
     publishRouteFile: () => Promise.resolve(),
     createAlertComponents: () => [],
+    createUserServices: STUB_FACTORIES.createUserServices,
   };
   const runtime = createInstanceRuntime(ctx, { factories });
   runtimes.push(runtime);

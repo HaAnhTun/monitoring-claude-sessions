@@ -355,6 +355,7 @@ function unusedRuntime(): InstanceRuntime {
     nudge: unused,
     health: unused,
     panels: { get: unused, tickAttempts: unused, stats: unused, close: unused },
+    user: null,
   };
 }
 

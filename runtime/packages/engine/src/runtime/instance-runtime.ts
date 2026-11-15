@@ -1,6 +1,8 @@
 // The composition root of the server-side services (01 4.4a, slice S8; registry 2.2): `createInstanceRuntime(ctx)` creates the
 // ingest service, the lifecycle sweeper, the database scheduler, the panel service and the state watchdog, starts them in that
-// order and stops them in reverse. It also owns three things no service owns: the `ingestUntilIdle` mapping of
+// order and stops them in reverse. On a user instance (`ctx.kind === 'user'`, 06 1.7) it also asks `createUserServices` for the census,
+// the access minter and the components of the terminal host: they start after the alert components and stop before them, and the
+// result is `runtime.user` (`null` for a task instance). It also owns three things no service owns: the `ingestUntilIdle` mapping of
 // `IngestIdleTimeoutError` (registry C06), the serialized 2 s attempts timer of the panel component (C57, N-01) and the late
 // bindings of `ctx` (panel statistics, ownership flag).
 //
@@ -15,6 +17,7 @@ import { McsError, type HealthReport, type PanelKey, type PanelResponse, type Pa
 
 import { bindOwnershipConflict, bindPanelStats, type InstanceContext } from './context.ts';
 import { createStateWatchdog } from './state-watchdog.ts';
+import { EMPTY_USER_SERVICES, type UserServices } from './user-services.ts';
 
 export interface RuntimeComponent {
   readonly name: string;
@@ -38,6 +41,8 @@ export interface InstanceRuntime {
   health(): HealthReport;
   /** The panel service, created with the one writer of the ingest service (06 3.4); the panels route uses it. */
   readonly panels: PanelService;
+  /** The census, the access minter and the terminal components of a user instance (06 1.7); `null` for a task instance. */
+  readonly user: UserServices | null;
 }
 
 /** The services of the runtime as the extension factory of the alerts receives them (plan section 4.2, WP-59). */
@@ -62,6 +67,8 @@ export interface RuntimeFactories {
   readonly publishRouteFile: (ctx: InstanceContext) => Promise<void>;
   /** Components added after the panel service, before the state watchdog (WP-59). */
   readonly createAlertComponents: (ctx: InstanceContext, services: RuntimeServices) => readonly RuntimeComponent[];
+  /** Called only when `ctx.kind` is `user` (06 1.7): the census, the access minter and the components of the terminal host. */
+  readonly createUserServices: (ctx: InstanceContext) => UserServices;
 }
 
 export interface InstanceRuntimeOptions {
@@ -180,6 +187,7 @@ export const STUB_FACTORIES: RuntimeFactories = {
   }),
   publishRouteFile: () => Promise.resolve(),
   createAlertComponents: () => [],
+  createUserServices: () => EMPTY_USER_SERVICES,
 };
 
 /** Where the work packages of the other owners register their real factories (the blocks at the end of this file). */
@@ -193,6 +201,8 @@ const STUB_SERVICES = [
   ['panels', 'createPanelService'],
   ['route-file', 'publishRouteFile'],
 ] as const;
+/** Worth a warning on a user instance only: a task instance never calls the factory. */
+const USER_STUB_SERVICE = ['user-services', 'createUserServices'] as const;
 
 /** The attempts tick of 06 3.10 runs this long after the previous one finished (01 4.4a component 4). */
 const ATTEMPTS_TICK_MS = 2000;
@@ -222,6 +232,10 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
   for (const [name, factory] of STUB_SERVICES) {
     if (factories[factory] === STUB_FACTORIES[factory]) ctx.logger.warn('runtime_stub_service', { phase: name });
   }
+  const [userName, userFactory] = USER_STUB_SERVICE;
+  if (ctx.kind === 'user' && factories[userFactory] === STUB_FACTORIES[userFactory]) {
+    ctx.logger.warn('runtime_stub_service', { phase: userName });
+  }
 
   // creation order = start order = reverse stop order (01 4.4a)
   const ingest = factories.createIngestService(ctx);
@@ -232,6 +246,8 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
   const watchdog = createStateWatchdog(ctx, { stateFileBytes: options.stateFileBytes ?? ((): null => null) });
   bindOwnershipConflict(ctx, () => watchdog.ownershipConflict());
   const services: RuntimeServices = { ingest, sweeper, scheduler, panels };
+  // a task instance has no terminal and no access code: the factory is not even called (06 1.7)
+  const user = ctx.kind === 'user' ? factories.createUserServices(ctx) : null;
 
   // ---- component 4: the attempts timer (registry C57) -------------------------------------------------------------------
 
@@ -323,6 +339,8 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
     },
     panelsComponent,
     ...factories.createAlertComponents(ctx, services),
+    // the terminal host and the rest of the user services: after the alerts, so they stop before them; the watchdog stays last
+    ...(user?.components ?? []),
     watchdog,
   ];
 
@@ -488,6 +506,7 @@ export function createInstanceRuntime(ctx: InstanceContext, options: InstanceRun
     ingestReplay: async (fromSegment) => ({ segments: (await ingest.replay(fromSegment)).segmentsReset }),
     health: () => ctx.queries.health(ctx.scope),
     panels,
+    user,
   };
 }
 

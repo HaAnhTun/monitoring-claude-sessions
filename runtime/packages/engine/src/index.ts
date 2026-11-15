@@ -993,3 +993,15 @@ export {
 } from './ops/autostart.ts';
 export type { AutostartDeps, AutostartRefresh, AutostartTarget } from './ops/autostart.ts';
 // @wp-end CAW-21
+
+// @wp-begin CAW-22
+export { EMPTY_CENSUS, EMPTY_USER_SERVICES, decideShutdown } from './runtime/user-services.ts';
+export type {
+  AccessMinter,
+  ShutdownDecision,
+  ShutdownDecisionInput,
+  TerminalCensus,
+  TerminalCensusEntry,
+  UserServices,
+} from './runtime/user-services.ts';
+// @wp-end CAW-22

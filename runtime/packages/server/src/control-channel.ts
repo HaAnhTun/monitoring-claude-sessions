@@ -1,9 +1,16 @@
 // The instance control channel (01 4.3, 8.2; ADR 0005): a named pipe (a Unix socket on POSIX) that is at once the instance
 // lock (INV-03), the identity probe of the CLI and the only way to stop the server gracefully on Windows. One request per
 // connection, one UTF-8 JSON object per line, at most 4096 bytes, one reply line, then the connection closes; an idle
-// connection is closed after 2 s. `identify` needs no token and returns no secret; `shutdown`, `backup` and `ingest-replay`
-// need the instance id and the 256-bit token of `run/control.token`. Lifecycle operations are not on HTTP, which a browser
-// can reach (DNS rebinding, CSRF); a browser cannot reach a pipe.
+// connection is closed after 2 s. `identify` needs no token and returns no secret; `shutdown`, `backup`, `ingest-replay`,
+// `terminals` and `access` need the instance id and the 256-bit token of `run/control.token`. Lifecycle operations are not on
+// HTTP, which a browser can reach (DNS rebinding, CSRF); a browser cannot reach a pipe.
+//
+// The user instance adds two operations and one refusal (06 1.8, ADR 0093, ADR 0094). `terminals` answers the census of the
+// terminal sessions (the count, the limit and at most 50 names with their start times) in every phase, but asks the census only
+// while the phase is `ready`. `access` mints the one-use code of the login link, only when ready, and only where a minter is
+// wired (a task instance answers `UNSUPPORTED`). `shutdown` carries an optional `force` and may be refused with
+// `TERMINALS_LIVE`: the server decides, this module only passes the question on. No code and no session name is ever logged:
+// the events carry a route and a status, nothing else.
 //
 // This module is the server half of the protocol of `@mcs/shared/protocol`. The client half at the end (`sendControlLine`,
 // `requestControl`) is used by the integration tests of this package; the CLI has its own in the engine (WP-19).
@@ -13,11 +20,17 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { hostPlatform, isMissingFileError, samePath, type Logger } from '@mcs/engine';
-import { McsError, controlAddress as sharedControlAddress, type AddressHost as SharedAddressHost } from '@mcs/shared';
+import { hostPlatform, isMissingFileError, samePath, type AccessMint, type Logger } from '@mcs/engine';
+import {
+  McsError,
+  controlAddress as sharedControlAddress,
+  isoMsZ,
+  type AddressHost as SharedAddressHost,
+} from '@mcs/shared';
 import {
   CONTROL_IDLE_TIMEOUT_MS,
   CONTROL_REQUEST_MAX_BYTES,
+  CONTROL_TERMINAL_SESSIONS_MAX,
   SPOOL_SEGMENT_RE,
   parseControlRequest,
   parseControlResponse,
@@ -26,6 +39,7 @@ import {
   type ControlRequest,
   type ControlResponse,
   type ControlShutdownReason,
+  type ControlTerminalSession,
 } from '@mcs/shared/protocol';
 
 // ---- the address ---------------------------------------------------------------------------------------------------------
@@ -78,6 +92,17 @@ export type ReplayOutcome =
   | { readonly ok: true; readonly segments: number }
   | { readonly ok: false; readonly error: 'BAD_REQUEST' | 'NOT_READY' };
 
+/** What `onShutdown` may answer after it decided: a refusal (06 3.2). Anything else, or nothing, means the shutdown was triggered. */
+export type ShutdownAnswer = { readonly ok: true } | { readonly ok: false; readonly error: 'TERMINALS_LIVE' };
+
+/** The census of the terminal sessions as the control op `terminals` reports it: `live` counts starting, live and lost sessions. */
+export interface TerminalsOutcome {
+  readonly live: number;
+  readonly max: number;
+  /** Oldest first; the channel keeps at most `CONTROL_TERMINAL_SESSIONS_MAX` and only the name and the start time of each. */
+  readonly sessions: readonly ControlTerminalSession[];
+}
+
 export interface ControlChannelOptions {
   readonly address: string;
   readonly instanceId: string;
@@ -85,8 +110,19 @@ export interface ControlChannelOptions {
   readonly token: () => string | null;
   readonly phase: () => ControlPhase;
   readonly identity: () => ControlIdentity;
-  /** The shutdown trigger; it returns at once (the server stops after the reply is written). */
-  readonly onShutdown: (reason: ControlShutdownReason) => void;
+  /**
+   * The shutdown decision and trigger; it returns at once (the server stops after the reply is written). `force` is true only
+   * when the request carried `force: true`. It refuses with `{ ok: false, error: 'TERMINALS_LIVE' }` and has then triggered
+   * nothing; with any other answer the channel replies `stopping`.
+   */
+  readonly onShutdown: (reason: ControlShutdownReason, o: { readonly force: boolean }) => ShutdownAnswer | undefined;
+  /** The census (06 1.8). Absent: an empty census, which is what a task instance reports. Asked only while the phase is `ready`. */
+  readonly onTerminals?: () => TerminalsOutcome;
+  /**
+   * Mints a one-use access code (ADR 0094); `null` when there is no access service. Absent: `UNSUPPORTED`, which is what a task
+   * instance answers. Called only while the phase is `ready`. It must not log, and nothing here logs its result.
+   */
+  readonly onAccess?: () => AccessMint | null;
   /** Called with a destination the caller has not validated (see `validateBackupDest`). */
   readonly onBackup: (dest: string) => Promise<BackupOutcome>;
   /** Called with `null` (all segments) or a name that matches `SPOOL_SEGMENT_RE`. */
@@ -205,6 +241,7 @@ export async function openControlChannel(o: ControlChannelOptions): Promise<Cont
 // ---- one server and its connections --------------------------------------------------------------------------------------------
 
 const BAD_REQUEST: ControlResponse = { v: 1, ok: false, error: 'BAD_REQUEST' };
+const NO_TERMINALS: TerminalsOutcome = { live: 0, max: 0, sessions: [] };
 const refusal = (error: ControlErrorCode): ControlResponse => ({ v: 1, ok: false, error });
 
 function tokenMatches(expected: string | null, given: string): boolean {
@@ -359,9 +396,25 @@ class ChannelServer {
     if (request.instanceId !== o.instanceId) return refusal('INSTANCE_MISMATCH');
     if (!tokenMatches(o.token(), request.token)) return refusal('FORBIDDEN');
     if (request.op === 'shutdown') {
-      o.onShutdown(request.reason);
+      const outcome = o.onShutdown(request.reason, { force: request.force === true });
+      if (outcome !== undefined && !outcome.ok) return refusal(outcome.error);
       return { v: 1, ok: true, op: 'shutdown', phase: 'stopping' };
     }
+    if (request.op === 'terminals') {
+      // while starting no terminal can exist yet, and while stopping they are going down: the census is not asked
+      const census = o.onTerminals !== undefined && o.phase() === 'ready' ? o.onTerminals() : NO_TERMINALS;
+      return {
+        v: 1,
+        ok: true,
+        op: 'terminals',
+        live: census.live,
+        max: census.max,
+        sessions: census.sessions
+          .slice(0, CONTROL_TERMINAL_SESSIONS_MAX)
+          .map(({ name, startedAt }) => ({ name, startedAt })),
+      };
+    }
+    if (request.op === 'access' && o.onAccess === undefined) return refusal('UNSUPPORTED');
     if (o.phase() !== 'ready') return refusal('NOT_READY');
     if (request.op === 'backup') {
       let outcome: BackupOutcome;
@@ -380,9 +433,17 @@ class ChannelServer {
       const outcome = await o.onIngestReplay(request.fromSegment);
       return outcome.ok ? { v: 1, ok: true, op: 'ingest-replay', segments: outcome.segments } : refusal(outcome.error);
     }
-    // `terminals` and `access` are parsed by the shared protocol but served only by the user instance (06 1.8): until the
-    // server wires them, they are answered like any request this channel does not know.
-    return refusal('BAD_REQUEST');
+    // what is left is `access`, in the phase ready, with a minter wired; a minter that has no access service answers null
+    const minted = o.onAccess?.() ?? null;
+    if (minted === null) return refusal('UNSUPPORTED');
+    return {
+      v: 1,
+      ok: true,
+      op: 'access',
+      code: minted.code,
+      expiresAt: isoMsZ(minted.expiresAtMs),
+      ttlSeconds: minted.ttlSeconds,
+    };
   }
 }
 

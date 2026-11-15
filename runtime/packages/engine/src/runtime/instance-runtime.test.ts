@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { RUNTIME_VERSION } from '@mcs/shared';
+import { RUNTIME_VERSION, type InstanceKind } from '@mcs/shared';
 import { FakeClock, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
@@ -21,6 +21,7 @@ import {
   type RuntimeComponent,
   type RuntimeFactories,
 } from './instance-runtime.ts';
+import { EMPTY_USER_SERVICES, type UserServices } from './user-services.ts';
 
 const makeTemp = useTempDirs();
 const NOW = Date.UTC(2026, 9, 11, 14, 5, 7);
@@ -111,7 +112,7 @@ interface Env {
   readonly calls: LoggedCall[];
 }
 
-async function makeEnv(): Promise<Env> {
+async function makeEnv(kind: InstanceKind = 'task'): Promise<Env> {
   const root = makeTemp('runtime').path;
   const skill = path.join(root, 'skill');
   mkdirSync(path.join(skill, 'config'), { recursive: true });
@@ -121,7 +122,14 @@ async function makeEnv(): Promise<Env> {
   const repo = path.join(root, 'repo');
   mkdirSync(repo);
   const clock = new FakeClock(NOW);
-  const { ws } = await initWorkspace({ repo, name: 'Demo', slug: 'demo', clock, newId: () => ID });
+  const { ws } = await initWorkspace({
+    repo,
+    name: 'Demo',
+    slug: 'demo',
+    clock,
+    newId: () => ID,
+    ...(kind === 'task' ? {} : { kind }),
+  });
   const { logger, calls } = fakeLogger();
   const ctx = await buildInstanceContext({
     instanceDir: ws.dir,
@@ -275,6 +283,7 @@ function makeFakes(): Fakes {
       return Promise.resolve();
     }),
     createAlertComponents: vi.fn(() => []),
+    createUserServices: vi.fn(() => EMPTY_USER_SERVICES),
   };
   return { log, m, ingest, panels, factories, writerSeenBySweeper, writerSeenByPanels, contextsSeen };
 }
@@ -400,6 +409,119 @@ describe('createInstanceRuntime: creation (01 4.4a component order)', () => {
     expect(fakes.m.ingestReplay).toHaveBeenCalledWith('hooks-20260101T00Z.ndjson');
     await runtime.ingestReplay(null);
     expect(fakes.m.ingestReplay).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('createInstanceRuntime: the user services of a user instance (06 1.7, ADR 0091)', () => {
+  function servicesWith(components: readonly RuntimeComponent[]): UserServices {
+    return { ...EMPTY_USER_SERVICES, components };
+  }
+
+  it('takes the kind of the context from instance.json: task when the key is absent, user for a user workspace', async () => {
+    expect((await makeEnv()).ctx.kind).toBe('task');
+    expect((await makeEnv('user')).ctx.kind).toBe('user');
+  });
+
+  it('gives a task instance no user services: the factory is not called, `user` is null, nothing is warned', async () => {
+    const env = await makeEnv();
+    const fakes = makeFakes();
+    const runtime = make(env, fakes);
+    expect(runtime.user).toBeNull();
+    expect(fakes.factories.createUserServices).not.toHaveBeenCalled();
+    expect(env.calls.filter((call) => call.event === 'runtime_stub_service')).toEqual([]);
+    const stubbed = createInstanceRuntime((await makeEnv()).ctx, { factories: STUB_FACTORIES });
+    runtimes.push(stubbed);
+    expect(stubbed.user).toBeNull();
+  });
+
+  it('calls the factory once with the context of a user instance and exposes what it made as `user`', async () => {
+    const env = await makeEnv('user');
+    const fakes = makeFakes();
+    const services = servicesWith([]);
+    vi.mocked(fakes.factories.createUserServices).mockReturnValue(services);
+    const runtime = make(env, fakes);
+    expect(runtime.user).toBe(services);
+    expect(fakes.factories.createUserServices).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fakes.factories.createUserServices).mock.calls[0]?.[0]).toBe(env.ctx);
+  });
+
+  it('starts its components after the alert components and before the route file, and stops them before the alert ones', async () => {
+    const env = await makeEnv('user');
+    const fakes = makeFakes();
+    vi.mocked(fakes.factories.createAlertComponents).mockReturnValue([fakeComponent('alerts', fakes.log)]);
+    vi.mocked(fakes.factories.createUserServices).mockReturnValue(
+      servicesWith([fakeComponent('terminal', fakes.log), fakeComponent('folders', fakes.log)]),
+    );
+    const runtime = make(env, fakes);
+    fakes.log.length = 0;
+    await runtime.start();
+    expect(fakes.log).toEqual([
+      'ingest.start',
+      'sweeper.start',
+      'db-scheduler.start',
+      'panels.tick',
+      'alerts.start',
+      'terminal.start',
+      'folders.start',
+      'route-file',
+    ]);
+    fakes.log.length = 0;
+    const deadline = NOW + 1000;
+    await expect(runtime.stop(deadline)).resolves.toEqual({ completed: true, pendingComponent: null });
+    expect(fakes.log).toEqual([
+      `folders.stop:${String(deadline)}`,
+      `terminal.stop:${String(deadline)}`,
+      `alerts.stop:${String(deadline)}`,
+      'panels.close',
+      'db-scheduler.stop:0',
+      `sweeper.stop:${String(deadline)}`,
+      `ingest.stop:${String(deadline)}`,
+    ]);
+  });
+
+  it('stops the components that started, user ones last-started first, when a user component fails to start', async () => {
+    const env = await makeEnv('user');
+    const fakes = makeFakes();
+    vi.mocked(fakes.factories.createAlertComponents).mockReturnValue([fakeComponent('alerts', fakes.log)]);
+    vi.mocked(fakes.factories.createUserServices).mockReturnValue(
+      servicesWith([
+        fakeComponent('terminal', fakes.log),
+        fakeComponent('folders', fakes.log, {
+          start: () => {
+            fakes.log.push('folders.start');
+            return Promise.reject(new Error('folders could not start'));
+          },
+        }),
+      ]),
+    );
+    const runtime = make(env, fakes);
+    fakes.log.length = 0;
+    await expect(runtime.start()).rejects.toThrow('folders could not start');
+    expect(fakes.log).toEqual([
+      'ingest.start',
+      'sweeper.start',
+      'db-scheduler.start',
+      'panels.tick',
+      'alerts.start',
+      'terminal.start',
+      'folders.start',
+      `terminal.stop:${String(NOW + 2000)}`,
+      `alerts.stop:${String(NOW + 2000)}`,
+      'panels.close',
+      'db-scheduler.stop:0',
+      `sweeper.stop:${String(NOW + 2000)}`,
+      `ingest.stop:${String(NOW + 2000)}`,
+    ]);
+    expect(fakes.factories.publishRouteFile).not.toHaveBeenCalled();
+  });
+
+  it('runs a user instance on the stubs: the empty services, one warning that names them, a clean start and stop', async () => {
+    const env = await makeEnv('user');
+    const runtime = createInstanceRuntime(env.ctx, { factories: STUB_FACTORIES });
+    runtimes.push(runtime);
+    expect(runtime.user).toBe(EMPTY_USER_SERVICES);
+    await runtime.start();
+    await expect(runtime.stop(NOW + 1000)).resolves.toEqual({ completed: true, pendingComponent: null });
   });
 });
 
@@ -821,6 +943,24 @@ describe('createInstanceRuntime: stubs and the registration of the real factorie
     const runtime = createInstanceRuntime(other.ctx, { factories: STUB_FACTORIES });
     runtimes.push(runtime);
     expect(stubWarnings(other)).toEqual(['ingest', 'lifecycle-sweeper', 'db-scheduler', 'panels', 'route-file']);
+  });
+
+  it('warns for the user services stub only on a user instance (06 1.7), after the others', async () => {
+    const user = await makeEnv('user');
+    runtimes.push(createInstanceRuntime(user.ctx, { factories: STUB_FACTORIES }));
+    expect(stubWarnings(user)).toEqual([
+      'ingest',
+      'lifecycle-sweeper',
+      'db-scheduler',
+      'panels',
+      'route-file',
+      'user-services',
+    ]);
+
+    const real = await makeEnv('user');
+    const { createUserServices } = makeFakes().factories;
+    runtimes.push(createInstanceRuntime(real.ctx, { factories: { ...STUB_FACTORIES, createUserServices } }));
+    expect(stubWarnings(real)).not.toContain('user-services');
   });
 
   it('runs a whole runtime on the stubs: start, an idle ingestUntilIdle, replay, stop', async () => {

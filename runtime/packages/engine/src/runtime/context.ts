@@ -9,6 +9,7 @@ import path from 'node:path';
 
 import {
   McsError,
+  instanceKindOf,
   systemClock,
   type ChildKind,
   type ChildKindStats,
@@ -19,6 +20,7 @@ import {
   type IngestHealth,
   type InstanceFile,
   type InstanceInfo,
+  type InstanceKind,
   type PanelStats,
   type SessionDetail,
 } from '@mcs/shared';
@@ -76,6 +78,8 @@ export interface InstanceContext {
   readonly config: ResolvedConfig;
   /** `instance.json` as read at boot. */
   readonly instance: InstanceFile;
+  /** The kind of `instance.json` (`task` when the key is absent): only `user` may host terminals and mint access codes (06 1.3). */
+  readonly kind: InstanceKind;
   readonly hooksEnabled: boolean;
   readonly clock: Clock;
   readonly db: InstanceDb;
@@ -448,6 +452,7 @@ export async function buildInstanceContextWith(i: BuildContextInput, deps: Conte
       runtimeDir: i.runtimeDir,
       config,
       instance,
+      kind: instanceKindOf(instance),
       hooksEnabled: instance.hooks.enabled,
       clock,
       db,

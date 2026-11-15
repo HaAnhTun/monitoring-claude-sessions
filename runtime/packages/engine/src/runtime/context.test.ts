@@ -166,6 +166,7 @@ describe('buildInstanceContext: the fields of InstanceContext', () => {
         'instance',
         'instanceDir',
         'instanceId',
+        'kind',
         'logger',
         'mcsHome',
         'process',

@@ -9,7 +9,12 @@ import path from 'node:path';
 
 import type { ControlPhase, ControlResponse, ControlShutdownReason } from '@mcs/shared/protocol';
 import { controlAddress as sharedControlAddress } from '@mcs/shared';
-import { CONTROL_REQUEST_MAX_BYTES, parseControlResponse } from '@mcs/shared/protocol';
+import {
+  ACCESS_CODE_RE,
+  CONTROL_REQUEST_MAX_BYTES,
+  CONTROL_TERMINAL_SESSIONS_MAX,
+  parseControlResponse,
+} from '@mcs/shared/protocol';
 import { makeJunction, useTempDirs, waitFor } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -23,6 +28,7 @@ import {
   type ControlChannel,
   type ControlChannelOptions,
   type ReplayOutcome,
+  type ShutdownAnswer,
 } from './control-channel.ts';
 
 const makeTemp = useTempDirs();
@@ -347,6 +353,371 @@ describe('ingest-replay', () => {
       ok: false,
       error: 'NOT_READY',
     });
+  });
+});
+
+describe('shutdown: the guard of the user instance (06 3.2, ADR 0093)', () => {
+  interface Asked {
+    readonly reason: ControlShutdownReason;
+    readonly force: boolean;
+  }
+
+  async function guarded(
+    decide: (reason: ControlShutdownReason, o: { force: boolean }) => ShutdownAnswer | undefined,
+  ): Promise<{ h: Harness; asked: Asked[] }> {
+    const asked: Asked[] = [];
+    const h = await start({
+      onShutdown: (reason, o) => {
+        asked.push({ reason, force: o.force });
+        return decide(reason, o);
+      },
+    });
+    return { h, asked };
+  }
+
+  it('tells the decision whether the request carries force: false when the key is absent, true when it is there', async () => {
+    const { h, asked } = await guarded(() => undefined);
+    await request(h, { op: 'shutdown', reason: 'stop' });
+    await request(h, { op: 'shutdown', reason: 'restart', force: true });
+    expect(asked).toEqual([
+      { reason: 'stop', force: false },
+      { reason: 'restart', force: true },
+    ]);
+  });
+
+  it('answers TERMINALS_LIVE, and not stopping, when the decision refuses; the channel keeps answering', async () => {
+    const { h } = await guarded(() => ({ ok: false, error: 'TERMINALS_LIVE' }));
+    expect(await request(h, { op: 'shutdown', reason: 'stop' })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'TERMINALS_LIVE',
+    });
+    expect(await requestControl(h.address, { v: 1, op: 'identify' })).toMatchObject({ ok: true, phase: 'ready' });
+    expect(await request(h, { op: 'shutdown', reason: 'stop', force: true })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'TERMINALS_LIVE',
+    });
+  });
+
+  it('answers stopping when the decision allows, with an explicit ok outcome or with none', async () => {
+    for (const outcome of [{ ok: true } as const, undefined]) {
+      const { h } = await guarded(() => outcome);
+      expect(await request(h, { op: 'shutdown', reason: 'stop' })).toEqual({
+        v: 1,
+        ok: true,
+        op: 'shutdown',
+        phase: 'stopping',
+      });
+    }
+  });
+
+  it('runs the guard matrix of the server: every reason with and without force reaches the decision', async () => {
+    const { h, asked } = await guarded((reason, o) =>
+      reason !== 'signal' && !o.force ? { ok: false, error: 'TERMINALS_LIVE' } : undefined,
+    );
+    const replies: Record<string, ControlResponse> = {};
+    for (const reason of ['stop', 'restart', 'upgrade', 'signal'] as const) {
+      replies[reason] = await request(h, { op: 'shutdown', reason });
+      replies[`${reason}+force`] = await request(h, { op: 'shutdown', reason, force: true });
+    }
+    expect(asked).toHaveLength(8);
+    expect(Object.entries(replies).map(([key, reply]) => `${key}:${reply.ok ? 'stopping' : reply.error}`)).toEqual([
+      'stop:TERMINALS_LIVE',
+      'stop+force:stopping',
+      'restart:TERMINALS_LIVE',
+      'restart+force:stopping',
+      'upgrade:TERMINALS_LIVE',
+      'upgrade+force:stopping',
+      'signal:stopping',
+      'signal+force:stopping',
+    ]);
+  });
+
+  it('does not ask the decision for a wrong token, another instance or a force that is not true', async () => {
+    const { h, asked } = await guarded(() => undefined);
+    expect(await request(h, { op: 'shutdown', reason: 'stop', token: 'cd'.repeat(32), force: true })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'FORBIDDEN',
+    });
+    expect(await request(h, { op: 'shutdown', reason: 'stop', instanceId: randomUUID(), force: true })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'INSTANCE_MISMATCH',
+    });
+    expect(await request(h, { op: 'shutdown', reason: 'stop', force: false })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'BAD_REQUEST',
+    });
+    expect(await request(h, { op: 'shutdown', reason: 'stop', force: 'yes' })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'BAD_REQUEST',
+    });
+    expect(asked).toEqual([]);
+  });
+
+  it('asks the decision in every phase: a stop while the server starts or stops is the decision of the server', async () => {
+    const { h, asked } = await guarded(() => undefined);
+    for (const phase of ['starting', 'stopping'] as const) {
+      h.state.phase = phase;
+      expect(await request(h, { op: 'shutdown', reason: 'stop' }), phase).toMatchObject({ ok: true, op: 'shutdown' });
+    }
+    expect(asked).toHaveLength(2);
+  });
+
+  it('logs the refusal by route and code only: no count, no session name', async () => {
+    const { h } = await guarded(() => ({ ok: false, error: 'TERMINALS_LIVE' }));
+    await request(h, { op: 'shutdown', reason: 'stop' });
+    const refused = h.logs.filter((line) => line.event === 'control_refused');
+    expect(refused).toHaveLength(1);
+    expect(refused[0]).toMatchObject({
+      level: 'warn',
+      fields: { route: 'control:shutdown', status: 'TERMINALS_LIVE' },
+    });
+    expect(Object.keys(refused[0]?.fields ?? {}).sort()).toEqual(['route', 'status']);
+  });
+});
+
+describe('terminals: the census of the user instance (06 1.8)', () => {
+  const SESSIONS = [
+    { name: 'api-1', startedAt: '2026-11-15T10:00:00.000Z' },
+    { name: 'web-1', startedAt: '2026-11-15T10:05:00.000Z' },
+  ];
+
+  it('answers an empty census when there is no census behind it (a task instance)', async () => {
+    const h = await start();
+    expect(await request(h, { op: 'terminals' })).toEqual({
+      v: 1,
+      ok: true,
+      op: 'terminals',
+      live: 0,
+      max: 0,
+      sessions: [],
+    });
+  });
+
+  it('answers the census of the server: the count, the limit and the sessions, oldest first as given', async () => {
+    const h = await start({ onTerminals: () => ({ live: 2, max: 8, sessions: SESSIONS }) });
+    expect(await request(h, { op: 'terminals' })).toEqual({
+      v: 1,
+      ok: true,
+      op: 'terminals',
+      live: 2,
+      max: 8,
+      sessions: SESSIONS,
+    });
+  });
+
+  it('keeps the real count when the list is shorter (starting and lost sessions are counted, not listed)', async () => {
+    const h = await start({ onTerminals: () => ({ live: 3, max: 8, sessions: SESSIONS.slice(0, 1) }) });
+    expect(await request(h, { op: 'terminals' })).toMatchObject({ live: 3, sessions: [SESSIONS[0]] });
+  });
+
+  it('lists at most 50 sessions however many the census returns, and keeps the count', async () => {
+    const many = Array.from({ length: 80 }, (_, i) => ({
+      name: `s-${String(i + 1)}`,
+      startedAt: '2026-11-15T10:00:00.000Z',
+    }));
+    const h = await start({ onTerminals: () => ({ live: 80, max: 64, sessions: many }) });
+    const reply = await request(h, { op: 'terminals' });
+    expect(reply).toMatchObject({ ok: true, op: 'terminals', live: 80 });
+    if (reply.ok && reply.op === 'terminals') {
+      expect(reply.sessions).toHaveLength(CONTROL_TERMINAL_SESSIONS_MAX);
+      expect(reply.sessions[0]?.name).toBe('s-1');
+    }
+  });
+
+  it('needs the instance id and the token, like every operation but identify', async () => {
+    let calls = 0;
+    const h = await start({
+      onTerminals: () => {
+        calls += 1;
+        return { live: 1, max: 8, sessions: SESSIONS.slice(0, 1) };
+      },
+    });
+    expect(await request(h, { op: 'terminals', token: 'cd'.repeat(32) })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'FORBIDDEN',
+    });
+    expect(await request(h, { op: 'terminals', instanceId: randomUUID() })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'INSTANCE_MISMATCH',
+    });
+    h.state.token = null;
+    expect(await request(h, { op: 'terminals' })).toEqual({ v: 1, ok: false, error: 'FORBIDDEN' });
+    expect(calls).toBe(0);
+  });
+
+  it('works in every phase, but skips the census while starting (nothing can exist yet) and stopping (it is going down)', async () => {
+    let calls = 0;
+    const h = await start({
+      onTerminals: () => {
+        calls += 1;
+        return { live: 2, max: 8, sessions: SESSIONS };
+      },
+    });
+    expect(await request(h, { op: 'terminals' })).toMatchObject({ ok: true, live: 2 });
+    expect(calls).toBe(1);
+    for (const phase of ['starting', 'stopping'] as const) {
+      h.state.phase = phase;
+      expect(await request(h, { op: 'terminals' }), phase).toEqual({
+        v: 1,
+        ok: true,
+        op: 'terminals',
+        live: 0,
+        max: 0,
+        sessions: [],
+      });
+    }
+    expect(calls).toBe(1);
+  });
+
+  it('answers INTERNAL, with no message, when the census throws, and serves the next request', async () => {
+    const h = await start({
+      onTerminals: () => {
+        throw new Error('census broke at a secret-looking place');
+      },
+    });
+    const line = await sendControlLine(
+      h.address,
+      JSON.stringify({ v: 1, op: 'terminals', instanceId: h.id, token: TOKEN }),
+      { timeoutMs: 5000 },
+    );
+    expect(parseControlResponse(line ?? '')).toEqual({ v: 1, ok: false, error: 'INTERNAL' });
+    expect(line).not.toContain('secret-looking');
+    expect(JSON.stringify(h.logs)).not.toContain('secret-looking');
+    expect(await requestControl(h.address, { v: 1, op: 'identify' })).toMatchObject({ ok: true });
+  });
+
+  it('logs the route and the status and nothing of the census', async () => {
+    const h = await start({ onTerminals: () => ({ live: 2, max: 8, sessions: SESSIONS }) });
+    await request(h, { op: 'terminals' });
+    const text = JSON.stringify(h.logs);
+    expect(text).not.toContain('api-1');
+    expect(text).not.toContain('web-1');
+    expect(text).not.toContain('2026-11-15');
+    expect(h.logs).toContainEqual({
+      level: 'info',
+      event: 'control_request',
+      fields: { route: 'control:terminals', status: 'ok' },
+    });
+  });
+});
+
+describe('access: the one-use code of the login link (06 1.8, ADR 0094)', () => {
+  const CODE = `Zq8-test_only_code-${'k'.repeat(24)}`;
+  const EXPIRES_AT_MS = Date.UTC(2026, 10, 15, 10, 2, 0, 123);
+
+  it('is a valid access code in these tests', () => {
+    expect(ACCESS_CODE_RE.test(CODE)).toBe(true);
+  });
+
+  it('answers UNSUPPORTED when there is no minter behind it (a task instance), in every phase, and calls nothing', async () => {
+    const h = await start();
+    for (const phase of ['ready', 'starting', 'stopping'] as const) {
+      h.state.phase = phase;
+      expect(await request(h, { op: 'access' }), phase).toEqual({ v: 1, ok: false, error: 'UNSUPPORTED' });
+    }
+  });
+
+  it('answers the code, its expiry as an ISO time and its lifetime in seconds', async () => {
+    const h = await start({ onAccess: () => ({ code: CODE, expiresAtMs: EXPIRES_AT_MS, ttlSeconds: 120 }) });
+    expect(await request(h, { op: 'access' })).toEqual({
+      v: 1,
+      ok: true,
+      op: 'access',
+      code: CODE,
+      expiresAt: '2026-11-15T10:02:00.123Z',
+      ttlSeconds: 120,
+    });
+  });
+
+  it('mints a new code for every request (the minter is asked each time)', async () => {
+    let n = 0;
+    const h = await start({
+      onAccess: () => {
+        n += 1;
+        return { code: `${CODE.slice(0, -1)}${String(n)}`, expiresAtMs: EXPIRES_AT_MS, ttlSeconds: 120 };
+      },
+    });
+    const first = await request(h, { op: 'access' });
+    const second = await request(h, { op: 'access' });
+    expect(first).toMatchObject({ ok: true, code: `${CODE.slice(0, -1)}1` });
+    expect(second).toMatchObject({ ok: true, code: `${CODE.slice(0, -1)}2` });
+  });
+
+  it('answers UNSUPPORTED when the minter says it has no access service (null)', async () => {
+    const h = await start({ onAccess: () => null });
+    expect(await request(h, { op: 'access' })).toEqual({ v: 1, ok: false, error: 'UNSUPPORTED' });
+  });
+
+  it('needs the token and the ready phase, and does not mint otherwise', async () => {
+    let minted = 0;
+    const h = await start({
+      onAccess: () => {
+        minted += 1;
+        return { code: CODE, expiresAtMs: EXPIRES_AT_MS, ttlSeconds: 120 };
+      },
+    });
+    expect(await request(h, { op: 'access', token: 'cd'.repeat(32) })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'FORBIDDEN',
+    });
+    expect(await request(h, { op: 'access', instanceId: randomUUID() })).toEqual({
+      v: 1,
+      ok: false,
+      error: 'INSTANCE_MISMATCH',
+    });
+    for (const phase of ['starting', 'stopping'] as const) {
+      h.state.phase = phase;
+      expect(await request(h, { op: 'access' }), phase).toEqual({ v: 1, ok: false, error: 'NOT_READY' });
+    }
+    h.state.token = null;
+    h.state.phase = 'ready';
+    expect(await request(h, { op: 'access' })).toEqual({ v: 1, ok: false, error: 'FORBIDDEN' });
+    expect(minted).toBe(0);
+  });
+
+  it('answers INTERNAL, with no message and no code, when the minter throws', async () => {
+    const h = await start({
+      onAccess: () => {
+        throw new Error(`mint failed for ${CODE}`);
+      },
+    });
+    const line = await sendControlLine(
+      h.address,
+      JSON.stringify({ v: 1, op: 'access', instanceId: h.id, token: TOKEN }),
+      {
+        timeoutMs: 5000,
+      },
+    );
+    expect(parseControlResponse(line ?? '')).toEqual({ v: 1, ok: false, error: 'INTERNAL' });
+    expect(line).not.toContain(CODE);
+    expect(JSON.stringify(h.logs)).not.toContain(CODE);
+    expect(await requestControl(h.address, { v: 1, op: 'identify' })).toMatchObject({ ok: true });
+  });
+
+  it('never writes the code to a log: the log says the route and the status', async () => {
+    const h = await start({ onAccess: () => ({ code: CODE, expiresAtMs: EXPIRES_AT_MS, ttlSeconds: 120 }) });
+    await request(h, { op: 'access' });
+    await request(h, { op: 'access', token: 'ee'.repeat(32) });
+    h.state.phase = 'starting';
+    await request(h, { op: 'access' });
+    const text = JSON.stringify(h.logs);
+    expect(text).not.toContain(CODE);
+    expect(text).not.toContain('Zq8-');
+    expect(h.logs).toContainEqual({
+      level: 'info',
+      event: 'control_request',
+      fields: { route: 'control:access', status: 'ok' },
+    });
+    for (const line of h.logs) expect(line.event).toMatch(/^control_/);
   });
 });
 

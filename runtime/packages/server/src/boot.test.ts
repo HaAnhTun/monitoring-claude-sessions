@@ -4,24 +4,43 @@ import { writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import path from 'node:path';
 
-import { DbError, SpoolSegmentNotFoundError, execFileText, type ChildLogEntry, type ChildSpec } from '@mcs/engine';
+import {
+  DbError,
+  EMPTY_CENSUS,
+  EMPTY_USER_SERVICES,
+  SpoolSegmentNotFoundError,
+  execFileText,
+  userRootOf,
+  type ChildLogEntry,
+  type ChildSpec,
+  type TerminalCensus,
+  type UserServices,
+} from '@mcs/engine';
 import { McsError, RUNTIME_VERSION, SERVER_EXIT_CODES as SharedExitCodes, serverExitNameOf } from '@mcs/shared';
+import { CONTROL_TERMINAL_SESSIONS_MAX } from '@mcs/shared/protocol';
 import { allocatePort, assertPortClosed, useTempDirs } from '@mcs/testkit';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
   BIND_HOST,
   SERVER_EXIT_CODES,
+  answerShutdown,
+  assertUserLocation,
   bindFirstFreePort,
+  censusOf,
   exitCodeOfError,
   exitNameOf,
   ingestReplayOutcome,
+  mintOutcome,
   parseServeArgv,
   readBuildStamp,
   scanPorts,
   serveMain,
+  terminalsOutcome,
   wireChildLog,
+  type ShutdownWiring,
 } from './boot.ts';
+import type { ShutdownReason } from './shutdown.ts';
 
 const makeTemp = useTempDirs();
 const ID = 'abcdef01-abcd-4bcd-8bcd-abcdef012345';
@@ -325,6 +344,245 @@ describe('ingestReplayOutcome (01 4.3, 02 2.7)', () => {
     warn.mockClear();
     await ingestReplayOutcome({ ingestReplay: () => Promise.reject(new Error('plain')) }, null, warn);
     expect(warn).toHaveBeenCalledWith('ingest_replay_failed', { code: 'INTERNAL' });
+  });
+});
+
+describe('assertUserLocation (06 1.3, ADR 0091 item 5)', () => {
+  function env(): Record<string, string> {
+    return { MCS_HOME: makeTemp('user-home').path };
+  }
+
+  it('accepts a user instance in the reserved user root', () => {
+    const e = env();
+    expect(() => {
+      assertUserLocation('user', userRootOf(e), e);
+    }).not.toThrow();
+  });
+
+  it('refuses a user instance anywhere else with WORKSPACE_INVALID (exit 17), naming no path', () => {
+    const e = env();
+    const elsewhere = path.join(makeTemp('some-repo').path, '.claude', 'monitor', 'tasks');
+    let failure: unknown;
+    try {
+      assertUserLocation('user', elsewhere, e);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(McsError);
+    expect(failure).toMatchObject({ code: 'WORKSPACE_INVALID' });
+    expect(exitCodeOfError(failure)).toBe(17);
+    expect((failure as McsError).message).not.toContain(elsewhere);
+    expect((failure as McsError).message).not.toContain(e['MCS_HOME'] ?? 'unreachable');
+  });
+
+  it('refuses the user root of another MCS home, and a folder that only looks like it', () => {
+    const e = env();
+    const other = { MCS_HOME: makeTemp('other-home').path };
+    expect(() => {
+      assertUserLocation('user', userRootOf(other), e);
+    }).toThrow(expect.objectContaining({ code: 'WORKSPACE_INVALID' }));
+    expect(() => {
+      assertUserLocation('user', path.join(userRootOf(e), 'user'), e);
+    }).toThrow(expect.objectContaining({ code: 'WORKSPACE_INVALID' }));
+  });
+
+  it('leaves a task alone wherever it is, and does not read the home of a task', () => {
+    const e = env();
+    expect(() => {
+      assertUserLocation('task', makeTemp('some-repo').path, e);
+      assertUserLocation('task', userRootOf(e), e);
+      assertUserLocation('task', makeTemp('no-home').path, {});
+    }).not.toThrow();
+  });
+
+  it('is CONFIG_INVALID (exit 10) when the home of a user instance cannot be found', () => {
+    let failure: unknown;
+    try {
+      assertUserLocation('user', makeTemp('some-repo').path, {});
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: 'CONFIG_INVALID' });
+    expect(exitCodeOfError(failure)).toBe(10);
+  });
+});
+
+describe('the services behind the control channel are late-bound (06 1.7, 1.8)', () => {
+  const MINT = { code: `Zq8-test_only_code-${'k'.repeat(24)}`, expiresAtMs: 1_800_000_000_000, ttlSeconds: 120 };
+  const census: TerminalCensus = {
+    count: () => 3,
+    sessions: (limit) => [{ name: 'api-1', startedAt: '2026-11-15T10:00:00.000Z' }].slice(0, limit),
+    beginDrain: () => undefined,
+  };
+
+  it('uses the empty census and no minter while there is no runtime, and for a task instance', () => {
+    for (const runtime of [undefined, { user: null }, { user: EMPTY_USER_SERVICES }]) {
+      expect(censusOf(runtime)).toBe(EMPTY_CENSUS);
+      expect(mintOutcome(runtime)).toBeNull();
+    }
+  });
+
+  it('reads the census and the minter of the user services at the time of the request', () => {
+    const minter = { mint: vi.fn(() => MINT) };
+    const runtime: { user: UserServices | null } = { user: null };
+    expect(censusOf(runtime)).toBe(EMPTY_CENSUS);
+    runtime.user = { census, access: minter, components: [] };
+    expect(censusOf(runtime)).toBe(census);
+    expect(mintOutcome(runtime)).toBe(MINT);
+    expect(mintOutcome(runtime)).toBe(MINT);
+    expect(minter.mint).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('terminalsOutcome (06 1.8, A4)', () => {
+  it('reports the count of starting, live and lost sessions, the limit and the sessions the census lists', () => {
+    const sessions = vi.fn((limit: number) =>
+      [{ name: 'api-1', startedAt: '2026-11-15T10:00:00.000Z' }].slice(0, limit),
+    );
+    const census: TerminalCensus = { count: () => 3, sessions, beginDrain: () => undefined };
+    expect(terminalsOutcome(census, 8)).toEqual({
+      live: 3,
+      max: 8,
+      sessions: [{ name: 'api-1', startedAt: '2026-11-15T10:00:00.000Z' }],
+    });
+    expect(sessions).toHaveBeenCalledWith(CONTROL_TERMINAL_SESSIONS_MAX);
+  });
+
+  it('is an empty census for the empty census', () => {
+    expect(terminalsOutcome(EMPTY_CENSUS, 0)).toEqual({ live: 0, max: 0, sessions: [] });
+  });
+});
+
+describe('answerShutdown: the server decides, and the drain starts on the allow decision only (06 3.2, A4)', () => {
+  /** A census whose members are properties, so that the spies can be read without a method leaving its object. */
+  interface RigCensus {
+    readonly count: Mock<() => number>;
+    readonly sessions: () => readonly never[];
+    readonly beginDrain: Mock<() => void>;
+  }
+
+  interface Rig {
+    readonly census: RigCensus;
+    readonly order: string[];
+    readonly trigger: ReturnType<typeof vi.fn<(reason: ShutdownReason) => void>>;
+    readonly warn: ReturnType<typeof vi.fn<(event: string, fields: Readonly<Record<string, unknown>>) => void>>;
+    readonly wiring: ShutdownWiring;
+    stopping: boolean;
+  }
+
+  function rig(count: number, kind: 'task' | 'user' = 'user'): Rig {
+    const order: string[] = [];
+    const census: RigCensus = {
+      count: vi.fn(() => count),
+      sessions: () => [],
+      beginDrain: vi.fn(() => {
+        order.push('beginDrain');
+      }),
+    };
+    const trigger = vi.fn((reason: ShutdownReason) => {
+      order.push(`trigger:${reason}`);
+    });
+    const warn = vi.fn();
+    const state = { stopping: false };
+    const wiring: ShutdownWiring = {
+      kind,
+      census: () => census,
+      stopping: () => state.stopping,
+      trigger,
+      warn,
+    };
+    return {
+      census,
+      order,
+      trigger,
+      warn,
+      wiring,
+      get stopping() {
+        return state.stopping;
+      },
+      set stopping(value: boolean) {
+        state.stopping = value;
+      },
+    };
+  }
+
+  it('answers TERMINALS_LIVE for live terminals, and neither starts the drain nor triggers the shutdown', () => {
+    const r = rig(2);
+    expect(answerShutdown(r.wiring, 'stop', false)).toEqual({ ok: false, error: 'TERMINALS_LIVE' });
+    expect(r.census.beginDrain).not.toHaveBeenCalled();
+    expect(r.trigger).not.toHaveBeenCalled();
+    expect(r.order).toEqual([]);
+  });
+
+  it('counts a starting and a lost session: the census count decides, whatever the list shows', () => {
+    const r = rig(1); // one session that is starting or lost: `sessions()` is empty, `count()` is 1
+    expect(answerShutdown(r.wiring, 'restart', false)).toEqual({ ok: false, error: 'TERMINALS_LIVE' });
+    expect(r.trigger).not.toHaveBeenCalled();
+  });
+
+  it('starts the drain first and triggers the shutdown right after, in the same tick, when it allows', async () => {
+    const r = rig(0);
+    const answer = answerShutdown(r.wiring, 'stop', false);
+    r.order.push('returned');
+    expect(answer).toEqual({ ok: true });
+    expect(r.order).toEqual(['beginDrain', 'trigger:stop', 'returned']);
+    await Promise.resolve(); // nothing is deferred to a later turn
+    expect(r.order).toEqual(['beginDrain', 'trigger:stop', 'returned']);
+  });
+
+  it('allows force over live terminals, with the drain and the trigger', () => {
+    const r = rig(2);
+    expect(answerShutdown(r.wiring, 'stop', true)).toEqual({ ok: true });
+    expect(r.order).toEqual(['beginDrain', 'trigger:stop']);
+  });
+
+  it('never guards the reason signal', () => {
+    const r = rig(5);
+    expect(answerShutdown(r.wiring, 'signal', false)).toEqual({ ok: true });
+    expect(r.order).toEqual(['beginDrain', 'trigger:signal']);
+    expect(r.census.count).not.toHaveBeenCalled();
+  });
+
+  it('never guards a task instance', () => {
+    const r = rig(5, 'task');
+    expect(answerShutdown(r.wiring, 'stop', false)).toEqual({ ok: true });
+    expect(r.trigger).toHaveBeenCalledWith('stop');
+  });
+
+  it('lets a request through while the instance is already stopping, without a second drain', () => {
+    const r = rig(2);
+    r.stopping = true;
+    expect(answerShutdown(r.wiring, 'stop', false)).toEqual({ ok: true });
+    expect(r.census.beginDrain).not.toHaveBeenCalled();
+    expect(r.trigger).toHaveBeenCalledTimes(1);
+  });
+
+  it('still triggers the shutdown when the drain fails, and logs that by phase, never by message', () => {
+    const r = rig(0);
+    r.census.beginDrain.mockImplementation(() => {
+      throw new Error('drain failed at /secret/place');
+    });
+    expect(answerShutdown(r.wiring, 'stop', false)).toEqual({ ok: true });
+    expect(r.trigger).toHaveBeenCalledWith('stop');
+    expect(r.warn).toHaveBeenCalledTimes(1);
+    expect(r.warn).toHaveBeenCalledWith('terminal_drain_failed', { phase: 'shutdown' });
+    expect(JSON.stringify(r.warn.mock.calls)).not.toContain('secret');
+  });
+
+  it('reads the census when the request arrives: terminals that appear after the boot are seen', () => {
+    let live = 0;
+    const census: TerminalCensus = { count: () => live, sessions: () => [], beginDrain: () => undefined };
+    const wiring: ShutdownWiring = {
+      kind: 'user',
+      census: () => census,
+      stopping: () => false,
+      trigger: () => undefined,
+      warn: () => undefined,
+    };
+    live = 1;
+    expect(answerShutdown(wiring, 'stop', false)).toEqual({ ok: false, error: 'TERMINALS_LIVE' });
+    live = 0;
+    expect(answerShutdown(wiring, 'stop', false)).toEqual({ ok: true });
   });
 });
 
