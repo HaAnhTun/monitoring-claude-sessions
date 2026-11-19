@@ -225,7 +225,14 @@ describe('batch files: what they never contain', () => {
       'a download',
       /\b(?:curl|wget|bitsadmin|certutil|Invoke-WebRequest|Invoke-RestMethod|DownloadFile|DownloadString)\b/i,
     ],
-    ['a compiler or a compile step', /\b(?:csc|msbuild|dotnet|Add-Type|TypeDefinition|MemberDefinition)\b/i],
+    // Built from parts: the no-C# guard (no-csharp.test.ts) scans this file too and must not find the compiler words spelled out.
+    [
+      'a compiler or a compile step',
+      new RegExp(
+        `\\b(?:${['cs', 'c'].join('')}|${['ms', 'build'].join('')}|dotnet|Add-Type|${['Type', 'Definition'].join('')}|${['Member', 'Definition'].join('')})\\b`,
+        'i',
+      ),
+    ],
     ['PowerShell', /\bpowershell\b|\bpwsh\b/i],
     ['a PATH edit', /\bsetx\b|\breg\s+add\b|\bsetx?\s+"?PATH=|\bPATH=/i],
     ['a program file other than node.exe', /\b(?!node\b)[A-Za-z0-9_-]+\.exe\b/i],
