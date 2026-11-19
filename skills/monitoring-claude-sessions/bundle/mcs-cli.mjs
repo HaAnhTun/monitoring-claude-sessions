@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-import { createRequire } from "node:module";
-import { closeSync, constants, createReadStream, createWriteStream, existsSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, statfsSync, unlinkSync, watch } from "node:fs";
+import { createRequire, findPackageJSON } from "node:module";
+import { accessSync, closeSync, constants, createReadStream, createWriteStream, existsSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, statfsSync, unlinkSync, watch } from "node:fs";
 import path, { dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual, parseArgs } from "node:util";
 import { spawn } from "node:child_process";
 import { access, appendFile, copyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rename, rm, rmdir, stat, statfs, unlink } from "node:fs/promises";
 import { setImmediate as setImmediate$1, setTimeout as setTimeout$1 } from "node:timers/promises";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import net, { createServer } from "node:net";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { request } from "node:http";
@@ -127,7 +127,7 @@ function hexValue(code) {
 	return -1;
 }
 /** Parse JSON text; see the module comment. Throws {@link JsonSyntaxError}. */
-function parseJson(text) {
+function parseJson$2(text) {
 	return new Scanner(text).parseDocument();
 }
 var BS$4, BOM$1, REASON_VALUE, REASON_KEY, REASON_COLON, REASON_COMMA, REASON_EXTRA, REASON_UNTERMINATED, REASON_CONTROL, REASON_ESCAPE, REASON_UNICODE, REASON_SURROGATE, REASON_BOM, REASON_TRAILING_OBJECT, REASON_TRAILING_ARRAY, REASON_DEPTH, MAX_DEPTH$2, JsonSyntaxError, SIMPLE_ESCAPES$1, Scanner;
@@ -562,7 +562,7 @@ function toPlain$1(v) {
 		case "obj": return Object.fromEntries(v.v.map(([key, item]) => [key, toPlain$1(item)]));
 	}
 }
-function isPlainObject$5(x) {
+function isPlainObject$6(x) {
 	const proto = Object.getPrototypeOf(x);
 	return proto === Object.prototype || proto === null;
 }
@@ -601,7 +601,7 @@ function convert(x, depth) {
 				v: converted
 			};
 		}
-		if (!isPlainObject$5(x)) throw new TypeError("only plain objects and arrays can be converted");
+		if (!isPlainObject$6(x)) throw new TypeError("only plain objects and arrays can be converted");
 		const entries = [];
 		for (const [key, value] of Object.entries(x)) {
 			if (value === void 0) continue;
@@ -750,7 +750,7 @@ function isCaseInsensitive(platform) {
 	return platform === "win32" || platform === "darwin";
 }
 var hostPlatform, pathsCaseInsensitive;
-var init_host = __esmMin((() => {
+var init_host$1 = __esmMin((() => {
 	hostPlatform = classifyPlatform(process.platform);
 	pathsCaseInsensitive = isCaseInsensitive(hostPlatform);
 }));
@@ -863,7 +863,7 @@ function slugify$1(input) {
 function isObject(data) {
 	return typeof data === "object" && data !== null && !Array.isArray(data);
 }
-function isPlainObject$4(o) {
+function isPlainObject$5(o) {
 	if (isObject(o) === false) return false;
 	const ctor = o.constructor;
 	if (ctor === void 0) return true;
@@ -874,7 +874,7 @@ function isPlainObject$4(o) {
 	return true;
 }
 function shallowClone(o) {
-	if (isPlainObject$4(o)) return { ...o };
+	if (isPlainObject$5(o)) return { ...o };
 	if (Array.isArray(o)) return [...o];
 	if (o instanceof Map) return new Map(o);
 	if (o instanceof Set) return new Set(o);
@@ -946,7 +946,7 @@ function omit(schema, mask) {
 	}));
 }
 function extend(schema, shape) {
-	if (!isPlainObject$4(shape)) throw new Error("Invalid input to extend: expected a plain object");
+	if (!isPlainObject$5(shape)) throw new Error("Invalid input to extend: expected a plain object");
 	const checks = schema._zod.def.checks;
 	if (checks && checks.length > 0) {
 		const existingShape = sourceShape(schema);
@@ -961,7 +961,7 @@ function extended(schema, shape) {
 	return newShape;
 }
 function safeExtend(schema, shape) {
-	if (!isPlainObject$4(shape)) throw new Error("Invalid input to safeExtend: expected a plain object");
+	if (!isPlainObject$5(shape)) throw new Error("Invalid input to safeExtend: expected a plain object");
 	return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
 }
 function merge(a, b) {
@@ -1466,7 +1466,7 @@ function formatError(error, mapper = (issue) => issue.message) {
 	return fieldErrors;
 }
 var _messageDesc, _issuesDesc, _installedToString, initializer$1, $ZodError, $ZodRealError;
-var init_errors$8 = __esmMin((() => {
+var init_errors$9 = __esmMin((() => {
 	init_core$1();
 	init_util$1();
 	_messageDesc = {
@@ -1523,7 +1523,7 @@ function finalizeParams(callee, params) {
 		Err: params?.Err
 	};
 }
-function failure$3(Err, issues, ctx) {
+function failure$4(Err, issues, ctx) {
 	let error;
 	return {
 		success: false,
@@ -1569,7 +1569,7 @@ function validateFallback(schema, value, _ctx) {
 var _parse, parse$1, _parseAsync, parseAsync$1, _safeParse, safeParse$2, _safeParseAsync, safeParseAsync$2, COMPILE_INVALID, COMPILE_FALLBACK, validate$1, validateAsync$1, _encode, _decode, _encodeAsync, _decodeAsync, _safeEncode, _safeDecode, _safeEncodeAsync, _safeDecodeAsync;
 var init_parse$3 = __esmMin((() => {
 	init_core$1();
-	init_errors$8();
+	init_errors$9();
 	init_util$1();
 	_parse = (_Err) => {
 		const fn = (schema, value, _ctx, _params) => {
@@ -1623,7 +1623,7 @@ var init_parse$3 = __esmMin((() => {
 			issues: []
 		}, ctx);
 		if (result instanceof Promise) throw new $ZodAsyncError();
-		return result.issues.length ? failure$3(_Err, result.issues, ctx) : {
+		return result.issues.length ? failure$4(_Err, result.issues, ctx) : {
 			success: true,
 			data: result.value
 		};
@@ -1639,7 +1639,7 @@ var init_parse$3 = __esmMin((() => {
 			issues: []
 		}, ctx);
 		if (result instanceof Promise) result = await result;
-		return result.issues.length ? failure$3(_Err, result.issues, ctx) : {
+		return result.issues.length ? failure$4(_Err, result.issues, ctx) : {
 			success: true,
 			data: result.value
 		};
@@ -2376,7 +2376,7 @@ function mergeValues$1(a, b) {
 		valid: true,
 		data: a
 	};
-	if (isPlainObject$4(a) && isPlainObject$4(b)) {
+	if (isPlainObject$5(a) && isPlainObject$5(b)) {
 		const bKeys = Object.keys(b);
 		const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
 		const newObj = {
@@ -3378,7 +3378,7 @@ var init_schemas$2 = __esmMin((() => {
 		memo?.attach(inst);
 		inst._zod.parse = (payload, ctx) => {
 			const input = payload.value;
-			if (!isPlainObject$4(input)) {
+			if (!isPlainObject$5(input)) {
 				payload.issues.push({
 					expected: "record",
 					code: "invalid_type",
@@ -5777,7 +5777,7 @@ var init_json_schema_processors = __esmMin((() => {
 var init_core = __esmMin((() => {
 	init_core$1();
 	init_parse$3();
-	init_errors$8();
+	init_errors$9();
 	init_schemas$2();
 	init_memoizer();
 	init_checks$2();
@@ -5825,7 +5825,7 @@ function _lazyMethod(proto, key, make) {
 	});
 }
 var _installedErrorProtos, initializer, ZodError$1, ZodRealError;
-var init_errors$7 = __esmMin((() => {
+var init_errors$8 = __esmMin((() => {
 	init_core();
 	init_util$1();
 	_installedErrorProtos = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
@@ -5862,7 +5862,7 @@ var init_errors$7 = __esmMin((() => {
 var parse, parseAsync, safeParse$1, safeParseAsync$1, encode, decode, encodeAsync, decodeAsync, safeEncode, safeDecode, safeEncodeAsync, safeDecodeAsync;
 var init_parse$2 = __esmMin((() => {
 	init_core();
-	init_errors$7();
+	init_errors$8();
 	parse = /* @__PURE__ */ _parse(ZodRealError);
 	parseAsync = /* @__PURE__ */ _parseAsync(ZodRealError);
 	safeParse$1 = /* @__PURE__ */ _safeParse(ZodRealError);
@@ -6879,7 +6879,7 @@ var init_external$2 = __esmMin((() => {
 	init_core();
 	init_schemas$1();
 	init_checks$1();
-	init_errors$7();
+	init_errors$8();
 	init_parse$2();
 	init_compat();
 	init_json_schema_processors();
@@ -6936,12 +6936,16 @@ var init_ids$1 = __esmMin((() => {
 
 //#endregion
 //#region packages/shared/src/errors.ts
-/** Process exit code of a failed command: 2 for a usage error, 1 for every other code (01 6.2). */
+/**
+* Process exit code of a failed command: 2 for a usage error, 3 when a stop or restart was refused because terminals are
+* live, 1 for every other code (01 6.2, 06 3).
+*/
 function cliExitCode(code) {
-	return code === "USAGE" ? 2 : 1;
+	if (code === "USAGE") return 2;
+	return code === "TERMINALS_LIVE" ? 3 : 1;
 }
 var CLI_ERROR_CODES, CliErrorCodeSchema, KNOWN$1, McsError;
-var init_errors$6 = __esmMin((() => {
+var init_errors$7 = __esmMin((() => {
 	init_zod();
 	CLI_ERROR_CODES = [
 		"USAGE",
@@ -6978,6 +6982,8 @@ var init_errors$6 = __esmMin((() => {
 		"OUTPUT_PATH_FORBIDDEN",
 		"NODE_TOO_OLD",
 		"HOOKS_FAILED",
+		"TERMINALS_LIVE",
+		"UNSUPPORTED_PLATFORM",
 		"NOT_FOUND",
 		"API_ERROR",
 		"INTERNAL"
@@ -7028,14 +7034,32 @@ var init_time$1 = __esmMin((() => {
 
 //#endregion
 //#region packages/shared/src/env.ts
-var init_env = __esmMin((() => {}));
+var init_env$1 = __esmMin((() => {}));
+
+//#endregion
+//#region packages/shared/src/product.ts
+var PRODUCT_NAME, COMMAND, CLI_NAME;
+var init_product = __esmMin((() => {
+	PRODUCT_NAME = "Claude Agent Workspace";
+	COMMAND = { cli: "mcs" };
+	CLI_NAME = COMMAND.cli;
+}));
+
+//#endregion
+//#region packages/shared/src/protocol/env-names.ts
+var init_env_names = __esmMin((() => {}));
 
 //#endregion
 //#region packages/shared/src/files/instance.ts
-var InstanceFileSchema;
+/** The kind of an instance file; a file without the key is a `task`. */
+function instanceKindOf(file) {
+	return file.kind ?? "task";
+}
+var InstanceKindSchema, InstanceFileSchema;
 var init_instance = __esmMin((() => {
 	init_zod();
 	init_ids$1();
+	InstanceKindSchema = _enum(["task", "user"]);
 	InstanceFileSchema = strictObject({
 		schema_version: literal(1),
 		/** `crypto.randomUUID()`; never changes except through `instances repair`. */
@@ -7050,6 +7074,11 @@ var init_instance = __esmMin((() => {
 		dbSchemaVersion: number$1().int().min(0),
 		/** Written by this runtime; the Node runtime is the only engine (ADR 0066). */
 		engine: literal("node"),
+		/**
+		* Written only for `user`; an absent key means `task`, so a task file stays byte-identical (06 1.3). It lives in the
+		* identity file, not in the configuration: a one-line `config.json` edit must not turn a task into a terminal host.
+		*/
+		kind: InstanceKindSchema.optional(),
 		/** Whether the hook handler routes to this instance. */
 		hooks: strictObject({ enabled: boolean() }),
 		upgradedAt: IsoSecondsZ.nullable()
@@ -7312,6 +7341,25 @@ var init_analytics = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/shared/src/config/runtime/app.ts
+var name, AppSectionKeys, AppSectionSchema;
+var init_app$1 = __esmMin((() => {
+	init_zod();
+	init_section();
+	name = {
+		/** Shown in the page header and title, and reported as `app.name` of the instance information. */
+		schema: string().min(1).max(80).regex(/^[\u0020-\u007e\u00a1-\uffff]+$/),
+		default: "Claude Agent Workspace"
+	};
+	AppSectionKeys = {
+		name,
+		/** true: `start` and `open` use an Edge or Chrome app window; false: a tab of the default browser. */
+		openAppWindow: boolKey(false)
+	};
+	AppSectionSchema = sectionSchema(AppSectionKeys);
+}));
+
+//#endregion
 //#region packages/shared/src/config/runtime/backup.ts
 var BackupSectionKeys, BackupSectionSchema;
 var init_backup$4 = __esmMin((() => {
@@ -7517,6 +7565,52 @@ var init_process$1 = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/shared/src/config/runtime/projects.ts
+var PROJECT_SCOPES, scope, daMemoryDir, ProjectsSectionKeys, ProjectsSectionSchema;
+var init_projects$2 = __esmMin((() => {
+	init_zod();
+	init_section();
+	PROJECT_SCOPES = [
+		"auto",
+		"repo",
+		"all"
+	];
+	scope = {
+		/** `repo` reads the one repository, `all` every folder under the Claude projects folder, `auto` decides by instance kind. */
+		schema: _enum(PROJECT_SCOPES),
+		default: "auto"
+	};
+	daMemoryDir = {
+		/** Folder of the DA memory files; null is `<home>/.claude/memory`, whatever `CLAUDE_CONFIG_DIR` says. */
+		schema: string().min(1).max(1024).regex(/^[\u0020-\u007e\u00a1-\uffff]+$/).nullable(),
+		default: null
+	};
+	ProjectsSectionKeys = {
+		scope,
+		/** Period of the full sweep of every project folder (scope `all`). */
+		fullSweepIntervalMs: intKey(5e3, 36e5, 6e4),
+		/** Period at which files without growth for five minutes are checked (scope `all`). */
+		coldStatIntervalMs: intKey(1e3, 6e5, 1e4),
+		/** Period of the refresh of the folder catalogue. */
+		catalogIntervalMs: intKey(5e3, 6e5, 3e4),
+		daMemoryDir,
+		/** How long one read of the DA memory is reused. */
+		daCacheMs: intKey(500, 6e4, 3e3),
+		/** The most folders a person may add by hand. */
+		userFoldersMax: intKey(1, 1e3, 200),
+		/** Poll of the registry for the link while a terminal is young. */
+		linkPollMs: intKey(100, 5e3, 250),
+		/** Poll after the fast window, and for terminals that are already linked. */
+		linkSlowPollMs: intKey(500, 6e4, 2e3),
+		/** Length of the fast poll window; the database fallback starts when it ends. */
+		linkFastWindowMs: intKey(5e3, 6e5, 3e4),
+		/** A registry entry may start this much before the spawn time and still count as the new session. */
+		linkStartToleranceMs: intKey(0, 3e4, 2e3)
+	};
+	ProjectsSectionSchema = sectionSchema(ProjectsSectionKeys);
+}));
+
+//#endregion
 //#region packages/shared/src/config/runtime/retention.ts
 var RetentionSectionKeys, RetentionSectionSchema;
 var init_retention$1 = __esmMin((() => {
@@ -7571,6 +7665,48 @@ var init_spool = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/shared/src/config/runtime/terminal.ts
+var INPUT_MAX_BYTES, command$39, args, envKeep, TerminalSectionKeys, TerminalSectionSchema;
+var init_terminal$2 = __esmMin((() => {
+	init_zod();
+	init_section();
+	INPUT_MAX_BYTES = 256 * KIB$1;
+	command$39 = {
+		/** Program of every new session: a name on PATH or an absolute path. No quotes or control characters. */
+		schema: string().min(1).max(260).regex(/^[\u0020\u0021\u0023-\u007e\u00a1-\uffff]+$/),
+		default: "claude"
+	};
+	args = {
+		/** Extra arguments in front of `--resume`, passed one by one and never through a shell. */
+		schema: array(string().max(500).refine((value) => !value.includes("\0"), "an argument cannot contain a NUL character")).max(32),
+		default: []
+	};
+	envKeep = {
+		/** Names from the stripped set of the child environment that are kept (for example `CLAUDE_CODE_USE_BEDROCK`). */
+		schema: array(string().max(128).regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).max(32),
+		default: []
+	};
+	TerminalSectionKeys = {
+		command: command$39,
+		args,
+		envKeep,
+		/** Live and starting sessions at once; a create over the limit is refused. */
+		maxSessions: intKey(1, 64, 8),
+		/** Replay buffer of one session, in bytes. */
+		replayBytes: intKey(64 * KIB$1, 16 * MIB$3, MIB$3),
+		/** Largest single write to a terminal; a bigger one is refused (the web client sends a paste in chunks). */
+		maxInputBytes: intKey(KIB$1, INPUT_MAX_BYTES, INPUT_MAX_BYTES),
+		/** How long to wait for the pseudo console to report the child as started. */
+		startTimeoutMs: intKey(1e3, 6e4, 1e4),
+		/** How long to wait for an exit after a kill before the whole process tree is killed. */
+		killTimeoutMs: intKey(500, 3e4, 3e3),
+		/** Use the `conpty.dll` and `OpenConsole.exe` that ship with the terminal package instead of the inbox conhost. */
+		conptyDll: boolKey(false)
+	};
+	TerminalSectionSchema = sectionSchema(TerminalSectionKeys);
+}));
+
+//#endregion
 //#region packages/shared/src/config/runtime/index.ts
 /** Applies the map of a derived default: `identity`, or `Math.floor(v * 1048576)` for megabytes to bytes. */
 function applyDerivedMap(map, value) {
@@ -7590,6 +7726,7 @@ var init_runtime = __esmMin((() => {
 	init_zod();
 	init_alerts$2();
 	init_analytics();
+	init_app$1();
 	init_backup$4();
 	init_board();
 	init_health$2();
@@ -7601,12 +7738,15 @@ var init_runtime = __esmMin((() => {
 	init_panelOptions();
 	init_pricing();
 	init_process$1();
+	init_projects$2();
 	init_retention$1();
 	init_section();
 	init_server$3();
 	init_spool();
+	init_terminal$2();
 	init_alerts$2();
 	init_analytics();
+	init_app$1();
 	init_backup$4();
 	init_board();
 	init_health$2();
@@ -7618,9 +7758,11 @@ var init_runtime = __esmMin((() => {
 	init_panelOptions();
 	init_pricing();
 	init_process$1();
+	init_projects$2();
 	init_retention$1();
 	init_server$3();
 	init_spool();
+	init_terminal$2();
 	RuntimeFileSchema = strictObject({
 		schema_version: literal(1),
 		logLevel: LogLevelSchema.default("info"),
@@ -7638,7 +7780,10 @@ var init_runtime = __esmMin((() => {
 		panelOptions: PanelOptionsSectionSchema,
 		retention: RetentionSectionSchema,
 		alerts: AlertsSectionSchema,
-		pricing: PricingSectionSchema
+		pricing: PricingSectionSchema,
+		terminal: TerminalSectionSchema,
+		app: AppSectionSchema,
+		projects: ProjectsSectionSchema
 	});
 	RuntimeOverridesSchema = strictObject({
 		schema_version: literal(1),
@@ -7657,7 +7802,10 @@ var init_runtime = __esmMin((() => {
 		panelOptions: sectionOverridesSchema(PanelOptionsSectionKeys),
 		retention: sectionOverridesSchema(RetentionSectionKeys),
 		alerts: sectionOverridesSchema(AlertsSectionKeys),
-		pricing: sectionOverridesSchema(PricingSectionKeys)
+		pricing: sectionOverridesSchema(PricingSectionKeys),
+		terminal: sectionOverridesSchema(TerminalSectionKeys),
+		app: sectionOverridesSchema(AppSectionKeys),
+		projects: sectionOverridesSchema(ProjectsSectionKeys)
 	});
 	R_TOP_KEYS = [
 		"logLevel",
@@ -7675,7 +7823,10 @@ var init_runtime = __esmMin((() => {
 		"panelOptions",
 		"retention",
 		"alerts",
-		"pricing"
+		"pricing",
+		"terminal",
+		"app",
+		"projects"
 	];
 	R_MERGED = new Set(R_TOP_KEYS.filter((k) => k !== "logLevel"));
 	R_DERIVED_DEFAULTS = {
@@ -7802,7 +7953,29 @@ var init_runtime = __esmMin((() => {
 		entry$1("alerts.rules.hook_gap", { default: rules$1.hook_gap }, { enabled: false }, "03", "03 10.1"),
 		entry$1("alerts.rules.hook_failing", { default: rules$1.hook_failing }, { cooldownMinutes: 5 }, "03", "03 10.1"),
 		entry$1("pricing.currency", PricingSectionKeys.currency, "EUR", "03", "03 8.3"),
-		entry$1("pricing.models", PricingSectionKeys.models, [priceSample], "03", "03 8.3")
+		entry$1("pricing.models", PricingSectionKeys.models, [priceSample], "03", "03 8.3"),
+		entry$1("terminal.command", TerminalSectionKeys.command, "claude-beta", "01", "01 1.6"),
+		entry$1("terminal.args", TerminalSectionKeys.args, ["--verbose"], "01", "01 1.6"),
+		entry$1("terminal.envKeep", TerminalSectionKeys.envKeep, ["CLAUDE_CODE_USE_BEDROCK"], "01", "01 1.6"),
+		entry$1("terminal.maxSessions", TerminalSectionKeys.maxSessions, 4, "01", "01 1.6"),
+		entry$1("terminal.replayBytes", TerminalSectionKeys.replayBytes, 2 * MIB$3, "01", "01 1.6"),
+		entry$1("terminal.maxInputBytes", TerminalSectionKeys.maxInputBytes, 65536, "01", "01 1.6"),
+		entry$1("terminal.startTimeoutMs", TerminalSectionKeys.startTimeoutMs, 2e4, "01", "01 1.6"),
+		entry$1("terminal.killTimeoutMs", TerminalSectionKeys.killTimeoutMs, 5e3, "01", "01 1.6"),
+		entry$1("terminal.conptyDll", TerminalSectionKeys.conptyDll, true, "01", "01 1.6"),
+		entry$1("app.name", AppSectionKeys.name, "Team Workspace", "01", "01 1.6"),
+		entry$1("app.openAppWindow", AppSectionKeys.openAppWindow, true, "01", "01 1.6"),
+		entry$1("projects.scope", ProjectsSectionKeys.scope, "all", "02", "02 2.1"),
+		entry$1("projects.fullSweepIntervalMs", ProjectsSectionKeys.fullSweepIntervalMs, 12e4, "02", "02 2.1"),
+		entry$1("projects.coldStatIntervalMs", ProjectsSectionKeys.coldStatIntervalMs, 2e4, "02", "02 2.1"),
+		entry$1("projects.catalogIntervalMs", ProjectsSectionKeys.catalogIntervalMs, 6e4, "03", "03 2.1"),
+		entry$1("projects.daMemoryDir", ProjectsSectionKeys.daMemoryDir, "memory-copy", "03", "03 2.1"),
+		entry$1("projects.daCacheMs", ProjectsSectionKeys.daCacheMs, 5e3, "03", "03 2.1"),
+		entry$1("projects.userFoldersMax", ProjectsSectionKeys.userFoldersMax, 50, "03", "03 2.1"),
+		entry$1("projects.linkPollMs", ProjectsSectionKeys.linkPollMs, 500, "06", "06 2.1"),
+		entry$1("projects.linkSlowPollMs", ProjectsSectionKeys.linkSlowPollMs, 4e3, "06", "06 2.1"),
+		entry$1("projects.linkFastWindowMs", ProjectsSectionKeys.linkFastWindowMs, 6e4, "06", "06 2.1"),
+		entry$1("projects.linkStartToleranceMs", ProjectsSectionKeys.linkStartToleranceMs, 1e3, "06", "06 2.1")
 	];
 }));
 
@@ -7810,7 +7983,7 @@ var init_runtime = __esmMin((() => {
 //#region packages/shared/src/cli/envelope.ts
 /**
 * Envelope schema for a given `data` schema. Beyond the shapes it checks what the contract says about the exit code:
-* `ok` means exit 0 and no error; a failure has a non-zero exit code, and an error fixes it (`USAGE` = 2, others = 1).
+* `ok` means exit 0 and no error; a failure has a non-zero exit code, and an error fixes it (`USAGE` = 2, `TERMINALS_LIVE` = 3, others = 1).
 * A failure may carry `data` and no error (a check that found problems).
 */
 function cliEnvelopeSchema(data) {
@@ -7821,7 +7994,8 @@ function cliEnvelopeSchema(data) {
 		exitCode: union([
 			literal(0),
 			literal(1),
-			literal(2)
+			literal(2),
+			literal(3)
 		]),
 		data: data.nullable(),
 		error: CliErrorSchema.nullable(),
@@ -7843,7 +8017,7 @@ function cliEnvelopeSchema(data) {
 		if (env.exitCode === 0) ctx.addIssue({
 			code: "custom",
 			path: ["exitCode"],
-			message: "a failure needs exitCode 1 or 2"
+			message: "a failure needs exitCode 1, 2 or 3"
 		});
 		else if (env.error !== null && env.exitCode !== cliExitCode(env.error.code)) ctx.addIssue({
 			code: "custom",
@@ -7886,7 +8060,7 @@ function failureEnvelope(command, error, options = {}) {
 var CLI_SCHEMA, CliErrorSchema, CliEnvelopeSchema;
 var init_envelope = __esmMin((() => {
 	init_zod();
-	init_errors$6();
+	init_errors$7();
 	CLI_SCHEMA = "mcs.cli/1";
 	CliErrorSchema = strictObject({
 		code: CliErrorCodeSchema,
@@ -7895,6 +8069,29 @@ var init_envelope = __esmMin((() => {
 		details: record$1(string(), unknown()).nullable()
 	});
 	CliEnvelopeSchema = cliEnvelopeSchema(unknown());
+}));
+
+//#endregion
+//#region packages/shared/src/protocol/access.ts
+function assertPort(port) {
+	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new RangeError("port must be an integer from 1 to 65535");
+}
+/** `http://127.0.0.1:<port>/`. */
+function appBrowserUrl(port) {
+	assertPort(port);
+	return `http://${LOOPBACK_HOST}:${String(port)}/`;
+}
+/** `http://127.0.0.1:<port>/#code=<code>`. The error never repeats the code. */
+function buildLoginUrl(port, code) {
+	if (!ACCESS_CODE_RE.test(code)) throw new RangeError("the access code does not match the access code format");
+	return `${appBrowserUrl(port)}${FRAGMENT_PREFIX}${code}`;
+}
+var ACCESS_CODE_RE, LOGIN_URL_RE, LOOPBACK_HOST, FRAGMENT_PREFIX;
+var init_access = __esmMin((() => {
+	ACCESS_CODE_RE = /^[A-Za-z0-9_-]{32,128}$/;
+	LOGIN_URL_RE = /^http:\/\/127\.0\.0\.1:[0-9]{1,5}\/(#code=[A-Za-z0-9_-]{32,128})?$/;
+	LOOPBACK_HOST = "127.0.0.1";
+	FRAGMENT_PREFIX = "#code=";
 }));
 
 //#endregion
@@ -7917,11 +8114,33 @@ function parseObject$1(line) {
 function onlyKeys(o, keys) {
 	return Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
 }
+function isNonEmptyString(v) {
+	return typeof v === "string" && v.length > 0;
+}
 function isCount(v) {
 	return typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 }
+function isPositiveCount(v) {
+	return isCount(v) && v > 0;
+}
 function isMember(list, v) {
 	return typeof v === "string" && list.some((x) => x === v);
+}
+function parseTerminalSessions(value) {
+	if (!Array.isArray(value) || value.length > 50) return null;
+	const sessions = [];
+	const items = value;
+	for (const item of items) {
+		if (typeof item !== "object" || item === null || Array.isArray(item)) return null;
+		const entry = Object.fromEntries(Object.entries(item));
+		const { name, startedAt } = entry;
+		if (!onlyKeys(entry, ["name", "startedAt"]) || !isNonEmptyString(name) || typeof startedAt !== "string") return null;
+		sessions.push({
+			name,
+			startedAt
+		});
+	}
+	return sessions;
 }
 /** Parses one reply line. Returns `null` when it is not a valid `ControlResponse`. */
 function parseControlResponse(line) {
@@ -8010,10 +8229,48 @@ function parseControlResponse(line) {
 			segments
 		} : null;
 	}
+	if (op === "terminals") {
+		const { live, max } = o;
+		const sessions = parseTerminalSessions(o["sessions"]);
+		return onlyKeys(o, [
+			"v",
+			"ok",
+			"op",
+			"live",
+			"max",
+			"sessions"
+		]) && isCount(live) && isCount(max) && sessions !== null ? {
+			v: 1,
+			ok: true,
+			op,
+			live,
+			max,
+			sessions
+		} : null;
+	}
+	if (op === "access") {
+		const { code, expiresAt, ttlSeconds } = o;
+		return onlyKeys(o, [
+			"v",
+			"ok",
+			"op",
+			"code",
+			"expiresAt",
+			"ttlSeconds"
+		]) && typeof code === "string" && ACCESS_CODE_RE.test(code) && typeof expiresAt === "string" && isPositiveCount(ttlSeconds) ? {
+			v: 1,
+			ok: true,
+			op,
+			code,
+			expiresAt,
+			ttlSeconds
+		} : null;
+	}
 	return null;
 }
-var CONTROL_PHASES, CONTROL_ERROR_CODES, CONTROL_CLIENT_TIMEOUT_MS, CONTROL_BACKUP_TIMEOUT_MS, CONTROL_REPLAY_TIMEOUT_MS;
+var CONTROL_PHASES, CONTROL_ERROR_CODES, CONTROL_TERMINAL_SESSIONS_MAX, CONTROL_CLIENT_TIMEOUT_MS, CONTROL_BACKUP_TIMEOUT_MS, CONTROL_REPLAY_TIMEOUT_MS;
 var init_control = __esmMin((() => {
+	init_access();
 	CONTROL_PHASES = [
 		"starting",
 		"ready",
@@ -8025,8 +8282,11 @@ var init_control = __esmMin((() => {
 		"INSTANCE_MISMATCH",
 		"NOT_READY",
 		"BACKUP_FAILED",
-		"INTERNAL"
+		"INTERNAL",
+		"TERMINALS_LIVE",
+		"UNSUPPORTED"
 	];
+	CONTROL_TERMINAL_SESSIONS_MAX = 50;
 	CONTROL_CLIENT_TIMEOUT_MS = 2e3;
 	CONTROL_BACKUP_TIMEOUT_MS = 6e5;
 	CONTROL_REPLAY_TIMEOUT_MS = 3e4;
@@ -8465,7 +8725,7 @@ var init_hook_events = __esmMin((() => {
 //#endregion
 //#region packages/shared/src/protocol/limits.ts
 var MAX_LINE_BYTES$2;
-var init_limits = __esmMin((() => {
+var init_limits$1 = __esmMin((() => {
 	MAX_LINE_BYTES$2 = 67108864;
 }));
 
@@ -8574,7 +8834,7 @@ function compactJsonText(value) {
 * counted in code points, and a longer text keeps its first `n` code points plus ` ... [truncated K chars]`.
 * `n` follows Python slicing, so a negative `n` drops code points from the end.
 */
-function clip$1(value, n) {
+function clip$2(value, n) {
 	if (!Number.isInteger(n)) throw new RangeError("clip: n must be an integer");
 	const text = typeof value === "string" ? value : compactJsonText(value);
 	const codePoints = Array.from(text);
@@ -8590,7 +8850,7 @@ function applyRule(rule, text) {
 * 4096 code points first, so the work is bounded.
 */
 function redactDetailed(text) {
-	let current = clip$1(text, REDACT_INPUT_MAX_CP);
+	let current = clip$2(text, REDACT_INPUT_MAX_CP);
 	let redacted = false;
 	for (const rule of REDACTION_RULES) {
 		const next = applyRule(rule, current);
@@ -8640,7 +8900,7 @@ function summarizeToolInputDetailed(input) {
 	};
 	const redacted = redactDetailed((typeof key === "string" ? key : stringifyJson(key) ?? "").split("\n")[0] ?? "");
 	return {
-		text: clip$1(redacted.text, 160),
+		text: clip$2(redacted.text, 160),
 		redacted: redacted.redacted
 	};
 }
@@ -8798,7 +9058,7 @@ function hostIsWin32() {
 * drive (`C:/`) and of the file system (`/`, `//`) keep their slash. Case is kept (02 2.5.4).
 */
 function normalizePath(path) {
-	const slashed = path.split(BACKSLASH$6).join("/");
+	const slashed = path.split(BACKSLASH$7).join("/");
 	let lead = 0;
 	while (lead < slashed.length && slashed[lead] === "/") lead += 1;
 	const prefix = lead === 0 ? "" : lead === 2 ? "//" : "/";
@@ -8814,9 +9074,9 @@ function routeKey(path, win32 = hostIsWin32()) {
 	const normalized = normalizePath(path);
 	return win32 ? normalized.toLowerCase() : normalized;
 }
-var BACKSLASH$6, REDACTION_RULES, QUOTED_SECRET_FIELD, GIT_ID_RE, REDACT_INPUT_MAX_CP, SUMMARY_KEYS$1, SHA256_K;
+var BACKSLASH$7, REDACTION_RULES, QUOTED_SECRET_FIELD, GIT_ID_RE, REDACT_INPUT_MAX_CP, SUMMARY_KEYS$1, SHA256_K;
 var init_sanitize = __esmMin((() => {
-	BACKSLASH$6 = String.fromCharCode(92);
+	BACKSLASH$7 = String.fromCharCode(92);
 	REDACTION_RULES = [
 		{
 			id: "R1",
@@ -8956,7 +9216,7 @@ function dirnameOf(normalized) {
 	const dir = normalized.slice(0, slash);
 	return /^[A-Za-z]:$/.test(dir) ? dir + "/" : dir;
 }
-function lastSegment(normalized) {
+function lastSegment$1(normalized) {
 	return normalized.slice(normalized.lastIndexOf("/") + 1);
 }
 /**
@@ -8978,7 +9238,7 @@ function matchRoute(route, ids, now, options = {}) {
 	if (ids.session_id !== null && route.match.sessionIds.includes(ids.session_id)) return "session_pin";
 	if (ids.transcript_path === null && ids.cwd !== null && ids.cwd !== "") {
 		const project = sanitizeProjectName(normalizePath(ids.cwd)).toLowerCase();
-		if (project !== "" && route.match.transcriptsDirs.some((dir) => lastSegment(dir).toLowerCase() === project)) return "cwd";
+		if (project !== "" && route.match.transcriptsDirs.some((dir) => lastSegment$1(dir).toLowerCase() === project)) return "cwd";
 	}
 	return null;
 }
@@ -8986,7 +9246,7 @@ function isAbsolutePath(path, win32) {
 	if (win32) return /^[A-Za-z]:[\\/]/.test(path) || /^[\\/]{2}[^\\/]/.test(path);
 	return path.startsWith("/");
 }
-function stripTrailingSeparators(path) {
+function stripTrailingSeparators$1(path) {
 	let end = path.length;
 	while (end > 1 && (path[end - 1] === "/" || path[end - 1] === "\\")) end -= 1;
 	const stripped = path.slice(0, end);
@@ -9001,19 +9261,19 @@ function stripTrailingSeparators(path) {
 function resolveMcsHome(env, options = {}) {
 	const win32 = options.win32 ?? hostIsWin32();
 	const explicit = env["MCS_HOME"];
-	if (explicit !== void 0 && explicit !== "" && isAbsolutePath(explicit, win32)) return stripTrailingSeparators(explicit);
+	if (explicit !== void 0 && explicit !== "" && isAbsolutePath(explicit, win32)) return stripTrailingSeparators$1(explicit);
 	const home = () => {
 		const found = options.homedir ?? (win32 ? env["USERPROFILE"] ?? env["HOME"] : env["HOME"]);
 		if (found === void 0 || found === "") throw new Error("resolveMcsHome: no home directory (set MCS_HOME)");
-		return stripTrailingSeparators(found);
+		return stripTrailingSeparators$1(found);
 	};
 	if (win32) {
 		const local = env["LOCALAPPDATA"];
-		if (local !== void 0 && local !== "" && isAbsolutePath(local, true)) return stripTrailingSeparators(local) + "/mcs";
+		if (local !== void 0 && local !== "" && isAbsolutePath(local, true)) return stripTrailingSeparators$1(local) + "/mcs";
 		return home() + "/AppData/Local/mcs";
 	}
 	const state = env["XDG_STATE_HOME"];
-	if (state !== void 0 && state !== "" && isAbsolutePath(state, false)) return stripTrailingSeparators(state) + "/mcs";
+	if (state !== void 0 && state !== "" && isAbsolutePath(state, false)) return stripTrailingSeparators$1(state) + "/mcs";
 	return home() + "/.local/state/mcs";
 }
 var init_routes$1 = __esmMin((() => {
@@ -9034,10 +9294,12 @@ var init_stamp = __esmMin((() => {}));
 //#endregion
 //#region packages/shared/src/protocol/index.ts
 var init_protocol$1 = __esmMin((() => {
+	init_access();
 	init_control();
+	init_env_names();
 	init_hook_envelope();
 	init_hook_events();
-	init_limits();
+	init_limits$1();
 	init_routes$1();
 	init_sanitize();
 	init_stamp();
@@ -9071,7 +9333,7 @@ var init_ids = __esmMin((() => {
 	AgentIdSchema = string().regex(AGENT_RE);
 	RunIdSchema = string().regex(RUN_ID_RE);
 	ToolUseIdSchema = string().regex(TOOL_ID_RE);
-	PROJECT_ID_RE = /^[a-z0-9][a-z0-9-]{0,254}$/;
+	PROJECT_ID_RE = /^[a-z0-9-]{1,255}$/;
 	ProjectIdSchema = string().regex(PROJECT_ID_RE);
 	InstanceIdSchema = string().regex(UUID_V4_RE);
 	EPOCH_RE = /^[0-9a-f]{8}$/;
@@ -9950,7 +10212,7 @@ function responseSchema(key, data) {
 		data: data.nullable()
 	});
 }
-var PANEL_KEYS, PanelKeySchema, PANEL_SOURCES, PanelSourceSchema, SOURCE_STATUSES, SourceStatusSchema, PanelSourceStateSchema, PanelStatusSchema, MachinePanelSchema, GitPanelSchema, LinesPanelSchema, LogsPanelSchema, ATTEMPT_STATES, AttemptStateSchema, AttemptsPanelSchema, PanelResponseSchema, CHILD_KINDS, ChildKindSchema, ChildKindStatsSchema, PanelSourceStatsSchema, PanelStatsSchema;
+var PANEL_KEYS, PanelKeySchema, PANEL_CONFIG_KEY, PANEL_SOURCES, PanelSourceSchema, SOURCE_STATUSES, SourceStatusSchema$1, PanelSourceStateSchema, PanelStatusSchema, MachinePanelSchema, GitPanelSchema, LinesPanelSchema, LogsPanelSchema, ATTEMPT_STATES, AttemptStateSchema, AttemptsPanelSchema, PanelResponseSchema, CHILD_KINDS, ChildKindSchema, ChildKindStatsSchema, PanelSourceStatsSchema, PanelStatsSchema;
 var init_panels = __esmMin((() => {
 	init_zod();
 	init_ids();
@@ -9965,6 +10227,14 @@ var init_panels = __esmMin((() => {
 		"logs"
 	];
 	PanelKeySchema = _enum(PANEL_KEYS);
+	PANEL_CONFIG_KEY = {
+		git: "git",
+		machine: "machine",
+		attempts: "attempts",
+		ledger: "ledger",
+		chainLog: "chain_log",
+		logs: "logs"
+	};
 	PANEL_SOURCES = [
 		"memory",
 		"cpu",
@@ -9987,10 +10257,10 @@ var init_panels = __esmMin((() => {
 		"unsupported",
 		"error"
 	];
-	SourceStatusSchema = _enum(SOURCE_STATUSES);
+	SourceStatusSchema$1 = _enum(SOURCE_STATUSES);
 	PanelSourceStateSchema = strictObject({
 		source: PanelSourceSchema,
-		status: SourceStatusSchema,
+		status: SourceStatusSchema$1,
 		/** Time of the value being served; may be older than `generatedAt` (stale-while-revalidate). */
 		sampledAt: NullableIsoTimeSchema,
 		/** English, at most 200 characters, never transcript text, prompts or tokens. */
@@ -10024,10 +10294,10 @@ var init_panels = __esmMin((() => {
 			"other"
 		]),
 		procsSampledAt: NullableIsoTimeSchema,
-		procsStatus: SourceStatusSchema,
+		procsStatus: SourceStatusSchema$1,
 		dockerEnabled: boolean(),
 		dockerSampledAt: NullableIsoTimeSchema,
-		dockerStatus: SourceStatusSchema
+		dockerStatus: SourceStatusSchema$1
 	});
 	GitPanelSchema = strictObject({
 		/** `null` when detached, not a repository, or git is missing. */
@@ -10131,7 +10401,10 @@ var init_panels = __esmMin((() => {
 		"taskkill",
 		"node",
 		"icacls",
-		"opener"
+		"opener",
+		"powershell.shortcut",
+		"claude",
+		"powershell.picker"
 	];
 	ChildKindSchema = _enum(CHILD_KINDS);
 	ChildKindStatsSchema = strictObject({
@@ -10144,7 +10417,7 @@ var init_panels = __esmMin((() => {
 		refreshes: CountSchema$1,
 		failures: CountSchema$1,
 		lastDurationMs: number$1().min(0).nullable(),
-		lastStatus: SourceStatusSchema.nullable()
+		lastStatus: SourceStatusSchema$1.nullable()
 	});
 	PanelStatsSchema = partialRecord(PanelSourceSchema, PanelSourceStatsSchema);
 }));
@@ -10154,6 +10427,7 @@ var init_panels = __esmMin((() => {
 var ErrorItemSchema, HookProbeResultSchema, nonNegative, HealthReportSchema, PollSchema, InstanceInfoSchema;
 var init_health$1 = __esmMin((() => {
 	init_zod();
+	init_instance();
 	init_entities();
 	init_ids();
 	init_panels();
@@ -10281,6 +10555,22 @@ var init_health$1 = __esmMin((() => {
 		dbSchemaVersion: CountSchema$1,
 		headSeq: CountSchema$1,
 		epoch: EpochSchema,
+		/**
+		* `user` for the user-wide instance (the terminal host), `task` for a task instance. Absent from the reply of a server that
+		* predates the key, which then reads as `task` (06 1.7: an older server is reported outdated, never invalid).
+		*/
+		kind: InstanceKindSchema.default("task"),
+		/**
+		* How the workspace presents itself: `app.name` is the config key `app.name` for the user instance, `null` for a task
+		* instance (and for a server that predates the key).
+		*/
+		app: strictObject({ name: string() }).nullable().default(null),
+		/**
+		* What the instance reads: `repo` is the one repository, `all` every project folder under the Claude home. The effective
+		* value (the config key `projects.scope` may say `auto`, which is resolved by the kind of the instance); absent from an
+		* instance that predates the key.
+		*/
+		scope: _enum(["repo", "all"]).optional(),
 		/** Config `poll.stale_after_ms`. */
 		staleAfterMs: CountSchema$1,
 		heartbeatMs: CountSchema$1,
@@ -10401,7 +10691,7 @@ function csvOf(item, max) {
 	return string().transform((text) => text.split(",")).pipe(array(item).min(1).max(max));
 }
 /** Text trimmed to `min..max` characters. A too-short `q` is reported as `query_too_short` (see `classifyQueryIssues`). */
-function textOf$3(min, max) {
+function textOf$4(min, max) {
 	return string().transform((text) => text.trim()).pipe(string().min(min).max(max));
 }
 /** Expands the alias `active` and removes duplicates; the order of first appearance is kept. */
@@ -10565,7 +10855,7 @@ function resolveTimeWindow(q, o) {
 	const windowed = () => ({
 		ok: true,
 		window: {
-			fromMs: o.nowMs - o.windowHours * HOUR_MS$11,
+			fromMs: o.nowMs - o.windowHours * HOUR_MS$12,
 			toMs: o.nowMs + 1
 		},
 		source: "window_hours"
@@ -10589,7 +10879,7 @@ function resolveTimeWindow(q, o) {
 function foldQuery(q) {
 	return q.normalize("NFKC").toLowerCase();
 }
-var MAX_INT, PRESETS, PresetSchema, HOUR_MS$11, DAY_MS$3, PRESET_MS, flagParam, STATE_FILTER_VALUES, StateFilterSchema, DirSchema, SeveritySchema, CursorParam, f, opt, timeShape, windowedTimeShape, AGENT_NEEDS_SESSION, SESSION_SORTS, AGENT_SORTS, TOOL_CALL_SORTS, SessionListQuerySchema, AgentListQuerySchema, SessionAgentsQuerySchema, eventFilterShape, EVENT_MODES, EVENT_AROUND_START, EVENT_LIMIT, EventListQuerySchema, SessionTimelineQuerySchema, ToolCallListQuerySchema, SessionToolCallsQuerySchema, TransitionListQuerySchema, ERROR_SOURCES, ErrorsQuerySchema, OverviewQuerySchema, WorkItemBoardQuerySchema, AlertListQuerySchema, UsageQuerySchema, SessionUsageQuerySchema, SeriesQuerySchema, AnalyticsToolsQuerySchema, TranscriptWindowQuerySchema, TranscriptLocateQuerySchema, EntryKindsParam, TranscriptSearchQuerySchema, InstanceSearchQuerySchema, PanelQuerySchema, StreamQuerySchema, MAX_SPAN_MS;
+var MAX_INT, PRESETS, PresetSchema, HOUR_MS$12, DAY_MS$3, PRESET_MS, flagParam, STATE_FILTER_VALUES, StateFilterSchema, DirSchema, SeveritySchema, CursorParam, f, opt, timeShape, windowedTimeShape, AGENT_NEEDS_SESSION, SESSION_SORTS, AGENT_SORTS, TOOL_CALL_SORTS, SessionListQuerySchema, AgentListQuerySchema, SessionAgentsQuerySchema, eventFilterShape, EVENT_MODES, EVENT_AROUND_START, EVENT_LIMIT, EventListQuerySchema, SessionTimelineQuerySchema, ToolCallListQuerySchema, SessionToolCallsQuerySchema, TransitionListQuerySchema, ERROR_SOURCES, ErrorsQuerySchema, OverviewQuerySchema, WorkItemBoardQuerySchema, AlertListQuerySchema, UsageQuerySchema, SessionUsageQuerySchema, SeriesQuerySchema, AnalyticsToolsQuerySchema, TranscriptWindowQuerySchema, TranscriptLocateQuerySchema, EntryKindsParam, TranscriptSearchQuerySchema, InstanceSearchQuerySchema, PanelQuerySchema, StreamQuerySchema, MAX_SPAN_MS;
 var init_filters = __esmMin((() => {
 	init_zod();
 	init_entities();
@@ -10605,12 +10895,12 @@ var init_filters = __esmMin((() => {
 		"all"
 	];
 	PresetSchema = _enum(PRESETS);
-	HOUR_MS$11 = 36e5;
+	HOUR_MS$12 = 36e5;
 	DAY_MS$3 = 864e5;
 	PRESET_MS = {
-		"1h": HOUR_MS$11,
-		"6h": 6 * HOUR_MS$11,
-		"24h": 24 * HOUR_MS$11,
+		"1h": HOUR_MS$12,
+		"6h": 6 * HOUR_MS$12,
+		"24h": 24 * HOUR_MS$12,
 		"7d": 7 * DAY_MS$3,
 		"30d": 30 * DAY_MS$3
 	};
@@ -10625,7 +10915,7 @@ var init_filters = __esmMin((() => {
 	]);
 	CursorParam = string().min(1).max(512);
 	f = {
-		q: textOf$3(2, 200),
+		q: textOf$4(2, 200),
 		state: csvOf(StateFilterSchema, 10),
 		presence: csvOf(_enum([
 			"open",
@@ -10683,6 +10973,8 @@ var init_filters = __esmMin((() => {
 		state: opt(f.state),
 		presence: opt(f.presence),
 		project: opt(f.project),
+		/** Only these sessions (at most 50 ids): the terminal sidebar asks for the sessions of its live terminals. */
+		session: opt(f.session),
 		workItem: opt(f.workItem),
 		model: opt(f.model),
 		hasErrors: opt(f.hasErrors),
@@ -10872,7 +11164,7 @@ var init_filters = __esmMin((() => {
 		session: SessionIdSchema,
 		agent: opt(f.agent),
 		/** 0..200; empty is allowed together with the other filters. */
-		q: opt(textOf$3(0, 200)),
+		q: opt(textOf$4(0, 200)),
 		kinds: opt(EntryKindsParam),
 		tool: opt(ToolNameSchema),
 		errors: opt(flagParam),
@@ -11243,7 +11535,7 @@ function toConfigInspection(r, engine) {
 		engine
 	};
 }
-var CONFIG_SOURCES, ConfigSourceSchema, CONFIG_FILE_NAMES, ConfigFileStatusSchema, ConfigInspectionEntrySchema, ConfigInspectionSchema, R_TOP$1, InstanceRowSchema, DOCTOR_LEVELS, DoctorCheckSchema, DoctorReportSchema, HOOKS_SCOPES, HooksScopeSchema, HOOKS_WARNING_CODES, HooksWarningSchema, HOOKS_ACTIONS, HOOK_SCRIPT_ACTIONS, HooksScriptResultSchema, HooksApplyResultSchema, HOOKS_VERIFY_CHECKS, HooksVerifyResultSchema, HOOK_SCRIPT_STATES, HooksStatusResultSchema, READER_MODES, ReaderModeSchema, SessionsListResultSchema, SessionEventLineSchema, SessionTranscriptTailSchema, SessionsShowResultSchema, USAGE_GROUPS, UsageResultSchema, ErrorsResultSchema, BackupRowSchema, BackupListResultSchema, BackupCreateResultSchema, BackupRestoreResultSchema, DbMigrationStepSchema, DbPlanSchema, UpgradePlanSchema, UpgradeResultSchema, DbMigrateResultSchema, DbRebuildResultSchema, McpJsonSchema, McpConfigResultSchema, ExportResultSchema, COMPLETION_EXPECTATIONS, CompletionExpectationSchema, VerifyCompletionResultSchema, CLEANUP_SCOPES, CleanupScopeSchema, CleanupTargetSchema, CleanupSkippedSchema, CleanupDataSchema, CleanupResultSchema, CONFIG_MIGRATE_FILES, ConfigMigrateStepSchema, ConfigMigrateResultSchema, DIAGNOSTICS_SCHEMA, DIAGNOSTICS_LOG_RECORDS, SafeValueSchema, LogRecordSchema, NonNegativeInt, DiagnosticsStatusSchema, DiagnosticsAlertSchema, DiagnosticsHealthSchema, DiagnosticsBundleSchema;
+var CONFIG_SOURCES, ConfigSourceSchema, CONFIG_FILE_NAMES, ConfigFileStatusSchema, ConfigInspectionEntrySchema, ConfigInspectionSchema, R_TOP$1, InstanceRowSchema, DOCTOR_LEVELS, DoctorCheckSchema, DoctorReportSchema, HOOKS_SCOPES, HooksScopeSchema, HOOKS_WARNING_CODES, HooksWarningSchema, HOOKS_ACTIONS, HOOK_SCRIPT_ACTIONS, HooksScriptResultSchema, HooksApplyResultSchema, HOOKS_VERIFY_CHECKS, HooksVerifyResultSchema, HOOK_SCRIPT_STATES, HooksStatusResultSchema, READER_MODES, ReaderModeSchema, SessionsListResultSchema, SessionEventLineSchema, SessionTranscriptTailSchema, SessionsShowResultSchema, USAGE_GROUPS, UsageResultSchema, ErrorsResultSchema, BackupRowSchema, BackupListResultSchema, BackupCreateResultSchema, BackupRestoreResultSchema, DbMigrationStepSchema, DbPlanSchema, UpgradePlanSchema, UpgradeResultSchema, DbMigrateResultSchema, DbRebuildResultSchema, McpJsonSchema, McpConfigResultSchema, ExportResultSchema, COMPLETION_EXPECTATIONS, CompletionExpectationSchema, VerifyCompletionResultSchema, CLEANUP_SCOPES, CleanupScopeSchema, CleanupTargetSchema, CleanupSkippedSchema, CleanupDataSchema, CleanupResultSchema, CONFIG_MIGRATE_FILES, ConfigMigrateStepSchema, ConfigMigrateResultSchema, DIAGNOSTICS_SCHEMA, DIAGNOSTICS_LOG_RECORDS, SafeValueSchema, LogRecordSchema, NonNegativeInt, DiagnosticsStatusSchema, DiagnosticsAlertSchema, DiagnosticsHealthSchema, DiagnosticsBundleSchema, AutostartStatusSchema;
 var init_results = __esmMin((() => {
 	init_zod();
 	init_runtime();
@@ -11864,12 +12156,167 @@ var init_results = __esmMin((() => {
 		/** What could not be collected, one short line each (a stopped instance has no health). */
 		notes: array(string())
 	});
+	AutostartStatusSchema = strictObject({
+		supported: boolean(),
+		enabled: boolean(),
+		/** Path of the `.lnk` in the Startup folder. */
+		shortcut: string().nullable(),
+		target: string().nullable(),
+		arguments: string().nullable(),
+		targetExists: boolean().nullable(),
+		matchesLauncher: boolean().nullable(),
+		note: string().nullable()
+	});
+}));
+
+//#endregion
+//#region packages/shared/src/folders/activity.ts
+/**
+* Reads a DA memory timestamp (`%Y-%m-%dT%H:%M:%S`, naive local time) to epoch milliseconds, or `null` when the text is
+* not exactly that format or names a time that does not exist (month 13, 30 February, hour 24, a DST gap). The check is
+* strict: a regular expression, then a round trip through `Date` so that nothing is silently rolled over.
+*/
+function parseDaTimestamp(text) {
+	if (typeof text !== "string") return null;
+	const m = DA_TIMESTAMP.exec(text);
+	if (m === null) return null;
+	const year = Number(m[1]);
+	const month = Number(m[2]);
+	const day = Number(m[3]);
+	const hour = Number(m[4]);
+	const minute = Number(m[5]);
+	const second = Number(m[6]);
+	if (year < 1970) return null;
+	const date = /* @__PURE__ */ new Date(0);
+	date.setFullYear(year, month - 1, day);
+	date.setHours(hour, minute, second, 0);
+	return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date.getHours() === hour && date.getMinutes() === minute && date.getSeconds() === second ? date.getTime() : null;
+}
+/** True when both instants fall on the same calendar day of the local time zone. */
+function sameLocalDay(aMs, bMs) {
+	const a = new Date(aMs);
+	const b = new Date(bMs);
+	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+/**
+* MTOP `activity_mark`: `full` up to two hours old (a time in the future counts as just now), `half` when it is still the
+* same local calendar day, otherwise `none`; a missing or non-finite time is `none`.
+*/
+function activityMarkOf(thenMs, nowMs) {
+	if (thenMs === null || !Number.isFinite(thenMs) || !Number.isFinite(nowMs)) return "none";
+	if (nowMs - thenMs <= TWO_HOURS_MS) return "full";
+	return sameLocalDay(thenMs, nowMs) ? "half" : "none";
+}
+var ACTIVITY_MARKS, TWO_HOURS_MS, DA_TIMESTAMP;
+var init_activity = __esmMin((() => {
+	ACTIVITY_MARKS = [
+		"full",
+		"half",
+		"none"
+	];
+	TWO_HOURS_MS = 72e5;
+	DA_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/;
+}));
+
+//#endregion
+//#region packages/shared/src/folders/path.ts
+/** Trims the text and removes the quotes a person pastes around a path (MTOP `strip().strip('"')`). */
+function unquote(raw) {
+	return raw.trim().replace(/^"+|"+$/g, "");
+}
+function segmentsOf(rest) {
+	return rest.split(SEPARATORS$1).filter((segment) => segment !== "");
+}
+/** C0 controls, DEL and C1 controls (a character class literal for them would trip `no-control-regex`). */
+function hasControlChar(text) {
+	for (let i = 0; i < text.length; i += 1) {
+		const code = text.charCodeAt(i);
+		if (code <= 31 || code >= 127 && code <= 159) return true;
+	}
+	return false;
+}
+function isReservedSegment(segment) {
+	const dot = segment.indexOf(".");
+	const base = (dot < 0 ? segment : segment.slice(0, dot)).replace(/ +$/, "");
+	return RESERVED_NAME.test(base);
+}
+function analyze(raw, win32) {
+	const text = unquote(raw);
+	if (DEVICE_PREFIX.test(text)) return refused("device");
+	if (UNC_PREFIX.test(text)) return refused("unc");
+	const wsl = WSL_DRIVE_PATH$1.exec(text);
+	const drive = wsl === null ? DRIVE_PATH.exec(text) : null;
+	let normalized;
+	if (wsl !== null || drive !== null) {
+		const letter = (wsl?.[1] ?? drive?.[1] ?? "").toUpperCase();
+		const segments = segmentsOf(wsl?.[2] ?? drive?.[2] ?? "");
+		if (segments.some((segment) => segment.includes(":"))) return refused("stream");
+		if (segments.some(isReservedSegment)) return refused("reserved_name");
+		normalized = `${letter}:\\${segments.join("\\")}`;
+	} else if (!win32 && text.startsWith("/")) normalized = `/${segmentsOf(text).join("/")}`;
+	else return refused("relative");
+	if (FORMAT_CHAR.test(text)) return refused("format_char");
+	if (hasControlChar(text)) return refused("control");
+	if (normalized.length > 240) return refused("too_long");
+	return {
+		path: normalized,
+		issue: null
+	};
+}
+/**
+* The Windows form of a folder (MTOP `normalize_path`): `D:\a\b\`, `d:/a/b` and `"D:\x y"` become `D:\a\b` and `D:\x y`;
+* the WSL spelling `/mnt/d/a/b` becomes `D:\a\b`. Another absolute POSIX path is kept (without a trailing separator) when
+* `win32` is false and refused on Windows, where it has no drive to live on. `null` for everything `folderPathIssue` names:
+* relative, UNC and device paths, a `:` after the drive, a reserved device name, a Unicode format character (category Cf), a
+* control character and more than 240 characters.
+*/
+function windowsFolderPath(raw, win32 = true) {
+	return analyze(raw, win32).path;
+}
+/** The first reason `windowsFolderPath` refuses the path, or `null` when it accepts it. */
+function folderPathIssue(raw, win32 = true) {
+	return analyze(raw, win32).issue;
+}
+/**
+* MTOP `path_key`: the normalized path without a trailing separator, in lower case, so that every spelling of one folder
+* gives one key. A path that cannot be a folder is folded the same way (separators, trailing separator, case) so that two
+* spellings of it still compare equal; the empty path gives the empty key.
+*/
+function folderPathKey(path) {
+	return (windowsFolderPath(path) ?? unquote(path).replaceAll("/", "\\")).replace(/\\+$/, "").toLowerCase();
+}
+/** The last non-empty segment of a path (`D:` for a drive root), `''` when there is none. */
+function lastSegment(path) {
+	const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
+	return segments[segments.length - 1] ?? "";
+}
+var MAX_FOLDER_PATH_CHARS, DEVICE_PREFIX, UNC_PREFIX, WSL_DRIVE_PATH$1, DRIVE_PATH, SEPARATORS$1, RESERVED_NAME, FORMAT_CHAR, refused;
+var init_path = __esmMin((() => {
+	MAX_FOLDER_PATH_CHARS = 240;
+	DEVICE_PREFIX = /^(?:[\\/]{2}[?.](?:[\\/]|$)|[\\/]\?\?(?:[\\/]|$))/;
+	UNC_PREFIX = /^[\\/]{2}/;
+	WSL_DRIVE_PATH$1 = /^\/mnt\/([a-z])(?:\/(.*))?$/s;
+	DRIVE_PATH = /^([A-Za-z]):[\\/](.*)$/s;
+	SEPARATORS$1 = /[\\/]+/;
+	RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])$/i;
+	FORMAT_CHAR = /\p{Cf}/u;
+	refused = (issue) => ({
+		path: null,
+		issue
+	});
+}));
+
+//#endregion
+//#region packages/shared/src/folders/index.ts
+var init_folders$1 = __esmMin((() => {
+	init_activity();
+	init_path();
 }));
 
 //#endregion
 //#region packages/shared/src/api/errors.ts
 var ERROR_CODES, ErrorCodeSchema, REQUEST_ID_RE, ErrorDetailSchema, ErrorEnvelopeSchema;
-var init_errors$5 = __esmMin((() => {
+var init_errors$6 = __esmMin((() => {
 	init_zod();
 	ERROR_CODES = [
 		"validation_failed",
@@ -11880,6 +12327,9 @@ var init_errors$5 = __esmMin((() => {
 		"range_too_large",
 		"filter_requires_scope",
 		"query_too_short",
+		"folder_invalid",
+		"access_required",
+		"access_code_invalid",
 		"host_not_allowed",
 		"origin_not_allowed",
 		"cross_site_request",
@@ -11893,19 +12343,29 @@ var init_errors$5 = __esmMin((() => {
 		"panel_disabled",
 		"probe_not_found",
 		"completion_target_not_found",
+		"terminal_not_found",
+		"folder_not_found",
 		"method_not_allowed",
 		"instance_mismatch",
+		"resume_unavailable",
+		"picker_busy",
+		"folder_limit",
 		"transcript_gone",
 		"payload_too_large",
 		"uri_too_long",
 		"unsupported_media_type",
+		"upgrade_required",
 		"search_busy",
 		"export_busy",
+		"access_rate_limited",
+		"terminal_limit",
 		"internal_error",
 		"db_busy",
 		"disk_full",
 		"stream_limit",
-		"shutting_down"
+		"shutting_down",
+		"terminal_unavailable",
+		"claude_not_found"
 	];
 	ErrorCodeSchema = _enum(ERROR_CODES);
 	REQUEST_ID_RE = /^r-[0-9a-z]{12}$/;
@@ -12086,6 +12546,176 @@ var init_cursor = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/shared/src/api/folders.ts
+var ActivityMarkSchema, FOLDER_ORIGINS, FolderOriginSchema, FOLDER_PATH_SOURCES, FolderPathSourceSchema, FOLDER_GROUPS, FolderGroupSchema, DA_SUMMARY_MAX_CODE_POINTS, DaSummarySchema, DaBlockSchema, ClaudeBlockSchema, FolderSchema, SourceStatusSchema, FolderListResponseSchema, AddFolderBodySchema, RESUME_REASONS, ResumeReasonSchema, ResumeEligibilitySchema, LINK_STATUSES, LinkStatusSchema, LINK_BASES, LinkBasisSchema, LINK_CONFIDENCES, LinkConfidenceSchema, LINK_REASONS, LinkReasonSchema, TerminalLinkSchema;
+var init_folders = __esmMin((() => {
+	init_zod();
+	init_folders$1();
+	init_ids();
+	init_time();
+	ActivityMarkSchema = _enum(ACTIVITY_MARKS);
+	FOLDER_ORIGINS = [
+		"da",
+		"user",
+		"claude",
+		"fallback"
+	];
+	FolderOriginSchema = _enum(FOLDER_ORIGINS);
+	FOLDER_PATH_SOURCES = [
+		"da",
+		"user",
+		"project",
+		"transcript",
+		"reverse",
+		"none"
+	];
+	FolderPathSourceSchema = _enum(FOLDER_PATH_SOURCES);
+	FOLDER_GROUPS = ["outside-da", "da"];
+	FolderGroupSchema = _enum(FOLDER_GROUPS);
+	DA_SUMMARY_MAX_CODE_POINTS = 120;
+	DaSummarySchema = string().max(240).refine((text) => Array.from(text).length <= DA_SUMMARY_MAX_CODE_POINTS, { error: "At most 120 characters" });
+	DaBlockSchema = strictObject({
+		lastUpdatedAt: NullableIsoTimeSchema,
+		activity: ActivityMarkSchema,
+		summary: DaSummarySchema,
+		brain: CountSchema$1,
+		action: CountSchema$1
+	});
+	ClaudeBlockSchema = strictObject({
+		/** The folder name under the Claude projects folder, as written on disk. */
+		dirName: string().min(1).max(255),
+		sessionsInWindow: CountSchema$1,
+		activeSessions: CountSchema$1,
+		totalSessions: CountSchema$1,
+		lastSessionAt: NullableIsoTimeSchema
+	});
+	FolderSchema = strictObject({
+		key: ProjectIdSchema,
+		name: string().min(1).max(255),
+		path: string().max(1024).nullable(),
+		pathSource: FolderPathSourceSchema,
+		/** Whether the folder is a directory now; `null` when it was not checked or there is no path. */
+		exists: boolean().nullable(),
+		origins: array(FolderOriginSchema).min(1),
+		group: FolderGroupSchema,
+		activity: ActivityMarkSchema,
+		lastActivityAt: NullableIsoTimeSchema,
+		da: DaBlockSchema.nullable(),
+		claude: ClaudeBlockSchema.nullable(),
+		/** The path is known and the folder is not known to be missing. */
+		canStart: boolean(),
+		userAdded: boolean()
+	});
+	SourceStatusSchema = _enum([
+		"ok",
+		"absent",
+		"unreadable"
+	]);
+	FolderListResponseSchema = strictObject({
+		folders: array(FolderSchema).max(500),
+		sources: strictObject({
+			daMemory: strictObject({
+				status: SourceStatusSchema,
+				folders: CountSchema$1,
+				readAt: NullableIsoTimeSchema
+			}),
+			claudeHome: strictObject({
+				status: SourceStatusSchema,
+				folders: CountSchema$1,
+				scannedAt: NullableIsoTimeSchema,
+				truncated: boolean()
+			}),
+			userFolders: strictObject({
+				status: _enum([
+					"ok",
+					"absent",
+					"corrupt",
+					"newer_version"
+				]),
+				count: CountSchema$1
+			})
+		}),
+		/** The "now" of the server: the page and the server agree on every relative time. */
+		asOf: IsoTimeSchema
+	});
+	AddFolderBodySchema = strictObject({ path: string().min(1).max(1024) });
+	RESUME_REASONS = [
+		"transcript_gone",
+		"folder_missing",
+		"folder_unknown",
+		"live_in_terminal",
+		"live_elsewhere"
+	];
+	ResumeReasonSchema = _enum(RESUME_REASONS);
+	ResumeEligibilitySchema = strictObject({
+		sessionId: SessionIdSchema,
+		allowed: boolean(),
+		forkAllowed: boolean(),
+		reason: ResumeReasonSchema.nullable(),
+		/** The folder the terminal would start in. */
+		folder: strictObject({
+			key: ProjectIdSchema,
+			path: string().max(1024)
+		}).nullable(),
+		/** A `claude` outside this app (a user's own terminal, an editor) holds the session: only a copy is safe. */
+		liveElsewhere: boolean(),
+		/** The name of the terminal of this app that holds the session. */
+		liveTerminal: string().min(1).max(64).nullable(),
+		/** The session that continued this one, when the monitor knows it: resuming the old id branches off. */
+		redirectTo: SessionIdSchema.nullable()
+	});
+	LINK_STATUSES = [
+		"pending",
+		"linked",
+		"ambiguous"
+	];
+	LinkStatusSchema = _enum(LINK_STATUSES);
+	LINK_BASES = [
+		"registry-pid",
+		"registry-tree",
+		"registry-cwd",
+		"registry-order",
+		"resume-id",
+		"transcript-time"
+	];
+	LinkBasisSchema = _enum(LINK_BASES);
+	LINK_CONFIDENCES = [
+		"high",
+		"medium",
+		"low"
+	];
+	LinkConfidenceSchema = _enum(LINK_CONFIDENCES);
+	LINK_REASONS = [
+		"no_registry",
+		"registry_unreadable",
+		"ambiguous"
+	];
+	LinkReasonSchema = _enum(LINK_REASONS);
+	TerminalLinkSchema = strictObject({
+		status: LinkStatusSchema,
+		sessionId: SessionIdSchema.nullable(),
+		/** The ids the process had before a `/clear` or `/resume` inside it. */
+		previousSessionIds: array(SessionIdSchema).max(8),
+		basis: LinkBasisSchema.nullable(),
+		confidence: LinkConfidenceSchema.nullable(),
+		since: NullableIsoTimeSchema,
+		claudePid: number$1().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(),
+		/** `tracked` once the monitor has a session row for the transcript. */
+		transcript: _enum(["none", "tracked"]),
+		registryStatus: _enum([
+			"busy",
+			"idle",
+			"waiting"
+		]).nullable(),
+		/** What the process waits for (for example a permission prompt), clipped to 64 characters. */
+		waitingFor: string().max(64).nullable(),
+		reason: LinkReasonSchema.nullable(),
+		/** Another live terminal of this app resolved to the same session id (a resume of a live session). */
+		shared: boolean()
+	});
+}));
+
+//#endregion
 //#region packages/shared/src/api/legacy-health.ts
 var LegacyHealthSchema;
 var init_legacy_health = __esmMin((() => {
@@ -12120,8 +12750,112 @@ var init_legacy_health = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/shared/src/api/terminal.ts
+var TERMINAL_NAME_RE, TerminalNameSchema, TerminalNameParamsSchema, AccessCodeSchema, CONTROL_CHARACTER$2, FolderPathSchema, EmptyBodySchema, AuthSessionResponseSchema, ExchangeBodySchema, ExchangeResponseSchema, LogoutResponseSchema, TERMINAL_UNAVAILABLE_REASONS, TerminalUnavailableReasonSchema, TerminalCapabilitiesSchema, MAX_LISTED_SESSIONS, TerminalSessionInfoSchema, TerminalStateSchema, CreateSessionBodySchema, CreateSessionResponseSchema, KillSessionResponseSchema, PickFolderResponseSchema, ResumeBodySchema, ResumeResponseSchema, DimensionSchema, TerminalClientMessageSchema, TerminalServerMessageSchema, TerminalHelloEventSchema, TerminalSessionsEventSchema, TerminalHeartbeatEventSchema;
+var init_terminal$1 = __esmMin((() => {
+	init_zod();
+	init_folders$1();
+	init_access();
+	init_folders();
+	init_ids();
+	init_time();
+	TERMINAL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+	TerminalNameSchema = string().regex(TERMINAL_NAME_RE);
+	TerminalNameParamsSchema = strictObject({ name: TerminalNameSchema });
+	AccessCodeSchema = string().regex(ACCESS_CODE_RE);
+	CONTROL_CHARACTER$2 = /\p{Cc}/u;
+	FolderPathSchema = string().min(1).max(1024).refine((path) => !CONTROL_CHARACTER$2.test(path), { error: "A folder path has no control characters" }).refine((path) => {
+		const issue = folderPathIssue(path);
+		return issue !== "unc" && issue !== "device";
+	}, { error: "A folder on a network share or a device is not allowed" });
+	EmptyBodySchema = strictObject({});
+	AuthSessionResponseSchema = strictObject({ authenticated: boolean() });
+	ExchangeBodySchema = strictObject({ code: AccessCodeSchema });
+	ExchangeResponseSchema = strictObject({ authenticated: literal(true) });
+	LogoutResponseSchema = strictObject({ authenticated: literal(false) });
+	TERMINAL_UNAVAILABLE_REASONS = [
+		"unsupported_os",
+		"addon_missing",
+		"claude_not_found",
+		"not_configured"
+	];
+	TerminalUnavailableReasonSchema = _enum(TERMINAL_UNAVAILABLE_REASONS);
+	TerminalCapabilitiesSchema = strictObject({
+		available: boolean(),
+		reason: TerminalUnavailableReasonSchema.nullable(),
+		folderPicker: boolean(),
+		resume: boolean(),
+		maxSessions: CountSchema$1
+	});
+	MAX_LISTED_SESSIONS = 64;
+	TerminalSessionInfoSchema = strictObject({
+		name: TerminalNameSchema,
+		path: FolderPathSchema,
+		createdAt: IsoTimeSchema,
+		cols: CountSchema$1,
+		rows: CountSchema$1,
+		viewers: CountSchema$1,
+		link: TerminalLinkSchema,
+		folderKey: ProjectIdSchema.nullable()
+	});
+	TerminalStateSchema = strictObject({
+		capabilities: TerminalCapabilitiesSchema,
+		sessions: array(TerminalSessionInfoSchema).max(MAX_LISTED_SESSIONS),
+		epoch: EpochSchema,
+		generatedAt: IsoTimeSchema
+	});
+	CreateSessionBodySchema = strictObject({ path: FolderPathSchema });
+	CreateSessionResponseSchema = strictObject({ session: TerminalSessionInfoSchema });
+	KillSessionResponseSchema = strictObject({ name: TerminalNameSchema });
+	PickFolderResponseSchema = strictObject({ path: FolderPathSchema.nullable() });
+	ResumeBodySchema = strictObject({
+		sessionId: SessionIdSchema,
+		fork: boolean().optional()
+	});
+	ResumeResponseSchema = strictObject({ session: TerminalSessionInfoSchema });
+	DimensionSchema = number$1().int().min(1).max(1e3);
+	TerminalClientMessageSchema = strictObject({
+		type: literal("resize"),
+		cols: DimensionSchema,
+		rows: DimensionSchema
+	});
+	TerminalServerMessageSchema = discriminatedUnion("type", [
+		strictObject({
+			type: literal("ready"),
+			v: literal(1),
+			cols: DimensionSchema,
+			rows: DimensionSchema,
+			replayBytes: CountSchema$1,
+			viewers: CountSchema$1
+		}),
+		strictObject({ type: literal("live") }),
+		strictObject({
+			type: literal("size"),
+			cols: DimensionSchema,
+			rows: DimensionSchema
+		}),
+		strictObject({
+			type: literal("exit"),
+			code: number$1().int().nullable(),
+			signal: string().min(1).max(32).nullable()
+		})
+	]);
+	TerminalHelloEventSchema = strictObject({
+		instanceId: InstanceIdSchema,
+		epoch: EpochSchema,
+		serverTime: IsoTimeSchema,
+		heartbeatMs: CountSchema$1
+	});
+	TerminalSessionsEventSchema = strictObject({
+		version: CountSchema$1,
+		sessions: array(TerminalSessionInfoSchema).max(MAX_LISTED_SESSIONS)
+	});
+	TerminalHeartbeatEventSchema = strictObject({ serverTime: IsoTimeSchema });
+}));
+
+//#endregion
 //#region packages/shared/src/schemas/ingest.ts
-var UUID_RE$1, CONTROL_RE, uuid, timestampMs, count$2, nullableTimestampMs, nameString, pathString, envelopeDataValue, HookEnvelopeV1Schema, HookRouteV1Schema, NudgeBodySchema, looseTyped, TranscriptRecordShape, reasonCode, IngestHealthSchema;
+var UUID_RE$1, CONTROL_RE, uuid, timestampMs, count$3, nullableTimestampMs, nameString, pathString, envelopeDataValue, HookEnvelopeV1Schema, HookRouteV1Schema, NudgeBodySchema, looseTyped, TranscriptRecordShape, reasonCode, IngestHealthSchema;
 var init_ingest$2 = __esmMin((() => {
 	init_zod();
 	init_hook_envelope();
@@ -12129,7 +12863,7 @@ var init_ingest$2 = __esmMin((() => {
 	CONTROL_RE = new RegExp("[" + String.fromCharCode(0) + "-]");
 	uuid = string().regex(UUID_RE$1);
 	timestampMs = number$1().int().nonnegative();
-	count$2 = number$1().int().nonnegative();
+	count$3 = number$1().int().nonnegative();
 	nullableTimestampMs = timestampMs.nullable();
 	nameString = string().max(64).refine((value) => !CONTROL_RE.test(value), { message: "control characters are not allowed" });
 	pathString = string().max(PATH_MAX_CHARS);
@@ -12157,11 +12891,11 @@ var init_ingest$2 = __esmMin((() => {
 		tool_use_id: string().regex(TOOL_ID_RE).nullable(),
 		permission_mode: nameString.nullable(),
 		claude_pid: number$1().int().nonnegative().max(9999999999).nullable(),
-		payload_bytes: count$2,
+		payload_bytes: count$3,
 		content_hash: string().regex(/^[0-9a-f]{32}$/),
 		handler: strictObject({
 			version: string().min(1).max(64),
-			pid: count$2,
+			pid: count$3,
 			async: boolean()
 		}),
 		flags: array(string().regex(ENVELOPE_FLAG_RE)).max(32),
@@ -12235,19 +12969,19 @@ var init_ingest$2 = __esmMin((() => {
 					ok: boolean().nullable()
 				})),
 				lastEnvelopeAt: nullableTimestampMs,
-				envelopes1h: count$2,
-				duplicates1h: count$2,
-				invalid1h: count$2,
+				envelopes1h: count$3,
+				duplicates1h: count$3,
+				invalid1h: count$3,
 				handlerErrors: array(strictObject({
 					code: string(),
-					count: count$2,
+					count: count$3,
 					lastAt: timestampMs
 				})),
-				transcriptHookFailures: count$2,
+				transcriptHookFailures: count$3,
 				coverage: strictObject({
-					full: count$2,
-					partial: count$2,
-					none: count$2
+					full: count$3,
+					partial: count$3,
+					none: count$3
 				}),
 				status: _enum([
 					"ok",
@@ -12258,26 +12992,26 @@ var init_ingest$2 = __esmMin((() => {
 				])
 			}),
 			spool: strictObject({
-				segments: count$2,
-				bytes: count$2,
-				bytesBehind: count$2,
+				segments: count$3,
+				bytes: count$3,
+				bytesBehind: count$3,
 				oldestPendingReceivedAt: nullableTimestampMs,
 				lastNudgeAt: nullableTimestampMs,
 				lastDrainAt: nullableTimestampMs,
-				foreignFiles: count$2
+				foreignFiles: count$3
 			}),
 			transcripts: strictObject({
 				dir: string().nullable(),
 				dirFound: boolean(),
-				filesTracked: count$2,
-				filesMissing: count$2,
-				filesUnreadable: count$2,
-				bytesBehind: count$2,
+				filesTracked: count$3,
+				filesMissing: count$3,
+				filesUnreadable: count$3,
+				bytesBehind: count$3,
 				maxLagMs: number$1().nonnegative(),
-				backfillRemainingBytes: count$2,
+				backfillRemainingBytes: count$3,
 				lastScanAt: nullableTimestampMs,
 				lastSyncAt: nullableTimestampMs,
-				errors: record$1(string(), count$2),
+				errors: record$1(string(), count$3),
 				status: _enum([
 					"ok",
 					"backfilling",
@@ -12289,10 +13023,10 @@ var init_ingest$2 = __esmMin((() => {
 		}),
 		persisted: strictObject({
 			lastCommitAt: nullableTimestampMs,
-			queueItems: count$2,
-			queueBytes: count$2,
+			queueItems: count$3,
+			queueBytes: count$3,
 			commitP95Ms: number$1().nonnegative(),
-			failures1h: count$2,
+			failures1h: count$3,
 			lastError: strictObject({
 				code: string(),
 				at: timestampMs
@@ -12305,7 +13039,7 @@ var init_ingest$2 = __esmMin((() => {
 			])
 		}),
 		display: strictObject({
-			headSeq: count$2,
+			headSeq: count$3,
 			serverTime: timestampMs
 		}),
 		runtime: strictObject({
@@ -12340,7 +13074,19 @@ function defineRoute(spec) {
 	if (spec.method === "GET" && spec.body !== null) throw new Error(`route ${spec.id}: a GET route has no body`);
 	if (spec.successStatus === 204 && (spec.response !== null || spec.contentType !== null)) throw new Error(`route ${spec.id}: a 204 route has neither a response schema nor a content type`);
 	if (spec.successStatus === 200 && spec.contentType === "application/json" && spec.response === null) throw new Error(`route ${spec.id}: a JSON route needs a response schema`);
-	return spec;
+	const access = spec.access ?? "open";
+	if (spec.contentType === "websocket") {
+		if (spec.method !== "GET" || spec.response !== null || spec.successStatus !== 101) throw new Error(`route ${spec.id}: a websocket route is a GET with no response schema and the status 101`);
+	} else if (spec.successStatus === 101) throw new Error(`route ${spec.id}: the status 101 belongs to a websocket route`);
+	if (access === "ticket" && spec.body === null) throw new Error(`route ${spec.id}: a ticket route needs a body`);
+	if (spec.method !== "GET" && access === "open" && spec.id !== OPEN_WRITE_ROUTE_ID) throw new Error(`route ${spec.id}: a write route must not be open`);
+	if (spec.body === null && spec.maxBodyBytes !== void 0 && spec.maxBodyBytes !== 0) throw new Error(`route ${spec.id}: maxBodyBytes needs a body`);
+	if (spec.body !== null && spec.maxBodyBytes !== void 0 && !(Number.isInteger(spec.maxBodyBytes) && spec.maxBodyBytes > 0)) throw new Error(`route ${spec.id}: maxBodyBytes must be a positive integer`);
+	return {
+		...spec,
+		access,
+		maxBodyBytes: spec.body === null ? 0 : spec.maxBodyBytes ?? 4096
+	};
 }
 /**
 * Fills the `:name` segments of a route path. Each value is checked with the route's `params` schema in its text form,
@@ -12364,7 +13110,7 @@ function routeUrl(route, options = {}) {
 	const query = queryString(toQuery(options.query ?? {}));
 	return query === "" ? path : `${path}?${query}`;
 }
-var SessionPath, WorkItemBoardSchema, ErrorsResponseSchema, WorkItemDetailSchema, routes, ROUTE_IDS;
+var DEFAULT_MAX_BODY_BYTES, OPEN_WRITE_ROUTE_ID, SessionPath, WorkItemBoardSchema, ErrorsResponseSchema, WorkItemDetailSchema, routes, ROUTE_IDS;
 var init_routes = __esmMin((() => {
 	init_zod();
 	init_results();
@@ -12373,10 +13119,14 @@ var init_routes = __esmMin((() => {
 	init_entities();
 	init_export$2();
 	init_filters();
+	init_folders();
 	init_health$1();
 	init_ids();
 	init_legacy_health();
 	init_panels();
+	init_terminal$1();
+	DEFAULT_MAX_BODY_BYTES = 4096;
+	OPEN_WRITE_ROUTE_ID = "ingestNudge";
 	SessionPath = strictObject({ sessionId: SessionIdSchema });
 	WorkItemBoardSchema = strictObject({
 		asOfSeq: CountSchema$1,
@@ -12546,7 +13296,8 @@ var init_routes = __esmMin((() => {
 				"query_too_short"
 			],
 			summary: "The activity events of one session (the events route with the session fixed).",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		sessionToolCalls: defineRoute({
 			id: "sessionToolCalls",
@@ -12559,7 +13310,8 @@ var init_routes = __esmMin((() => {
 			successStatus: 200,
 			errors: ["session_not_found", "query_too_short"],
 			summary: "The tool calls of one session.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		sessionTransitions: defineRoute({
 			id: "sessionTransitions",
@@ -12602,7 +13354,8 @@ var init_routes = __esmMin((() => {
 				"transcript_gone"
 			],
 			summary: "A window of transcript entries read from the transcript file on request.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		transcriptLocate: defineRoute({
 			id: "transcriptLocate",
@@ -12620,7 +13373,8 @@ var init_routes = __esmMin((() => {
 				"event_not_found"
 			],
 			summary: "The transcript entry at an index, a time or a byte offset.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		searchTranscript: defineRoute({
 			id: "searchTranscript",
@@ -12637,7 +13391,8 @@ var init_routes = __esmMin((() => {
 				"transcript_gone"
 			],
 			summary: "Content search inside one session transcript, with honest coverage.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		searchTranscripts: defineRoute({
 			id: "searchTranscripts",
@@ -12654,7 +13409,8 @@ var init_routes = __esmMin((() => {
 				"query_too_short"
 			],
 			summary: "Content search across the transcripts of the instance, with honest coverage.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		listAgents: defineRoute({
 			id: "listAgents",
@@ -12697,7 +13453,8 @@ var init_routes = __esmMin((() => {
 			successStatus: 200,
 			errors: ["event_not_found"],
 			summary: "One activity event.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		listToolCalls: defineRoute({
 			id: "listToolCalls",
@@ -12710,7 +13467,8 @@ var init_routes = __esmMin((() => {
 			successStatus: 200,
 			errors: ["filter_requires_scope", "query_too_short"],
 			summary: "Tool calls across sessions, filtered, sorted and paged.",
-			contentType: "application/json"
+			contentType: "application/json",
+			access: "reader"
 		}),
 		workItemBoard: defineRoute({
 			id: "workItemBoard",
@@ -12827,7 +13585,8 @@ var init_routes = __esmMin((() => {
 			successStatus: 200,
 			errors: ["range_invalid", "export_busy"],
 			summary: "Streams the instance data as JSON lines in the format mcs.export/1.",
-			contentType: "application/x-ndjson"
+			contentType: "application/x-ndjson",
+			access: "reader"
 		}),
 		ingestNudge: defineRoute({
 			id: "ingestNudge",
@@ -12845,7 +13604,8 @@ var init_routes = __esmMin((() => {
 				"body_invalid_json"
 			],
 			summary: "Tells the server that the spool has new data; the body carries no event data.",
-			contentType: null
+			contentType: null,
+			maxBodyBytes: 256
 		}),
 		ingestProbe: defineRoute({
 			id: "ingestProbe",
@@ -12872,6 +13632,219 @@ var init_routes = __esmMin((() => {
 			errors: ["stream_limit"],
 			summary: "Server-sent events: hello, change, heartbeat and reset frames.",
 			contentType: "text/event-stream"
+		}),
+		listFolders: defineRoute({
+			id: "listFolders",
+			method: "GET",
+			path: "/api/v3/folders",
+			params: null,
+			query: null,
+			body: null,
+			response: FolderListResponseSchema,
+			successStatus: 200,
+			errors: [],
+			summary: "The project folders with their DA memory and Claude home details, and what each source said.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		addFolder: defineRoute({
+			id: "addFolder",
+			method: "POST",
+			path: "/api/v3/folders",
+			params: null,
+			query: null,
+			body: AddFolderBodySchema,
+			response: FolderSchema,
+			successStatus: 200,
+			errors: ["folder_invalid", "folder_limit"],
+			summary: "Adds a folder by hand to the folder list; the answer is its row.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		removeFolder: defineRoute({
+			id: "removeFolder",
+			method: "POST",
+			path: "/api/v3/folders/:key/remove",
+			params: strictObject({ key: ProjectIdSchema }),
+			query: null,
+			body: EmptyBodySchema,
+			response: null,
+			successStatus: 204,
+			errors: ["folder_not_found"],
+			summary: "Removes a folder that was added by hand from the folder list; the folder on disk is not touched.",
+			contentType: null,
+			access: "session"
+		}),
+		sessionResume: defineRoute({
+			id: "sessionResume",
+			method: "GET",
+			path: "/api/v3/sessions/:sessionId/resume",
+			params: SessionPath,
+			query: null,
+			body: null,
+			response: ResumeEligibilitySchema,
+			successStatus: 200,
+			errors: ["session_not_found"],
+			summary: "Whether the session can be resumed in a terminal, whether a copy can, and why not.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		authSession: defineRoute({
+			id: "authSession",
+			method: "GET",
+			path: "/api/v3/auth/session",
+			params: null,
+			query: null,
+			body: null,
+			response: AuthSessionResponseSchema,
+			successStatus: 200,
+			errors: [],
+			summary: "Whether the request carries a valid session cookie; the page asks this before it exchanges an access code.",
+			contentType: "application/json",
+			access: "open"
+		}),
+		authExchange: defineRoute({
+			id: "authExchange",
+			method: "POST",
+			path: "/api/v3/auth/exchange",
+			params: null,
+			query: null,
+			body: ExchangeBodySchema,
+			response: ExchangeResponseSchema,
+			successStatus: 200,
+			errors: ["access_code_invalid", "access_rate_limited"],
+			summary: "Redeems the one-time access code of the login link once and answers with the session cookie in Set-Cookie; the code is single use and short lived.",
+			contentType: "application/json",
+			access: "ticket"
+		}),
+		authLogout: defineRoute({
+			id: "authLogout",
+			method: "POST",
+			path: "/api/v3/auth/logout",
+			params: null,
+			query: null,
+			body: EmptyBodySchema,
+			response: LogoutResponseSchema,
+			successStatus: 200,
+			errors: [],
+			summary: "Ends the session: the credential is revoked, its sockets close and the cookie is cleared.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		terminalState: defineRoute({
+			id: "terminalState",
+			method: "GET",
+			path: "/api/v3/terminal/state",
+			params: null,
+			query: null,
+			body: null,
+			response: TerminalStateSchema,
+			successStatus: 200,
+			errors: [],
+			summary: "What the terminal can do on this system (capabilities, with the reason when it cannot) and the live sessions; the polling fallback of the events feed.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		terminalEvents: defineRoute({
+			id: "terminalEvents",
+			method: "GET",
+			path: "/api/v3/terminal/events",
+			params: null,
+			query: null,
+			body: null,
+			response: null,
+			successStatus: 200,
+			errors: ["stream_limit"],
+			summary: "Server-sent events: hello, the full list of live sessions after every change (latest wins) and heartbeat frames.",
+			contentType: "text/event-stream",
+			access: "session"
+		}),
+		terminalCreateSession: defineRoute({
+			id: "terminalCreateSession",
+			method: "POST",
+			path: "/api/v3/terminal/sessions",
+			params: null,
+			query: null,
+			body: CreateSessionBodySchema,
+			response: CreateSessionResponseSchema,
+			successStatus: 200,
+			errors: [
+				"folder_invalid",
+				"claude_not_found",
+				"terminal_unavailable",
+				"terminal_limit"
+			],
+			summary: "Starts the claude command in a folder as a new terminal session; the body carries the folder only, never a command line, arguments or an environment.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		terminalKillSession: defineRoute({
+			id: "terminalKillSession",
+			method: "POST",
+			path: "/api/v3/terminal/sessions/:name/kill",
+			params: TerminalNameParamsSchema,
+			query: null,
+			body: EmptyBodySchema,
+			response: KillSessionResponseSchema,
+			successStatus: 200,
+			errors: ["terminal_not_found"],
+			summary: "Kills the process of a terminal session; its viewers get the exit frame and the close code killed.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		terminalSocket: defineRoute({
+			id: "terminalSocket",
+			method: "GET",
+			path: "/api/v3/terminal/sessions/:name/socket",
+			params: TerminalNameParamsSchema,
+			query: null,
+			body: null,
+			response: null,
+			successStatus: 101,
+			errors: [
+				"terminal_not_found",
+				"upgrade_required",
+				"stream_limit",
+				"terminal_unavailable"
+			],
+			summary: "WebSocket (subprotocol caw.terminal.v1) to one terminal: binary frames are the raw bytes in both directions, text frames are the protocol messages; a plain GET answers 426.",
+			contentType: "websocket",
+			access: "session"
+		}),
+		terminalPickFolder: defineRoute({
+			id: "terminalPickFolder",
+			method: "POST",
+			path: "/api/v3/terminal/pick-folder",
+			params: null,
+			query: null,
+			body: EmptyBodySchema,
+			response: PickFolderResponseSchema,
+			successStatus: 200,
+			errors: ["picker_busy", "terminal_unavailable"],
+			summary: "Opens the folder dialog of the computer and answers the chosen folder, or null when the dialog was closed.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		terminalResume: defineRoute({
+			id: "terminalResume",
+			method: "POST",
+			path: "/api/v3/terminal/resume",
+			params: null,
+			query: null,
+			body: ResumeBodySchema,
+			response: ResumeResponseSchema,
+			successStatus: 200,
+			errors: [
+				"session_not_found",
+				"resume_unavailable",
+				"folder_invalid",
+				"claude_not_found",
+				"terminal_unavailable",
+				"terminal_limit"
+			],
+			summary: "Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments.",
+			contentType: "application/json",
+			access: "session"
 		}),
 		explainCompletion: defineRoute({
 			id: "explainCompletion",
@@ -12905,9 +13878,9 @@ var init_db_constants = __esmMin((() => {
 //#region packages/shared/src/control-address.ts
 /** `<tmpdir><sep>mcs-<uid><sep><id>.sock` with the separator the temp folder itself uses (no `node:path` here). */
 function socketFile(host, instanceId) {
-	const sep = host.tmpdir.includes("/") || !host.tmpdir.includes(BACKSLASH$5) ? "/" : BACKSLASH$5;
+	const sep = host.tmpdir.includes("/") || !host.tmpdir.includes(BACKSLASH$6) ? "/" : BACKSLASH$6;
 	let base = host.tmpdir;
-	while (base.length > 0 && (base.endsWith("/") || base.endsWith(BACKSLASH$5))) base = base.slice(0, -1);
+	while (base.length > 0 && (base.endsWith("/") || base.endsWith(BACKSLASH$6))) base = base.slice(0, -1);
 	return `${base}${sep}mcs-${String(host.uid ?? 0)}${sep}${instanceId}.sock`;
 }
 /**
@@ -12924,18 +13897,18 @@ function controlAddress(instanceId, host) {
 		case "other": return socketFile(host, instanceId);
 	}
 }
-var NUL, BACKSLASH$5, WINDOWS_PIPE_PREFIX;
+var NUL, BACKSLASH$6, WINDOWS_PIPE_PREFIX;
 var init_control_address = __esmMin((() => {
 	init_ids$1();
 	NUL = String.fromCharCode(0);
-	BACKSLASH$5 = String.fromCharCode(92);
+	BACKSLASH$6 = String.fromCharCode(92);
 	WINDOWS_PIPE_PREFIX = [
-		BACKSLASH$5,
-		BACKSLASH$5,
+		BACKSLASH$6,
+		BACKSLASH$6,
 		".",
-		BACKSLASH$5,
+		BACKSLASH$6,
 		"pipe",
-		BACKSLASH$5,
+		BACKSLASH$6,
 		"mcs-"
 	].join("");
 }));
@@ -12980,26 +13953,31 @@ var init_server_exit = __esmMin((() => {
 //#region packages/shared/src/index.ts
 var init_src$1 = __esmMin((() => {
 	init_ids$1();
-	init_errors$6();
+	init_errors$7();
 	init_version$1();
 	init_time$1();
-	init_env();
+	init_env$1();
+	init_product();
+	init_env_names();
 	init_instance();
 	init_state$1();
 	init_backup_manifest();
 	init_runtime();
 	init_envelope();
 	init_results();
+	init_folders$1();
 	init_ids();
 	init_time();
-	init_errors$5();
+	init_errors$6();
 	init_cursor();
 	init_entities();
 	init_filters();
+	init_folders();
 	init_health$1();
 	init_legacy_health();
 	init_panels();
 	init_stream();
+	init_terminal$1();
 	init_export$2();
 	init_routes();
 	init_ingest$2();
@@ -13029,7 +14007,7 @@ function spawnErrorCode(code) {
 	if (code === "EACCES" || code === "EPERM") return "EACCES";
 	return "SPAWN_FAILED";
 }
-function errnoCode$5(error) {
+function errnoCode$6(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 function specRefusal(spec) {
@@ -13079,7 +14057,10 @@ function mapKinds(make) {
 		taskkill: make("taskkill"),
 		node: make("node"),
 		icacls: make("icacls"),
-		opener: make("opener")
+		opener: make("opener"),
+		"powershell.shortcut": make("powershell.shortcut"),
+		claude: make("claude"),
+		"powershell.picker": make("powershell.picker")
 	};
 }
 /**
@@ -13163,7 +14144,7 @@ function execFileText(request, signal) {
 			signal?.addEventListener("abort", onAbort, { once: true });
 		});
 	} catch (error) {
-		return Promise.resolve(unattributed("SPAWN_FAILED", errnoCode$5(error) ?? "unexpected failure"));
+		return Promise.resolve(unattributed("SPAWN_FAILED", errnoCode$6(error) ?? "unexpected failure"));
 	}
 }
 /** Runs one child; the slot it occupies is released exactly once, when the result is final. */
@@ -13252,7 +14233,7 @@ function runChild(spec, signal) {
 				...spec.cwd === void 0 ? {} : { cwd: spec.cwd }
 			});
 		} catch (thrown) {
-			error = spawnErrorCode(errnoCode$5(thrown));
+			error = spawnErrorCode(errnoCode$6(thrown));
 			finish(null);
 			return;
 		}
@@ -13260,7 +14241,7 @@ function runChild(spec, signal) {
 			child.stdout?.on("data", collect(stdoutChunks));
 			child.stderr?.on("data", collect(stderrChunks));
 			child.once("error", (failure) => {
-				error ??= spawnErrorCode(errnoCode$5(failure));
+				error ??= spawnErrorCode(errnoCode$6(failure));
 				finish(null);
 			});
 			child.once("close", (code) => {
@@ -13312,6 +14293,25 @@ function spawnDetached(file, args, o) {
 			o.stdoutFd,
 			o.stderrFd
 		]
+	});
+	child.unref();
+	return child;
+}
+/**
+* Starts `file` detached and with a visible window (`windowsHide: false`: the one spawn that shows its window), no stdio,
+* then `unref()`s it. For the Edge or Chrome app window of the login (06 2.5), nothing else: the caller has validated every
+* argument. Same refusals and same missing-file behavior as `spawnDetached`: the caller must attach `child.on('error', ...)`
+* in the same tick. Not counted in the statistics.
+*/
+function spawnDetachedVisible(file, args, o) {
+	assertSpawnable(file);
+	const child = spawn(file, [...args], {
+		shell: false,
+		windowsHide: false,
+		detached: true,
+		env: o.env,
+		stdio: "ignore",
+		...o.cwd === void 0 ? {} : { cwd: o.cwd }
 	});
 	child.unref();
 	return child;
@@ -13430,7 +14430,7 @@ function resolveExecutable(name) {
 var MAX_STDIN_BYTES, MAX_RUNNING, MAX_QUEUED, EXIT_GRACE_MS, MAX_TIMER_MS$4, ENV_ALLOW_LIST, DOCKER_PASSTHROUGH, counters, logSink, running$1, queue, RESOLVE_TTL_MS, RESOLVE_MISS_TTL_MS, realResolver;
 var init_exec = __esmMin((() => {
 	init_src$1();
-	init_host();
+	init_host$1();
 	MAX_STDIN_BYTES = 4096;
 	MAX_RUNNING = 2;
 	MAX_QUEUED = 8;
@@ -13757,6 +14757,27 @@ var init_fsx = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/platform/process.ts
+/**
+* The start time of the processes `pids` as `<pid><TAB><ISO UTC>` lines, then the end marker. Only validated integers are
+* interpolated. A pid that does not exist is skipped (`SilentlyContinue`), so it has no row.
+*/
+function startTimesScript(pids) {
+	return `\$ErrorActionPreference='SilentlyContinue'; Get-Process -Id ${pids.join(",")} | ForEach-Object { '' + $_.Id + [char]9 + $_.StartTime.ToUniversalTime().ToString('o') }; '${START_TIMES_END}'`;
+}
+/** The rows of a listing up to its end marker, or null when the marker never came (a failed query, a cut output). */
+function rowsUntil(result, marker) {
+	if (!result.ok || result.truncated) return null;
+	const rows = [];
+	for (const line of result.stdout.split(/\r?\n/)) {
+		if (line === marker) return rows;
+		rows.push(line);
+	}
+	return null;
+}
+/** Epoch milliseconds of `2026-11-14T10:20:30` plus fraction digits; more than three digits are cut, never rounded. */
+function startTimeMs(seconds, fraction) {
+	return Date.parse(`${seconds}.${(fraction ?? "").padEnd(3, "0").slice(0, 3)}Z`);
+}
 /** A pid is a positive integer of at most ten digits: nothing else is ever passed to an operating system call. */
 function isValidPid(pid) {
 	return Number.isSafeInteger(pid) && PID_RE$1.test(String(pid));
@@ -13839,8 +14860,9 @@ function createProcessHelpers(deps) {
 		remember(pid, line);
 		return line;
 	}
-	async function forceKill(pid) {
-		if (!isValidPid(pid)) throw new RangeError(`forceKill: ${String(pid)} is not a valid pid`);
+	async function terminate(pid, tree) {
+		const name = tree ? "forceKillTree" : "forceKill";
+		if (!isValidPid(pid)) throw new RangeError(`${name}: ${String(pid)} is not a valid pid`);
 		cache.delete(pid);
 		if (deps.platform === "win32") {
 			const file = await deps.resolve("taskkill");
@@ -13848,7 +14870,12 @@ function createProcessHelpers(deps) {
 			const result = await deps.exec({
 				kind: "taskkill",
 				file,
-				args: [
+				args: tree ? [
+					"/PID",
+					String(pid),
+					"/T",
+					"/F"
+				] : [
 					"/PID",
 					String(pid),
 					"/F"
@@ -13869,6 +14896,82 @@ function createProcessHelpers(deps) {
 			throw stopFailed(pid, code ?? "unknown error");
 		}
 	}
+	function forceKill(pid) {
+		return terminate(pid, false);
+	}
+	/** POSIX: SIGKILL of the pid only; a process-group kill belongs with POSIX terminal support (design 01 section 6). */
+	function forceKillTree(pid) {
+		return terminate(pid, true);
+	}
+	async function processStartTimes(pids) {
+		const wanted = [...new Set(pids.filter((pid) => isValidPid(pid)))];
+		if (wanted.length === 0) return /* @__PURE__ */ new Map();
+		if (wanted.length > START_QUERY_MAX_PIDS || deps.platform !== "win32") return null;
+		try {
+			const file = await deps.resolve("powershell");
+			if (file === null) return null;
+			const rows = rowsUntil(await deps.exec({
+				kind: "powershell.processes",
+				file,
+				args: powershellEncodedArgs(startTimesScript(wanted)),
+				timeoutMs: CMDLINE_TIMEOUT_MS,
+				maxOutputBytes: SMALL_OUTPUT_BYTES,
+				encoding: "utf8"
+			}), START_TIMES_END);
+			if (rows === null) return null;
+			const asked = new Set(wanted);
+			const times = /* @__PURE__ */ new Map();
+			for (const row of rows) {
+				const match = START_RECORD_RE.exec(row);
+				const pidText = match?.[1];
+				const seconds = match?.[2];
+				if (pidText === void 0 || seconds === void 0) continue;
+				const pid = Number(pidText);
+				const at = startTimeMs(seconds, match?.[3]);
+				if (asked.has(pid) && Number.isFinite(at)) times.set(pid, at);
+			}
+			return times;
+		} catch {
+			return null;
+		}
+	}
+	async function listDescendantPids(root) {
+		if (!isValidPid(root) || deps.platform !== "win32") return null;
+		try {
+			const file = await deps.resolve("powershell");
+			if (file === null) return null;
+			const rows = rowsUntil(await deps.exec({
+				kind: "powershell.processes",
+				file,
+				args: powershellEncodedArgs(TREE_SCRIPT),
+				timeoutMs: CMDLINE_TIMEOUT_MS,
+				maxOutputBytes: TREE_OUTPUT_BYTES,
+				encoding: "utf8"
+			}), TREE_END);
+			if (rows === null) return null;
+			const childrenOf = /* @__PURE__ */ new Map();
+			for (const row of rows) {
+				const match = TREE_RECORD_RE.exec(row);
+				const pidText = match?.[1];
+				const parentText = match?.[2];
+				if (pidText === void 0 || parentText === void 0) continue;
+				const parent = Number(parentText);
+				const siblings = childrenOf.get(parent);
+				if (siblings === void 0) childrenOf.set(parent, [Number(pidText)]);
+				else siblings.push(Number(pidText));
+			}
+			const seen = /* @__PURE__ */ new Set([root]);
+			const queue = [root];
+			for (let at = 0; at < queue.length && seen.size <= TREE_MAX_DESCENDANTS; at += 1) for (const child of childrenOf.get(queue[at] ?? 0) ?? []) {
+				if (seen.has(child)) continue;
+				seen.add(child);
+				queue.push(child);
+			}
+			return queue.slice(1).sort((a, b) => a - b);
+		} catch {
+			return null;
+		}
+	}
 	async function waitForExit(pid, timeoutMs, pollMs = 100) {
 		const started = deps.now();
 		for (;;) {
@@ -13882,6 +14985,9 @@ function createProcessHelpers(deps) {
 		pidAlive,
 		commandLineOf,
 		forceKill,
+		forceKillTree,
+		processStartTimes,
+		listDescendantPids,
 		waitForExit
 	};
 }
@@ -13901,15 +15007,38 @@ function commandLineOf(pid) {
 function forceKill(pid) {
 	return real.forceKill(pid);
 }
+/**
+* `forceKill` for the whole tree: `taskkill.exe /PID <pid> /T /F` through `execFileText` (exit code 128, "not found", counts as
+* success), `SIGKILL` of the pid elsewhere. The one tree kill of the engine: the terminal sessions and the lifecycle
+* operations use it. Errors as `forceKill`; check the identity of the process first when the pid came from a file.
+*/
+function forceKillTree(pid) {
+	return real.forceKillTree(pid);
+}
+/**
+* The start time (epoch ms) of each live pid of `pids`, from one constant PowerShell query that is spawned only when at least
+* one valid pid is asked about. A pid that is gone has no entry. Null: the answer is unknown (not Windows, failed or cut query,
+* more than 256 pids). Never throws. The sweep of orphaned terminal children compares it with the recorded spawn time (pid reuse).
+*/
+function processStartTimes(pids) {
+	return real.processStartTimes(pids);
+}
+/**
+* Every descendant of `root` (not `root`), ascending, computed in Node from one constant CIM listing of the machine; null when
+* the listing failed or the platform is not Windows. Never throws. A parent id reused by the system can add a stray row.
+*/
+function listDescendantPids(root) {
+	return real.listDescendantPids(root);
+}
 /** Polls `pidAlive` every `pollMs` (default 100) until the process is gone (true) or `timeoutMs` has passed (false). */
 function waitForExit(pid, timeoutMs, pollMs) {
 	return real.waitForExit(pid, timeoutMs, pollMs);
 }
-var PID_RE$1, CMDLINE_TTL_MS, CMDLINE_CACHE_MAX, CMDLINE_TIMEOUT_MS, KILL_TIMEOUT_MS, SMALL_OUTPUT_BYTES, TASKKILL_NOT_FOUND, real;
+var PID_RE$1, CMDLINE_TTL_MS, CMDLINE_CACHE_MAX, CMDLINE_TIMEOUT_MS, KILL_TIMEOUT_MS, SMALL_OUTPUT_BYTES, TASKKILL_NOT_FOUND, START_QUERY_MAX_PIDS, TREE_OUTPUT_BYTES, TREE_MAX_DESCENDANTS, START_TIMES_END, TREE_END, START_RECORD_RE, TREE_RECORD_RE, TREE_SCRIPT, real;
 var init_process = __esmMin((() => {
 	init_src$1();
 	init_exec();
-	init_host();
+	init_host$1();
 	init_fsx();
 	PID_RE$1 = /^[1-9][0-9]{0,9}$/;
 	CMDLINE_TTL_MS = 5e3;
@@ -13918,6 +15047,14 @@ var init_process = __esmMin((() => {
 	KILL_TIMEOUT_MS = 1e4;
 	SMALL_OUTPUT_BYTES = 65536;
 	TASKKILL_NOT_FOUND = 128;
+	START_QUERY_MAX_PIDS = 256;
+	TREE_OUTPUT_BYTES = 1048576;
+	TREE_MAX_DESCENDANTS = 4096;
+	START_TIMES_END = "MCS-START-END";
+	TREE_END = "MCS-TREE-END";
+	START_RECORD_RE = /^([1-9][0-9]{0,9})\t(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?Z$/;
+	TREE_RECORD_RE = /^([1-9][0-9]{0,9})\t([0-9]{1,10})$/;
+	TREE_SCRIPT = `\$ErrorActionPreference='Stop'; Get-CimInstance Win32_Process | ForEach-Object { '' + \$_.ProcessId + [char]9 + \$_.ParentProcessId }; '${TREE_END}'`;
 	real = createProcessHelpers({
 		platform: hostPlatform,
 		exec: (spec) => execFileText(spec),
@@ -13998,8 +15135,8 @@ function toPosixRel(p, base) {
 	return toPosix(rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) ? target : rel);
 }
 var EXTENDED_UNC, EXTENDED_LOCAL_PREFIX, LOWER_DRIVE, MSYS_DRIVE;
-var init_paths$2 = __esmMin((() => {
-	init_host();
+var init_paths$3 = __esmMin((() => {
+	init_host$1();
 	EXTENDED_UNC = /^\\\\\?\\UNC\\/i;
 	EXTENDED_LOCAL_PREFIX = "\\\\?\\";
 	LOWER_DRIVE = /^([a-z]):/;
@@ -14151,7 +15288,7 @@ async function listDir(dir) {
 		return [];
 	}
 }
-async function isFile$1(candidate) {
+async function isFile$3(candidate) {
 	try {
 		return (await stat(candidate)).isFile();
 	} catch {
@@ -14219,7 +15356,7 @@ async function globFiles(pattern, base, opts = {}) {
 		if (!hasMagic(segment)) {
 			const child = path.join(dir, segment);
 			if (last) {
-				if (await isFile$1(child)) add(child);
+				if (await isFile$3(child)) add(child);
 			} else if (await isDirectory$1(child)) await walk(child, index + 1, depth);
 			return;
 		}
@@ -14231,7 +15368,7 @@ async function globFiles(pattern, base, opts = {}) {
 			if (!matches(entry.name)) continue;
 			const child = path.join(dir, entry.name);
 			if (last) {
-				if (entry.isFile() || entry.isSymbolicLink() && await isFile$1(child)) add(child);
+				if (entry.isFile() || entry.isSymbolicLink() && await isFile$3(child)) add(child);
 			} else if (entry.isDirectory() && depth < maxDepth) await walk(child, index + 1, depth + 1);
 		}
 	};
@@ -14243,7 +15380,7 @@ async function globFiles(pattern, base, opts = {}) {
 }
 var DEFAULT_MAX_MATCHES, DEFAULT_MAX_DEPTH, DRIVE_ROOT, UNC_ROOT;
 var init_glob = __esmMin((() => {
-	init_host();
+	init_host$1();
 	DEFAULT_MAX_MATCHES = 500;
 	DEFAULT_MAX_DEPTH = 8;
 	DRIVE_ROOT = /^[A-Za-z]:\//;
@@ -14574,13 +15711,13 @@ function flagGroupAt(source, i) {
 	return null;
 }
 /** One pass over the source outside escapes, tracking (nested `v`-mode) classes, for the constructs this module refuses or explains. */
-function scan(source) {
+function scan$1(source) {
 	let python = false;
 	let modifierGroup = false;
 	let classDepth = 0;
 	for (let i = 0; i < source.length; i++) {
 		const code = source.charCodeAt(i);
-		if (code === BACKSLASH$4) {
+		if (code === BACKSLASH$5) {
 			const next = source[i + 1];
 			if (next === "A" || next === "Z") python = true;
 			i += 1;
@@ -14613,7 +15750,7 @@ function scan(source) {
 }
 /** The hint for a pattern that uses a Python-only construct, else null. */
 function pythonSyntaxHint(source) {
-	return scan(source).python ? PYTHON_SYNTAX_HINT : null;
+	return scan$1(source).python ? PYTHON_SYNTAX_HINT : null;
 }
 /** The V8 message without the `Invalid regular expression: /source/flags: ` prefix, so the pattern is never repeated. */
 function reasonOf$2(error, source, flags) {
@@ -14679,7 +15816,7 @@ function makeMatch(groupCount, groupNames, text, m) {
 * and the search continues code point by code point with a sticky copy of the same pattern.
 */
 function compileRegex(source, context) {
-	const found = scan(source);
+	const found = scan$1(source);
 	if (found.modifierGroup) throw new RegexCompileError(MODIFIER_REASON, true);
 	const flags = FLAGS[context];
 	let regex;
@@ -14737,7 +15874,7 @@ function tryCompileRegex(source, context) {
 		throw error;
 	}
 }
-var PYTHON_SYNTAX_HINT, MODIFIER_REASON, GENERIC_REASON, FLAGS, BACKSLASH$4, OPEN_CLASS, CLOSE_CLASS, OPEN_GROUP, RegexCompileError;
+var PYTHON_SYNTAX_HINT, MODIFIER_REASON, GENERIC_REASON, FLAGS, BACKSLASH$5, OPEN_CLASS, CLOSE_CLASS, OPEN_GROUP, RegexCompileError;
 var init_compile = __esmMin((() => {
 	PYTHON_SYNTAX_HINT = "this looks like Python regex syntax; run `mcs migrate-workspace --task <slug>` (dry run first)";
 	MODIFIER_REASON = "inline modifier groups such as (?i:...) are not supported; write the letter variants with classes";
@@ -14746,7 +15883,7 @@ var init_compile = __esmMin((() => {
 		session_rule: "sv",
 		attempts: "vy"
 	};
-	BACKSLASH$4 = 92;
+	BACKSLASH$5 = 92;
 	OPEN_CLASS = 91;
 	CLOSE_CLASS = 93;
 	OPEN_GROUP = 40;
@@ -14894,7 +16031,7 @@ function createWatchHint(root, onHint, o) {
 }
 var DEFAULT_DEBOUNCE_MS, DEFAULT_RETRY_MS;
 var init_watch_hint = __esmMin((() => {
-	init_host();
+	init_host$1();
 	DEFAULT_DEBOUNCE_MS = 100;
 	DEFAULT_RETRY_MS = 6e4;
 }));
@@ -15093,7 +16230,7 @@ var init_mutex = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	init_zod();
-	init_host();
+	init_host$1();
 	init_process();
 	MutexTimeoutError = class extends McsError {
 		constructor(name, waitedMs) {
@@ -15137,7 +16274,7 @@ function bundleLayout(r, runtimeDir) {
 		mode: "bundle",
 		skillDir,
 		runtimeDir,
-		launcherPath: p.join(skillDir, "scripts", "mcs.mjs"),
+		launcherPath: p.join(skillDir, "scripts", LAUNCHER_FILE),
 		serverEntry: p.join(runtimeDir, BUNDLE_SERVER_FILE),
 		hookEntry: p.join(runtimeDir, BUNDLE_HOOK_FILE),
 		webDir: p.join(runtimeDir, "web"),
@@ -15154,7 +16291,7 @@ function sourceLayout(r, runtimeDir) {
 		mode: "source",
 		skillDir,
 		runtimeDir,
-		launcherPath: p.join(skillDir, "scripts", "mcs.mjs"),
+		launcherPath: p.join(skillDir, "scripts", LAUNCHER_FILE),
 		serverEntry: p.join(runtimeDir, "packages", "server", "dist", "main.js"),
 		hookEntry: p.join(runtimeDir, "packages", "cli", "dist", "hook.js"),
 		webDir: p.join(runtimeDir, "packages", "web", "dist"),
@@ -15210,11 +16347,12 @@ function layoutOfModule(moduleUrl, fs) {
 	}
 	throw unknownTree(file);
 }
-var SKILL_FOLDER_NAME, BUNDLE_SERVER_FILE, BUNDLE_CLI_FILE, BUNDLE_HOOK_FILE, BUILD_STAMP_FILE;
+var SKILL_FOLDER_NAME, LAUNCHER_FILE, BUNDLE_SERVER_FILE, BUNDLE_CLI_FILE, BUNDLE_HOOK_FILE, BUILD_STAMP_FILE;
 var init_layout = __esmMin((() => {
 	init_src$1();
-	init_host();
+	init_host$1();
 	SKILL_FOLDER_NAME = "monitoring-claude-sessions";
+	LAUNCHER_FILE = "caw.mjs";
 	BUNDLE_SERVER_FILE = "mcs-server.mjs";
 	BUNDLE_CLI_FILE = "mcs-cli.mjs";
 	BUNDLE_HOOK_FILE = "mcs-hook.mjs";
@@ -15299,13 +16437,13 @@ function parseRuntimeCommandLine(commandLine) {
 function quoteIfNeeded(argument) {
 	return /[\s"]/.test(argument) ? `"${argument.replaceAll("\"", "")}"` : argument;
 }
-function failure$2(what, result, reason) {
+function failure$3(what, result, reason) {
 	const detail = reason ?? (result === null ? "the program was not found" : firstLine(result.stderr) || (result.error ?? "unknown error"));
 	return new McsError("INTERNAL", `could not list runtime processes (${what}): ${detail}`);
 }
 async function rowsFromPowerShell(deps) {
 	const file = await deps.resolve("powershell");
-	if (file === null) throw failure$2("powershell", null);
+	if (file === null) throw failure$3("powershell", null);
 	const result = await deps.exec({
 		kind: "powershell.cmdline",
 		file,
@@ -15314,7 +16452,7 @@ async function rowsFromPowerShell(deps) {
 		maxOutputBytes: LIST_MAX_OUTPUT_BYTES,
 		encoding: "utf8"
 	});
-	if (!result.ok) throw failure$2("powershell", result);
+	if (!result.ok) throw failure$3("powershell", result);
 	const rows = [];
 	let ended = false;
 	for (const line of result.stdout.split(/\r?\n/)) {
@@ -15331,7 +16469,7 @@ async function rowsFromPowerShell(deps) {
 			commandLine: Buffer.from(encoded, "base64").toString("utf8")
 		});
 	}
-	if (!ended) throw failure$2("powershell", result, "the listing did not reach its end marker");
+	if (!ended) throw failure$3("powershell", result, "the listing did not reach its end marker");
 	return rows;
 }
 /**
@@ -15342,7 +16480,7 @@ async function rowsFromPowerShell(deps) {
 */
 async function rowsFromPs(deps) {
 	const file = await deps.resolve("ps");
-	if (file === null) throw failure$2("ps", null);
+	if (file === null) throw failure$3("ps", null);
 	const result = await deps.exec({
 		kind: "ps",
 		file,
@@ -15351,7 +16489,7 @@ async function rowsFromPs(deps) {
 		maxOutputBytes: LIST_MAX_OUTPUT_BYTES,
 		encoding: "utf8"
 	});
-	if (!result.ok) throw failure$2("ps", result);
+	if (!result.ok) throw failure$3("ps", result);
 	const rows = [];
 	for (const line of result.stdout.split(/\r?\n/)) {
 		const match = /^\s*([0-9]+)\s+(.*)$/.exec(line);
@@ -15438,9 +16576,9 @@ var init_markers = __esmMin((() => {
 	init_src$1();
 	init_exec();
 	init_fsx();
-	init_host();
+	init_host$1();
 	init_layout();
-	init_paths$2();
+	init_paths$3();
 	RUNTIME_ENTRY = "/packages/server/dist/main.js";
 	BUNDLE_SERVER_ENTRY = `/${BUNDLE_SERVER_FILE}`;
 	RUNTIME_ENTRIES = [RUNTIME_ENTRY, BUNDLE_SERVER_ENTRY];
@@ -15462,7 +16600,7 @@ var init_markers = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/security/paths.ts
-function errnoCode$4(error) {
+function errnoCode$5(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 /** The spelling every path takes before it is compared: no extended prefix and an upper-case drive letter on win32. */
@@ -15493,14 +16631,14 @@ function probe(candidate) {
 			path: normalizeReal(realpathSync.native(candidate))
 		};
 	} catch (error) {
-		const code = errnoCode$4(error);
+		const code = errnoCode$5(error);
 		if (code !== "ENOENT" && code !== "ENOTDIR") return { kind: "refused" };
 	}
 	try {
 		lstatSync(candidate);
 		return { kind: "refused" };
 	} catch (error) {
-		const code = errnoCode$4(error);
+		const code = errnoCode$5(error);
 		return code === "ENOENT" || code === "ENOTDIR" ? { kind: "missing" } : { kind: "refused" };
 	}
 }
@@ -15611,10 +16749,10 @@ function* walkNoLinks(dir, opts) {
 	};
 }
 var WIN32;
-var init_paths$1 = __esmMin((() => {
+var init_paths$2 = __esmMin((() => {
 	init_src$1();
-	init_host();
-	init_paths$2();
+	init_host$1();
+	init_paths$3();
 	init_protocol$1();
 	WIN32 = hostPlatform === "win32";
 }));
@@ -15626,7 +16764,7 @@ function safeValue(value) {
 	if (typeof value === "number") return Number.isFinite(value);
 	return typeof value === "boolean";
 }
-function errnoCode$3(error) {
+function errnoCode$4(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 /** Builds a logger over `deps`. `createLogger` is this over the real file system and `process.stderr`. */
@@ -15696,7 +16834,7 @@ function createLoggerWith(o, deps) {
 				sleep: (ms) => deps.sleep(ms)
 			});
 		} catch (error) {
-			if (errnoCode$3(error) !== "ENOENT") throw error;
+			if (errnoCode$4(error) !== "ENOENT") throw error;
 		}
 	}
 	async function rotate(file) {
@@ -15859,7 +16997,7 @@ function isDbError(error, code) {
 	return error instanceof DbError && (code === void 0 || error.code === code);
 }
 var DB_ERROR_CODES$1, DbError;
-var init_errors$4 = __esmMin((() => {
+var init_errors$5 = __esmMin((() => {
 	DB_ERROR_CODES$1 = [
 		"db_busy",
 		"db_locked",
@@ -16158,7 +17296,7 @@ function pragmaNumber(driver, text) {
 }
 var STATEMENT_CACHE_SIZE, BUSY_TIMEOUT_MS, BACKUP_PAGES_PER_STEP, sqliteModule, PRIMARY_NAMES, EXTENDED_NAMES, SQLITE_CONSTRAINT;
 var init_driver = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	STATEMENT_CACHE_SIZE = 200;
 	BUSY_TIMEOUT_MS = 5e3;
 	BACKUP_PAGES_PER_STEP = 100;
@@ -16248,11 +17386,11 @@ function invalidFile(fileName, reason) {
 function normalise(text) {
 	return (text.startsWith(UTF8_BOM) ? text.slice(1) : text).replaceAll("\r\n", "\n");
 }
-function sha256(text) {
+function sha256$1(text) {
 	return createHash("sha256").update(text, "utf8").digest("hex");
 }
 function parseFile(folder, fileName) {
-	const nameMatch = FILE_NAME_RE.exec(fileName);
+	const nameMatch = FILE_NAME_RE$1.exec(fileName);
 	if (nameMatch === null) throw invalidFile(fileName, "the name must match NNNN_snake_name.sql");
 	const sql = normalise(readFileSync(join(folder, fileName), "utf8"));
 	const lines = sql.split("\n");
@@ -16272,7 +17410,7 @@ function parseFile(folder, fileName) {
 	return {
 		version,
 		name: headerMatch[2] ?? "",
-		checksum: sha256(sql),
+		checksum: sha256$1(sql),
 		sql,
 		foreignKeysOff
 	};
@@ -16491,14 +17629,14 @@ function migrateDb$1(path, opts) {
 		db.close();
 	}
 }
-var UTF8_BOM, FILE_NAME_RE, HEADER_RE, DIRECTIVE_RE, BOOTSTRAP_SQL;
+var UTF8_BOM, FILE_NAME_RE$1, HEADER_RE, DIRECTIVE_RE, BOOTSTRAP_SQL;
 var init_migrations$1 = __esmMin((() => {
 	init_src$1();
 	init_layout();
 	init_driver();
-	init_errors$4();
+	init_errors$5();
 	UTF8_BOM = String.fromCharCode(65279);
-	FILE_NAME_RE = /^(\d{4})_([a-z0-9_]{1,48})\.sql$/;
+	FILE_NAME_RE$1 = /^(\d{4})_([a-z0-9_]{1,48})\.sql$/;
 	HEADER_RE = /^-- mcs:migration version=(\d+) name=([a-z0-9_]{1,48})$/;
 	DIRECTIVE_RE = /^-- mcs:foreign_keys=(\S+)$/;
 	BOOTSTRAP_SQL = `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -16601,10 +17739,10 @@ function openInstanceDb(o) {
 	};
 }
 var DB_OPEN_EXIT_CODES, SLEEP_CELL, CONNECTION_PRAGMAS;
-var init_open$1 = __esmMin((() => {
+var init_open$2 = __esmMin((() => {
 	init_src$1();
 	init_driver();
-	init_errors$4();
+	init_errors$5();
 	init_migrations$1();
 	DB_OPEN_EXIT_CODES = Object.freeze({
 		db_busy: 14,
@@ -16728,7 +17866,7 @@ async function backupDb(src, destPath, opts = {}) {
 }
 var init_backup$3 = __esmMin((() => {
 	init_driver();
-	init_errors$4();
+	init_errors$5();
 	init_migrations$1();
 }));
 
@@ -16910,7 +18048,7 @@ function onCommitted(db, listener) {
 var subscriptions, running;
 var init_write = __esmMin((() => {
 	init_changes$1();
-	init_errors$4();
+	init_errors$5();
 	subscriptions = /* @__PURE__ */ new WeakMap();
 	running = /* @__PURE__ */ new WeakSet();
 }));
@@ -16965,7 +18103,7 @@ function parseObject(file, bytes) {
 	}
 	let doc;
 	try {
-		doc = parseJson(text);
+		doc = parseJson$2(text);
 	} catch (error) {
 		throw new McsError("CONFIG_INVALID", `${file} is not valid JSON: ${reasonOf$1(error)}`, { cause: error });
 	}
@@ -17116,7 +18254,7 @@ var init_defaults = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/config/merge.ts
-function isPlainObject$3(value) {
+function isPlainObject$4(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /**
@@ -17141,7 +18279,7 @@ function mergeLayer(base, over, merged) {
 	for (const [key, value] of Object.entries(over)) {
 		if (key.startsWith("_")) continue;
 		const current = Object.hasOwn(out, key) ? out[key] : void 0;
-		if (merged.has(key) && isPlainObject$3(value) && isPlainObject$3(current)) {
+		if (merged.has(key) && isPlainObject$4(value) && isPlainObject$4(current)) {
 			const combined = {};
 			for (const [k, v] of Object.entries(current)) setOwn(combined, k, v);
 			for (const [k, v] of Object.entries(structuredClone(value))) setOwn(combined, k, v);
@@ -17151,7 +18289,7 @@ function mergeLayer(base, over, merged) {
 	return out;
 }
 var L_MERGED;
-var init_merge$1 = __esmMin((() => {
+var init_merge$2 = __esmMin((() => {
 	L_MERGED = /* @__PURE__ */ new Set([
 		"panels",
 		"ui",
@@ -17222,7 +18360,7 @@ var init_migrations = __esmMin((() => {
 //#region packages/engine/src/config/provenance.ts
 /** Dotted paths of the leaves of `value`: scalars, `null` and arrays are leaves, objects are walked, `{}` has none. */
 function leafPaths(value, prefix) {
-	if (!isPlainObject$3(value)) return [prefix];
+	if (!isPlainObject$4(value)) return [prefix];
 	const out = [];
 	for (const [key, child] of Object.entries(value)) out.push(...leafPaths(child, prefix === "" ? key : `${prefix}.${key}`));
 	return out;
@@ -17235,9 +18373,9 @@ function leafPaths(value, prefix) {
 */
 function legacyProvenance(defaults, over) {
 	const out = {};
-	for (const [key, value] of Object.entries(defaults)) if (L_MERGED.has(key) && isPlainObject$3(value)) {
+	for (const [key, value] of Object.entries(defaults)) if (L_MERGED.has(key) && isPlainObject$4(value)) {
 		const set = over[key];
-		const setKeys = isPlainObject$3(set) ? set : {};
+		const setKeys = isPlainObject$4(set) ? set : {};
 		for (const sub of Object.keys(value)) out[`${key}.${sub}`] = Object.hasOwn(setKeys, sub) ? "config" : "skill";
 	} else out[key] = Object.hasOwn(over, key) ? "config" : "skill";
 	for (const key of Object.keys(over)) if (!key.startsWith("_") && !Object.hasOwn(defaults, key)) out[key] = "config";
@@ -17255,7 +18393,7 @@ function clearUnder(tags, prefix) {
 */
 function runtimeProvenance(layers, runtime, derived = {}) {
 	const tags = /* @__PURE__ */ new Map();
-	for (const layer of layers) for (const [top, value] of Object.entries(layer.overrides)) if (R_MERGED.has(top) && isPlainObject$3(value)) for (const [sub, subValue] of Object.entries(value)) {
+	for (const layer of layers) for (const [top, value] of Object.entries(layer.overrides)) if (R_MERGED.has(top) && isPlainObject$4(value)) for (const [sub, subValue] of Object.entries(value)) {
 		const prefix = `${top}.${sub}`;
 		clearUnder(tags, prefix);
 		for (const leaf of leafPaths(subValue, prefix)) tags.set(leaf, layer.source);
@@ -17271,7 +18409,7 @@ function runtimeProvenance(layers, runtime, derived = {}) {
 }
 var init_provenance = __esmMin((() => {
 	init_src$1();
-	init_merge$1();
+	init_merge$2();
 }));
 
 //#endregion
@@ -17475,8 +18613,8 @@ var MAX_SAFE, LegacyConfigFileSchema, LEGACY_KEYS, MSYS_MESSAGE;
 var init_validate_legacy = __esmMin((() => {
 	init_src$1();
 	init_json$1();
-	init_host();
-	init_paths$2();
+	init_host$1();
+	init_paths$3();
 	init_time_format();
 	init_regex$1();
 	MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -17588,7 +18726,7 @@ function plainObject(doc, file) {
 		if (error instanceof RangeError) throw invalid$2(`${file}: an integer is beyond 2^53-1 in magnitude`, error);
 		throw error;
 	}
-	if (!isPlainObject$3(plain)) throw invalid$2(`${file} must contain a JSON object`);
+	if (!isPlainObject$4(plain)) throw invalid$2(`${file} must contain a JSON object`);
 	return plain;
 }
 function formatPath(segments) {
@@ -17599,7 +18737,7 @@ function formatPath(segments) {
 function getPath(root, dotted) {
 	let cur = root;
 	for (const part of dotted.split(".")) {
-		if (!isPlainObject$3(cur) || !Object.hasOwn(cur, part)) return void 0;
+		if (!isPlainObject$4(cur) || !Object.hasOwn(cur, part)) return void 0;
 		cur = cur[part];
 	}
 	return cur;
@@ -17609,7 +18747,7 @@ function setPath(root, dotted, value) {
 	let cur = root;
 	for (const part of parts.slice(0, -1)) {
 		const next = Object.hasOwn(cur, part) ? cur[part] : void 0;
-		if (!isPlainObject$3(next)) throw new Error(`cannot set ${dotted}: ${part} is not an object`);
+		if (!isPlainObject$4(next)) throw new Error(`cannot set ${dotted}: ${part} is not an object`);
 		cur = next;
 	}
 	setOwn(cur, parts[parts.length - 1] ?? dotted, value);
@@ -17836,9 +18974,9 @@ var PORT_MAX, LEVELS, RuntimeConfigSchema;
 var init_resolve = __esmMin((() => {
 	init_src$1();
 	init_json$1();
-	init_paths$2();
+	init_paths$3();
 	init_defaults();
-	init_merge$1();
+	init_merge$2();
 	init_provenance();
 	init_validate_legacy();
 	PORT_MAX = 65535;
@@ -18001,7 +19139,7 @@ async function readJsonFile(file) {
 	try {
 		return {
 			text,
-			value: parseJson(text)
+			value: parseJson$2(text)
 		};
 	} catch (error) {
 		if (error instanceof JsonSyntaxError) throw new McsError("CONFIG_UNREADABLE", `${file} is not valid JSON: ${error.message}`, { cause: error });
@@ -18142,10 +19280,10 @@ async function withTaskMutex(ws, fn, o = {}) {
 	}
 }
 var WORKSPACE_JSON_FILES, WORKSPACE_DIRS, WORKSPACE_GUARDED_FILES, TASK_MUTEX_TIMEOUT_MS, heldMutexes;
-var init_paths = __esmMin((() => {
+var init_paths$1 = __esmMin((() => {
 	init_src$1();
 	init_mutex();
-	init_paths$2();
+	init_paths$3();
 	init_json$1();
 	init_fsio();
 	WORKSPACE_JSON_FILES = [
@@ -18385,7 +19523,7 @@ var AUDIT_ACTIONS, CHANGES_HEADER, DECISIONS_HEADER, HEADERS, KNOWN_ACTIONS;
 var init_writer$1 = __esmMin((() => {
 	init_src$1();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	init_reader();
 	AUDIT_ACTIONS = [
 		"init-task",
@@ -18431,6 +19569,7 @@ function newInstanceFile(slug, o) {
 		runtimeVersion,
 		dbSchemaVersion: 0,
 		engine: "node",
+		...o.kind === "user" ? { kind: o.kind } : {},
 		hooks: { enabled: false },
 		upgradedAt: null
 	};
@@ -18449,6 +19588,7 @@ function instanceFileToDoc(file) {
 		runtimeVersion: f.runtimeVersion,
 		dbSchemaVersion: f.dbSchemaVersion,
 		engine: f.engine,
+		...f.kind === void 0 ? {} : { kind: f.kind },
 		hooks: { enabled: f.hooks.enabled },
 		upgradedAt: f.upgradedAt
 	});
@@ -18550,7 +19690,8 @@ function adoptWorkspace(ws, o = {}) {
 		const nowMs = (o.clock ?? systemClock).now();
 		const instance = newInstanceFile(ws.slug, {
 			nowMs,
-			...o.newId === void 0 ? {} : { instanceId: o.newId() }
+			...o.newId === void 0 ? {} : { instanceId: o.newId() },
+			...o.kind === void 0 ? {} : { kind: o.kind }
 		});
 		for (const folder of [
 			"audit",
@@ -18570,7 +19711,7 @@ var init_adopt = __esmMin((() => {
 	init_writer$1();
 	init_json$1();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 }));
 
 //#endregion
@@ -18634,7 +19775,7 @@ var init_list = __esmMin((() => {
 	init_src$1();
 	init_adopt();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 }));
 
 //#endregion
@@ -18862,7 +20003,7 @@ async function prepareRequest(o, root) {
 	};
 }
 function readmeText(name, description, slug) {
-	return `# Monitoring task: ${name}\n\n${description}\n\n${README_NOTES}- Inspect: \`node <skill>/scripts/mcs.mjs inspect --task ${slug}\` (\`<skill>\` is the installed skill folder that holds \`SKILL.md\`)\n- Never copy transcripts here; they are read in place.
+	return `# Monitoring task: ${name}\n\n${description}\n\n${README_NOTES}- Inspect: \`node <skill>/scripts/${LAUNCHER_FILE} inspect --task ${slug}\` (\`<skill>\` is the installed skill folder that holds \`SKILL.md\`)\n- Never copy transcripts here; they are read in place.
 `;
 }
 /** `repo` of `task.json`: relative to the workspace with `/`; on another Windows drive there is none: the absolute path with `/`. */
@@ -18888,7 +20029,8 @@ async function buildStaging(ws, staging, request, o, clock) {
 	const nowMs = clock.now();
 	const instance = newInstanceFile(ws.slug, {
 		nowMs,
-		...o.newId === void 0 ? {} : { instanceId: o.newId() }
+		...o.newId === void 0 ? {} : { instanceId: o.newId() },
+		...o.kind === void 0 ? {} : { kind: o.kind }
 	});
 	await mkdir(staging);
 	const there = { dir: staging };
@@ -18988,7 +20130,8 @@ async function reuse(ws, request, o, clock) {
 	}
 	const adoption = await adoptWorkspace(ws, {
 		clock,
-		...o.newId === void 0 ? {} : { newId: o.newId }
+		...o.newId === void 0 ? {} : { newId: o.newId },
+		...o.kind === void 0 ? {} : { kind: o.kind }
 	});
 	return {
 		created: false,
@@ -19054,11 +20197,12 @@ var init_init$1 = __esmMin((() => {
 	init_writer$1();
 	init_defaults();
 	init_validate_legacy();
+	init_layout();
 	init_process();
 	init_json$1();
 	init_adopt();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	STAGING_RE = /^\.init-[a-z0-9-]+-(\d+)-[0-9a-f]{8}$/;
 	STAGING_MAX_AGE_MS = 6e5;
 	RENAME_BUDGET_MS$3 = 2e3;
@@ -19224,7 +20368,7 @@ var init_repair = __esmMin((() => {
 	init_fsx();
 	init_fsio();
 	init_adopt();
-	init_paths();
+	init_paths$1();
 	RETRY_CODES$1 = /* @__PURE__ */ new Set([
 		"EPERM",
 		"EBUSY",
@@ -19333,7 +20477,7 @@ async function ledgerCandidates(repo) {
 	return files.map((file) => relativeToRepo(repo, file)).filter((relative) => !relative.includes("node_modules"));
 }
 function clipPrompt(prompt) {
-	return Array.from(prompt.trim().split(LF$9).join(" ")).slice(0, PROMPT_CHARS).join("");
+	return Array.from(prompt.trim().split(LF$10).join(" ")).slice(0, PROMPT_CHARS).join("");
 }
 function sessionLine(s) {
 	const age = String(Math.round(s.ageSeconds)).padStart(5);
@@ -19448,7 +20592,7 @@ async function version(ctx, deps = {}) {
 		text: `mcs ${RUNTIME_VERSION} (code ${code ?? "unknown"}, node ${node}, build ${build})`
 	};
 }
-var SESSION_LIMIT, CANDIDATE_LIMIT, PROMPT_CHARS, LF$9;
+var SESSION_LIMIT, CANDIDATE_LIMIT, PROMPT_CHARS, LF$10;
 var init_workspace = __esmMin((() => {
 	init_src$1();
 	init_glob();
@@ -19458,11 +20602,11 @@ var init_workspace = __esmMin((() => {
 	init_fsio();
 	init_init$1();
 	init_list();
-	init_paths();
+	init_paths$1();
 	SESSION_LIMIT = 15;
 	CANDIDATE_LIMIT = 5;
 	PROMPT_CHARS = 110;
-	LF$9 = String.fromCharCode(10);
+	LF$10 = String.fromCharCode(10);
 }));
 
 //#endregion
@@ -19527,7 +20671,7 @@ var BACKUP_FILES;
 var init_backup$2 = __esmMin((() => {
 	init_src$1();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	BACKUP_FILES = [
 		"task.json",
 		"config.json",
@@ -19596,13 +20740,13 @@ function requestControl(address, message, o) {
 		}, o.timeoutMs);
 		socket.once("connect", () => {
 			connected = true;
-			socket.write(`${JSON.stringify(message)}${LF$8}`);
+			socket.write(`${JSON.stringify(message)}${LF$9}`);
 		});
 		socket.on("data", (chunk) => {
 			received.push(chunk);
 			size += chunk.length;
 			const all = text();
-			const end = all.indexOf(LF$8);
+			const end = all.indexOf(LF$9);
 			if (end >= 0) finish(judgeLine(all.slice(0, end)));
 			else if (size > CONTROL_REPLY_MAX_BYTES) finish({
 				kind: "silent",
@@ -19611,7 +20755,7 @@ function requestControl(address, message, o) {
 		});
 		socket.on("error", (error) => {
 			const code = errnoOf$1(error);
-			if (size > 0) finish(judgeLine(text().split(LF$8)[0] ?? ""));
+			if (size > 0) finish(judgeLine(text().split(LF$9)[0] ?? ""));
 			else if (!connected && (code === "ENOENT" || code === "ECONNREFUSED")) finish({ kind: "absent" });
 			else finish({
 				kind: "silent",
@@ -19622,7 +20766,7 @@ function requestControl(address, message, o) {
 			finish(size === 0 ? {
 				kind: "silent",
 				reason: "closed"
-			} : judgeLine(text().split(LF$8)[0] ?? ""));
+			} : judgeLine(text().split(LF$9)[0] ?? ""));
 		});
 	});
 }
@@ -19632,6 +20776,12 @@ function identifyInstance(address, timeoutMs) {
 		v: 1,
 		op: "identify"
 	}, { timeoutMs });
+}
+/** The `Authorization` header for `bearer`, or none; a value that is not a control token is refused without repeating it. */
+function bearerHeaderOf(bearer) {
+	if (bearer === void 0) return {};
+	if (!CONTROL_TOKEN_RE$1.test(bearer)) throw new RangeError("httpGet: the bearer value is not a control token");
+	return { Authorization: `Bearer ${bearer}` };
 }
 /** True for `http://127.0.0.1:<port>` and nothing else: the only address this module ever connects to. */
 function isLoopbackBase(url) {
@@ -19654,7 +20804,10 @@ function httpGet(url, o) {
 		}
 	} : attempt);
 }
-/** `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`). Same limits and the same refusals. */
+/**
+* `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`), and that can send the control token as a
+* Bearer header (`o.bearer`). Same limits and the same refusals.
+*/
 function httpGetWithHeaders(url, o) {
 	return new Promise((resolve, reject) => {
 		const match = URL_RE.exec(url);
@@ -19662,6 +20815,13 @@ function httpGetWithHeaders(url, o) {
 		const pathPart = match?.[2];
 		if (base === void 0 || pathPart === void 0 || !isLoopbackBase(base)) {
 			reject(/* @__PURE__ */ new RangeError("httpGet: only http://127.0.0.1:<port>/... is allowed"));
+			return;
+		}
+		let authorization;
+		try {
+			authorization = bearerHeaderOf(o.bearer);
+		} catch (error) {
+			reject(error instanceof Error ? error : /* @__PURE__ */ new RangeError("httpGet: the bearer value is not a control token"));
 			return;
 		}
 		const port = Number(BASE_RE.exec(base)?.[1] ?? "0");
@@ -19689,7 +20849,8 @@ function httpGetWithHeaders(url, o) {
 			headers: {
 				Host: `127.0.0.1:${String(port)}`,
 				Accept: "application/json",
-				Connection: "close"
+				Connection: "close",
+				...authorization
 			}
 		}, (res) => {
 			const chunks = [];
@@ -19740,6 +20901,35 @@ function jsonBodyOf(reply) {
 	} catch {
 		return;
 	}
+}
+/**
+* The reader of `run/control.token`, for the clients that send it as `Authorization: Bearer` to a `reader` route of a user
+* instance (the CLI, the skill and the MCP server read through `ApiReader`). The file is read again only when its size, times
+* or file id change (a new boot writes a new token by an atomic replace), so a client that asks often costs one `stat`. A link, a
+* missing, unreadable or oversized file, and content that is not 64 lower-case hex digits, are `null`: the request then goes
+* without a token and the server decides.
+*/
+function createControlTokenSource(file, deps = {}) {
+	const read = deps.read ?? readSmallFile;
+	let cached;
+	return async () => {
+		try {
+			assertNotLink(file);
+			const info = await stat(file);
+			const stamp = `${String(info.size)}:${String(info.mtimeMs)}:${String(info.ctimeMs)}:${String(info.ino)}`;
+			if (cached?.stamp === stamp) return cached.token;
+			const text = (await read(file, TOKEN_FILE_MAX_BYTES$1)).toString("utf8").trim();
+			const token = CONTROL_TOKEN_RE$1.test(text) ? text : null;
+			cached = {
+				stamp,
+				token
+			};
+			return token;
+		} catch {
+			cached = void 0;
+			return null;
+		}
+	};
 }
 function recordOf$1(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : null;
@@ -19888,21 +21078,24 @@ async function pidOfHungRuntime(deps, instanceId, stateFile, runtimeDir) {
 function probeInstance(ws, o) {
 	return realProbe(ws, o);
 }
-var LF$8, CONTROL_REPLY_MAX_BYTES, BASE_RE, URL_RE, HTTP_BODY_MAX_BYTES, DEFAULT_TIMEOUT_MS$1, UNMANAGED_HEALTH_TIMEOUT_MS, STATE_FILE_MAX_BYTES$1, realProbe;
+var LF$9, CONTROL_REPLY_MAX_BYTES, BASE_RE, URL_RE, HTTP_BODY_MAX_BYTES, CONTROL_TOKEN_RE$1, TOKEN_FILE_MAX_BYTES$1, DEFAULT_TIMEOUT_MS$1, UNMANAGED_HEALTH_TIMEOUT_MS, STATE_FILE_MAX_BYTES$1, realProbe;
 var init_probe = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	init_fsx();
-	init_host();
+	init_host$1();
 	init_markers();
 	init_process();
 	init_adopt();
-	init_paths();
-	LF$8 = String.fromCharCode(10);
+	init_fsio();
+	init_paths$1();
+	LF$9 = String.fromCharCode(10);
 	CONTROL_REPLY_MAX_BYTES = 65536;
 	BASE_RE = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})$/;
 	URL_RE = /^(http:\/\/127\.0\.0\.1:[0-9]{1,5})(\/[^\s]*)$/;
 	HTTP_BODY_MAX_BYTES = 4194304;
+	CONTROL_TOKEN_RE$1 = /^[0-9a-f]{64}$/;
+	TOKEN_FILE_MAX_BYTES$1 = 4096;
 	DEFAULT_TIMEOUT_MS$1 = 2e3;
 	UNMANAGED_HEALTH_TIMEOUT_MS = 3e3;
 	STATE_FILE_MAX_BYTES$1 = 65536;
@@ -19918,7 +21111,7 @@ var init_probe = __esmMin((() => {
 //#region packages/engine/src/ops/backup.ts
 var backup_exports$1 = /* @__PURE__ */ __exportAll({
 	assertNotLive: () => assertNotLive,
-	controlTokenOf: () => controlTokenOf,
+	controlTokenOf: () => controlTokenOf$1,
 	create: () => create,
 	createLines: () => createLines,
 	databaseFiles: () => databaseFiles,
@@ -20240,7 +21433,7 @@ async function discard(staging) {
 	}).catch(() => void 0);
 }
 /** The control token of `run/control.token` (64 hex digits), or `null`. Used for the one request to the instance's own server. */
-async function controlTokenOf(ws) {
+async function controlTokenOf$1(ws) {
 	const file = workspacePath(ws, "run", "control.token");
 	try {
 		assertNotLink(file);
@@ -20312,7 +21505,7 @@ async function schemaVersionOf(file, fallback) {
 /** Asks the running server (the only writer) to copy its database into `<partial>/monitor.db` (01 4.3, 5.5 step 2). */
 async function copyDatabaseViaServer(ws, instance, partial, deps) {
 	const dest = path.join(partial, DB_FILE);
-	const token = await controlTokenOf(ws);
+	const token = await controlTokenOf$1(ws);
 	if (token === null) throw new McsError("DB_ERROR", "the running server cannot be asked for a backup: it left no control token", { hint: `mcs doctor --task ${ws.slug}` });
 	const attempt = await (deps.control ?? requestControl)(controlAddressOf(instance.instanceId), {
 		v: 1,
@@ -20635,7 +21828,7 @@ function createLines(result) {
 	if (result.pruned.length > 0) lines.push(`removed ${String(result.pruned.length)} older backups: ${result.pruned.join(", ")}`);
 	return lines;
 }
-function rowOf$3(listed, problems) {
+function rowOf$4(listed, problems) {
 	const m = listed.manifest;
 	return {
 		id: listed.id,
@@ -20655,7 +21848,7 @@ async function list$1(ctx, input) {
 	const ws = await openWorkspace(ctx, input.task);
 	const verify = input.verify === true;
 	const rows = [];
-	for (const listed of await listBackups(ws)) rows.push(rowOf$3(listed, verify ? await verifyBackup(listed.dir, listed.manifest) : null));
+	for (const listed of await listBackups(ws)) rows.push(rowOf$4(listed, verify ? await verifyBackup(listed.dir, listed.manifest) : null));
 	return {
 		task: ws.slug,
 		verify,
@@ -20823,7 +22016,7 @@ var init_backup$1 = __esmMin((() => {
 	init_writer$1();
 	init_resolve();
 	init_backup$3();
-	init_errors$4();
+	init_errors$5();
 	init_migrations$1();
 	init_json$1();
 	init_layout();
@@ -20831,7 +22024,7 @@ var init_backup$1 = __esmMin((() => {
 	init_backup$2();
 	init_adopt();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	init_probe();
 	init_workspace();
 	PARTIAL_SUFFIX = ".partial";
@@ -20983,7 +22176,7 @@ function parseSets(items) {
 		const raw = item.slice(at + 1);
 		let value;
 		try {
-			value = parseJson(raw);
+			value = parseJson$2(raw);
 		} catch (error) {
 			if (!(error instanceof JsonSyntaxError)) throw error;
 			value = {
@@ -21001,7 +22194,7 @@ function parseSets(items) {
 }
 /** A key that cannot name a configuration value: an empty segment, a path separator or a prototype name. */
 function isForbiddenKey(parts) {
-	return parts.some((part) => part === "" || part.includes("/") || part.includes(BACKSLASH$3) || FORBIDDEN_SEGMENTS.has(part));
+	return parts.some((part) => part === "" || part.includes("/") || part.includes(BACKSLASH$4) || FORBIDDEN_SEGMENTS.has(part));
 }
 function getAt(doc, parts) {
 	let cur = doc;
@@ -21595,7 +22788,7 @@ function migrateLines$1(result) {
 		];
 	}
 }
-var DEFAULT_SLUG$1, CONFIG_FILE, RUNTIME_FILE, CHANGES_FILE, DECISIONS_FILE, ROUTING_KEYS, R_TOP, FORBIDDEN_SEGMENTS, BACKSLASH$3, MIGRATED_FILES;
+var DEFAULT_SLUG$1, CONFIG_FILE, RUNTIME_FILE, CHANGES_FILE, DECISIONS_FILE, ROUTING_KEYS, R_TOP, FORBIDDEN_SEGMENTS, BACKSLASH$4, MIGRATED_FILES;
 var init_config = __esmMin((() => {
 	init_src$1();
 	init_writer$1();
@@ -21607,7 +22800,7 @@ var init_config = __esmMin((() => {
 	init_adopt();
 	init_fsio();
 	init_list();
-	init_paths();
+	init_paths$1();
 	init_snapshot();
 	init_mutex();
 	init_workspace();
@@ -21629,7 +22822,7 @@ var init_config = __esmMin((() => {
 		"constructor",
 		"prototype"
 	]);
-	BACKSLASH$3 = String.fromCharCode(92);
+	BACKSLASH$4 = String.fromCharCode(92);
 	MIGRATED_FILES = [
 		"config.json",
 		"runtime.json",
@@ -21815,7 +23008,7 @@ var init_audit$1 = __esmMin((() => {
 	init_fsio();
 	init_list();
 	init_workspace();
-	init_paths();
+	init_paths$1();
 	init_config();
 	TASK_SCHEMA = 1;
 	SPOOL_DIR = ["data", "spool"];
@@ -21912,7 +23105,7 @@ function projectFolderName(directory) {
 		truncated: false
 	};
 }
-function isPlain$2(value) {
+function isPlain$4(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** The `cwd` of the first record with a truthy one within the first 61 lines of a file ('' when there is none). */
@@ -21927,7 +23120,7 @@ async function firstCwd(fs, file) {
 		} catch {
 			continue;
 		}
-		if (isPlain$2(record)) {
+		if (isPlain$4(record)) {
 			const cwd = record["cwd"];
 			if (typeof cwd === "string" && cwd !== "") return cwd;
 		}
@@ -22004,6 +23197,29 @@ function over(counters) {
 	if (counters.entries < MAX_ENTRIES$1) return false;
 	counters.truncated = true;
 	return true;
+}
+/**
+* `fn` over `items`, at most `limit` calls at a time; the results are in the order of the items. The first failure rejects the
+* call and no further item is started. `limit` must be a whole number of at least 1.
+*/
+async function mapLimit(items, limit, fn) {
+	if (!Number.isInteger(limit) || limit < 1) throw new RangeError(`mapLimit: limit must be a whole number of at least 1, got ${String(limit)}`);
+	const results = new Array(items.length);
+	const queue = items.entries();
+	let failed = false;
+	async function worker() {
+		for (const [index, item] of queue) {
+			if (failed) return;
+			try {
+				results[index] = await fn(item, index);
+			} catch (error) {
+				failed = true;
+				throw error;
+			}
+		}
+	}
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+	return results;
 }
 function fileOf(file, kind, sessionId, ids, stat) {
 	return {
@@ -22115,22 +23331,33 @@ async function scanSessionFolder(fs, tdir, sessionId, counters, out) {
 	}
 	return title;
 }
-/** The main transcript `<tdir>/<sid>.jsonl`: a regular file, never a link. */
-async function mainFile(fs, tdir, sessionId, counters) {
+async function lookupMain(fs, tdir, sessionId) {
 	const full = path.join(tdir, `${sessionId}.jsonl`);
 	const stat = await fs.lstat(full);
-	if (stat === null) return null;
-	if (stat.kind === "link") {
-		counters.symlinksSkipped += 1;
-		return null;
-	}
-	return stat.kind === "file" ? fileOf(full, "session", sessionId, {}, stat) : null;
+	if (stat === null) return {
+		file: null,
+		link: false
+	};
+	if (stat.kind === "link") return {
+		file: null,
+		link: true
+	};
+	return {
+		file: stat.kind === "file" ? fileOf(full, "session", sessionId, {}, stat) : null,
+		link: false
+	};
+}
+/** The main transcript `<tdir>/<sid>.jsonl`: a regular file, never a link (a link is counted). */
+async function mainFile(fs, tdir, sessionId, counters) {
+	const { file, link } = await lookupMain(fs, tdir, sessionId);
+	if (link) counters.symlinksSkipped += 1;
+	return file;
 }
 /**
 * The tracked sessions below `tdir` (02 5.1.2): a session is tracked when its main file was written within the look-back
 * window, or it is pinned, or it has hook events or is already tracked. Subagent and workflow files follow their session.
 */
-async function discoverTranscripts(tdir, policy, fs = nodeDiscoveryFs) {
+async function discoverTranscripts(tdir, policy, fs = nodeDiscoveryFs, options = {}) {
 	const counters = freshCounters$1();
 	let names;
 	try {
@@ -22149,18 +23376,31 @@ async function discoverTranscripts(tdir, policy, fs = nodeDiscoveryFs) {
 		if (SID_RE.test(id)) candidates.add(id);
 	}
 	const sessions = [];
-	for (const sessionId of [...candidates].sort()) {
-		if (over(counters)) break;
-		counters.entries += 1;
-		const main = await mainFile(fs, tdir, sessionId, counters);
-		if (!(main !== null && main.mtimeMs >= policy.nowMs - policy.lookbackMs || policy.pinned.has(sessionId) || policy.isKnown(sessionId))) continue;
-		const files = main === null ? [] : [main];
-		const customTitlePath = await scanSessionFolder(fs, tdir, sessionId, counters, files);
-		if (files.length > 0 || customTitlePath !== null) sessions.push({
-			sessionId,
-			files,
-			customTitlePath
-		});
+	const ids = [...candidates].sort();
+	const batch = options.concurrency ?? 1;
+	for (let start = 0; start < ids.length; start += batch) {
+		const slice = ids.slice(start, start + batch);
+		const mains = await mapLimit(slice, batch, (sessionId) => lookupMain(fs, tdir, sessionId));
+		for (const [at, sessionId] of slice.entries()) {
+			if (over(counters)) return {
+				sessions,
+				counters,
+				missing: false
+			};
+			counters.entries += 1;
+			const looked = mains[at];
+			if (looked === void 0) continue;
+			const { file: main, link } = looked;
+			if (link) counters.symlinksSkipped += 1;
+			if (!(main !== null && main.mtimeMs >= policy.nowMs - policy.lookbackMs || policy.pinned.has(sessionId) || policy.isKnown(sessionId))) continue;
+			const files = main === null ? [] : [main];
+			const customTitlePath = await scanSessionFolder(fs, tdir, sessionId, counters, files);
+			if (files.length > 0 || customTitlePath !== null) sessions.push({
+				sessionId,
+				files,
+				customTitlePath
+			});
+		}
 	}
 	return {
 		sessions,
@@ -22188,7 +23428,7 @@ function text(value, max, redacted) {
 	if (typeof value !== "string" || value === "") return void 0;
 	return clipCodePoints$1(redacted ? redact(value) : value, max);
 }
-function count$1(value) {
+function count$2(value) {
 	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : void 0;
 }
 async function readObject(fs, file, maxBytes) {
@@ -22196,7 +23436,7 @@ async function readObject(fs, file, maxBytes) {
 	if (body === null) return null;
 	try {
 		const value = JSON.parse(body);
-		return isPlain$2(value) ? value : null;
+		return isPlain$4(value) ? value : null;
 	} catch {
 		return null;
 	}
@@ -22213,7 +23453,7 @@ async function readAgentMeta(transcriptPath, fs = nodeDiscoveryFs) {
 	set("description", text(doc["description"], DESCRIPTION_MAX_CP, true));
 	set("model", text(doc["model"], 128, false));
 	set("requestShape", text(doc["requestShape"], 32, false));
-	set("spawnDepth", count$1(doc["spawnDepth"]));
+	set("spawnDepth", count$2(doc["spawnDepth"]));
 	const toolUseId = doc["toolUseId"];
 	set("spawnToolUseId", typeof toolUseId === "string" && TOOL_ID_RE.test(toolUseId) ? toolUseId : void 0);
 	set("workflowPhase", text(doc["workflowPhase"], 120, true));
@@ -22234,11 +23474,11 @@ async function readWorkflowStatus(file, fs = nodeDiscoveryFs) {
 	if (state !== void 0) status.status = state;
 	const name = text(doc["workflowName"], 120, true);
 	if (name !== void 0) status.workflowName = name;
-	const agents = count$1(doc["agentCount"]);
+	const agents = count$2(doc["agentCount"]);
 	if (agents !== void 0) status.agentCount = agents;
-	const duration = count$1(doc["durationMs"]);
+	const duration = count$2(doc["durationMs"]);
 	if (duration !== void 0) status.durationMs = duration;
-	const started = count$1(doc["startTime"]);
+	const started = count$2(doc["startTime"]);
 	if (started !== void 0) status.startTime = started;
 	return status;
 }
@@ -22246,7 +23486,7 @@ var nodeDiscoveryFs, PROJECT_NAME_MAX, SEPARATORS, FIRST_CWD_LINES, FIRST_CWD_BY
 var init_discovery = __esmMin((() => {
 	init_protocol$1();
 	init_fsx();
-	init_host();
+	init_host$1();
 	nodeDiscoveryFs = {
 		readdir: (dir) => readdir(dir),
 		async lstat(file) {
@@ -22372,7 +23612,7 @@ var ViewEvidenceSchema, EvidenceListSchema;
 var init_shared$1 = __esmMin((() => {
 	init_zod();
 	init_fsx();
-	init_errors$4();
+	init_errors$5();
 	ViewEvidenceSchema = object$1({
 		source: string(),
 		fact: string(),
@@ -22445,7 +23685,7 @@ function toRow$5(row) {
 		detail
 	};
 }
-var DetailSchema$1, COLUMNS$5, AlertsRepo;
+var DetailSchema$1, COLUMNS$6, AlertsRepo;
 var init_alerts$1 = __esmMin((() => {
 	init_zod();
 	init_transitions$1();
@@ -22455,7 +23695,7 @@ var init_alerts$1 = __esmMin((() => {
 		boolean(),
 		_null()
 	]));
-	COLUMNS$5 = `id, rule_id AS ruleId, rule_kind AS ruleKind, scope_kind AS scopeKind, scope_key AS scopeKey,
+	COLUMNS$6 = `id, rule_id AS ruleId, rule_kind AS ruleKind, scope_kind AS scopeKind, scope_key AS scopeKey,
   session_id AS sessionId, severity, status, title, detail, first_fired_at AS firstFiredAt, last_fired_at AS lastFiredAt,
   fire_count AS fireCount, resolved_at AS resolvedAt, resolved_reason AS resolvedReason, updated_seq AS updatedSeq`;
 	AlertsRepo = class {
@@ -22466,7 +23706,7 @@ var init_alerts$1 = __esmMin((() => {
 		/** The one open alert of a rule and scope (`ux_alerts_live`). */
 		openFor(ctx, ruleId, scopeKey) {
 			this.db.assertScope(ctx);
-			const row = this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts WHERE rule_id = :ruleId AND scope_key = :scopeKey AND status = 'open'`).get({
+			const row = this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts WHERE rule_id = :ruleId AND scope_key = :scopeKey AND status = 'open'`).get({
 				ruleId,
 				scopeKey
 			});
@@ -22474,13 +23714,13 @@ var init_alerts$1 = __esmMin((() => {
 		}
 		byId(ctx, id) {
 			this.db.assertScope(ctx);
-			const row = this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts WHERE id = :id`).get({ id });
+			const row = this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts WHERE id = :id`).get({ id });
 			return row === void 0 ? void 0 : toRow$5(row);
 		}
 		/** Newest firing first. */
 		list(ctx, q) {
 			this.db.assertScope(ctx);
-			return (q.status === void 0 ? this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({ limit: rowLimit(q.limit) }) : this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts WHERE status = :status ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({
+			return (q.status === void 0 ? this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({ limit: rowLimit(q.limit) }) : this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts WHERE status = :status ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({
 				status: q.status,
 				limit: rowLimit(q.limit)
 			})).map(toRow$5);
@@ -22727,6 +23967,7 @@ var init_ingest_health$1 = __esmMin((() => {
 //#region packages/engine/src/db/repos/sessions.ts
 function patchEntries$1(p) {
 	return [
+		["project_id", p.projectId],
 		["transcript_file_id", p.transcriptFileId],
 		["label", p.label],
 		["label_source", p.labelSource],
@@ -22937,6 +24178,25 @@ var init_sessions$1 = __esmMin((() => {
 			return result;
 		}
 		/**
+		* The sessions without a project that have a main transcript file, by row id after `afterId` (a keyset: a session that
+		* cannot be assigned is passed over, never asked for again in one pass). The path is the one of the file the session names as
+		* its main file, else of the first main file registered for it.
+		*/
+		withoutProject(ctx, afterId, limit) {
+			this.db.assertScope(ctx);
+			return this.db.driver.prepare(`SELECT id, sessionUid, cwd, lastActivityAt, transcriptPath FROM (
+           SELECT s.id AS id, s.session_uid AS sessionUid, s.cwd AS cwd, s.last_activity_at AS lastActivityAt,
+                  coalesce(
+                    (SELECT f.path FROM transcript_files f WHERE f.id = s.transcript_file_id AND f.kind = 'session'),
+                    (SELECT f.path FROM transcript_files f WHERE f.session_uid = s.session_uid AND f.kind = 'session'
+                      ORDER BY f.id LIMIT 1)) AS transcriptPath
+             FROM sessions s WHERE s.project_id IS NULL AND s.id > :afterId)
+         WHERE transcriptPath IS NOT NULL ORDER BY id LIMIT :limit`).all({
+				afterId,
+				limit: rowLimit(limit)
+			});
+		}
+		/**
 		* Sessions that may match an attempt label (06 3.10.6). The one hour of slack only widens the prefilter
 		* (`idx_sessions_activity`); the caller applies the exact window and delta rules. At most 500 labels per statement.
 		*/
@@ -23003,7 +24263,7 @@ function needsQuotes(value) {
 /** The value as it is written between double quotes. */
 function escapeInQuotes(value) {
 	let escaped = "";
-	for (const c of value) escaped += ESCAPED_IN_QUOTES.has(c) ? BACKSLASH$2 + c : c;
+	for (const c of value) escaped += ESCAPED_IN_QUOTES.has(c) ? BACKSLASH$3 + c : c;
 	return escaped;
 }
 /**
@@ -23021,7 +24281,7 @@ function formatCommand(argv) {
 }
 /** A path as it is shown: forward slashes on Windows, so that Git Bash, PowerShell and cmd all read the same text. */
 function shownPath(p) {
-	return hostPlatform === "win32" ? p.replaceAll(BACKSLASH$2, "/") : p;
+	return hostPlatform === "win32" ? p.replaceAll(BACKSLASH$3, "/") : p;
 }
 /**
 * The six display strings of `InstanceInfo.commands` (01 6.6): `node <launcher> <command> --task <slug>`, the options of
@@ -23032,7 +24292,13 @@ function instanceCommands(i) {
 	const launcher = shownPath(i.launcherPath);
 	const repo = shownPath(i.repoDir);
 	const exportFile = `${shownPath(i.instanceDir)}/logs/export.ndjson`;
-	const build = (command, options = []) => formatCommand([
+	const build = (command, options = []) => i.kind === "user" ? formatCommand([
+		"node",
+		launcher,
+		command,
+		"--user",
+		...options
+	]) : formatCommand([
 		"node",
 		launcher,
 		command,
@@ -23051,15 +24317,15 @@ function instanceCommands(i) {
 		cleanupDryRun: build("cleanup", ["--scope", "logs"])
 	};
 }
-var SPACE, TAB, NEWLINE, RETURN, QUOTE, BACKSLASH$2, BACKTICK, SHELL_SYNTAX, ESCAPED_IN_QUOTES;
+var SPACE, TAB, NEWLINE, RETURN, QUOTE, BACKSLASH$3, BACKTICK, SHELL_SYNTAX, ESCAPED_IN_QUOTES;
 var init_commands = __esmMin((() => {
-	init_host();
+	init_host$1();
 	SPACE = " ";
 	TAB = String.fromCharCode(9);
 	NEWLINE = String.fromCharCode(10);
 	RETURN = String.fromCharCode(13);
 	QUOTE = "\"";
-	BACKSLASH$2 = String.fromCharCode(92);
+	BACKSLASH$3 = String.fromCharCode(92);
 	BACKTICK = String.fromCharCode(96);
 	SHELL_SYNTAX = /* @__PURE__ */ new Set([
 		"\"",
@@ -23078,15 +24344,76 @@ var init_commands = __esmMin((() => {
 		"]",
 		"{",
 		"}",
-		BACKSLASH$2,
+		BACKSLASH$3,
 		BACKTICK
 	]);
 	ESCAPED_IN_QUOTES = /* @__PURE__ */ new Set([
 		QUOTE,
 		"$",
-		BACKSLASH$2,
+		BACKSLASH$3,
 		BACKTICK
 	]);
+}));
+
+//#endregion
+//#region packages/engine/src/projects/scope.ts
+/**
+* True when the instance reads the transcripts of every project (`all`): the key says `all`, or it says `auto` and the instance
+* is the user instance. A task instance stays on its repository unless the key forces `all` (tests, odd setups).
+*/
+function isAllScope(scope, kind) {
+	return scope === "all" || scope === "auto" && kind === "user";
+}
+/** `<claude home>/projects`: the folder that holds one folder per project. */
+function projectsRootOf(claudeHome) {
+	return path.join(claudeHome, "projects");
+}
+/**
+* Whether the sessions that no rule matched are part of a list, a tile or an agent count: the monitor setting
+* `include_unmatched`, the request flag, or the scope `all` (most of its projects have no rule, and `matched` stays a badge).
+*/
+function unmatchedVisible(config, kind, query) {
+	return query.includeUnmatched === true || config.monitor.include_unmatched || isAllScope(config.runtime.projects.scope, kind);
+}
+/** The panels as the instance offers them: those of `config.json`, minus the per-repository ones for the user instance. */
+function effectivePanels(panels, kind) {
+	if (kind !== "user") return panels;
+	const effective = { ...panels };
+	for (const key of REPOSITORY_PANELS) effective[key] = false;
+	return effective;
+}
+/**
+* The kind of the instance that a resolved configuration belongs to: the `kind` of the `instance.json` next to `config.json`
+* (`task` when the file or the key is absent or the file is damaged). It is read once per configuration object: the kind of an
+* instance is fixed for the life of the process.
+*/
+function instanceKindOfConfig(config) {
+	const known = kindsByConfig.get(config);
+	if (known !== void 0) return known;
+	const kind = readKind(config);
+	kindsByConfig.set(config, kind);
+	return kind;
+}
+function readKind(config) {
+	const file = config.files.find((entry) => entry.name === "config.json");
+	if (file === void 0) return "task";
+	try {
+		const instance = InstanceFileSchema.safeParse(JSON.parse(readFileSync(path.join(path.dirname(file.path), "instance.json"), "utf8")));
+		return instance.success ? instanceKindOf(instance.data) : "task";
+	} catch {
+		return "task";
+	}
+}
+var REPOSITORY_PANELS, kindsByConfig;
+var init_scope = __esmMin((() => {
+	init_src$1();
+	REPOSITORY_PANELS = [
+		PANEL_CONFIG_KEY.git,
+		PANEL_CONFIG_KEY.attempts,
+		PANEL_CONFIG_KEY.ledger,
+		PANEL_CONFIG_KEY.chainLog
+	];
+	kindsByConfig = /* @__PURE__ */ new WeakMap();
 }));
 
 //#endregion
@@ -23185,7 +24512,7 @@ function sum(values) {
 	for (const value of values) total += value;
 	return total;
 }
-function iso$2(ms) {
+function iso$3(ms) {
 	return ms === null ? null : isoMsZ(ms);
 }
 function ingestionStatus(report, o) {
@@ -23199,7 +24526,7 @@ function ingestionStatus(report, o) {
 function lastHandlerError(report, nowMs) {
 	let latest = null;
 	for (const entry of report.receiving.hooks.handlerErrors) {
-		if (nowMs - entry.lastAt > HOUR_MS$10) continue;
+		if (nowMs - entry.lastAt > HOUR_MS$11) continue;
 		if (latest === null || entry.lastAt > latest.lastAt) latest = entry;
 	}
 	if (latest === null) return null;
@@ -23249,15 +24576,15 @@ function notEvaluated(hooksEnabled) {
 function projectIngestion(report, o) {
 	if (report === null) return notEvaluated(o.hooksEnabled);
 	const { hooks, spool, transcripts } = report.receiving;
-	const handlerErrorsLastHour = sum(hooks.handlerErrors.filter((entry) => o.nowMs - entry.lastAt <= HOUR_MS$10).map((entry) => entry.count));
+	const handlerErrorsLastHour = sum(hooks.handlerErrors.filter((entry) => o.nowMs - entry.lastAt <= HOUR_MS$11).map((entry) => entry.count));
 	return {
 		status: ingestionStatus(report, o),
 		reasons: report.reasons.map((reason) => reason.code),
 		hooks: {
 			enabled: o.hooksEnabled,
 			installed: hooks.status !== "not_installed",
-			lastReceivedAt: iso$2(hooks.lastEnvelopeAt),
-			lastEventAt: iso$2(report.persisted.lastCommitAt),
+			lastReceivedAt: iso$3(hooks.lastEnvelopeAt),
+			lastEventAt: iso$3(report.persisted.lastCommitAt),
 			spoolPendingBytes: spool.bytesBehind,
 			spoolLagMs: spool.oldestPendingReceivedAt === null ? null : Math.max(0, o.nowMs - spool.oldestPendingReceivedAt),
 			errorsLastHour: hooks.invalid1h + handlerErrorsLastHour,
@@ -23266,8 +24593,8 @@ function projectIngestion(report, o) {
 		transcripts: {
 			dirFound: transcripts.dirFound,
 			filesTracked: transcripts.filesTracked,
-			lastScanAt: iso$2(transcripts.lastScanAt),
-			lastImportedAt: iso$2(transcripts.lastSyncAt),
+			lastScanAt: iso$3(transcripts.lastScanAt),
+			lastImportedAt: iso$3(transcripts.lastSyncAt),
 			importLagMs: transcripts.maxLagMs,
 			pendingBytes: transcripts.bytesBehind + transcripts.backfillRemainingBytes,
 			invalidLines: sum(INVALID_LINE_CODES.map((code) => transcripts.errors[code] ?? 0)),
@@ -23278,7 +24605,7 @@ function projectIngestion(report, o) {
 }
 /**
 * Every child kind with zero counters, in the order of `CHILD_KINDS`; fresh objects on every call. The literal lists the
-* nine kinds, so a kind that is added to or removed from the shared list is a compile error here.
+* twelve kinds, so a kind that is added to or removed from the shared list is a compile error here.
 */
 function zeroChildStats() {
 	return {
@@ -23290,7 +24617,10 @@ function zeroChildStats() {
 		taskkill: zero$1(),
 		node: zero$1(),
 		icacls: zero$1(),
-		opener: zero$1()
+		opener: zero$1(),
+		"powershell.shortcut": zero$1(),
+		claude: zero$1(),
+		"powershell.picker": zero$1()
 	};
 }
 /** `db.ok`: the stored report names no failing or erroring write (03 6.2). */
@@ -23379,7 +24709,7 @@ function toAlertItem(row, sessionUid) {
 		since: isoMsZ(row.firstFiredAt),
 		lastFiredAt: isoMsZ(row.lastFiredAt),
 		fireCount: row.fireCount,
-		resolvedAt: iso$2(row.resolvedAt),
+		resolvedAt: iso$3(row.resolvedAt),
 		resolvedReason: row.resolvedReason,
 		detail: { ...row.detail }
 	};
@@ -23421,11 +24751,11 @@ function eventLoopDelayP99Ms(nowMs) {
 	}
 	return Number.isFinite(p99) && p99 > 0 ? p99 : 0;
 }
-var INGEST_NOT_EVALUATED, HOUR_MS$10, DISK_CACHE_MS, LOOP_RESET_MS, INVALID_LINE_CODES, CODE_MAX_CHARS, zero$1, loopHistogram, loopResetAt;
+var INGEST_NOT_EVALUATED, HOUR_MS$11, DISK_CACHE_MS, LOOP_RESET_MS, INVALID_LINE_CODES, CODE_MAX_CHARS, zero$1, loopHistogram, loopResetAt;
 var init_health = __esmMin((() => {
 	init_src$1();
 	INGEST_NOT_EVALUATED = "NOT_EVALUATED";
-	HOUR_MS$10 = 36e5;
+	HOUR_MS$11 = 36e5;
 	DISK_CACHE_MS = 3e4;
 	LOOP_RESET_MS = 6e4;
 	INVALID_LINE_CODES = [
@@ -23921,12 +25251,12 @@ function toRow$4(row) {
 		observedAt: row.observedAt
 	};
 }
-var ModelUsageSchema, COLUMNS$4, CostStatesRepo;
+var ModelUsageSchema, COLUMNS$5, CostStatesRepo;
 var init_cost_states = __esmMin((() => {
 	init_zod();
 	init_transitions$1();
 	ModelUsageSchema = record$1(string(), record$1(string(), number$1()));
-	COLUMNS$4 = `file_id AS fileId, session_id AS sessionId, total_cost_usd AS totalCostUsd,
+	COLUMNS$5 = `file_id AS fileId, session_id AS sessionId, total_cost_usd AS totalCostUsd,
   model_usage_json AS modelUsageJson, byte_offset AS byteOffset, is_trailing AS isTrailing, observed_at AS observedAt`;
 	CostStatesRepo = class {
 		db;
@@ -23958,12 +25288,12 @@ var init_cost_states = __esmMin((() => {
 		}
 		byFile(ctx, fileId) {
 			this.db.assertScope(ctx);
-			const row = this.db.driver.prepare(`SELECT ${COLUMNS$4} FROM cost_states WHERE file_id = :fileId`).get({ fileId });
+			const row = this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM cost_states WHERE file_id = :fileId`).get({ fileId });
 			return row === void 0 ? void 0 : toRow$4(row);
 		}
 		listBySession(ctx, sessionId) {
 			this.db.assertScope(ctx);
-			return this.db.driver.prepare(`SELECT ${COLUMNS$4} FROM cost_states WHERE session_id = :sessionId ORDER BY file_id`).all({ sessionId }).map(toRow$4);
+			return this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM cost_states WHERE session_id = :sessionId ORDER BY file_id`).all({ sessionId }).map(toRow$4);
 		}
 		/**
 		* The latest trailing cost the provider reported for a session (the value `sessions.reported_cost_usd` mirrors):
@@ -24048,7 +25378,7 @@ function notFound$4(what) {
 }
 var MERGES, UPSERT$2, COUNTS, ToolCallsRepo;
 var init_tool_calls$1 = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	MERGES = [
 		["started_at", "coalesce(min(tool_calls.started_at, excluded.started_at), tool_calls.started_at, excluded.started_at)"],
 		["ended_at", "coalesce(max(tool_calls.ended_at, excluded.ended_at), tool_calls.ended_at, excluded.ended_at)"],
@@ -25594,7 +26924,7 @@ function workflowFactsOf(model, runId) {
 	};
 }
 var PERMISSIONS_KEPT, mergeFacts, OUTCOME_ORDER;
-var init_merge = __esmMin((() => {
+var init_merge$1 = __esmMin((() => {
 	init_protocol$1();
 	init_facts();
 	PERMISSIONS_KEPT = 64;
@@ -25847,7 +27177,7 @@ function viewOf$1(decision, now, nextCheckAt) {
 	};
 }
 var EVIDENCE_TEXT_MAX_CP, TEMPLATES, ACTIVE_CHILD_STATES, BLOCKING_NOTIFICATION_TYPES, EVIDENCE_MAX;
-var init_rules$1 = __esmMin((() => {
+var init_rules$2 = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	EVIDENCE_TEXT_MAX_CP = 120;
@@ -25960,7 +27290,7 @@ function nextCheckAt(view, input, cfg) {
 }
 var SESSION_TIME_INVARIANT;
 var init_next_check = __esmMin((() => {
-	init_rules$1();
+	init_rules$2();
 	SESSION_TIME_INVARIANT = /* @__PURE__ */ new Set([
 		"S-1",
 		"S-2",
@@ -26109,7 +27439,7 @@ function deriveAgent(facts, rows, now, cfg) {
 }
 var init_derive_agent = __esmMin((() => {
 	init_next_check();
-	init_rules$1();
+	init_rules$2();
 }));
 
 //#endregion
@@ -26193,7 +27523,7 @@ function deriveWorkflow(facts, rows, now, cfg) {
 var FAILED_RUN_STATUSES;
 var init_derive_workflow = __esmMin((() => {
 	init_next_check();
-	init_rules$1();
+	init_rules$2();
 	FAILED_RUN_STATUSES = /* @__PURE__ */ new Set([
 		"failed",
 		"error",
@@ -26602,11 +27932,11 @@ function deriveModel(model, now, cfg, inputs = {}) {
 var JOB_FAILED_STATES;
 var init_derive_session = __esmMin((() => {
 	init_protocol$1();
-	init_merge();
+	init_merge$1();
 	init_derive_agent();
 	init_derive_workflow();
 	init_next_check();
-	init_rules$1();
+	init_rules$2();
 	JOB_FAILED_STATES = /* @__PURE__ */ new Set([
 		"failed",
 		"error",
@@ -26721,16 +28051,99 @@ var init_jobs = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/external/registry.ts
-/** One file of the registry as an event, or null when it is not for this instance; `failed` when it cannot be used. */
-function readEntry(bytes, options, now) {
-	let parsed;
+function plain$1(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function textOf$3(value, max) {
+	return typeof value === "string" && value !== "" ? clipCodePoints$1(value, max) : null;
+}
+function epochMsOf(value) {
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+/**
+* The fields of a registry file that the link needs, or null when it has no usable pid and session id. Nothing else of the file
+* is read: not `name`, not `procStart`.
+*/
+function looseFieldsOf(value) {
+	if (!plain$1(value)) return null;
+	const { pid, sessionId, status, kind } = value;
+	if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+	if (typeof sessionId !== "string" || !SID_RE.test(sessionId)) return null;
+	return {
+		pid,
+		sessionId,
+		status: status === "busy" || status === "idle" || status === "waiting" ? status : null,
+		waitingFor: textOf$3(value["waitingFor"], 64),
+		cwd: textOf$3(value["cwd"], REGISTRY_CWD_MAX_CHARS),
+		startedAtMs: epochMsOf(value["startedAt"]),
+		updatedAtMs: epochMsOf(value["updatedAt"]),
+		kind: kind === "interactive" || kind === "bg" ? kind : null,
+		entrypoint: textOf$3(value["entrypoint"], ENTRYPOINT_MAX_CHARS)
+	};
+}
+function parseJson$1(bytes) {
 	try {
-		const result = RegistryFileSchema.safeParse(JSON.parse(bytes.toString("utf8")));
-		if (!result.success) return { failed: true };
-		parsed = result.data;
+		return JSON.parse(bytes.toString("utf8"));
 	} catch {
-		return { failed: true };
+		return;
 	}
+}
+/** The names of the registry folder that may be opened, sorted. */
+async function registryNames(dir, fs) {
+	return (await fs.readdir(dir)).filter((name) => REGISTRY_FILE_RE.test(name)).slice(0, MAX_ENTRIES);
+}
+/**
+* Every entry of the registry (CAW design 03 5.4): the loose reading, no filter on the session. A file that cannot be read, is
+* damaged, or lacks a usable pid or session id counts in `readFailures` and is left out. Sorted by pid.
+*/
+async function listRegistryEntries(options) {
+	const fs = options.fs ?? nodeExternalFs;
+	const dir = path.join(options.claudeHome, "sessions");
+	const entries = [];
+	let readFailures = 0;
+	for (const name of await registryNames(dir, fs)) {
+		const bytes = await fs.readSmall(path.join(dir, name), REGISTRY_FILE_MAX_BYTES$1);
+		const fields = bytes === null ? null : looseFieldsOf(parseJson$1(bytes));
+		if (fields === null) {
+			readFailures += 1;
+			continue;
+		}
+		if (!isValidPid(fields.pid)) continue;
+		entries.push({
+			...fields,
+			alive: options.pidAlive(fields.pid)
+		});
+	}
+	entries.sort((a, b) => a.pid - b.pid);
+	return {
+		entries,
+		readFailures
+	};
+}
+/** `listRegistryEntries` memoised: the link, the resume check and the lifecycle poller do not each read the folder. */
+function createRegistrySnapshot(options) {
+	const memoMs = options.memoMs ?? 1e3;
+	let memo = null;
+	return { read() {
+		const at = options.now();
+		if (memo !== null && at - memo.at < memoMs) return memo.listing;
+		const listing = listRegistryEntries(options);
+		const mine = {
+			at,
+			listing
+		};
+		memo = mine;
+		listing.catch(() => {
+			if (memo === mine) memo = null;
+		});
+		return listing;
+	} };
+}
+/** One file of the registry as an event, or null when it is not for this instance; `failed` when it cannot be used. */
+function readEntry(value, options, now) {
+	const result = RegistryFileSchema$1.safeParse(value);
+	if (!result.success) return { failed: true };
+	const parsed = result.data;
 	if (!isValidPid(parsed.pid) || !options.isKnownSession(parsed.sessionId)) return { candidate: null };
 	const alive = options.pidAlive(parsed.pid);
 	const waitingFor = parsed.waitingFor === void 0 || parsed.waitingFor === "" ? void 0 : clipCodePoints$1(parsed.waitingFor, 64);
@@ -26752,18 +28165,36 @@ function createRegistryReader(options) {
 	const repeatMs = options.repeatMs ?? 6e4;
 	const dir = path.join(options.claudeHome, "sessions");
 	const last = /* @__PURE__ */ new Map();
+	/** The sessions that were named to `onUnknownSession`, and when. */
+	const hinted = /* @__PURE__ */ new Map();
+	/** The hint of one file: a live process of a session this instance does not know is named, once per 30 s. */
+	function hintOf(value, now) {
+		const callback = options.onUnknownSession;
+		if (callback === void 0) return;
+		const fields = looseFieldsOf(value);
+		if (fields === null || !isValidPid(fields.pid) || options.isKnownSession(fields.sessionId)) return;
+		const before = hinted.get(fields.sessionId);
+		if (before !== void 0 && now - before < 3e4) return;
+		if (!options.pidAlive(fields.pid)) return;
+		hinted.set(fields.sessionId, now);
+		try {
+			callback(fields.sessionId, fields.cwd);
+		} catch {}
+	}
 	return { async poll() {
 		const now = options.now();
-		const names = (await fs.readdir(dir)).filter((name) => REGISTRY_FILE_RE.test(name)).slice(0, MAX_ENTRIES);
+		const names = await registryNames(dir, fs);
 		const found = /* @__PURE__ */ new Map();
 		let readFailures = 0;
 		for (const name of names.sort()) {
-			const bytes = await fs.readSmall(path.join(dir, name), REGISTRY_FILE_MAX_BYTES);
+			const bytes = await fs.readSmall(path.join(dir, name), REGISTRY_FILE_MAX_BYTES$1);
 			if (bytes === null) {
 				readFailures += 1;
 				continue;
 			}
-			const entry = readEntry(bytes, options, now);
+			const value = parseJson$1(bytes);
+			hintOf(value, now);
+			const entry = readEntry(value, options, now);
 			if ("failed" in entry) {
 				readFailures += 1;
 				continue;
@@ -26773,6 +28204,7 @@ function createRegistryReader(options) {
 			const other = found.get(candidate.event.sessionId);
 			if (!(other !== void 0 && (other.event.pidAlive || !candidate.event.pidAlive))) found.set(candidate.event.sessionId, candidate);
 		}
+		for (const [sessionId, at] of hinted) if (now - at >= 3e4) hinted.delete(sessionId);
 		const events = [];
 		const taken = /* @__PURE__ */ new Map();
 		for (const [sessionId, { event, key }] of found) {
@@ -26796,19 +28228,23 @@ function createRegistryReader(options) {
 		};
 	} };
 }
-var REGISTRY_FILE_MAX_BYTES, REGISTRY_REPEAT_MS, WAITING_FOR_MAX_CHARS, MAX_ENTRIES, REGISTRY_FILE_RE, RegistryFileSchema;
-var init_registry = __esmMin((() => {
+var REGISTRY_FILE_MAX_BYTES$1, REGISTRY_REPEAT_MS, WAITING_FOR_MAX_CHARS, REGISTRY_CWD_MAX_CHARS, REGISTRY_HINT_REPEAT_MS, REGISTRY_SNAPSHOT_MEMO_MS, ENTRYPOINT_MAX_CHARS, MAX_ENTRIES, REGISTRY_FILE_RE, RegistryFileSchema$1;
+var init_registry$1 = __esmMin((() => {
 	init_protocol$1();
 	init_zod();
 	init_fsx();
 	init_process();
 	init_fs();
-	REGISTRY_FILE_MAX_BYTES = 65536;
+	REGISTRY_FILE_MAX_BYTES$1 = 65536;
 	REGISTRY_REPEAT_MS = 6e4;
 	WAITING_FOR_MAX_CHARS = 64;
+	REGISTRY_CWD_MAX_CHARS = 1024;
+	REGISTRY_HINT_REPEAT_MS = 3e4;
+	REGISTRY_SNAPSHOT_MEMO_MS = 1e3;
+	ENTRYPOINT_MAX_CHARS = 64;
 	MAX_ENTRIES = 1e3;
 	REGISTRY_FILE_RE = /^[1-9][0-9]{0,9}\.json$/;
-	RegistryFileSchema = looseObject({
+	RegistryFileSchema$1 = looseObject({
 		pid: number$1().int().positive(),
 		sessionId: string().regex(SID_RE),
 		status: _enum([
@@ -26848,7 +28284,7 @@ function segmentNameOf(receivedAt) {
 function hourEndOf(segment) {
 	const start = startOf(segment);
 	if (start === null) throw new RangeError("not a spool segment name");
-	return start + HOUR_MS$9;
+	return start + HOUR_MS$10;
 }
 /**
 * `seal`: past the hour and the grace, every byte consumed. `seal_torn`: past the grace, but an unterminated tail is left;
@@ -26861,7 +28297,7 @@ function sealDecision(input) {
 }
 /** A sealed segment is deleted once `now` is past its hour plus `retainHours`. */
 function retentionExpired(segment, now, retainHours) {
-	return now > hourEndOf(segment) + retainHours * HOUR_MS$9;
+	return now > hourEndOf(segment) + retainHours * HOUR_MS$10;
 }
 /**
 * The files of the spool folder. A folder that does not exist is an empty listing (no hook has written yet). A directory, a
@@ -26900,10 +28336,10 @@ async function listSegments(spoolDir) {
 		foreign
 	};
 }
-var HOUR_MS$9;
+var HOUR_MS$10;
 var init_segments = __esmMin((() => {
 	init_protocol$1();
-	HOUR_MS$9 = 36e5;
+	HOUR_MS$10 = 36e5;
 }));
 
 //#endregion
@@ -27225,7 +28661,7 @@ function parseHandlerLog(text, instanceId, now) {
 		if (!parsed.success) continue;
 		const entry = parsed.data;
 		if (entry.instanceId !== null && entry.instanceId !== instanceId) continue;
-		if (now - entry.at > HOUR_MS$8) continue;
+		if (now - entry.at > HOUR_MS$9) continue;
 		const known = byCode.get(entry.code);
 		if (known === void 0) byCode.set(entry.code, {
 			code: entry.code,
@@ -27361,7 +28797,7 @@ function createIngestHealthEvaluator(ctx, sources, alertTarget = ctx) {
 	}
 	function hourlyFacts(now) {
 		if (hourly !== null && now >= hourly.at && now - hourly.at < SLOW_QUERY_CACHE_MS) return hourly.value;
-		const since = now - HOUR_MS$8;
+		const since = now - HOUR_MS$9;
 		const failed = { n: 0 };
 		const coverage = {
 			full: 0,
@@ -27529,7 +28965,7 @@ function createIngestHealthEvaluator(ctx, sources, alertTarget = ctx) {
 		}
 	}
 	function alertSnapshot(now, next) {
-		const since = now - HOUR_MS$8;
+		const since = now - HOUR_MS$9;
 		let failedRows = 0;
 		const rows = (sql, params) => {
 			try {
@@ -27675,7 +29111,7 @@ function safeJson(text) {
 		return null;
 	}
 }
-var HOUR_MS$8, TEN_MINUTES_MS, SLOW_QUERY_CACHE_MS, HANDLER_LOG_TAIL_BYTES$1, HANDLER_LOG_MAX_CODES$1, EVENT_LOOP_WARN_MS, INGEST_HEALTH_PARTIAL, FAILING_HANDLER_CODES, DB_ERROR_CODES, SPOOL_INVALID_CODES, HandlerLogLineSchema, boundSources, evaluators, WindowedCounter, CountersSchema$1;
+var HOUR_MS$9, TEN_MINUTES_MS, SLOW_QUERY_CACHE_MS, HANDLER_LOG_TAIL_BYTES$1, HANDLER_LOG_MAX_CODES$1, EVENT_LOOP_WARN_MS, INGEST_HEALTH_PARTIAL, FAILING_HANDLER_CODES, DB_ERROR_CODES, SPOOL_INVALID_CODES, HandlerLogLineSchema, boundSources, evaluators, WindowedCounter, CountersSchema$1;
 var init_ingest_health = __esmMin((() => {
 	init_src$1();
 	init_zod();
@@ -27685,7 +29121,7 @@ var init_ingest_health = __esmMin((() => {
 	init_segments();
 	init_health();
 	init_alert_inputs();
-	HOUR_MS$8 = 36e5;
+	HOUR_MS$9 = 36e5;
 	TEN_MINUTES_MS = 6e5;
 	SLOW_QUERY_CACHE_MS = 3e4;
 	HANDLER_LOG_TAIL_BYTES$1 = 65536;
@@ -27726,7 +29162,7 @@ var init_ingest_health = __esmMin((() => {
 				at: now,
 				value
 			});
-			while (this.samples.length > 1 && (this.samples[1]?.at ?? Number.POSITIVE_INFINITY) <= now - HOUR_MS$8) this.samples.shift();
+			while (this.samples.length > 1 && (this.samples[1]?.at ?? Number.POSITIVE_INFINITY) <= now - HOUR_MS$9) this.samples.shift();
 			const base = this.samples[0]?.value ?? value;
 			return Math.max(0, value - base);
 		}
@@ -27828,10 +29264,10 @@ var init_changes = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/db/repos/ingest-errors.ts
-var COLUMNS$3, DETAIL_CAP, SEGMENT_CAP, IngestErrorsRepo;
+var COLUMNS$4, DETAIL_CAP, SEGMENT_CAP, IngestErrorsRepo;
 var init_ingest_errors = __esmMin((() => {
 	init_shared$1();
-	COLUMNS$3 = `id, at, source, code, file_id AS fileId, segment, byte_offset AS byteOffset, session_uid AS sessionUid, detail`;
+	COLUMNS$4 = `id, at, source, code, file_id AS fileId, segment, byte_offset AS byteOffset, session_uid AS sessionUid, detail`;
 	DETAIL_CAP = 200;
 	SEGMENT_CAP = 128;
 	IngestErrorsRepo = class {
@@ -27857,7 +29293,7 @@ var init_ingest_errors = __esmMin((() => {
 		/** Newest first; `beforeId` continues after the last id of the previous page (keyset, `idx_ingest_errors_at`). */
 		recent(ctx, limit, beforeId) {
 			this.db.assertScope(ctx);
-			return this.db.driver.prepare(`SELECT ${COLUMNS$3} FROM ingest_errors
+			return this.db.driver.prepare(`SELECT ${COLUMNS$4} FROM ingest_errors
          WHERE (:beforeId IS NULL OR id < :beforeId) ORDER BY id DESC LIMIT :limit`).all({
 				beforeId,
 				limit: rowLimit(limit)
@@ -27910,7 +29346,7 @@ function toRow$2(row) {
 function eventKindOf(kind) {
 	return kind === "runtime_unavailable" || kind === "hook_gap" ? "monitor.gap" : "monitor.reconcile";
 }
-var DetailSchema, COLUMNS$2, ReconciliationsRepo;
+var DetailSchema, COLUMNS$3, ReconciliationsRepo;
 var init_reconciliations = __esmMin((() => {
 	init_zod();
 	init_transitions$1();
@@ -27920,7 +29356,7 @@ var init_reconciliations = __esmMin((() => {
 		boolean(),
 		_null()
 	]));
-	COLUMNS$2 = "id, session_id AS sessionId, scope_key AS scopeKey, kind, at, detail";
+	COLUMNS$3 = "id, session_id AS sessionId, scope_key AS scopeKey, kind, at, detail";
 	ReconciliationsRepo = class {
 		db;
 		constructor(db) {
@@ -27984,7 +29420,7 @@ var init_reconciliations = __esmMin((() => {
 		/** Newest first (`idx_reconciliations_session`). */
 		listBySession(ctx, sessionId, limit) {
 			this.db.assertScope(ctx);
-			return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM reconciliations WHERE session_id = :sessionId ORDER BY at DESC, id DESC LIMIT :limit`).all({
+			return this.db.driver.prepare(`SELECT ${COLUMNS$3} FROM reconciliations WHERE session_id = :sessionId ORDER BY at DESC, id DESC LIMIT :limit`).all({
 				sessionId,
 				limit: rowLimit(limit)
 			}).map(toRow$2);
@@ -27992,7 +29428,7 @@ var init_reconciliations = __esmMin((() => {
 		/** Records of one kind strictly newer than `at`, newest first (`idx_reconciliations_kind_at`). */
 		newerThan(ctx, kind, at, limit) {
 			this.db.assertScope(ctx);
-			return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM reconciliations WHERE kind = :kind AND at > :at ORDER BY at DESC, id DESC LIMIT :limit`).all({
+			return this.db.driver.prepare(`SELECT ${COLUMNS$3} FROM reconciliations WHERE kind = :kind AND at > :at ORDER BY at DESC, id DESC LIMIT :limit`).all({
 				kind,
 				at,
 				limit: rowLimit(limit)
@@ -28163,7 +29599,7 @@ function notFound$3(what) {
 }
 var NUMERIC_FIELDS, UPSERT_FILE, OWNER, AGGREGATE, UPSERT_USAGE, CONTRIBUTION_KEYS, ROLLUP_COLUMNS, ADD_TO_SESSION, ADD_TO_AGENT, NOTE_MODEL, UNKNOWN_MODEL, SYNTHETIC_MODEL$2, VERIFY_SESSIONS, VERIFY_AGENTS, UsageRepo;
 var init_usage$2 = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	NUMERIC_FIELDS = [
 		"input_tokens",
 		"output_tokens",
@@ -28549,7 +29985,7 @@ async function runBookkeepingRetention(db, ctx, config, now, options = {}) {
 	const alerts = new AlertsRepo(db);
 	const reconciliations = new ReconciliationsRepo(db);
 	const probes = new HookProbesRepo(db);
-	const byAge = await drain(db, ctx, limit, signal, (tx) => changes.deleteOlderThan(ctx, tx, now - config.changesMaxAgeHours * HOUR_MS$7, limit));
+	const byAge = await drain(db, ctx, limit, signal, (tx) => changes.deleteOlderThan(ctx, tx, now - config.changesMaxAgeHours * HOUR_MS$8, limit));
 	const byCount = await drain(db, ctx, limit, signal, (tx) => changes.deleteBeyondMaxRows(ctx, tx, config.changesMaxRows, limit));
 	const ingestErrors = await drain(db, ctx, limit, signal, (tx) => errors.trimToNewest(ctx, tx, config.ingestErrorsMaxRows, limit));
 	const resolvedCutoff = now - config.resolvedAlertsDays * DAY_MS$2;
@@ -28778,11 +30214,11 @@ async function applyRetention(db, ctx, policy, opts) {
 		freedBytes: Math.max(0, sizeBefore - fileSize$1(db.driver.path))
 	};
 }
-var HOUR_MS$7, DAY_MS$2, BATCH_ROWS, BATCH_SESSIONS, VACUUM_PAGES, SAMPLE_SIZE, PROBE_MAX_AGE_MS, FILE_TABLES, ELIGIBLE_LIST, candidate, CANDIDATE_IDS, CANDIDATE_FILES;
+var HOUR_MS$8, DAY_MS$2, BATCH_ROWS, BATCH_SESSIONS, VACUUM_PAGES, SAMPLE_SIZE, PROBE_MAX_AGE_MS, FILE_TABLES, ELIGIBLE_LIST, candidate, CANDIDATE_IDS, CANDIDATE_FILES;
 var init_retention = __esmMin((() => {
 	init_src$1();
 	init_driver();
-	init_errors$4();
+	init_errors$5();
 	init_alerts$1();
 	init_attempts();
 	init_changes();
@@ -28791,13 +30227,13 @@ var init_retention = __esmMin((() => {
 	init_reconciliations();
 	init_usage$2();
 	init_write();
-	HOUR_MS$7 = 36e5;
-	DAY_MS$2 = 24 * HOUR_MS$7;
+	HOUR_MS$8 = 36e5;
+	DAY_MS$2 = 24 * HOUR_MS$8;
 	BATCH_ROWS = 5e3;
 	BATCH_SESSIONS = 10;
 	VACUUM_PAGES = 2e3;
 	SAMPLE_SIZE = 20;
-	PROBE_MAX_AGE_MS = 24 * HOUR_MS$7;
+	PROBE_MAX_AGE_MS = 24 * HOUR_MS$8;
 	FILE_TABLES = [
 		{
 			table: "transcript_checkpoints",
@@ -29036,6 +30472,158 @@ var init_schedule = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/engine/src/db/repos/projects.ts
+var COLUMNS$2, ProjectsRepo;
+var init_projects$1 = __esmMin((() => {
+	COLUMNS$2 = `id, project_key AS projectKey, dir_name AS dirName, root_path AS rootPath, first_seen_at AS firstSeenAt,
+  last_activity_at AS lastActivityAt`;
+	ProjectsRepo = class {
+		db;
+		constructor(db) {
+			this.db = db;
+		}
+		/** Inserts the project or advances it: the first seen time and a known root path stay, the last activity only grows. */
+		ensure(ctx, _tx, p) {
+			this.db.assertScope(ctx);
+			const row = this.db.driver.prepare(`INSERT INTO projects (project_key, dir_name, root_path, first_seen_at, last_activity_at)
+         VALUES (:projectKey, :dirName, :rootPath, :at, :at)
+         ON CONFLICT(project_key) DO UPDATE SET
+           root_path = coalesce(projects.root_path, excluded.root_path),
+           last_activity_at = max(projects.last_activity_at, excluded.last_activity_at)
+         RETURNING id`).get({
+				projectKey: p.projectKey,
+				dirName: p.dirName,
+				rootPath: p.rootPath,
+				at: p.at
+			});
+			if (row === void 0) throw new Error("INSERT ... RETURNING answered no row");
+			return row.id;
+		}
+		byKey(ctx, projectKey) {
+			this.db.assertScope(ctx);
+			return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM projects WHERE project_key = :projectKey`).get({ projectKey });
+		}
+		/** Most recently active first. */
+		list(ctx) {
+			this.db.assertScope(ctx);
+			return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM projects ORDER BY last_activity_at DESC, id DESC`).all();
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/projects/folder-key.ts
+/** The key of a Claude folder name: lower case, or null when the name cannot be a project folder. */
+function keyOfDirName(dirName) {
+	return PROJECT_DIR_NAME_RE.test(dirName) ? dirName.toLowerCase() : null;
+}
+/** The key of a working directory, built on the one folder-name rule of `discovery.ts`. */
+function folderKeyOfPath(directory) {
+	const { name, truncated } = projectFolderName(directory);
+	return {
+		key: name.toLowerCase(),
+		prefix: truncated
+	};
+}
+/**
+* True when the Claude folder `dirName` is the folder of `folder`: the same lower-cased name, or, for a cut name, a name that
+* starts with the cut key and a dash (the rest is the hash Claude appended).
+*/
+function dirMatchesKey(dirName, folder) {
+	const key = keyOfDirName(dirName);
+	if (key === null) return false;
+	return folder.prefix ? key.startsWith(`${folder.key}-`) : key === folder.key;
+}
+/** The name of the folder that holds a transcript file, whichever separator the path uses (a hook reports the path of its own OS). */
+function dirNameOfTranscript(transcriptPath) {
+	const parts = transcriptPath.split(/[\\/]/);
+	if (parts.length < 2) return null;
+	const name = parts[parts.length - 2];
+	return name === void 0 || name === "" ? null : name;
+}
+/**
+* The project of a session from the path of its main transcript file and the working directory it reported. None when there
+* is no path or the folder name is not a project name. The root is the working directory, clipped to the column.
+*/
+function projectOfSeen(transcriptPath, cwd) {
+	if (transcriptPath === void 0) return null;
+	const dirName = dirNameOfTranscript(transcriptPath);
+	if (dirName === null) return null;
+	const key = keyOfDirName(dirName);
+	if (key === null) return null;
+	return {
+		key,
+		dirName,
+		root: cwd === void 0 || cwd === "" ? null : clipCodePoints$1(cwd, ROOT_PATH_MAX)
+	};
+}
+var PROJECT_DIR_NAME_RE, ROOT_PATH_MAX;
+var init_folder_key = __esmMin((() => {
+	init_fsx();
+	init_discovery();
+	PROJECT_DIR_NAME_RE = /^[A-Za-z0-9-]{1,255}$/;
+	ROOT_PATH_MAX = 1024;
+}));
+
+//#endregion
+//#region packages/engine/src/projects/backfill.ts
+/**
+* Assigns the projects that are missing. Safe to run at every start: a session that has a project is never looked at, and one
+* that cannot be assigned is passed over without a write. The loop yields to the event loop between transactions.
+*/
+async function backfillProjects(db, scope, options = {}) {
+	const batchSize = options.batchSize ?? 500;
+	if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new RangeError("the backfill batch is a positive whole number of sessions");
+	const sessions = new SessionsRepo(db);
+	const projects = new ProjectsRepo(db);
+	let scanned = 0;
+	let assigned = 0;
+	let afterId = 0;
+	for (;;) {
+		const batch = withWriteTx(db, scope, (tx) => {
+			const candidates = sessions.withoutProject(scope, afterId, batchSize);
+			const sink = createChangeSink(tx);
+			let done = 0;
+			for (const candidate of candidates) {
+				const seen = projectOfSeen(candidate.transcriptPath, candidate.cwd ?? void 0);
+				if (seen === null) continue;
+				const projectId = projects.ensure(scope, tx, {
+					projectKey: seen.key,
+					dirName: seen.dirName,
+					rootPath: seen.root,
+					at: candidate.lastActivityAt
+				});
+				const seq = sink.record("session", `${String(candidate.id)}:${candidate.sessionUid}`, "update");
+				sessions.update(scope, tx, candidate.id, { projectId }, seq);
+				done += 1;
+			}
+			return {
+				size: candidates.length,
+				assigned: done,
+				last: candidates[candidates.length - 1]?.id ?? afterId
+			};
+		});
+		scanned += batch.size;
+		assigned += batch.assigned;
+		afterId = batch.last;
+		if (batch.size < batchSize) return {
+			scanned,
+			assigned
+		};
+		await setImmediate$1();
+	}
+}
+var BACKFILL_BATCH;
+var init_backfill = __esmMin((() => {
+	init_change_sink();
+	init_projects$1();
+	init_sessions$1();
+	init_write();
+	init_folder_key();
+	BACKFILL_BATCH = 500;
+}));
+
+//#endregion
 //#region packages/engine/src/ingest/errors.ts
 function isIngestErrorCode(value) {
 	return typeof value === "string" && KNOWN.has(value);
@@ -29051,7 +30639,7 @@ function ingestError(code, source, fields = {}) {
 	};
 }
 var INGEST_ERROR_CODES, KNOWN, INGEST_ERROR_DETAIL_MAX_CP, SpoolSegmentNotFoundError, IngestWriterClosedError;
-var init_errors$3 = __esmMin((() => {
+var init_errors$4 = __esmMin((() => {
 	init_fsx();
 	INGEST_ERROR_CODES = [
 		"SPOOL_LINE_INVALID_JSON",
@@ -29255,7 +30843,7 @@ var init_spool_cursors = __esmMin((() => {
 //#endregion
 //#region packages/engine/src/ingest/tail/file-identity.ts
 /** Error code of a failed file call, `'UNKNOWN'` when the error carries none. */
-function errorCodeOf$1(error) {
+function errorCodeOf$2(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 	return "UNKNOWN";
 }
@@ -29312,7 +30900,7 @@ async function checkIdentity(path, stored, storedSize, lowestCursor, storedMtime
 	try {
 		st = await stat(path, { bigint: true });
 	} catch (error) {
-		const code = errorCodeOf$1(error);
+		const code = errorCodeOf$2(error);
 		return classifyFsError(code) === "missing" ? { kind: "missing" } : {
 			kind: "unreadable",
 			code
@@ -29344,7 +30932,7 @@ async function checkIdentity(path, stored, storedSize, lowestCursor, storedMtime
 			try {
 				head = await readHead(path, size);
 			} catch (error) {
-				const code = errorCodeOf$1(error);
+				const code = errorCodeOf$2(error);
 				return classifyFsError(code) === "missing" ? { kind: "missing" } : {
 					kind: "unreadable",
 					code
@@ -29381,9 +30969,9 @@ function emptyCounters() {
 function hasBom(bytes) {
 	return bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191;
 }
-var LF$7, CR, LineSplitter;
+var LF$8, CR, LineSplitter;
 var init_line_splitter = __esmMin((() => {
-	LF$7 = 10;
+	LF$8 = 10;
 	CR = 13;
 	LineSplitter = class {
 		counters = emptyCounters();
@@ -29423,7 +31011,7 @@ var init_line_splitter = __esmMin((() => {
 		push(chunk, chunkStart, stop, out) {
 			let from = 0;
 			for (;;) {
-				const lf = chunk.indexOf(LF$7, from);
+				const lf = chunk.indexOf(LF$8, from);
 				if (lf < 0) {
 					this.#hold(chunk.subarray(from));
 					return false;
@@ -29699,7 +31287,7 @@ var init_jsonl_tailer = __esmMin((() => {
 					counters: result.counters
 				};
 			} catch (error) {
-				const code = errorCodeOf$1(error);
+				const code = errorCodeOf$2(error);
 				return classifyFsError(code) === "missing" ? { status: "missing" } : {
 					status: "unreadable",
 					code
@@ -29716,7 +31304,7 @@ function notFound$2(what) {
 }
 var INSERT$1, EventsRepo;
 var init_events$1 = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	INSERT$1 = `INSERT INTO events (session_id, agent_id, kind, entry_kind, severity, sources, ts, ts_rank, ts_tie, ts_source,
     received_at, event_uid, natural_key, record_uuid, hook_event, content_hash, spool_segment, spool_offset, flags, prompt_id,
     tool_use_id, tool_name, message_id, file_id, byte_offset, byte_length, line_no, record_type, subtype, text_len, summary,
@@ -29938,7 +31526,7 @@ function notFound$1(what) {
 }
 var SELECT, INSERT, RELINK, SCALARS, COUNTERS, RESET_IDENTITY, TranscriptFilesRepo;
 var init_transcript_files = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	SELECT = "SELECT * FROM transcript_files";
 	INSERT = `INSERT INTO transcript_files (path, path_key, kind, session_uid, agent_uid, run_uid, session_id, agent_id,
     workflow_run_id, mtime_seen, birth_ms, first_seen_mtime_ms, discovered_at, updated_at)
@@ -30182,7 +31770,7 @@ function toTurn(row) {
 }
 var NEWER, UPSERT$1, TurnsRepo;
 var init_turns = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	NEWER = `(excluded.ended_at IS NOT NULL AND (turns.ended_at IS NULL OR
   (excluded.ended_at, excluded.end_rank, excluded.end_tie) > (turns.ended_at, turns.end_rank, turns.end_tie)))`;
 	UPSERT$1 = `INSERT INTO turns (session_id, agent_id, prompt_id, started_at, ended_at, end_kind, end_rank, end_tie, origin, tool_count)
@@ -30449,7 +32037,7 @@ function detailOf$1(data) {
 	return Object.keys(detail).length === 0 ? null : detail;
 }
 function preview(text) {
-	return text === void 0 ? null : clip$1(redact(text), 160);
+	return text === void 0 ? null : clip$2(redact(text), 160);
 }
 function infoOf(sid, stamp, what, detail) {
 	return detail === void 0 ? {
@@ -30969,6 +32557,7 @@ function changedSessionPatch(row, wanted) {
 	if (wanted.agentCount !== void 0 && wanted.agentCount !== row.agentCount) patch.agentCount = wanted.agentCount;
 	if (wanted.cwd !== void 0 && wanted.cwd !== row.cwd) patch.cwd = wanted.cwd;
 	if (wanted.claudePid !== void 0 && wanted.claudePid !== row.claudePid) patch.claudePid = wanted.claudePid;
+	if (wanted.projectId !== void 0 && wanted.projectId !== row.projectId) patch.projectId = wanted.projectId;
 	return patch;
 }
 function createIngestWriter(options) {
@@ -30985,6 +32574,7 @@ function createIngestWriter(options) {
 	let itemsPerTx = Math.min(options.maxItemsPerTx ?? DEFAULT_ITEMS_PER_TX, DEFAULT_ITEMS_PER_TX * 10);
 	const itemsPerTxCap = itemsPerTx;
 	const sessions = new SessionsRepo(db);
+	const projects = new ProjectsRepo(db);
 	const agents = new AgentsRepo(db);
 	const events = new EventsRepo(db);
 	const toolCalls = new ToolCallsRepo(db);
@@ -31172,6 +32762,14 @@ function createIngestWriter(options) {
 		c.working.set(uid, w);
 		return w;
 	}
+	/** The first usable project of the transaction stays; a later event of the same session only supplies a root that was missing. */
+	function rememberProject(w, seen) {
+		if (seen === null) return;
+		w.project = w.project === void 0 ? seen : {
+			...w.project,
+			root: w.project.root ?? seen.root
+		};
+	}
 	function upsertAgent(c, w, a) {
 		const spec = {
 			...a,
@@ -31344,6 +32942,7 @@ function createIngestWriter(options) {
 					if (event.version !== void 0) w.patch.ccVersion = clipCodePoints$1(event.version, 32);
 					if (event.gitBranch !== void 0) w.patch.gitBranch = clipCodePoints$1(event.gitBranch, 255);
 				}
+				rememberProject(w, projectOfSeen(event.transcriptPath, event.cwd));
 				break;
 			case "session.start":
 				if (event.model !== void 0) w.patch.lastModel = clipCodePoints$1(event.model, 128);
@@ -31713,9 +33312,16 @@ function createIngestWriter(options) {
 		if (row !== void 0) {
 			const startedAt = Math.min(row.startedAt, w.startedAt);
 			const pid = facts.claudePid?.value;
+			const lastActivityAt = Math.max(startedAt, maxOf$1(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt));
+			const projectId = row.projectId === null && w.project !== void 0 ? projects.ensure(scope, c.tx, {
+				projectKey: w.project.key,
+				dirName: w.project.dirName,
+				rootPath: w.project.root,
+				at: lastActivityAt
+			}) : void 0;
 			const patch = changedSessionPatch(row, {
 				startedAt,
-				lastActivityAt: Math.max(startedAt, maxOf$1(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt)),
+				lastActivityAt,
 				lastHookAt: facts.lastHookAt ?? row.lastHookAt,
 				endedAt: facts.end === null ? row.endedAt : Math.max(startedAt, facts.end.stamp.at),
 				eventCount: row.eventCount + w.eventsInserted,
@@ -31723,7 +33329,8 @@ function createIngestWriter(options) {
 				warningCount: row.warningCount + w.warningEvents,
 				agentCount: agents.countBySession(scope, w.rowId),
 				...w.patch.cwd === void 0 ? {} : { cwd: w.patch.cwd },
-				...pid === void 0 || pid <= 0 ? {} : { claudePid: pid }
+				...pid === void 0 || pid <= 0 ? {} : { claudePid: pid },
+				...projectId === void 0 ? {} : { projectId }
 			});
 			const stored = db.driver.prepare(`SELECT entrypoint, cc_version AS ccVersion, git_branch AS gitBranch, last_model AS lastModel, title_ai AS titleAi,
                   title_custom AS titleCustom, continued_in AS continuedIn, copied_from AS copiedFrom,
@@ -32222,13 +33829,14 @@ var init_writer = __esmMin((() => {
 	init_protocol$1();
 	init_zod();
 	init_change_sink();
-	init_errors$4();
+	init_errors$5();
 	init_agents$1();
 	init_cost_states();
 	init_events$1();
 	init_hook_probes();
 	init_ingest_errors();
 	init_ingest_health$1();
+	init_projects$1();
 	init_reconciliations();
 	init_sessions$1();
 	init_spool_cursors();
@@ -32240,10 +33848,11 @@ var init_writer = __esmMin((() => {
 	init_write();
 	init_derive_session();
 	init_facts();
-	init_merge();
+	init_merge$1();
 	init_fsx();
+	init_folder_key();
 	init_dedupe();
-	init_errors$3();
+	init_errors$4();
 	init_normalize_envelope();
 	init_link_file();
 	DEFAULT_QUEUE_ITEMS = 5e3;
@@ -32304,10 +33913,10 @@ function applySpoolReplay(db, ctx, plan) {
 	const cursors = new SpoolCursorsRepo(db);
 	return { segmentsReset: withWriteTx(db, ctx, (tx) => cursors.resetMany(ctx, tx, plan.segments.map((entry) => entry.segment))) };
 }
-var init_replay = __esmMin((() => {
+var init_replay$1 = __esmMin((() => {
 	init_spool_cursors();
 	init_write();
-	init_errors$3();
+	init_errors$4();
 	init_segments();
 }));
 
@@ -32700,9 +34309,9 @@ var init_spool_drainer = __esmMin((() => {
 	init_spool_cursors();
 	init_fsx();
 	init_jsonl_tailer();
-	init_errors$3();
+	init_errors$4();
 	init_writer();
-	init_replay();
+	init_replay$1();
 	init_segments();
 	DOWNTIME_MARGIN_MS = 5e3;
 }));
@@ -33024,18 +34633,18 @@ function compileSessionRules(rules) {
 		};
 	});
 }
-function isPlain$1(value) {
+function isPlain$3(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** The text blocks of a user record (legacy `_blocks`): the string content, or the `text` of every `type: 'text'` block. */
 function blocksOf$1(record) {
 	const message = record["message"];
-	const content = isPlain$1(message) ? message["content"] : void 0;
+	const content = isPlain$3(message) ? message["content"] : void 0;
 	if (typeof content === "string") return [content];
 	if (!Array.isArray(content)) return [];
 	const blocks = content;
 	const texts = [];
-	for (const block of blocks) if (isPlain$1(block) && block["type"] === "text") texts.push(block["text"] ?? "");
+	for (const block of blocks) if (isPlain$3(block) && block["type"] === "text") texts.push(block["text"] ?? "");
 	return texts;
 }
 function nonEmpty$1(value) {
@@ -33065,7 +34674,7 @@ function userTexts(head, limit = USER_TEXT_LIMIT) {
 	const out = [];
 	for (const { lineNo, record } of head) {
 		if (lineNo > 401 || out.length >= limit) break;
-		if (!isPlain$1(record) || record["type"] !== "user") continue;
+		if (!isPlain$3(record) || record["type"] !== "user") continue;
 		for (const text of blocksOf$1(record)) if (nonEmpty$1(text) && !BOILER.test(text)) out.push(text);
 	}
 	return out;
@@ -33074,7 +34683,7 @@ function userTexts(head, limit = USER_TEXT_LIMIT) {
 function firstUserText(head) {
 	for (const { lineNo, record } of head) {
 		if (lineNo > FIRST_TEXT_LINE_LIMIT) break;
-		if (!isPlain$1(record) || record["type"] !== "user") continue;
+		if (!isPlain$3(record) || record["type"] !== "user") continue;
 		for (const text of blocksOf$1(record)) if (nonEmpty$1(text)) return text;
 	}
 	return "";
@@ -33128,6 +34737,102 @@ var init_classify = __esmMin((() => {
 	NO_PROMPT = "(no prompt)";
 	DEFAULT_RULE_LABEL = "session";
 	BOILER = /^\s*<(local-command|ide_|browser_instruction|system-reminder|command-|user-prompt)/;
+}));
+
+//#endregion
+//#region packages/engine/src/ingest/transcripts/discover-projects.ts
+/**
+* One level of `<home>/projects`: real folders only (a link or junction is counted, never entered), names of the form
+* `PROJECT_FOLDER_NAME_RE`, newest modification time first and ties by name. An odd name (a dot file, a `.key`, a space) is
+* counted as ignored without being looked at.
+*/
+async function listProjectFolders(root, fs = nodeDiscoveryFs) {
+	let names;
+	try {
+		names = await fs.readdir(root);
+	} catch {
+		return {
+			folders: [],
+			missing: true,
+			linksSkipped: 0,
+			ignored: 0
+		};
+	}
+	const candidates = names.filter((name) => PROJECT_FOLDER_NAME_RE.test(name));
+	let ignored = names.length - candidates.length;
+	let linksSkipped = 0;
+	const looked = await mapLimit(candidates, 32, async (name) => ({
+		name,
+		stat: await fs.lstat(path.join(root, name))
+	}));
+	const folders = [];
+	for (const { name, stat } of looked) if (stat?.kind === "link") linksSkipped += 1;
+	else if (stat?.kind === "dir") folders.push({
+		name,
+		dir: path.join(root, name),
+		mtimeMs: stat.mtimeMs
+	});
+	else ignored += 1;
+	folders.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+	return {
+		folders,
+		missing: false,
+		linksSkipped,
+		ignored
+	};
+}
+/**
+* Pure: which folders to look into this tick, in the order of `list` (newest first). `full` when the first sweep or the
+* interval is due: then every folder. Otherwise the folders that are hot, hinted, new, or whose modification time differs from
+* the last look; a quiet tick chooses none.
+*/
+function selectFolders(list, state, nowMs, options) {
+	const full = state.lastFullAt === null || nowMs - state.lastFullAt >= options.fullSweepIntervalMs;
+	if (full) return {
+		chosen: [...list],
+		full
+	};
+	return {
+		chosen: list.filter((folder) => options.hot.has(folder.name) || options.hinted.has(folder.name) || state.mtimes.get(folder.name) !== folder.mtimeMs),
+		full
+	};
+}
+/**
+* The folder that holds a session id which a registry entry or the linker names: `firstFolder` (the folder name derived from
+* the working directory) first, then one `lstat` of `<folder>/<id>.jsonl` in every project folder, newest folder first; then
+* `discoverSession` in the folder that has it, whatever the age policy says. The id is validated before any path is built;
+* `firstFolder` must look like a project folder name or it is not used. Null when no folder has the session.
+*/
+async function discoverSessionAnywhere(root, sessionId, fs = nodeDiscoveryFs, firstFolder) {
+	if (!SID_RE.test(sessionId)) return null;
+	let tried = null;
+	if (firstFolder !== void 0 && PROJECT_FOLDER_NAME_RE.test(firstFolder)) {
+		tried = firstFolder;
+		const dir = path.join(root, firstFolder);
+		const session = await discoverSession(dir, sessionId, fs);
+		if (session !== null) return {
+			dir,
+			session
+		};
+	}
+	const others = (await listProjectFolders(root, fs)).folders.filter((folder) => folder.name !== tried);
+	const hasMain = await mapLimit(others, 32, async (folder) => {
+		return (await fs.lstat(path.join(folder.dir, `${sessionId}.jsonl`)))?.kind === "file";
+	});
+	const hit = others.find((_, at) => hasMain[at] === true);
+	if (hit === void 0) return null;
+	const session = await discoverSession(hit.dir, sessionId, fs);
+	return session === null ? null : {
+		dir: hit.dir,
+		session
+	};
+}
+var PROJECT_FOLDER_NAME_RE, FOLDER_PARALLEL;
+var init_discover_projects = __esmMin((() => {
+	init_protocol$1();
+	init_discovery();
+	PROJECT_FOLDER_NAME_RE = /^[A-Za-z0-9-]{1,255}$/;
+	FOLDER_PARALLEL = 32;
 }));
 
 //#endregion
@@ -33811,7 +35516,7 @@ function normalizeRecord(rec, file, at, opts = {}) {
 }
 function bump(counts, name) {
 	const key = clipCodePoints$1(name, 64);
-	const slot = counts.has(key) || counts.size < MAX_NAMES ? key : "other";
+	const slot = counts.has(key) || counts.size < MAX_NAMES$1 ? key : "other";
 	counts.set(slot, (counts.get(slot) ?? 0) + 1);
 }
 /** Parses, validates and normalizes lines of ONE file, in order. A bad line is counted, never thrown. */
@@ -33883,7 +35588,7 @@ function normalizeRecords(lines, file, state, opts = {}) {
 		taken
 	};
 }
-var INTERRUPT_PREFIX, SYNTHETIC_MODEL, TITLE_MAX_CP, ORIGIN_MAX_CP, OUR_HOOK_MARKER, RANK, TITLE_FIELDS, BOOKKEEPING, MAX_NAMES;
+var INTERRUPT_PREFIX, SYNTHETIC_MODEL, TITLE_MAX_CP, ORIGIN_MAX_CP, OUR_HOOK_MARKER, RANK, TITLE_FIELDS, BOOKKEEPING, MAX_NAMES$1;
 var init_normalize_record = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
@@ -33928,7 +35633,7 @@ var init_normalize_record = __esmMin((() => {
 		"file-history-delta",
 		"bridge-session"
 	]);
-	MAX_NAMES = 64;
+	MAX_NAMES$1 = 64;
 }));
 
 //#endregion
@@ -33978,6 +35683,17 @@ function createTranscriptImporter(options) {
 		sliceFailures: 0
 	};
 	let tdir = options.transcriptsDir ?? null;
+	const allProjects = options.projectScope === "all";
+	let projectsRoot = options.projectsRoot ?? null;
+	const fullSweepIntervalMs = options.fullSweepIntervalMs ?? DEFAULT_FULL_SWEEP_MS;
+	const coldStatIntervalMs = options.coldStatIntervalMs ?? DEFAULT_COLD_STAT_MS;
+	let lastFullAt = null;
+	const folderMtimes = /* @__PURE__ */ new Map();
+	const hintedFolders = /* @__PURE__ */ new Set();
+	let lastColdStatAt = null;
+	let truncationLogged = false;
+	const knownSessions = /* @__PURE__ */ new Map();
+	let hookKnown = /* @__PURE__ */ new Set();
 	let rules = compileSessionRules(options.rules ?? []);
 	let pinned = new Set(options.pinned ?? []);
 	let loaded = false;
@@ -34085,6 +35801,7 @@ function createTranscriptImporter(options) {
 			if (row.kind === "session") state.needsClassify = true;
 			states.set(state.id, state);
 			byKey.set(row.pathKey, state);
+			countKnown(state.sessionUid, state.state, 1);
 		}
 		loaded = true;
 	}
@@ -34106,11 +35823,20 @@ function createTranscriptImporter(options) {
 	function changedSinceCheck(file) {
 		return file.observedSize !== file.checkedSize || file.observedMtimeMs !== file.checkedMtimeMs;
 	}
+	/** A file that is not untracked keeps its session known (`delta` 1), until it is untracked (-1). */
+	function countKnown(sessionUid, state, delta) {
+		if (state === "untracked") return;
+		const next = (knownSessions.get(sessionUid) ?? 0) + delta;
+		if (next > 0) knownSessions.set(sessionUid, next);
+		else knownSessions.delete(sessionUid);
+	}
 	function markState(file, next) {
 		if (file.state === next) return;
 		withWriteTx(db, scope, (tx) => {
 			files.setState(scope, tx, file.id, next);
 		});
+		countKnown(file.sessionUid, file.state, -1);
+		countKnown(file.sessionUid, next, 1);
 		file.state = next;
 	}
 	function workOf(file) {
@@ -34235,6 +35961,7 @@ function createTranscriptImporter(options) {
           WHERE o.file_id = ? GROUP BY s.session_uid ORDER BY s.session_uid`).all([file.id]);
 		const items = [];
 		for (const { source, n } of rows) {
+			if (source === file.sessionUid) continue;
 			if (file.copyReported.get(source) === n) continue;
 			file.copyReported.set(source, n);
 			items.push(eventItem([{
@@ -34838,9 +36565,11 @@ function createTranscriptImporter(options) {
 		}
 	}
 	function isKnown(sessionId) {
-		for (const file of states.values()) if (file.sessionUid === sessionId && file.state !== "untracked") return true;
-		const row = sessions.byUid(scope, sessionId);
-		return row !== void 0 && row.lastHookAt !== null;
+		return knownSessions.has(sessionId) || hookKnown.has(sessionId);
+	}
+	/** The sessions with hook events, read once for one discovery call instead of one row per candidate. */
+	function loadHookKnown() {
+		hookKnown = new Set(db.driver.prepare("SELECT session_uid FROM sessions WHERE last_hook_at IS NOT NULL").all().map((row) => row.session_uid));
 	}
 	function registerFile(d) {
 		const key = routeKey(d.path);
@@ -34871,6 +36600,7 @@ function createTranscriptImporter(options) {
 		state.checkedMtimeMs = state.mtimeSeen;
 		states.set(id, state);
 		byKey.set(key, state);
+		countKnown(state.sessionUid, state.state, 1);
 		return state;
 	}
 	async function refreshSmallFiles(session, found) {
@@ -34953,7 +36683,7 @@ function createTranscriptImporter(options) {
 			if (known.busy) continue;
 			known.observedSize = d.size;
 			known.observedMtimeMs = Math.floor(d.mtimeMs);
-			if (known.state === "untracked" && d.mtimeMs >= clock.now() - settings.lookbackHours * HOUR_MS$6) markState(known, "active");
+			if (known.state === "untracked" && d.mtimeMs >= clock.now() - settings.lookbackHours * HOUR_MS$7) markState(known, "active");
 		}
 		fresh.sort((a, b) => (a.birthMs ?? a.mtimeMs) - (b.birthMs ?? b.mtimeMs) || a.path.localeCompare(b.path));
 		for (const d of fresh) registerFile(d);
@@ -34963,49 +36693,162 @@ function createTranscriptImporter(options) {
 	function untrackIdle(now) {
 		for (const file of states.values()) {
 			if (file.busy || !active(file) || file.kind === "workflow_status") continue;
-			if (now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) <= settings.untrackAfterHours * HOUR_MS$6) continue;
+			if (now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) <= settings.untrackAfterHours * HOUR_MS$7) continue;
 			if (headDone(file) && file.observedSize > file.tailOffset + file.partialBytes) continue;
 			const view = sessions.byUid(scope, file.sessionUid)?.state;
 			if (view === "completed" || view === "failed" || view === "stale") markState(file, "untracked");
 		}
 	}
-	async function discover() {
-		loadKnown();
-		if (tdir === null || closed) return {
+	/** Said once, as a count: a folder had more entries than the budget of one pass (never a path). */
+	function noteTruncated(truncatedFolders) {
+		if (truncatedFolders === 0 || truncationLogged) return;
+		truncationLogged = true;
+		options.logger?.warn("discovery_truncated", { truncatedFolders });
+	}
+	/** What follows every discovery: idle files are untracked and the head records of new sessions are classified. */
+	async function afterDiscovery(now) {
+		untrackIdle(now);
+		for (const file of [...states.values()]) if (file.needsClassify && file.kind === "session" && !file.busy && headDone(file) && active(file)) {
+			file.needsClassify = false;
+			await classifyFile(file);
+		}
+		stats.lastScanAt = clock.now();
+	}
+	/** The folders that hold a tracked file that is still active: their names below the projects folder. */
+	function hotFolders(root) {
+		const hot = /* @__PURE__ */ new Set();
+		for (const file of states.values()) {
+			if (file.state !== "active") continue;
+			const relative = path.relative(root, file.path);
+			if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+			const name = relative.split(path.sep)[0];
+			if (name !== void 0 && name !== "") hot.add(name);
+		}
+		return hot;
+	}
+	/** Scope `all`: the project folders that are hot, changed or hinted, or every folder when the full sweep is due. */
+	async function discoverAll(root) {
+		const now = clock.now();
+		const list = await listProjectFolders(root, fsx);
+		if (list.missing) return {
 			sessions: 0,
 			newFiles: 0,
 			symlinksSkipped: 0,
-			missingDir: tdir === null
+			missingDir: true,
+			folders: 0,
+			truncatedFolders: 0
+		};
+		const hinted = new Set(list.folders.filter((f) => hintedFolders.has(f.name.toLowerCase())).map((f) => f.name));
+		hintedFolders.clear();
+		const { chosen, full } = selectFolders(list.folders, {
+			lastFullAt,
+			mtimes: folderMtimes
+		}, now, {
+			fullSweepIntervalMs,
+			hot: hotFolders(root),
+			hinted
+		});
+		loadHookKnown();
+		const policy = {
+			nowMs: now,
+			lookbackMs: settings.lookbackHours * HOUR_MS$7,
+			pinned,
+			isKnown
+		};
+		let sessionCount = 0;
+		let newFiles = 0;
+		let symlinksSkipped = list.linksSkipped;
+		let folders = 0;
+		let truncatedFolders = 0;
+		let finished = true;
+		for (const folder of chosen) {
+			if (closed) {
+				finished = false;
+				break;
+			}
+			const result = await discoverTranscripts(folder.dir, policy, fsx, { concurrency: 32 });
+			if (!result.missing) {
+				newFiles += await trackSessions(result.sessions);
+				folders += 1;
+				sessionCount += result.sessions.length;
+				symlinksSkipped += result.counters.symlinksSkipped;
+				if (result.counters.truncated) truncatedFolders += 1;
+				folderMtimes.set(folder.name, folder.mtimeMs);
+			}
+			await setImmediate$1();
+		}
+		if (full && finished) lastFullAt = now;
+		const present = new Set(list.folders.map((f) => f.name));
+		for (const name of [...folderMtimes.keys()]) if (!present.has(name)) folderMtimes.delete(name);
+		noteTruncated(truncatedFolders);
+		await afterDiscovery(now);
+		return {
+			sessions: sessionCount,
+			newFiles,
+			symlinksSkipped,
+			missingDir: false,
+			folders,
+			truncatedFolders
+		};
+	}
+	async function discover() {
+		loadKnown();
+		const dir = allProjects ? projectsRoot : tdir;
+		if (dir === null || closed) return {
+			sessions: 0,
+			newFiles: 0,
+			symlinksSkipped: 0,
+			missingDir: dir === null,
+			folders: 0,
+			truncatedFolders: 0
 		};
 		discovering += 1;
 		try {
+			if (allProjects) return await discoverAll(dir);
 			const now = clock.now();
-			const result = await discoverTranscripts(tdir, {
+			loadHookKnown();
+			const result = await discoverTranscripts(dir, {
 				nowMs: now,
-				lookbackMs: settings.lookbackHours * HOUR_MS$6,
+				lookbackMs: settings.lookbackHours * HOUR_MS$7,
 				pinned,
 				isKnown
 			}, fsx);
 			const newFiles = await trackSessions(result.sessions);
-			untrackIdle(now);
-			for (const file of [...states.values()]) if (file.needsClassify && file.kind === "session" && !file.busy && headDone(file) && active(file)) {
-				file.needsClassify = false;
-				await classifyFile(file);
-			}
-			stats.lastScanAt = clock.now();
+			const truncatedFolders = result.counters.truncated ? 1 : 0;
+			noteTruncated(truncatedFolders);
+			await afterDiscovery(now);
 			return {
 				sessions: result.sessions.length,
 				newFiles,
 				symlinksSkipped: result.counters.symlinksSkipped,
-				missingDir: result.missing
+				missingDir: result.missing,
+				folders: result.missing ? 0 : 1,
+				truncatedFolders
 			};
 		} finally {
 			discovering -= 1;
 		}
 	}
-	async function discoverSession$1(sessionId) {
+	async function discoverSession$1(sessionId, cwd) {
 		loadKnown();
-		if (tdir === null || closed) return false;
+		if (closed) return false;
+		if (allProjects) {
+			if (projectsRoot === null) return false;
+			discovering += 1;
+			try {
+				const first = cwd === void 0 || cwd === null || cwd === "" ? void 0 : projectFolderName(cwd).name;
+				const found = await discoverSessionAnywhere(projectsRoot, sessionId, fsx, first);
+				if (found === null) {
+					if (first !== void 0) hintedFolders.add(first.toLowerCase());
+					return false;
+				}
+				await trackSessions([found.session]);
+				return true;
+			} finally {
+				discovering -= 1;
+			}
+		}
+		if (tdir === null) return false;
 		discovering += 1;
 		try {
 			const found = await discoverSession(tdir, sessionId, fsx);
@@ -35027,14 +36870,18 @@ function createTranscriptImporter(options) {
 			}
 		} catch (error) {
 			if (file.busy) return;
-			const code = errorCodeOf$1(error);
+			const code = errorCodeOf$2(error);
 			markState(file, classifyFsError(code) === "missing" ? "missing" : "unreadable");
 		}
 	}
 	async function statTick() {
 		loadKnown();
-		const list = [...states.values()].filter((file) => file.state !== "untracked" && file.state !== "retired" && file.kind !== "workflow_status");
-		for (let i = 0; i < list.length; i += STAT_PARALLEL) await Promise.all(list.slice(i, i + STAT_PARALLEL).map(statOne));
+		const now = clock.now();
+		const coldDue = !allProjects || lastColdStatAt === null || now - lastColdStatAt >= coldStatIntervalMs;
+		if (allProjects && coldDue) lastColdStatAt = now;
+		const cold = (file) => allProjects && now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) > COLD_AFTER_MS;
+		const list = [...states.values()].filter((file) => file.state !== "untracked" && file.state !== "retired" && file.kind !== "workflow_status" && (coldDue || !cold(file)));
+		for (let i = 0; i < list.length; i += STAT_PARALLEL$1) await Promise.all(list.slice(i, i + STAT_PARALLEL$1).map(statOne));
 		stats.lastScanAt = clock.now();
 		refreshStats();
 		if (stats.bytesBehind === 0 && discovering === 0) stats.lastSyncAt = clock.now();
@@ -35076,6 +36923,9 @@ function createTranscriptImporter(options) {
 		setTranscriptsDir(dir) {
 			tdir = dir;
 		},
+		setProjectsRoot(dir) {
+			projectsRoot = dir;
+		},
 		setRules(next, nextPinned) {
 			rules = compileSessionRules(next);
 			pinned = new Set(nextPinned);
@@ -35103,7 +36953,7 @@ function createTranscriptImporter(options) {
 		}
 	};
 }
-var MIB$2, HOUR_MS$6, DEFAULT_IMPORT_SETTINGS, DEFAULT_CHUNK_BYTES, STAT_PARALLEL, MAX_TRACKED_ROWS, TITLE_KIND;
+var MIB$2, HOUR_MS$7, DEFAULT_IMPORT_SETTINGS, DEFAULT_CHUNK_BYTES, STAT_PARALLEL$1, DEFAULT_FULL_SWEEP_MS, DEFAULT_COLD_STAT_MS, COLD_AFTER_MS, MAX_TRACKED_ROWS, TITLE_KIND;
 var init_importer = __esmMin((() => {
 	init_protocol$1();
 	init_agents$1();
@@ -35115,16 +36965,17 @@ var init_importer = __esmMin((() => {
 	init_write();
 	init_fsx();
 	init_accumulate();
-	init_errors$3();
+	init_errors$4();
 	init_jsonl_tailer();
 	init_file_identity();
 	init_link_file();
 	init_writer();
 	init_classify();
+	init_discover_projects();
 	init_discovery();
 	init_normalize_record();
 	MIB$2 = 1048576;
-	HOUR_MS$6 = 36e5;
+	HOUR_MS$7 = 36e5;
 	DEFAULT_IMPORT_SETTINGS = {
 		lookbackHours: 8,
 		headMaxBytes: 16 * MIB$2,
@@ -35134,7 +36985,10 @@ var init_importer = __esmMin((() => {
 		sliceMs: 20
 	};
 	DEFAULT_CHUNK_BYTES = 262144;
-	STAT_PARALLEL = 32;
+	STAT_PARALLEL$1 = 32;
+	DEFAULT_FULL_SWEEP_MS = 6e4;
+	DEFAULT_COLD_STAT_MS = 1e4;
+	COLD_AFTER_MS = 3e5;
 	MAX_TRACKED_ROWS = 1e6;
 	TITLE_KIND = "custom";
 }));
@@ -35182,8 +37036,19 @@ function sessionRulesOf(config) {
 		};
 	});
 }
-/** The folder of the transcripts: the configured one, or (`auto`, the shipped value, and null) the folder of the repository. */
+/**
+* True when the instance reads every project below the Claude home (`projects.scope`, `auto` follows the kind of the instance,
+* CAW design 03 2.1). Such an instance runs without hooks, so it has no route file.
+*/
+function readsAllProjects(ctx) {
+	return isAllScope(ctx.config.runtime.projects.scope, ctx.kind);
+}
+/**
+* The folder of the transcripts: in scope `all` the folder that holds every project (no repository to detect); else the
+* configured one, or (`auto`, the shipped value, and null) the folder of the repository.
+*/
 async function resolveTranscriptsDir(ctx) {
+	if (readsAllProjects(ctx)) return projectsRootOf(ctx.claudeHome);
 	const configured = ctx.config.monitor.transcripts_dir;
 	if (configured !== null && configured !== "" && configured !== "auto") return path.resolve(configured);
 	return detectTranscriptsDir(ctx.config.monitor.repo, path.join(ctx.claudeHome, "projects"));
@@ -35205,6 +37070,7 @@ function routeInstanceOf(ctx, transcriptsDir) {
 * service wrote the same content at its own start; the write is idempotent.
 */
 async function publishRouteFile(ctx) {
+	if (readsAllProjects(ctx)) return;
 	const dir = await resolveTranscriptsDir(ctx);
 	await writeRouteFile(routeInstanceOf(ctx, dir), { stoppedAt: null }, { now: ctx.clock.now() });
 }
@@ -35226,6 +37092,7 @@ function createIngestService(ctx, options = {}) {
 	const spoolDir = path.join(ctx.instanceDir, "data", "spool");
 	const idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
 	const sessions = new SessionsRepo(db);
+	const allProjects = readsAllProjects(ctx);
 	const commitDurations = [];
 	let txStartedAt = null;
 	const callerBeforeCommit = options.writer?.beforeCommit;
@@ -35279,6 +37146,12 @@ function createIngestService(ctx, options = {}) {
 		writer,
 		clock,
 		transcriptsDir: null,
+		...allProjects ? {
+			projectScope: "all",
+			projectsRoot: projectsRootOf(ctx.claudeHome),
+			fullSweepIntervalMs: ctx.config.runtime.projects.fullSweepIntervalMs,
+			coldStatIntervalMs: ctx.config.runtime.projects.coldStatIntervalMs
+		} : {},
 		settings: importSettingsOf(ctx.config),
 		rules: sessionRulesOf(ctx.config),
 		pinned: ctx.config.monitor.session_ids,
@@ -35286,6 +37159,7 @@ function createIngestService(ctx, options = {}) {
 	});
 	let transcriptsDir = null;
 	async function writeRoute(state) {
+		if (allProjects) return;
 		try {
 			await writeRouteFile(routeInstanceOf(ctx, transcriptsDir), state, { now: clock.now() });
 		} catch (error) {
@@ -35307,11 +37181,18 @@ function createIngestService(ctx, options = {}) {
 		importer.setTranscriptsDir(found);
 		if (accepting) await writeRoute({ stoppedAt: null });
 	}
+	/** The working folder that a hint came with, kept until the scheduler asks the importer for that session (bounded). */
+	const hintedCwds = /* @__PURE__ */ new Map();
+	const HINTED_CWDS_MAX = 1e3;
 	const importerPort = {
 		work: () => importer.work(),
 		runSlice: (work, deadline) => importer.runSlice(work, deadline),
 		statTick: () => importer.statTick(),
-		discoverSession: (sessionId) => importer.discoverSession(sessionId),
+		discoverSession: (sessionId) => {
+			const cwd = hintedCwds.get(sessionId) ?? null;
+			hintedCwds.delete(sessionId);
+			return importer.discoverSession(sessionId, cwd);
+		},
 		isIdle: () => importer.isIdle(),
 		discover: async () => {
 			await ensureTranscriptsDir();
@@ -35326,6 +37207,12 @@ function createIngestService(ctx, options = {}) {
 		backfillShare: ctx.config.runtime.import.backfillShare,
 		logger
 	});
+	/** Looks for the transcript of a session that is known to be live: the scheduler discovers it at once, whatever its age. */
+	function hint(sessionId, cwd) {
+		if (!accepting) return;
+		if (cwd !== null && hintedCwds.size < HINTED_CWDS_MAX) hintedCwds.set(sessionId, cwd);
+		scheduler.hint(sessionId);
+	}
 	const externalFs = options.externalFs ?? nodeExternalFs;
 	const alive = options.pidAlive ?? pidAlive;
 	const isKnownSession = (uid) => sessions.idByUid(scope, uid) !== void 0;
@@ -35334,7 +37221,10 @@ function createIngestService(ctx, options = {}) {
 		now: () => clock.now(),
 		isKnownSession,
 		pidAlive: alive,
-		fs: externalFs
+		fs: externalFs,
+		...allProjects ? { onUnknownSession: (sessionUid, cwd) => {
+			hint(sessionUid, cwd);
+		} } : {}
 	});
 	const jobs = createJobsReader({
 		claudeHome: ctx.claudeHome,
@@ -35446,11 +37336,27 @@ function createIngestService(ctx, options = {}) {
 			filesTracked: t.filesTracked
 		};
 	}
+	/**
+	* Sessions written before the project dimension was filled get their project now, once per start (CAW design 03 2.5). It runs
+	* before the producers start, so it never competes with the writer; a failure is logged as a code and never stops ingestion.
+	*/
+	async function backfillProjectDimension() {
+		try {
+			const result = await (options.backfillProjects ?? backfillProjects)(db, scope);
+			if (result.assigned > 0) logger.info("project_backfill", {
+				scanned: result.scanned,
+				assigned: result.assigned
+			});
+		} catch (error) {
+			logger.warn("project_backfill_failed", { code: failureCode(error) });
+		}
+	}
 	async function doStart() {
 		try {
 			unsubscribeCommits = onCommitted(db, noteCommit);
 			accepting = true;
 			bindActivityFlush(ctx, () => writer.flushActivity());
+			await backfillProjectDimension();
 			transcriptsDir = await resolveTranscriptsDir(ctx);
 			importer.setTranscriptsDir(transcriptsDir);
 			await writeRoute({ stoppedAt: null });
@@ -35500,7 +37406,7 @@ function createIngestService(ctx, options = {}) {
 		const hours = ctx.config.runtime.hooks.spoolWhileStoppedHours;
 		await within(deadlineMs + WRITER_CLOSE_GRACE_MS, writeRoute({
 			stoppedAt: now,
-			spoolUntil: hours > 0 ? now + hours * HOUR_MS$5 : null
+			spoolUntil: hours > 0 ? now + hours * HOUR_MS$6 : null
 		}));
 	}
 	async function doStop(deadlineMs) {
@@ -35548,11 +37454,14 @@ function createIngestService(ctx, options = {}) {
 			if (!accepting) return Promise.reject(new IngestWriterClosedError());
 			return drainer.replay(fromSegment);
 		},
+		hintSession: (sessionId) => {
+			if (SID_RE.test(sessionId)) hint(sessionId, null);
+		},
 		stats
 	};
 }
-var IngestIdleTimeoutError, IDLE_POLL_MS, HOUR_MS$5, ITEM_BYTES$1, COMMIT_SAMPLES, MAX_TIMER_MS$2, WRITER_CLOSE_GRACE_MS, START_FAILURE_STOP_MS$1;
-var init_service$3 = __esmMin((() => {
+var IngestIdleTimeoutError, IDLE_POLL_MS, HOUR_MS$6, ITEM_BYTES$1, COMMIT_SAMPLES, MAX_TIMER_MS$2, WRITER_CLOSE_GRACE_MS, START_FAILURE_STOP_MS$1;
+var init_service$4 = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	init_change_sink();
@@ -35560,12 +37469,14 @@ var init_service$3 = __esmMin((() => {
 	init_sessions$1();
 	init_fs();
 	init_jobs();
-	init_registry();
+	init_registry$1();
 	init_ingest_health();
 	init_facts();
 	init_schedule();
 	init_process();
-	init_errors$3();
+	init_backfill();
+	init_scope();
+	init_errors$4();
 	init_routes_file();
 	init_spool_drainer();
 	init_scheduler();
@@ -35581,7 +37492,7 @@ var init_service$3 = __esmMin((() => {
 		}
 	};
 	IDLE_POLL_MS = 50;
-	HOUR_MS$5 = 36e5;
+	HOUR_MS$6 = 36e5;
 	ITEM_BYTES$1 = 200;
 	COMMIT_SAMPLES = 200;
 	MAX_TIMER_MS$2 = 2 ** 31 - 1;
@@ -35751,7 +37662,7 @@ var init_completion$1 = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	init_derive_session();
-	init_rules$1();
+	init_rules$2();
 	CompletionTargetError = class extends Error {
 		code;
 		target;
@@ -35926,7 +37837,7 @@ function legacyOfSession(facts, rows, view, now, cfg) {
 var END_STOPS;
 var init_legacy = __esmMin((() => {
 	init_json$1();
-	init_rules$1();
+	init_rules$2();
 	END_STOPS = ["end_turn", "stop_sequence"];
 }));
 
@@ -35955,7 +37866,7 @@ function agentRowId(db, sessionRowIdValue, agentUid) {
 		uid: agentUid
 	})?.id;
 }
-function iso$1(ms) {
+function iso$2(ms) {
 	return isoMsZ(ms);
 }
 function isoOrNull(ms) {
@@ -36194,7 +38105,7 @@ function idsParam(ids) {
 function toTransitionItem(row, nowMs) {
 	return {
 		id: row.id,
-		at: iso$1(row.at),
+		at: iso$2(row.at),
 		agentId: row.agentUid,
 		from: row.fromState,
 		to: row.toState,
@@ -36265,7 +38176,7 @@ var init_transitions = __esmMin((() => {
 	init_transitions$1();
 	init_facts();
 	init_legacy();
-	init_rules$1();
+	init_rules$2();
 	NotFoundError = class extends Error {
 		code;
 		constructor(code) {
@@ -36456,10 +38367,10 @@ var init_completion = __esmMin((() => {
 	init_sessions$1();
 	init_tool_calls$1();
 	init_workflow_runs();
-	init_service$3();
+	init_service$4();
 	init_completion$1();
 	init_facts();
-	init_merge();
+	init_merge$1();
 	init_transitions();
 	OPEN_TOOLS_READ = 200;
 	MAX_EVIDENCE_ITEMS = 8;
@@ -36493,8 +38404,8 @@ function agentNodes(db, deps, rows) {
 			},
 			requestShape: row.requestShape,
 			model: row.model,
-			startedAt: iso$1(row.startedAt),
-			lastActivityAt: iso$1(row.lastActivityAt),
+			startedAt: iso$2(row.startedAt),
+			lastActivityAt: iso$2(row.lastActivityAt),
 			endedAt: isoOrNull(row.endedAt),
 			state: assessmentOf(row, nowMs),
 			usage: tokenUsageOf({
@@ -36607,7 +38518,7 @@ function createAgentQueries(db, deps) {
 			if (q.project !== void 0) where.push(`s.project_id IN (SELECT id FROM projects WHERE project_key IN ${bind.list(q.project)})`);
 			if (q.hasErrors === true) where.push("a.error_count > 0");
 			if (q.includeInternal !== true && q.kind?.includes("internal") !== true) where.push("a.kind <> 'internal'");
-			if (q.includeUnmatched !== true && !deps.config.monitor.include_unmatched) where.push("(s.matched = 1 OR s.pinned = 1)");
+			if (!unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q)) where.push("(s.matched = 1 OR s.pinned = 1)");
 			const expression = q.sort === "started" ? "a.started_at" : "a.last_activity_at";
 			if (resume !== null) {
 				const op = dir === "desc" ? "<" : ">";
@@ -36646,6 +38557,7 @@ function createAgentQueries(db, deps) {
 var AGENT_COLUMNS, AGENT_FROM, TREE_KEY;
 var init_agents = __esmMin((() => {
 	init_src$1();
+	init_scope();
 	init_transitions();
 	AGENT_COLUMNS = `a.id AS id, a.agent_uid AS uid, s.session_uid AS sessionUid, a.kind AS kind, a.depth AS depth,
   pa.agent_uid AS parentUid, a.spawn_tool_use_id AS spawnToolUseId, a.agent_type AS agentType, a.label AS label,
@@ -36680,7 +38592,7 @@ function agentLabelOf(row) {
 	if (row.agentUid === null) return null;
 	return row.agentLabel !== null && row.agentLabel !== "" ? row.agentLabel : row.agentType ?? row.agentUid;
 }
-function keyOf$1(row) {
+function keyOf$2(row) {
 	if (row.naturalKey !== null) return row.naturalKey;
 	if (row.eventUid !== null) return `h:${row.eventUid}`;
 	return `t:${row.recordUuid ?? String(row.id)}`;
@@ -36711,14 +38623,14 @@ function eventItems(db, rows) {
 		return {
 			id: row.id,
 			seq: row.seq,
-			key: keyOf$1(row),
+			key: keyOf$2(row),
 			sessionId: row.sessionUid,
 			sessionLabel: row.sessionLabel,
 			agentId: row.agentUid,
 			agentLabel: agentLabelOf(row),
-			at: iso$1(row.ts),
+			at: iso$2(row.ts),
 			atSource: row.tsSource,
-			receivedAt: iso$1(row.receivedAt),
+			receivedAt: iso$2(row.receivedAt),
 			sources,
 			source: sources[0] ?? "monitor",
 			type: kind,
@@ -36739,7 +38651,7 @@ function eventItems(db, rows) {
 		};
 	});
 }
-function resolveScope(db, q, options) {
+function resolveScope$1(db, q, options) {
 	let sessionIds = null;
 	if (q.session !== void 0) {
 		const bind = new Binder();
@@ -36879,7 +38791,7 @@ function createEventQueries(db, deps) {
 		const resume = q.afterId === void 0 && q.around === void 0 ? readCursor(q.cursor, spec) : null;
 		const window = resolveWindow(deps, q, options.pathSession === true ? "all" : "24h", resume);
 		if ((q.q !== void 0 || q.tool !== void 0) && q.session === void 0 && !isNarrow(window)) throw new QueryRefusal("filter_requires_scope");
-		const scope = resolveScope(db, q, options);
+		const scope = resolveScope$1(db, q, options);
 		if (scope.sessionIds !== null && scope.sessionIds.length === 0) return emptyPage(asOfSeq, q.limit);
 		const base = {
 			q,
@@ -37103,7 +39015,7 @@ function summaryOf$2(row, side, nowMs) {
 	}, files);
 	const reported = row.reportedCostUsd === null || row.reportedCostAt === null ? null : {
 		amountUsd: row.reportedCostUsd,
-		at: iso$1(row.reportedCostAt),
+		at: iso$2(row.reportedCostAt),
 		trailing: side.trailing.get(row.id) ?? false,
 		label: "Reported by Claude Code (cumulative, not a bill)"
 	};
@@ -37123,8 +39035,8 @@ function summaryOf$2(row, side, nowMs) {
 		ccVersion: row.ccVersion,
 		models: stringList(row.models),
 		lastModel: row.lastModel,
-		startedAt: iso$1(row.startedAt),
-		lastActivityAt: iso$1(row.lastActivityAt),
+		startedAt: iso$2(row.startedAt),
+		lastActivityAt: iso$2(row.lastActivityAt),
 		endedAt: isoOrNull(row.endedAt),
 		durationMs: Math.max(0, (row.endedAt ?? row.lastActivityAt) - row.startedAt),
 		state: assessmentOf(row, nowMs),
@@ -37168,6 +39080,7 @@ function filterSql$1(deps, q, window, bind) {
 	}
 	where.push(`s.started_at < ${bind.bind(window.toMs)}`);
 	if (q.q !== void 0) where.push(`instr(s.search_text, ${bind.bind(foldQuery(q.q))}) > 0`);
+	if (q.session !== void 0) where.push(`s.session_uid IN ${bind.list(q.session)}`);
 	if (q.state !== void 0) where.push(`s.state IN ${bind.list(expandStateFilter(q.state))}`);
 	if (q.presence !== void 0) where.push(`s.presence IN ${bind.list(q.presence)}`);
 	if (q.project !== void 0) where.push(`s.project_id IN (SELECT id FROM projects WHERE project_key IN ${bind.list(q.project)})`);
@@ -37177,7 +39090,7 @@ function filterSql$1(deps, q, window, bind) {
 	const tokens = "s.tok_input + s.tok_output + s.tok_cache_read + s.tok_cache_creation";
 	if (q.tokensMin !== void 0) where.push(`(${tokens}) >= ${bind.bind(q.tokensMin)}`);
 	if (q.tokensMax !== void 0) where.push(`(${tokens}) <= ${bind.bind(q.tokensMax)}`);
-	if (q.includeUnmatched !== true && !deps.config.monitor.include_unmatched) where.push("(s.matched = 1 OR s.pinned = 1)");
+	if (!unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q)) where.push("(s.matched = 1 OR s.pinned = 1)");
 	return where;
 }
 function detailOf(db, deps, row) {
@@ -37187,7 +39100,7 @@ function detailOf(db, deps, row) {
 	const external = driver.prepare(`SELECT source, observed_at AS observedAt, value_json AS value FROM external_observations
         WHERE session_id = :sid ORDER BY source`).all({ sid: row.id }).map((item) => ({
 		source: item.source,
-		observedAt: iso$1(item.observedAt),
+		observedAt: iso$2(item.observedAt),
 		value: flatRecord(item.value)
 	}));
 	const workItems = driver.prepare(`SELECT w.id AS id, w.title AS title, w.state AS state FROM work_item_sessions ws
@@ -37206,7 +39119,7 @@ function detailOf(db, deps, row) {
 		limit: MAX_RECONCILIATIONS
 	}).map((item) => ({
 		kind: item.kind,
-		at: iso$1(item.at),
+		at: iso$2(item.at),
 		detail: flatRecord(item.detail)
 	}));
 	return {
@@ -37309,6 +39222,7 @@ function createSessionQueries(db, deps) {
 var SORT_EXPRESSIONS$1, SESSION_COLUMNS, SESSION_FROM, MAX_FILES, MAX_RECONCILIATIONS;
 var init_sessions = __esmMin((() => {
 	init_src$1();
+	init_scope();
 	init_transitions();
 	SORT_EXPRESSIONS$1 = {
 		lastActivity: "s.last_activity_at",
@@ -37573,7 +39487,7 @@ var init_alerts = __esmMin((() => {
 /** A stored row as the API item: the detail is the message (the code when there is none), the segment is the place. */
 function itemOf(row) {
 	return {
-		at: iso$1(row.at),
+		at: iso$2(row.at),
 		source: row.source,
 		code: row.code,
 		where: row.segment,
@@ -37615,7 +39529,7 @@ function mergeServerErrors(ring, stored, q) {
 	tagged.sort((a, b) => Date.parse(b.item.at) - Date.parse(a.item.at) || a.rank - b.rank || a.order - b.order);
 	return tagged.slice(0, q.limit).map((entry) => ({ ...entry.item }));
 }
-var init_errors$2 = __esmMin((() => {
+var init_errors$3 = __esmMin((() => {
 	init_transitions();
 }));
 
@@ -37748,7 +39662,7 @@ function groupingSql(grouping) {
 		}
 	}
 }
-function keyOf(row) {
+function keyOf$1(row) {
 	const value = row["k"];
 	if (typeof value === "number" || typeof value === "string") return value;
 	return typeof value === "bigint" ? Number(value) : null;
@@ -37767,7 +39681,7 @@ function aggregateGroups(db, ctx, filter, grouping) {
 	return rows.map((row) => {
 		const model = row["m"];
 		return {
-			key: keyOf(row),
+			key: keyOf$1(row),
 			model: typeof model === "string" ? model : grouping.by === "model" ? String(row["k"]) : null,
 			sessions: num$2(row, "sessions"),
 			agg: toAggregate(row, complete, 0)
@@ -38239,7 +40153,7 @@ function mergedDrafts(env, by) {
 		cost: cost === null ? null : entry.ids.flatMap((id) => ownedBy(cost, id) ?? [])
 	}));
 }
-function rowOf$2(entries, currency, draft) {
+function rowOf$3(entries, currency, draft) {
 	return {
 		key: draft.key,
 		label: draft.label,
@@ -38293,7 +40207,7 @@ function buildUsageReport(db, ctx, deps, asOfSeq, req) {
 		case "project":
 		case "workItem": drafts = mergedDrafts(env, req.groupBy);
 	}
-	const rows = drafts.map((draft) => rowOf$2(entries, currency, draft)).sort(byUsage);
+	const rows = drafts.map((draft) => rowOf$3(entries, currency, draft)).sort(byUsage);
 	const nowMs = deps.now();
 	return {
 		asOfSeq,
@@ -38548,7 +40462,7 @@ function createOverviewQueries(db, deps) {
 		const nowMs = deps.now();
 		const asOf = isoMsZ(nowMs);
 		const window = resolveWindow(deps, q, "window", null);
-		const includeUnmatched = q.includeUnmatched === true || deps.config.monitor.include_unmatched;
+		const includeUnmatched = unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q);
 		const states = /* @__PURE__ */ new Map();
 		const sessionBind = new Binder();
 		for (const row of db.driver.prepare(`SELECT s.state AS state, count(*) AS n FROM sessions s
@@ -38623,6 +40537,7 @@ var providers, SESSION_SOURCE, SPEC;
 var init_overview = __esmMin((() => {
 	init_src$1();
 	init_alerts$1();
+	init_scope();
 	init_alerts();
 	init_events();
 	init_transitions();
@@ -38780,7 +40695,7 @@ function itemsOf(db, rows) {
 			state: row.state,
 			boardReason: row.boardReason,
 			evidence: lines,
-			since: iso$1(row.stateSince),
+			since: iso$2(row.stateSince),
 			sessionIds: sessionIds.get(row.id) ?? [],
 			sessionCount: row.sessionCount,
 			lastActivityAt: isoOrNull(row.lastActivityAt),
@@ -38865,7 +40780,7 @@ function toCheckpoint(row) {
 }
 var COLUMNS, UPSERT, SEEK_BY_ENTRY, SEEK_BY_OFFSET, FIRST_REACHING_TS, LIST_AFTER, LAST, CheckpointsRepo;
 var init_checkpoints = __esmMin((() => {
-	init_errors$4();
+	init_errors$5();
 	COLUMNS = "file_id, entry_index, byte_offset, min_ts, max_ts";
 	UPSERT = `INSERT INTO transcript_checkpoints (file_id, entry_index, byte_offset, min_ts, max_ts)
   VALUES (:fileId, :entryIndex, :byteOffset, :minTs, :maxTs)
@@ -38954,7 +40869,7 @@ var init_checkpoints = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/transcript/entries.ts
-function isPlain(value) {
+function isPlain$2(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function listOf$1(value) {
@@ -38998,7 +40913,7 @@ function toJsonDoc(value, depth) {
 		k: "arr",
 		v: items.map((item) => toJsonDoc(item, depth + 1))
 	};
-	if (isPlain(value)) {
+	if (isPlain$2(value)) {
 		const fields = [];
 		for (const [key, item] of Object.entries(value)) if (item !== void 0) fields.push([key, toJsonDoc(item, depth + 1)]);
 		return {
@@ -39024,7 +40939,7 @@ function reprOf(value) {
 	if (typeof value === "number") return Number.isInteger(value) ? String(value) : formatFloat(value);
 	const items = listOf$1(value);
 	if (items !== void 0) return `[${items.map(reprOf).join(", ")}]`;
-	if (isPlain(value)) return `{${Object.entries(value).map(([key, item]) => `${quoteText(key)}: ${reprOf(item)}`).join(", ")}}`;
+	if (isPlain$2(value)) return `{${Object.entries(value).map(([key, item]) => `${quoteText(key)}: ${reprOf(item)}`).join(", ")}}`;
 	return "";
 }
 /** Python `str()` of a JSON value, for the summary key of a tool input. */
@@ -39071,20 +40986,20 @@ function hasContent(text) {
 }
 /** The record time as the legacy code reads it: `timestamp` when it is a text, else the empty text. */
 function recordTimestamp(record) {
-	if (!isPlain(record)) return "";
+	if (!isPlain$2(record)) return "";
 	const stamp = record["timestamp"];
 	return typeof stamp === "string" ? stamp : "";
 }
 /** The `message.content` of a record: undefined unless `message` is an object. */
 function contentOf(record) {
 	const message = record["message"];
-	return isPlain(message) ? message["content"] : void 0;
+	return isPlain$2(message) ? message["content"] : void 0;
 }
 /** The text of a `tool_result` block: a list of text parts is joined with LF (legacy), a falsy value is the empty text. */
 function resultText(content) {
 	let value = content;
 	const parts = listOf$1(value);
-	if (parts !== void 0) value = parts.filter(isPlain).map((part) => typeof part["text"] === "string" ? part["text"] : "").join(LF$6);
+	if (parts !== void 0) value = parts.filter(isPlain$2).map((part) => typeof part["text"] === "string" ? part["text"] : "").join(LF$7);
 	return truthy(value) ? value : "";
 }
 /** The first line of the first truthy of `command`, `file_path`, `pattern`, `description`, `prompt`, `script` (legacy `key`). */
@@ -39093,7 +41008,7 @@ function summaryOf$1(input) {
 		const value = input[key];
 		if (truthy(value)) {
 			const text = pyStr(value);
-			const line = text.indexOf(LF$6);
+			const line = text.indexOf(LF$7);
 			return clipText(line < 0 ? text : text.slice(0, line), 160);
 		}
 	}
@@ -39104,7 +41019,7 @@ function summaryOf$1(input) {
 * `assistant` records produce entries; anything else, and any block of an unexpected shape, produces none.
 */
 function displayEntries(record, opts) {
-	if (!isPlain(record)) return [];
+	if (!isPlain$2(record)) return [];
 	const type = record["type"];
 	const content = contentOf(record);
 	const blocks = listOf$1(content);
@@ -39117,7 +41032,7 @@ function displayEntries(record, opts) {
 			text: clipText(content, opts.textChars)
 		});
 		else if (blocks !== void 0) for (const block of blocks) {
-			if (!isPlain(block)) continue;
+			if (!isPlain$2(block)) continue;
 			if (block["type"] === "text") out.push({
 				t,
 				k: "prompt",
@@ -39135,7 +41050,7 @@ function displayEntries(record, opts) {
 			}
 		}
 	} else if (type === "assistant" && blocks !== void 0) for (const block of blocks) {
-		if (!isPlain(block)) continue;
+		if (!isPlain$2(block)) continue;
 		const blockType = block["type"];
 		if (blockType === "text") {
 			const text = block["text"];
@@ -39146,7 +41061,7 @@ function displayEntries(record, opts) {
 			});
 		} else if (blockType === "tool_use") {
 			const rawInput = block["input"];
-			const input = isPlain(rawInput) ? rawInput : {};
+			const input = isPlain$2(rawInput) ? rawInput : {};
 			const id = block["id"];
 			const name = block["name"];
 			out.push({
@@ -39167,16 +41082,16 @@ function displayEntries(record, opts) {
 }
 /** `displayEntries(record, ...).length` without building any text (the entry index counts with this, 7.2). */
 function countEntries(record) {
-	if (!isPlain(record)) return 0;
+	if (!isPlain$2(record)) return 0;
 	const type = record["type"];
 	const content = contentOf(record);
 	const blocks = listOf$1(content);
 	let count = 0;
 	if (type === "user") {
 		if (typeof content === "string") return 1;
-		for (const block of blocks ?? []) if (isPlain(block) && (block["type"] === "text" || block["type"] === "tool_result")) count += 1;
+		for (const block of blocks ?? []) if (isPlain$2(block) && (block["type"] === "text" || block["type"] === "tool_result")) count += 1;
 	} else if (type === "assistant") for (const block of blocks ?? []) {
-		if (!isPlain(block)) continue;
+		if (!isPlain$2(block)) continue;
 		const blockType = block["type"];
 		if (blockType === "text") {
 			const text = block["text"];
@@ -39186,13 +41101,13 @@ function countEntries(record) {
 	}
 	return count;
 }
-var TOOL_INPUT_CHARS, THINK_CHARS, SUMMARY_CHARS, LF$6, SUMMARY_KEYS, FLOAT_FORM_FROM, MAX_JSON_DEPTH;
+var TOOL_INPUT_CHARS, THINK_CHARS, SUMMARY_CHARS, LF$7, SUMMARY_KEYS, FLOAT_FORM_FROM, MAX_JSON_DEPTH;
 var init_entries = __esmMin((() => {
 	init_json$1();
 	TOOL_INPUT_CHARS = 4e3;
 	THINK_CHARS = 1500;
 	SUMMARY_CHARS = 160;
-	LF$6 = String.fromCharCode(10);
+	LF$7 = String.fromCharCode(10);
 	SUMMARY_KEYS = [
 		"command",
 		"file_path",
@@ -39232,7 +41147,7 @@ async function orGone(call) {
 	try {
 		return await call();
 	} catch (error) {
-		if (classifyFsError(errorCodeOf$1(error)) === "missing") throw new TranscriptError("transcript_gone");
+		if (classifyFsError(errorCodeOf$2(error)) === "missing") throw new TranscriptError("transcript_gone");
 		throw error;
 	}
 }
@@ -39444,14 +41359,19 @@ function createTranscriptRootResolver(options) {
 	}
 	return async (file, siblings) => configuredRoot ?? await discoveredRoot() ?? derivedRoot(file, siblings);
 }
-/** The root options of the instance: the configured folder, and with `auto` the discovery of the repository's project folder. */
-function transcriptRootOptionsOf(deps) {
+/**
+* The root options of the instance: in scope `all` the projects folder of the Claude home; else the configured folder, and
+* with `auto` the discovery of the repository's project folder. `env` names the Claude home (the server's own environment, as
+* `buildInstanceContext` does).
+*/
+function transcriptRootOptionsOf(deps, env = process.env) {
+	if (isAllScope(deps.config.runtime.projects.scope, instanceKindOfConfig(deps.config))) return { transcriptsDir: projectsRootOf(claudeHomeOf(env)) };
 	const monitor = deps.config.monitor;
 	const auto = monitor.transcripts_dir === null || monitor.transcripts_dir === "" || monitor.transcripts_dir === "auto";
 	return {
 		transcriptsDir: monitor.transcripts_dir,
 		...auto ? {
-			discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(process.env), "projects")),
+			discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(env), "projects")),
 			now: deps.now
 		} : {}
 	};
@@ -39676,7 +41596,8 @@ var init_window = __esmMin((() => {
 	init_sessions$1();
 	init_transcript_files();
 	init_jsonl_tailer();
-	init_paths$1();
+	init_scope();
+	init_paths$2();
 	init_entries();
 	init_index_service();
 	READ_BUDGET_BYTES = 8388608;
@@ -39692,7 +41613,7 @@ var init_window = __esmMin((() => {
 /** `text` as the source of a regular expression that matches it literally. */
 function escapeRegExp$1(text) {
 	let out = "";
-	for (const char of text) out += REGEX_SPECIALS.has(char) ? `${BACKSLASH$1}${char}` : char;
+	for (const char of text) out += REGEX_SPECIALS.has(char) ? `${BACKSLASH$2}${char}` : char;
 	return out;
 }
 function isUnsafe(char) {
@@ -39727,7 +41648,7 @@ function hex4(unit) {
 /** `\uXXXX` for every UTF-16 unit of `char`, as the source of a literal match. */
 function escapedUnits(char) {
 	let out = "";
-	for (let i = 0; i < char.length; i += 1) out += `${BACKSLASH$1}${BACKSLASH$1}u${hex4(char.charCodeAt(i))}`;
+	for (let i = 0; i < char.length; i += 1) out += `${BACKSLASH$2}${BACKSLASH$2}u${hex4(char.charCodeAt(i))}`;
 	return out;
 }
 /** One character of the needle: ASCII as it is, any other as itself or as the `\uXXXX` of it, of its lower and of its upper case. */
@@ -39785,7 +41706,7 @@ function keeps(entry, criteria, relation) {
 	return criteria.needle === "" || haystackOf(entry).toLowerCase().includes(criteria.needle);
 }
 /** The first of the three texts that is not empty (the legacy `text or summary or input`). */
-function sourceOf(entry) {
+function sourceOf$1(entry) {
 	for (const candidate of [
 		entry.text,
 		entry.summary,
@@ -39795,7 +41716,7 @@ function sourceOf(entry) {
 }
 /** Up to 160 characters of the entry text, starting 40 characters before the first match (code points, as the legacy code). */
 function snippetOf(entry, needle) {
-	const source = sourceOf(entry);
+	const source = sourceOf$1(entry);
 	let start = 0;
 	if (needle !== "") {
 		const lowered = source.toLowerCase();
@@ -39963,16 +41884,16 @@ async function scanRelation(env, end, patterns, criteria, into, interrupt) {
 	}
 	return "done";
 }
-var BACKSLASH$1, WHITESPACE_RUN, REGEX_SPECIALS, UNSAFE_CHARS, CLIP_NOTE, SNIPPET_BEFORE, SNIPPET_CHARS, SLICE_BYTES, BREATHE_MS;
+var BACKSLASH$2, WHITESPACE_RUN, REGEX_SPECIALS, UNSAFE_CHARS, CLIP_NOTE, SNIPPET_BEFORE, SNIPPET_CHARS, SLICE_BYTES, BREATHE_MS;
 var init_scan = __esmMin((() => {
 	init_jsonl_tailer();
 	init_entries();
-	BACKSLASH$1 = String.fromCharCode(92);
-	WHITESPACE_RUN = `${BACKSLASH$1}s*`;
-	REGEX_SPECIALS = /* @__PURE__ */ new Set(`.*+?^\${}()|[]-/${BACKSLASH$1}`);
+	BACKSLASH$2 = String.fromCharCode(92);
+	WHITESPACE_RUN = `${BACKSLASH$2}s*`;
+	REGEX_SPECIALS = /* @__PURE__ */ new Set(`.*+?^\${}()|[]-/${BACKSLASH$2}`);
 	UNSAFE_CHARS = /* @__PURE__ */ new Set([
 		"\"",
-		BACKSLASH$1,
+		BACKSLASH$2,
 		"{",
 		"}",
 		"[",
@@ -40020,12 +41941,12 @@ function isResume(position) {
 }
 /** An error of the file system (the code is an errno name), as against a database error or a bug. */
 function isFsError(error) {
-	return error instanceof Error && /^E[A-Z0-9]+$/.test(errorCodeOf$1(error));
+	return error instanceof Error && /^E[A-Z0-9]+$/.test(errorCodeOf$2(error));
 }
 function mb(bytes) {
 	return `${(bytes / MIB$1).toFixed(1)} MB`;
 }
-function plural$2(count, one, many) {
+function plural$3(count, one, many) {
 	return `${String(count)} ${count === 1 ? one : many}`;
 }
 function describeFiles(problems, kind, count) {
@@ -40038,10 +41959,10 @@ function describeFiles(problems, kind, count) {
 function noteOf(f) {
 	const t = f.tally;
 	const size = t.bytesScanned >= f.bytesInScope ? mb(t.bytesScanned) : `${mb(t.bytesScanned)} of ${mb(f.bytesInScope)}`;
-	const where = f.scope === "instance" ? ` of ${plural$2(f.sessions, "session", "sessions")}` : "";
-	const parts = [`Searched ${String(t.filesScanned)} of ${plural$2(f.filesInScope, "transcript file", "transcript files")} (${size})${where}.`];
-	if (t.filesMissing > 0) parts.push(`${plural$2(t.filesMissing, "file was", "files were")} deleted by Claude Code and could not be searched${describeFiles(t.problems, "missing", t.filesMissing)}.`);
-	if (t.filesUnreadable > 0) parts.push(`${plural$2(t.filesUnreadable, "file", "files")} could not be read${describeFiles(t.problems, "unreadable", t.filesUnreadable)}.`);
+	const where = f.scope === "instance" ? ` of ${plural$3(f.sessions, "session", "sessions")}` : "";
+	const parts = [`Searched ${String(t.filesScanned)} of ${plural$3(f.filesInScope, "transcript file", "transcript files")} (${size})${where}.`];
+	if (t.filesMissing > 0) parts.push(`${plural$3(t.filesMissing, "file was", "files were")} deleted by Claude Code and could not be searched${describeFiles(t.problems, "missing", t.filesMissing)}.`);
+	if (t.filesUnreadable > 0) parts.push(`${plural$3(t.filesUnreadable, "file", "files")} could not be read${describeFiles(t.problems, "unreadable", t.filesUnreadable)}.`);
 	if (f.bytesNotIndexed > 0) parts.push(`${mb(f.bytesNotIndexed)} of newly written or oversized lines are not indexed yet and were not searched.`);
 	if (f.scopeTruncated) parts.push("Only the most recently active sessions are in scope; narrow the filters to reach the others.");
 	if (f.stoppedBy === "time_budget") parts.push("The time budget ended the search; continue it to search the rest.");
@@ -40158,7 +42079,7 @@ function createSearchService(db, options) {
 				if (error.code === "aborted") return { kind: "cancelled" };
 				return { kind: error.code === "transcript_gone" ? "missing" : "unreadable" };
 			}
-			if (isFsError(error)) return { kind: classifyFsError(errorCodeOf$1(error)) };
+			if (isFsError(error)) return { kind: classifyFsError(errorCodeOf$2(error)) };
 			throw error;
 		}
 	}
@@ -40306,7 +42227,7 @@ function createSearchService(db, options) {
 				}
 			} catch (error) {
 				if (!isFsError(error)) throw error;
-				failure = classifyFsError(errorCodeOf$1(error));
+				failure = classifyFsError(errorCodeOf$2(error));
 			}
 			if (failure !== null) {
 				noteProblem(tally, target, failure);
@@ -40554,7 +42475,7 @@ function createSearchQueryPart(db, deps) {
 	};
 }
 var MAX_CONCURRENT, MAX_CONTINUATIONS, CONTINUATION_TTL_MS, MAX_SESSIONS, CHECKPOINT_PAGE, MAX_PROBLEMS, NAMED_PROBLEMS, MIB$1, TRANSCRIPT_KINDS, SearchBusyError, FIRST_FILE;
-var init_service$2 = __esmMin((() => {
+var init_service$3 = __esmMin((() => {
 	init_src$1();
 	init_checkpoints();
 	init_sessions$1();
@@ -40562,7 +42483,7 @@ var init_service$2 = __esmMin((() => {
 	init_file_identity();
 	init_sessions();
 	init_transitions();
-	init_paths$1();
+	init_paths$2();
 	init_index_service();
 	init_window();
 	init_scan();
@@ -40621,7 +42542,7 @@ function pointOf(group) {
 function createSeriesQueries(db, deps) {
 	return { series: (ctx, q) => snapshot(db, ctx, (asOfSeq) => {
 		const window = resolveWindow(deps, q, DEFAULT_RANGE$1, null);
-		const sizeMs = q.bucket === "hour" ? HOUR_MS$4 : DAY_MS$1;
+		const sizeMs = q.bucket === "hour" ? HOUR_MS$5 : DAY_MS$1;
 		const offsetMs = q.tzOffsetMinutes * MINUTE_MS$2;
 		const scope = resolveUsageScope(db, q);
 		const filter = usageFilterOf(window, scope);
@@ -40665,13 +42586,13 @@ function createSeriesQueries(db, deps) {
 		})));
 	}) };
 }
-var HOUR_MS$4, DAY_MS$1, MINUTE_MS$2, MAX_BUCKETS, DEFAULT_RANGE$1;
+var HOUR_MS$5, DAY_MS$1, MINUTE_MS$2, MAX_BUCKETS, DEFAULT_RANGE$1;
 var init_series = __esmMin((() => {
 	init_src$1();
 	init_transitions();
 	init_aggregate();
 	init_usage$1();
-	HOUR_MS$4 = 36e5;
+	HOUR_MS$5 = 36e5;
 	DAY_MS$1 = 864e5;
 	MINUTE_MS$2 = 6e4;
 	MAX_BUCKETS = 2e3;
@@ -40792,6 +42713,48 @@ var init_tools$1 = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/engine/src/query/projects.ts
+function createProjectQueries(db) {
+	return {
+		projectStats: (ctx, o) => snapshot(db, ctx, () => {
+			const bind = new Binder();
+			const from = bind.bind(o.windowFromMs ?? Number.MIN_SAFE_INTEGER);
+			return db.driver.prepare(`SELECT p.project_key AS key, p.dir_name AS dirName, p.root_path AS rootPath,
+                    coalesce(sum(s.last_activity_at >= ${from}), 0) AS sessionsInWindow,
+                    coalesce(sum(s.state IN ${bind.list(ACTIVE_STATES)}), 0) AS activeSessions,
+                    max(p.last_activity_at, coalesce(max(s.last_activity_at), 0)) AS lastActivityAt,
+                    count(s.id) AS totalSessions
+               FROM projects p LEFT JOIN sessions s ON s.project_id = p.id
+              GROUP BY p.id ORDER BY lastActivityAt DESC, p.project_key`).all(bind.params);
+		}),
+		resumeFacts: (ctx, sessionId) => snapshot(db, ctx, () => {
+			const row = db.driver.prepare(`SELECT s.session_uid AS sessionId, p.project_key AS projectKey, p.dir_name AS dirName, p.root_path AS rootPath,
+                    s.cwd AS sessionCwd, s.entrypoint AS entrypoint, s.continued_in AS continuedIn,
+                    f.path AS filePath, f.state AS fileState
+               FROM sessions s
+               LEFT JOIN projects p ON p.id = s.project_id
+               LEFT JOIN transcript_files f ON f.id = coalesce(
+                      (SELECT x.id FROM transcript_files x WHERE x.id = s.transcript_file_id AND x.kind = 'session'),
+                      (SELECT min(x.id) FROM transcript_files x WHERE x.session_uid = s.session_uid AND x.kind = 'session'))
+              WHERE s.session_uid = :uid`).get({ uid: sessionId });
+			if (row === void 0) return null;
+			const { filePath, fileState, ...facts } = row;
+			return {
+				...facts,
+				mainFile: filePath === null || fileState === null ? null : {
+					path: filePath,
+					state: fileState
+				}
+			};
+		})
+	};
+}
+var init_projects = __esmMin((() => {
+	init_src$1();
+	init_transitions();
+}));
+
+//#endregion
 //#region packages/engine/src/query/index.ts
 /**
 * Adds a part to every layer that `createQueries` makes afterwards. `methods` are the names the part promises; the layer
@@ -40829,9 +42792,10 @@ function readIdentity$1(config) {
 	const defaultsFile = config.files.find((file) => file.name === "defaults.json");
 	const workspaceDir = configFile === void 0 ? null : path.dirname(configFile.path);
 	const skillDir = defaultsFile === void 0 ? null : path.dirname(path.dirname(defaultsFile.path));
-	const launcherPath = path.join(skillDir ?? ".", "scripts", "mcs.mjs");
+	const launcherPath = path.join(skillDir ?? ".", "scripts", LAUNCHER_FILE);
 	if (workspaceDir === null) return {
 		slug: "",
+		kind: "task",
 		description: null,
 		hooksEnabled: false,
 		workspaceDir,
@@ -40840,6 +42804,7 @@ function readIdentity$1(config) {
 	const instance = InstanceFileSchema.safeParse(readJson(path.join(workspaceDir, "instance.json")));
 	return {
 		slug: instance.success ? instance.data.slug : path.basename(workspaceDir),
+		kind: instance.success ? instanceKindOf(instance.data) : "task",
 		description: descriptionOf(readJson(path.join(workspaceDir, "task.json"))),
 		hooksEnabled: instance.success && instance.data.hooks.enabled,
 		workspaceDir,
@@ -40858,7 +42823,8 @@ function retentionSummary(config) {
 }
 function instanceInfoOf(db, deps, identity, runtime) {
 	const { monitor, runtime: config } = deps.config;
-	const { ui, poll, panels, limits } = monitor;
+	const { ui, poll, limits } = monitor;
+	const panels = effectivePanels(monitor.panels, identity.kind);
 	return {
 		instanceId: db.instanceId,
 		slug: identity.slug,
@@ -40869,6 +42835,9 @@ function instanceInfoOf(db, deps, identity, runtime) {
 		dbSchemaVersion: pragmaNumber(db.driver, "user_version"),
 		headSeq: db.headSeq(),
 		epoch: db.epoch,
+		kind: identity.kind,
+		app: identity.kind === "user" ? { name: config.app.name } : null,
+		scope: isAllScope(config.projects.scope, identity.kind) ? "all" : "repo",
 		staleAfterMs: num$1(poll, "stale_after_ms", 15e3),
 		heartbeatMs: STREAM_HEARTBEAT_MS,
 		windowHours: monitor.window_hours,
@@ -40908,7 +42877,8 @@ function instanceInfoOf(db, deps, identity, runtime) {
 			launcherPath: identity.launcherPath,
 			slug: identity.slug,
 			repoDir: monitor.repo,
-			instanceDir: identity.workspaceDir ?? ""
+			instanceDir: identity.workspaceDir ?? "",
+			kind: identity.kind
 		}),
 		limits: {
 			pageMax: 200,
@@ -41063,6 +43033,8 @@ var init_query = __esmMin((() => {
 	init_ingest_health$1();
 	init_sessions$1();
 	init_commands();
+	init_layout();
+	init_scope();
 	init_health();
 	init_completion();
 	init_agents();
@@ -41071,14 +43043,15 @@ var init_query = __esmMin((() => {
 	init_tool_calls();
 	init_transitions();
 	init_alerts();
-	init_errors$2();
+	init_errors$3();
 	init_overview();
 	init_work_items$1();
 	init_window();
-	init_service$2();
+	init_service$3();
 	init_series();
 	init_tools$1();
 	init_usage$1();
+	init_projects();
 	registrations = [];
 	HEALTH_POLL_MS = 5e3;
 	UNKNOWN_STAMP = "unknown";
@@ -41125,6 +43098,7 @@ var init_query = __esmMin((() => {
 	registerQueryPart(createUsageQueries, ["usage", "sessionUsage"]);
 	registerQueryPart(createSeriesQueries, ["series"]);
 	registerQueryPart(createToolFrequencyQueries, ["tools"]);
+	registerQueryPart(createProjectQueries, ["projectStats", "resumeFacts"]);
 }));
 
 //#endregion
@@ -41352,6 +43326,7 @@ async function buildInstanceContextWith(i, deps) {
 			runtimeDir: i.runtimeDir,
 			config,
 			instance,
+			kind: instanceKindOf(instance),
 			hooksEnabled: instance.hooks.enabled,
 			clock,
 			db,
@@ -41376,13 +43351,13 @@ var init_context = __esmMin((() => {
 	init_zod();
 	init_reader();
 	init_resolve();
-	init_errors$4();
-	init_open$1();
+	init_errors$5();
+	init_open$2();
 	init_discovery();
 	init_logger();
 	init_exec();
 	init_adopt();
-	init_paths();
+	init_paths$1();
 	init_error_ring();
 	init_query();
 	lateBindings = /* @__PURE__ */ new WeakMap();
@@ -41432,7 +43407,7 @@ var init_context = __esmMin((() => {
 
 //#endregion
 //#region packages/engine/src/runtime/state-watchdog.ts
-function parseState(bytes) {
+function parseState$1(bytes) {
 	try {
 		const parsed = StateFileSchema.safeParse(JSON.parse(Buffer.from(bytes).toString("utf8")));
 		return parsed.success ? parsed.data : null;
@@ -41440,7 +43415,7 @@ function parseState(bytes) {
 		return null;
 	}
 }
-function codeOf$3(error) {
+function codeOf$4(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 	return "INTERNAL";
 }
@@ -41471,14 +43446,14 @@ function createStateWatchdog(ctx, deps) {
 				await restore(ours, "unparsable");
 				return;
 			}
-			ctx.logger.warn("state_file_unreadable", { code: codeOf$3(error) });
+			ctx.logger.warn("state_file_unreadable", { code: codeOf$4(error) });
 			return;
 		}
 		if (Buffer.compare(current, ours) === 0) {
 			conflict = false;
 			return;
 		}
-		const state = parseState(current);
+		const state = parseState$1(current);
 		if (state === null) {
 			await restore(ours, "unparsable");
 			return;
@@ -41500,7 +43475,7 @@ function createStateWatchdog(ctx, deps) {
 			try {
 				await inspect();
 			} catch (error) {
-				ctx.logger.warn("state_watchdog_failed", { code: codeOf$3(error) });
+				ctx.logger.warn("state_watchdog_failed", { code: codeOf$4(error) });
 				ctx.errors.push({
 					source: "runtime",
 					code: "STATE_WATCHDOG_FAILED",
@@ -41555,6 +43530,58 @@ var init_state_watchdog = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/engine/src/runtime/user-services.ts
+/**
+* The server's decision on a `shutdown` request, and the one place that starts the drain. A shutdown of a user instance is
+* refused while the census counts a session, unless the request forces it. Never guarded: a task instance (no terminal), the
+* reason `signal` (logoff, Ctrl+C and SIGTERM end the process anyway, and refusing them would hang a logoff) and a request that
+* arrives while the instance is already stopping. The count is read once; `beginDrain()` runs in this same call on every allow
+* decision (so that no session can start between the count and the stop) and never on a refusal. Only exactly zero means "no
+* terminals": a count that is not a number refuses.
+*/
+function decideShutdown(i) {
+	if (i.stopping) return {
+		allow: true,
+		drained: true
+	};
+	if (i.kind === "user" && i.reason !== "signal" && !i.force) {
+		const live = i.census.count();
+		if (live !== 0) return {
+			allow: false,
+			live
+		};
+	}
+	try {
+		i.census.beginDrain();
+	} catch {
+		return {
+			allow: true,
+			drained: false
+		};
+	}
+	return {
+		allow: true,
+		drained: true
+	};
+}
+var EMPTY_CENSUS, EMPTY_USER_SERVICES;
+var init_user_services = __esmMin((() => {
+	EMPTY_CENSUS = Object.freeze({
+		count: () => 0,
+		sessions: () => [],
+		beginDrain: () => void 0
+	});
+	EMPTY_USER_SERVICES = Object.freeze({
+		census: EMPTY_CENSUS,
+		access: null,
+		accessService: null,
+		terminal: null,
+		folders: null,
+		components: Object.freeze([])
+	});
+}));
+
+//#endregion
 //#region packages/engine/src/external/pid.ts
 /**
 * One `external.pid` event per target whose pid is a valid process id. A target with an invalid pid is skipped: nothing is
@@ -41581,7 +43608,7 @@ var init_pid = __esmMin((() => {
 //#endregion
 //#region packages/engine/src/lifecycle/sweeper.ts
 /** What a log line or the error ring may say about a failure: its code or its name, never its message (a path may be in it). */
-function errorCodeOf(error) {
+function errorCodeOf$1(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 	return error instanceof Error ? error.name : "unknown";
 }
@@ -41709,12 +43736,12 @@ function createLifecycleSweeper(ctx, deps, options = {}) {
 			try {
 				await tick();
 			} catch (error) {
-				ctx.logger.warn("sweeper_tick_failed", { code: errorCodeOf(error) });
+				ctx.logger.warn("sweeper_tick_failed", { code: errorCodeOf$1(error) });
 				ctx.errors.push({
 					source: "lifecycle",
 					code: "SWEEPER_TICK_FAILED",
 					where: "lifecycle.sweeper",
-					message: `the sweeper tick failed (${errorCodeOf(error)})`
+					message: `the sweeper tick failed (${errorCodeOf$1(error)})`
 				});
 			} finally {
 				running = null;
@@ -42073,11 +44100,11 @@ var init_source_cache = __esmMin((() => {
 function resolveConfigured(repoDir, configured) {
 	return path.isAbsolute(configured) ? configured : path.resolve(repoDir, configured);
 }
-function errnoCode$2(error) {
+function errnoCode$3(error) {
 	return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : void 0;
 }
 function readableMessage(error, what) {
-	const code = errnoCode$2(error);
+	const code = errnoCode$3(error);
 	if (code !== void 0) return `the ${what} could not be read (${code})`;
 	const line = error instanceof Error ? firstLine(error.message, 200) : "";
 	return line === "" ? `the ${what} could not be read` : line;
@@ -42116,7 +44143,7 @@ function linesCache(deps, io, source, configured) {
 		try {
 			info = await io.stat(file);
 		} catch (error) {
-			const code = errnoCode$2(error);
+			const code = errnoCode$3(error);
 			if (code === "ENOENT" || code === "ENOTDIR") return {
 				status: "unavailable",
 				message: `the ${what} file was not found`
@@ -42328,7 +44355,7 @@ var init_files = __esmMin((() => {
 	init_exec();
 	init_fsx();
 	init_glob();
-	init_paths$2();
+	init_paths$3();
 	init_constants();
 	init_source_cache();
 	realFilesIo = {
@@ -42644,7 +44671,7 @@ function parseDockerLines(stdout) {
 	}
 	return lines;
 }
-function failure$1(done) {
+function failure$2(done) {
 	switch (done.error) {
 		case "ENOENT": return {
 			status: "unavailable",
@@ -42711,7 +44738,7 @@ function createDockerSource(deps) {
 		return done.ok ? {
 			status: "ok",
 			value: parseDockerLines(done.stdout)
-		} : failure$1(done);
+		} : failure$2(done);
 	}, deps.timing), deps.clock, deps.errors);
 	return {
 		enabled: true,
@@ -42797,7 +44824,7 @@ async function readLinuxProcesses(fs, signal) {
 	}
 	return entries;
 }
-function codeOf$2(error) {
+function codeOf$3(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 /** The loader of the process list on Linux. A missing or unreadable `/proc` is an unavailable source, not an error. */
@@ -42814,7 +44841,7 @@ function createLinuxLister(deps = {}) {
 				value: entries
 			};
 		} catch (error) {
-			const code = codeOf$2(error);
+			const code = codeOf$3(error);
 			if (code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM") return {
 				status: "unavailable",
 				message: "/proc is not available; per-process memory is disabled"
@@ -43276,7 +45303,7 @@ function createMachineSampler(deps) {
 var GiB, MiB, BASICS_TTL_MS, VM_STAT_RETRY_MS, CpuSampler, NOTHING_TO_WATCH;
 var init_machine = __esmMin((() => {
 	init_src$1();
-	init_host();
+	init_host$1();
 	init_constants();
 	init_docker();
 	init_proc_linux();
@@ -43509,7 +45536,7 @@ function publishEvidence(deps, plan, floorMs) {
 }
 var EMPTY_PLAN, MAX_KEPT_BATCHES;
 var init_evidence = __esmMin((() => {
-	init_errors$3();
+	init_errors$4();
 	EMPTY_PLAN = {
 		attempts: [],
 		clears: [],
@@ -43666,7 +45693,7 @@ function wholeNumber(text, pattern) {
 	const value = Number(text);
 	return Number.isSafeInteger(value) ? value : null;
 }
-function rowOf$1(run, sessionId, usage) {
+function rowOf$2(run, sessionId, usage) {
 	return {
 		part: run.part,
 		n: wholeNumber(run.nRaw, DIGITS_RE),
@@ -43705,7 +45732,7 @@ function readAttemptsPanel(ctx, limit, sourceState) {
 	return {
 		rows: runs.map((run) => {
 			const sessionId = run.sessionRowId === null ? null : uids.get(run.sessionRowId) ?? null;
-			return rowOf$1(run, sessionId, sessionId === null ? null : usageByUid.get(sessionId) ?? null);
+			return rowOf$2(run, sessionId, sessionId === null ? null : usageByUid.get(sessionId) ?? null);
 		}),
 		sourceState: state
 	};
@@ -43739,13 +45766,13 @@ function quoted(text) {
 	for (const ch of text) {
 		const code = ch.codePointAt(0) ?? 0;
 		const short = SHORT_ESCAPES.get(code);
-		if (ch === quote || ch === BACKSLASH) out += BACKSLASH + ch;
+		if (ch === quote || ch === BACKSLASH$1) out += BACKSLASH$1 + ch;
 		else if (short !== void 0) out += short;
 		else if (code >= 32 && code < 127) out += ch;
 		else if (code < 128 || NOT_PRINTABLE.test(ch)) {
-			if (code <= 255) out += `${BACKSLASH}x${hex(code, 2)}`;
-			else if (code <= 65535) out += `${BACKSLASH}u${hex(code, 4)}`;
-			else out += `${BACKSLASH}U${hex(code, 8)}`;
+			if (code <= 255) out += `${BACKSLASH$1}x${hex(code, 2)}`;
+			else if (code <= 65535) out += `${BACKSLASH$1}u${hex(code, 4)}`;
+			else out += `${BACKSLASH$1}U${hex(code, 8)}`;
 		} else out += ch;
 	}
 	return `${quote}${out}${quote}`;
@@ -43772,17 +45799,17 @@ function externalState(exitRaw, statusRaw) {
 		evidence: `chain log: the run ended (exit=${exit}) but its status ${quoted(trimmed)} is neither a pass nor a failure`
 	};
 }
-var OPEN_EVIDENCE, PASS_RE, FAIL_RE, BACKSLASH, NOT_PRINTABLE, SHORT_ESCAPES;
+var OPEN_EVIDENCE, PASS_RE, FAIL_RE, BACKSLASH$1, NOT_PRINTABLE, SHORT_ESCAPES;
 var init_state = __esmMin((() => {
 	OPEN_EVIDENCE = "chain log: started, no END yet";
 	PASS_RE = /^\s*(?:PASS|DONE|OK|COMPLETE[D]?|SUCCESS)/i;
 	FAIL_RE = /FAIL|BLOCK|ERROR|ABORT/i;
-	BACKSLASH = String.fromCharCode(92);
+	BACKSLASH$1 = String.fromCharCode(92);
 	NOT_PRINTABLE = /^[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]$/u;
 	SHORT_ESCAPES = /* @__PURE__ */ new Map([
-		[9, `${BACKSLASH}t`],
-		[10, `${BACKSLASH}n`],
-		[13, `${BACKSLASH}r`]
+		[9, `${BACKSLASH$1}t`],
+		[10, `${BACKSLASH$1}n`],
+		[13, `${BACKSLASH$1}r`]
 	]);
 }));
 
@@ -43806,7 +45833,7 @@ function attemptsSettings(config) {
 			timeFormat
 		},
 		includeUnmatched,
-		windowMs: config.runtime.panelOptions.attemptsWindowHours * HOUR_MS$3
+		windowMs: config.runtime.panelOptions.attemptsWindowHours * HOUR_MS$4
 	};
 }
 /** The hash that tells a changed configuration from an unchanged one (06 3.10.3 step 2). */
@@ -43916,7 +45943,7 @@ function outcome(state, over = {}) {
 }
 /** Why a file read failed: ENOENT and ENOTDIR are `missing` (the rows are kept), anything else is `error`. */
 function readFailure(ctx, state, error) {
-	const code = errorCodeOf$1(error);
+	const code = errorCodeOf$2(error);
 	if (classifyFsError(code) === "missing") return "missing";
 	if (state.lastReadError !== code) ctx.logger.warn("attempts_read_failed", { code });
 	state.lastReadError = code;
@@ -44085,13 +46112,13 @@ async function tickAttempts(ctx, deps) {
 		eventsSubmitted: result.eventsSubmitted + kept
 	};
 }
-var KIB, MIB, ATTEMPTS_LIMITS, MAX_LINE_BYTES$1, CHUNK_BYTES$1, MAX_RUNS_TO_MATCH, MAX_PIECES_PER_LINE, HOUR_MS$3;
+var KIB, MIB, ATTEMPTS_LIMITS, MAX_LINE_BYTES$1, CHUNK_BYTES$1, MAX_RUNS_TO_MATCH, MAX_PIECES_PER_LINE, HOUR_MS$4;
 var init_ingest$1 = __esmMin((() => {
 	init_write();
 	init_file_identity();
 	init_jsonl_tailer();
 	init_fsx();
-	init_paths$2();
+	init_paths$3();
 	init_evidence();
 	init_match();
 	init_parse$1();
@@ -44108,7 +46135,7 @@ var init_ingest$1 = __esmMin((() => {
 	CHUNK_BYTES$1 = MIB;
 	MAX_RUNS_TO_MATCH = 500;
 	MAX_PIECES_PER_LINE = 1e4;
-	HOUR_MS$3 = 36e5;
+	HOUR_MS$4 = 36e5;
 }));
 
 //#endregion
@@ -44326,7 +46353,7 @@ function createPanelService(ctx, options) {
 	};
 }
 var ATTEMPTS_DEFAULT_LIMIT, ATTEMPTS_MAX_LIMIT, ATTEMPTS_CACHES_MAX, IDLE_TICK, PanelServiceClosedError;
-var init_service$1 = __esmMin((() => {
+var init_service$2 = __esmMin((() => {
 	init_src$1();
 	init_constants();
 	init_files();
@@ -44426,7 +46453,7 @@ function cooldownMs(rule) {
 	return "cooldownMinutes" in rule ? rule.cooldownMinutes * 6e4 : 0;
 }
 var RULE_SCOPE_KIND, INSTANCE_SCOPE_KEY, MIN_SWEEP_SECONDS, MAX_SWEEP_SECONDS;
-var init_rules = __esmMin((() => {
+var init_rules$1 = __esmMin((() => {
 	RULE_SCOPE_KIND = {
 		inactivity: "session",
 		ingest_errors: "code",
@@ -44482,7 +46509,7 @@ function compactNumber(n) {
 	if (n < 1e9) return `${trim(n / 1e6)}M`;
 	return `${trim(n / 1e9)}G`;
 }
-function plural$1(n, one, many) {
+function plural$2(n, one, many) {
 	return n === 1 ? one : many;
 }
 function inactivity(rule, facts) {
@@ -44516,13 +46543,13 @@ function ingestErrors(rule, facts) {
 function runtimeUnavailable(rule, facts) {
 	const { downtime } = facts;
 	if (downtime === null) return [];
-	if (facts.now - downtime.at >= rule.expireHours * HOUR_MS$2) return [];
-	if (downtime.source === "handler") return [held(INSTANCE_SCOPE_KEY, "warning", downtime.count, `Hook handler could not reach the monitor ${String(downtime.count)} ${plural$1(downtime.count, "time", "times")}`, {
+	if (facts.now - downtime.at >= rule.expireHours * HOUR_MS$3) return [];
+	if (downtime.source === "handler") return [held(INSTANCE_SCOPE_KEY, "warning", downtime.count, `Hook handler could not reach the monitor ${String(downtime.count)} ${plural$2(downtime.count, "time", "times")}`, {
 		source: "handler",
 		count: downtime.count
 	})];
 	const minutes = Math.max(0, Math.round((downtime.to - downtime.from) / MINUTE_MS$1));
-	const events = plural$1(downtime.envelopes, "event", "events");
+	const events = plural$2(downtime.envelopes, "event", "events");
 	return [held(INSTANCE_SCOPE_KEY, "warning", minutes, `Monitor was not running for ${String(minutes)} min while ${String(downtime.envelopes)} hook ${events} arrived`, {
 		source: "reconciliation",
 		minutes,
@@ -44600,8 +46627,8 @@ function dbDisk(rule, facts) {
 function hookGap(_rule, facts) {
 	return facts.gaps.map((gap) => {
 		const parts = [];
-		if (gap.missingTools > 0) parts.push(`${String(gap.missingTools)} ${plural$1(gap.missingTools, "tool call", "tool calls")}`);
-		if (gap.missingTurns > 0) parts.push(`${String(gap.missingTurns)} ${plural$1(gap.missingTurns, "turn", "turns")}`);
+		if (gap.missingTools > 0) parts.push(`${String(gap.missingTools)} ${plural$2(gap.missingTools, "tool call", "tool calls")}`);
+		if (gap.missingTurns > 0) parts.push(`${String(gap.missingTurns)} ${plural$2(gap.missingTurns, "turn", "turns")}`);
 		const missed = parts.length === 0 ? "some events" : parts.join(" and ");
 		return held(gap.uid, "warning", gap.missingTools + gap.missingTurns, `Hooks missed ${missed} in this session`, {
 			missingTools: gap.missingTools,
@@ -44632,11 +46659,11 @@ function evaluate(rule, facts) {
 		case "hook_failing": return hookFailing(rule, facts);
 	}
 }
-var MINUTE_MS$1, HOUR_MS$2, SECOND_MS, TITLE_MAX, DISK_CODES, FULL_SPOOL_CODES, CODE_ALPHABET, LAG_CRITICAL_FACTOR, INACTIVITY_CRITICAL_FACTOR, TOKEN_CRITICAL_FACTOR;
+var MINUTE_MS$1, HOUR_MS$3, SECOND_MS, TITLE_MAX, DISK_CODES, FULL_SPOOL_CODES, CODE_ALPHABET, LAG_CRITICAL_FACTOR, INACTIVITY_CRITICAL_FACTOR, TOKEN_CRITICAL_FACTOR;
 var init_evaluator = __esmMin((() => {
-	init_rules();
+	init_rules$1();
 	MINUTE_MS$1 = 6e4;
-	HOUR_MS$2 = 36e5;
+	HOUR_MS$3 = 36e5;
 	SECOND_MS = 1e3;
 	TITLE_MAX = 200;
 	DISK_CODES = /* @__PURE__ */ new Set([
@@ -45017,7 +47044,7 @@ function createAlertComponents(ctx) {
 	}];
 }
 var MB, MAX_SCOPES_PER_RULE, MAX_DETAIL_BYTES, ACTIVE_LIST, INPUT_RULE, HEALTH_RULES;
-var init_service = __esmMin((() => {
+var init_service$1 = __esmMin((() => {
 	init_src$1();
 	init_alerts$1();
 	init_ingest_errors();
@@ -45027,7 +47054,7 @@ var init_service = __esmMin((() => {
 	init_health();
 	init_schedule();
 	init_evaluator();
-	init_rules();
+	init_rules$1();
 	MB = 1048576;
 	MAX_SCOPES_PER_RULE = 500;
 	MAX_DETAIL_BYTES = 1800;
@@ -45050,6 +47077,4799 @@ var init_service = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/engine/src/folders/project-root.ts
+/**
+* The working directory of a project folder from its newest transcripts. One `readdir` and a batched `lstat` find the three
+* newest main files (`<session id>.jsonl`; agent files, folders and every other name are left alone); the first of them that
+* names a `cwd` which is a usable folder on this host wins. Null when no file does.
+*/
+async function readProjectRoot(fs, dir, options) {
+	let names;
+	try {
+		names = await fs.readdir(dir);
+	} catch {
+		return null;
+	}
+	const mains = names.filter((name) => name.endsWith(MAIN_SUFFIX) && SID_RE.test(name.slice(0, -6))).slice(0, MAX_NAMES);
+	const newest = (await mapLimit(mains, STAT_PARALLEL, async (name) => ({
+		name,
+		stat: await fs.lstat(path.join(dir, name))
+	}))).filter((entry) => entry.stat?.kind === "file").sort((a, b) => (b.stat?.mtimeMs ?? 0) - (a.stat?.mtimeMs ?? 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).slice(0, NEWEST_MAIN_FILES);
+	for (const { name } of newest) {
+		const cwd = await firstCwd(fs, path.join(dir, name));
+		if (cwd === "") continue;
+		const root = windowsFolderPath(cwd, options.win32);
+		if (root !== null) return {
+			root,
+			source: "transcript"
+		};
+	}
+	return null;
+}
+/**
+* The folder that `dirName` was made from, found by walking the file system. The name `D--work-app` starts at `D:\` (a name that
+* starts with a dash starts at `/`); in each directory the entries are tried by the length of their sanitized name, longest
+* first, and an entry is entered when the rest of the name equals it (the answer: it must be a real folder) or starts with it and
+* a dash (the dash is the separator). A dot folder sanitizes to `-name`, which is the `--` in `D--work--claude`. Case is ignored
+* on Windows, not elsewhere. At most `maxReaddirs` calls (64) and 5,000 entries of a directory; links are never entered.
+*/
+async function reverseProjectName(dirName, fs, options) {
+	if (!PROJECT_FOLDER_NAME_RE.test(dirName)) return null;
+	const { win32 } = options;
+	const sep = win32 ? String.fromCharCode(92) : "/";
+	let start;
+	let rest;
+	const drive = /^([A-Za-z])--(.+)$/.exec(dirName);
+	if (win32 && drive !== null) {
+		start = `${(drive[1] ?? "").toUpperCase()}:${sep}`;
+		rest = drive[2] ?? "";
+	} else if (!win32 && dirName.startsWith("-") && dirName.length > 1) {
+		start = "/";
+		rest = dirName.slice(1);
+	} else return null;
+	let readdirs = 0;
+	const budget = options.maxReaddirs ?? 64;
+	const fold = (text) => win32 ? text.toLowerCase() : text;
+	async function walk(dir, remaining) {
+		if (readdirs >= budget) return null;
+		readdirs += 1;
+		let names;
+		try {
+			names = await fs.readdir(dir);
+		} catch {
+			return null;
+		}
+		const candidates = names.filter((name) => name !== "" && name !== "." && name !== "..").slice(0, REVERSE_MAX_ENTRIES).map((name) => ({
+			name,
+			text: fold(sanitizeProjectName(name))
+		})).sort((a, b) => b.text.length - a.text.length || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+		const wanted = fold(remaining);
+		for (const { name, text } of candidates) {
+			const child = dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
+			if (text === wanted) {
+				if ((await fs.lstat(child))?.kind === "dir") return child;
+			} else if (wanted.length > text.length + 1 && wanted.startsWith(`${text}-`)) {
+				if ((await fs.lstat(child))?.kind !== "dir") continue;
+				const found = await walk(child, remaining.slice(text.length + 1));
+				if (found !== null) return found;
+				if (readdirs >= budget) return null;
+			}
+		}
+		return null;
+	}
+	return walk(start, rest);
+}
+var NEWEST_MAIN_FILES, MAX_NAMES, STAT_PARALLEL, REVERSE_MAX_READDIRS, REVERSE_MAX_ENTRIES, MAIN_SUFFIX;
+var init_project_root = __esmMin((() => {
+	init_src$1();
+	init_protocol$1();
+	init_discover_projects();
+	init_discovery();
+	NEWEST_MAIN_FILES = 3;
+	MAX_NAMES = 5e3;
+	STAT_PARALLEL = 16;
+	REVERSE_MAX_READDIRS = 64;
+	REVERSE_MAX_ENTRIES = 5e3;
+	MAIN_SUFFIX = ".jsonl";
+}));
+
+//#endregion
+//#region packages/engine/src/folders/catalog.ts
+function createProjectCatalog(options) {
+	const fs = options.fs ?? nodeDiscoveryFs;
+	const win32 = options.win32 ?? hostPlatform === "win32";
+	const maxFolders = options.maxFolders ?? 2e3;
+	const recheckMs = options.existsRecheckMs ?? 12e4;
+	let cache = /* @__PURE__ */ new Map();
+	let list = [];
+	let state = {
+		state: "ok",
+		scannedAt: null,
+		truncated: false
+	};
+	let inFlight = null;
+	let timer = null;
+	async function present(target) {
+		try {
+			return await fs.lstat(target) !== null;
+		} catch {
+			return false;
+		}
+	}
+	async function rootExists(root) {
+		try {
+			return (await fs.lstat(root))?.kind === "dir";
+		} catch {
+			return false;
+		}
+	}
+	async function rootOf(folder) {
+		try {
+			const sniffed = await readProjectRoot(fs, folder.dir, { win32 });
+			if (sniffed !== null) return {
+				root: sniffed.root,
+				rootSource: sniffed.source
+			};
+			const decoded = await reverseProjectName(folder.name, fs, { win32 });
+			return decoded === null ? {
+				root: null,
+				rootSource: null
+			} : {
+				root: decoded,
+				rootSource: "reverse"
+			};
+		} catch {
+			return {
+				root: null,
+				rootSource: null
+			};
+		}
+	}
+	async function resolve(folder, nowMs) {
+		const { root, rootSource } = await rootOf(folder);
+		const exists = root === null ? null : await rootExists(root);
+		return {
+			entry: {
+				dirName: folder.name,
+				key: folder.name.toLowerCase(),
+				dirMtimeMs: folder.mtimeMs,
+				root,
+				rootSource,
+				exists
+			},
+			existsAt: nowMs
+		};
+	}
+	async function refreshExists(cached, nowMs) {
+		const { root } = cached.entry;
+		if (root === null || nowMs - cached.existsAt < recheckMs) return cached;
+		return {
+			entry: {
+				...cached.entry,
+				exists: await rootExists(root)
+			},
+			existsAt: nowMs
+		};
+	}
+	async function scan() {
+		const nowMs = options.now();
+		let folders;
+		let missing;
+		try {
+			const found = await listProjectFolders(options.projectsRoot, fs);
+			folders = found.folders;
+			missing = found.missing;
+		} catch {
+			cache = /* @__PURE__ */ new Map();
+			list = [];
+			state = {
+				state: "unreadable",
+				scannedAt: nowMs,
+				truncated: false
+			};
+			return;
+		}
+		if (missing) {
+			const exists = await present(options.projectsRoot);
+			cache = /* @__PURE__ */ new Map();
+			list = [];
+			state = {
+				state: exists ? "unreadable" : "absent",
+				scannedAt: nowMs,
+				truncated: false
+			};
+			return;
+		}
+		const truncated = folders.length > maxFolders;
+		const kept = truncated ? folders.slice(0, maxFolders) : folders;
+		const next = /* @__PURE__ */ new Map();
+		const resolved = await mapLimit(kept, RESOLVE_PARALLEL, async (folder) => {
+			const known = cache.get(folder.name);
+			if (known?.entry.dirMtimeMs === folder.mtimeMs) return refreshExists(known, nowMs);
+			return resolve(folder, nowMs);
+		});
+		resolved.forEach((cached) => next.set(cached.entry.dirName, cached));
+		cache = next;
+		list = resolved.map((cached) => cached.entry);
+		state = {
+			state: "ok",
+			scannedAt: nowMs,
+			truncated
+		};
+	}
+	function refresh() {
+		if (inFlight !== null) return inFlight;
+		const run = scan().catch(() => {
+			cache = /* @__PURE__ */ new Map();
+			list = [];
+			state = {
+				state: "unreadable",
+				scannedAt: options.now(),
+				truncated: false
+			};
+		}).finally(() => {
+			inFlight = null;
+		});
+		inFlight = run;
+		return run;
+	}
+	return {
+		start() {
+			if (timer !== null) return;
+			refresh();
+			timer = setInterval(() => {
+				refresh();
+			}, options.intervalMs);
+			timer.unref();
+		},
+		async stop() {
+			if (timer !== null) {
+				clearInterval(timer);
+				timer = null;
+			}
+			if (inFlight !== null) await inFlight;
+		},
+		refresh,
+		entries: () => list,
+		status: () => state
+	};
+}
+var CATALOG_MAX_FOLDERS, CATALOG_EXISTS_RECHECK_MS, RESOLVE_PARALLEL;
+var init_catalog = __esmMin((() => {
+	init_discovery();
+	init_discover_projects();
+	init_host$1();
+	init_project_root();
+	CATALOG_MAX_FOLDERS = 2e3;
+	CATALOG_EXISTS_RECHECK_MS = 12e4;
+	RESOLVE_PARALLEL = 8;
+}));
+
+//#endregion
+//#region packages/engine/src/folders/da-memory.ts
+/** `<home>/.claude/memory`: where the hook writes, even when `CLAUDE_CONFIG_DIR` points elsewhere. */
+function defaultDaMemoryDir() {
+	return path.join(os.homedir(), ".claude", "memory");
+}
+function isPlain$1(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseJson(text) {
+	try {
+		return JSON.parse(text.charCodeAt(0) === 65279 ? text.slice(1) : text);
+	} catch {
+		return;
+	}
+}
+function count$1(value) {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+/** Control characters, format characters (the right-to-left override among them) and line separators become nothing or one space. */
+function cleanSummary(value) {
+	if (typeof value !== "string") return "";
+	let text = "";
+	for (const char of value) {
+		const code = char.codePointAt(0) ?? 0;
+		if (code === 9 || code === 10 || code === 13 || code === 8232 || code === 8233) text += " ";
+		else if (code <= 31 || code >= 127 && code <= 159 || /\p{Cf}/u.test(char)) continue;
+		else text += char;
+	}
+	const collapsed = text.replace(/\s+/gu, " ").trim();
+	return clipCodePoints$1(redact(collapsed), SUMMARY_MAX_CODE_POINTS).trim();
+}
+/** The fields of one folder from a `meta.json` object or an `index.json` entry; null without a non-empty string `path`. */
+function rawFolderOf(slug, value) {
+	if (!isPlain$1(value)) return null;
+	const rawPath = value["path"];
+	if (typeof rawPath !== "string" || rawPath.trim() === "") return null;
+	const counts = isPlain$1(value["counts"]) ? value["counts"] : {};
+	return {
+		slug,
+		rawPath,
+		lastUpdatedMs: parseDaTimestamp(value["last_updated"]),
+		summary: cleanSummary(value["summary"]),
+		brain: count$1(counts["brain"]),
+		action: count$1(counts["action"])
+	};
+}
+function compareSlug(a, b) {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+/** Newest first, a missing time last, then the smaller slug. */
+function newerFirst(a, b) {
+	if (a.lastUpdatedMs !== b.lastUpdatedMs) {
+		if (a.lastUpdatedMs === null) return 1;
+		if (b.lastUpdatedMs === null) return -1;
+		return b.lastUpdatedMs - a.lastUpdatedMs;
+	}
+	return compareSlug(a.slug, b.slug);
+}
+function addCounts(a, b) {
+	return Math.min(Number.MAX_SAFE_INTEGER, a + b);
+}
+/** Folds the entries that name one folder (`folderPathKey`) into the newest of them. */
+function dedupe(raw, win32) {
+	const groups = /* @__PURE__ */ new Map();
+	for (const entry of raw) {
+		const usable = windowsFolderPath(entry.rawPath, win32);
+		const key = usable === null ? `raw:${entry.slug}` : folderPathKey(usable);
+		const group = groups.get(key);
+		if (group === void 0) groups.set(key, [entry]);
+		else group.push(entry);
+	}
+	const out = [];
+	for (const group of groups.values()) {
+		const winner = [...group].sort(newerFirst)[0];
+		if (winner === void 0) continue;
+		out.push({
+			slug: winner.slug,
+			rawPath: winner.rawPath,
+			path: windowsFolderPath(winner.rawPath, win32),
+			lastUpdatedMs: winner.lastUpdatedMs,
+			summary: winner.summary,
+			brain: group.reduce((sum, entry) => addCounts(sum, entry.brain), 0),
+			action: group.reduce((sum, entry) => addCounts(sum, entry.action), 0),
+			merged: group.length - 1
+		});
+	}
+	return out.sort(newerFirst);
+}
+async function scan(dir, fs, maxFolders, win32, nowMs) {
+	const names = await fs.readdir(dir);
+	if ("code" in names) return {
+		status: classifyFsError(names.code) === "missing" ? "absent" : "unreadable",
+		folders: [],
+		skipped: 0,
+		readAtMs: nowMs
+	};
+	const candidates = names.filter((name) => CANDIDATE_RE.test(name) && !NOT_A_FOLDER(name)).sort(compareSlug).slice(0, MAX_CANDIDATES);
+	const parsed = await mapLimit(candidates, READ_PARALLEL, async (slug) => {
+		const text = await fs.readText(path.join(dir, slug, "meta.json"), DA_META_MAX_BYTES);
+		return text === null ? null : rawFolderOf(slug, parseJson(text));
+	});
+	const raw = parsed.filter((entry) => entry !== null);
+	const skipped = parsed.length - raw.length;
+	if (raw.length === 0) return {
+		status: "ok",
+		folders: dedupe(await readIndex(dir, fs), win32).slice(0, maxFolders),
+		skipped,
+		readAtMs: nowMs
+	};
+	return {
+		status: "ok",
+		folders: dedupe(raw, win32).slice(0, maxFolders),
+		skipped,
+		readAtMs: nowMs
+	};
+}
+async function readIndex(dir, fs) {
+	const text = await fs.readText(path.join(dir, "index.json"), DA_INDEX_MAX_BYTES);
+	if (text === null) return [];
+	const parsed = parseJson(text);
+	const folders = isPlain$1(parsed) ? parsed["folders"] : void 0;
+	if (!Array.isArray(folders)) return [];
+	const out = [];
+	const entries = folders.slice(0, MAX_INDEX_ENTRIES);
+	for (const entry of entries) {
+		const folder = rawFolderOf(isPlain$1(entry) && typeof entry["slug"] === "string" ? entry["slug"] : "", entry);
+		if (folder !== null) out.push(folder);
+	}
+	return out;
+}
+function createDaMemoryReader(options) {
+	const fs = options.fs ?? nodeDaFs;
+	const cacheMs = options.cacheMs ?? DEFAULT_CACHE_MS;
+	const maxFolders = options.maxFolders ?? 500;
+	const win32 = options.win32 ?? hostPlatform === "win32";
+	let cached = null;
+	let inFlight = null;
+	async function run(nowMs) {
+		try {
+			return await scan(options.dir, fs, maxFolders, win32, nowMs);
+		} catch {
+			return {
+				status: "unreadable",
+				folders: [],
+				skipped: 0,
+				readAtMs: nowMs
+			};
+		}
+	}
+	return { read(nowMs) {
+		if (cached !== null) {
+			const age = nowMs - cached.readAtMs;
+			if (age >= 0 && age < cacheMs) return Promise.resolve(cached);
+		}
+		if (inFlight !== null) return inFlight;
+		const flight = run(nowMs).then((result) => {
+			cached = result;
+			inFlight = null;
+			return result;
+		});
+		inFlight = flight;
+		return flight;
+	} };
+}
+var DA_META_MAX_BYTES, DA_INDEX_MAX_BYTES, DA_MAX_FOLDERS, MAX_CANDIDATES, MAX_INDEX_ENTRIES, SUMMARY_MAX_CODE_POINTS, READ_PARALLEL, DEFAULT_CACHE_MS, CANDIDATE_RE, NOT_A_FOLDER, nodeDaFs;
+var init_da_memory = __esmMin((() => {
+	init_src$1();
+	init_protocol$1();
+	init_fsx();
+	init_host$1();
+	init_file_identity();
+	init_discovery();
+	DA_META_MAX_BYTES = 524288;
+	DA_INDEX_MAX_BYTES = 1048576;
+	DA_MAX_FOLDERS = 500;
+	MAX_CANDIDATES = 5e3;
+	MAX_INDEX_ENTRIES = 5e3;
+	SUMMARY_MAX_CODE_POINTS = 120;
+	READ_PARALLEL = 16;
+	DEFAULT_CACHE_MS = 3e3;
+	CANDIDATE_RE = /^[A-Za-z0-9._-]{1,255}$/;
+	NOT_A_FOLDER = (name) => name === "." || name === ".." || name === "index.json" || name.endsWith(".key") || name.endsWith(".py");
+	nodeDaFs = {
+		async readdir(dir) {
+			try {
+				return await readdir(dir);
+			} catch (error) {
+				return { code: errorCodeOf$2(error) };
+			}
+		},
+		readText: (file, maxBytes) => nodeDiscoveryFs.readText(file, maxBytes)
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/folders/merge.ts
+function clip$1(text, max) {
+	return text.length <= max ? text : Array.from(text).slice(0, max).join("").slice(0, max);
+}
+/** The project key a path joins: exact, or the unique Claude key that starts with a cut key. */
+function joinKey(path, claudeKeys) {
+	const folder = folderKeyOfPath(path);
+	if (!folder.prefix) return folder.key;
+	const matches = claudeKeys.filter((key) => key.startsWith(`${folder.key}-`));
+	return matches.length === 1 && matches[0] !== void 0 ? matches[0] : folder.key;
+}
+function newestMs(values) {
+	let best = null;
+	for (const value of values) {
+		if (value === null || value === void 0 || !Number.isFinite(value) || value <= 0) continue;
+		if (best === null || value > best) best = value;
+	}
+	return best;
+}
+function compareText$1(a, b) {
+	const x = a.toLowerCase();
+	const y = b.toLowerCase();
+	if (x < y) return -1;
+	return x > y ? 1 : 0;
+}
+/** A path as a row shows it: normalized for this host, within the column, or null. */
+function shown$2(raw, win32) {
+	if (raw === null || raw === void 0 || raw === "") return null;
+	const normalized = windowsFolderPath(raw, win32);
+	return normalized === null || normalized.length > PATH_MAX ? null : normalized;
+}
+function mergeFolders(input) {
+	const win32 = input.win32 ?? hostPlatform === "win32";
+	const maxRows = input.maxRows ?? 500;
+	const buckets = /* @__PURE__ */ new Map();
+	const bucketOf = (key) => {
+		let bucket = buckets.get(key);
+		if (bucket === void 0) {
+			bucket = {
+				key,
+				catalog: void 0,
+				stat: void 0,
+				da: void 0,
+				user: void 0,
+				addedAtMs: 0
+			};
+			buckets.set(key, bucket);
+		}
+		return bucket;
+	};
+	for (const entry of input.catalog) bucketOf(entry.key).catalog = entry;
+	for (const stat of input.stats) bucketOf(stat.key).stat = stat;
+	const claudeKeys = [...buckets.keys()];
+	input.da.forEach((folder, order) => {
+		if (folder.path === null) return;
+		const bucket = bucketOf(joinKey(folder.path, claudeKeys));
+		if (bucket.da === void 0) bucket.da = {
+			folder,
+			order,
+			brain: folder.brain,
+			action: folder.action
+		};
+		else bucket.da = {
+			...bucket.da,
+			brain: bucket.da.brain + folder.brain,
+			action: bucket.da.action + folder.action
+		};
+	});
+	for (const folder of input.user) {
+		const bucket = bucketOf(joinKey(folder.path, claudeKeys));
+		bucket.user ??= folder;
+		bucket.addedAtMs = Math.max(bucket.addedAtMs, folder.addedAtMs);
+	}
+	const ranked = [];
+	for (const bucket of buckets.values()) ranked.push(rowOf$1(bucket, input.nowMs, win32, input.exists));
+	const outside = ranked.filter((entry) => entry.row.group === "outside-da").sort((a, b) => b.sortMs - a.sortMs || compareText$1(a.row.name, b.row.name) || compareText$1(a.row.key, b.row.key));
+	const inDa = ranked.filter((entry) => entry.row.group === "da").sort((a, b) => a.order - b.order);
+	let rows = [...outside, ...inDa].map((entry) => entry.row);
+	if (rows.length > maxRows) {
+		const drop = rows.length - maxRows;
+		rows = drop <= outside.length ? [...outside.slice(0, outside.length - drop), ...inDa].map((e) => e.row) : rows.slice(0, maxRows);
+	}
+	if (rows.length === 0) {
+		const home = homeRow(input.homeDir, win32, input.exists);
+		if (home !== null) rows = [home];
+	}
+	return rows;
+}
+function rowOf$1(bucket, nowMs, win32, existence) {
+	const { catalog, stat, da, user } = bucket;
+	const winner = [
+		{
+			path: shown$2(da?.folder.path, win32),
+			source: "da"
+		},
+		{
+			path: shown$2(user?.path, win32),
+			source: "user"
+		},
+		{
+			path: shown$2(stat?.rootPath, win32),
+			source: "project"
+		},
+		{
+			path: shown$2(catalog?.root, win32),
+			source: catalog?.rootSource ?? "none"
+		}
+	].find((candidate) => candidate.path !== null);
+	const path = winner?.path ?? null;
+	const pathSource = winner === void 0 ? "none" : winner.source;
+	let exists = null;
+	if (path !== null) {
+		const pathKey = folderPathKey(path);
+		const checked = existence?.get(pathKey);
+		if (checked !== void 0) exists = checked;
+		else if (catalog?.root !== null && catalog?.root !== void 0 && folderPathKey(catalog.root) === pathKey) exists = catalog.exists;
+	}
+	const dirName = catalog?.dirName ?? stat?.dirName ?? null;
+	const name = clip$1(path === null ? dirName ?? bucket.key : lastSegment(path) || (dirName ?? bucket.key), NAME_MAX);
+	const lastActivityMs = newestMs([
+		da?.folder.lastUpdatedMs,
+		stat?.lastActivityAt,
+		catalog?.dirMtimeMs
+	]);
+	const origins = [];
+	if (da !== void 0) origins.push("da");
+	if (user !== void 0) origins.push("user");
+	if (catalog !== void 0 || stat !== void 0) origins.push("claude");
+	return {
+		row: {
+			key: bucket.key,
+			name,
+			path,
+			pathSource,
+			exists,
+			origins,
+			group: da === void 0 ? "outside-da" : "da",
+			activity: activityMarkOf(lastActivityMs, nowMs),
+			lastActivityAt: lastActivityMs === null ? null : iso$1(lastActivityMs),
+			da: da === void 0 ? null : {
+				lastUpdatedAt: da.folder.lastUpdatedMs === null ? null : iso$1(da.folder.lastUpdatedMs),
+				activity: activityMarkOf(da.folder.lastUpdatedMs, nowMs),
+				summary: da.folder.summary,
+				brain: da.brain,
+				action: da.action
+			},
+			claude: dirName === null ? null : {
+				dirName,
+				sessionsInWindow: stat?.sessionsInWindow ?? 0,
+				activeSessions: stat?.activeSessions ?? 0,
+				totalSessions: stat?.totalSessions ?? 0,
+				lastSessionAt: stat === void 0 || stat.totalSessions === 0 || stat.lastActivityAt <= 0 ? null : iso$1(stat.lastActivityAt)
+			},
+			canStart: path !== null && exists !== false,
+			userAdded: user !== void 0
+		},
+		sortMs: Math.max(lastActivityMs ?? Number.MIN_SAFE_INTEGER, bucket.addedAtMs > 0 ? bucket.addedAtMs : Number.MIN_SAFE_INTEGER),
+		order: da?.order ?? 0
+	};
+}
+/** The one row of an empty list: where a terminal can always start. */
+function homeRow(homeDir, win32, existence) {
+	const path = shown$2(homeDir, win32);
+	if (path === null) return null;
+	const exists = existence?.get(folderPathKey(path)) ?? null;
+	const key = folderKeyOfPath(path).key;
+	return {
+		key: key === "" ? "home" : key,
+		name: clip$1(lastSegment(path) || "home", NAME_MAX),
+		path,
+		pathSource: "none",
+		exists,
+		origins: ["fallback"],
+		group: "outside-da",
+		activity: "none",
+		lastActivityAt: null,
+		da: null,
+		claude: null,
+		canStart: exists !== false,
+		userAdded: false
+	};
+}
+var FOLDER_LIST_MAX, PATH_MAX, NAME_MAX, iso$1;
+var init_merge = __esmMin((() => {
+	init_src$1();
+	init_host$1();
+	init_folder_key();
+	FOLDER_LIST_MAX = 500;
+	PATH_MAX = 1024;
+	NAME_MAX = 255;
+	iso$1 = (ms) => new Date(ms).toISOString();
+}));
+
+//#endregion
+//#region packages/engine/src/folders/resume.ts
+/**
+* The folder to resume in: the first directory among the root the project reported, the working directory the session reported and
+* the root of the catalog, whose key is the key of the project. That is the launch folder, not a later `cd`: a folder with another
+* key is never a candidate. Two spellings of one path are asked about once.
+*/
+async function launchFolderOf(facts, env) {
+	const key = facts.projectKey;
+	if (key === null) return { absent: "folder_unknown" };
+	const candidates = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const raw of [
+		facts.rootPath,
+		facts.sessionCwd,
+		env.catalogRoot
+	]) {
+		if (raw === null) continue;
+		const path = windowsFolderPath(raw, env.win32);
+		if (path === null || !dirMatchesKey(key, folderKeyOfPath(path))) continue;
+		const identity = env.win32 ? path.toLowerCase() : path;
+		if (seen.has(identity)) continue;
+		seen.add(identity);
+		candidates.push(path);
+	}
+	if (candidates.length === 0) return { absent: "folder_unknown" };
+	for (const path of candidates) if (await env.isDirectory(path) === true) return {
+		key,
+		path
+	};
+	return { absent: "folder_missing" };
+}
+/** The decision for one session. Throws `ResumeRefusal('session_not_found')` for a session the database does not know. */
+async function decideResume(sessionId, env) {
+	const { facts } = env;
+	if (facts === null) throw new ResumeRefusal("session_not_found");
+	const redirectTo = facts.continuedIn !== null && facts.continuedIn !== sessionId && env.knowsSession(facts.continuedIn) ? facts.continuedIn : null;
+	const refused = (reason, rest = {}) => ({
+		sessionId,
+		allowed: false,
+		forkAllowed: false,
+		reason,
+		folder: null,
+		liveElsewhere: false,
+		liveTerminal: null,
+		redirectTo,
+		...rest
+	});
+	const file = facts.mainFile;
+	if (file === null || file.state === "missing" || file.state === "retired") return refused("transcript_gone");
+	if (env.transcriptExists !== null && !await env.transcriptExists(file.path)) return refused("transcript_gone");
+	const launch = await launchFolderOf(facts, env);
+	if ("absent" in launch) return refused(launch.absent);
+	const folder = {
+		key: launch.key,
+		path: launch.path
+	};
+	const owner = env.sessionOwner(sessionId);
+	if (owner !== null) return refused("live_in_terminal", {
+		folder,
+		liveTerminal: owner
+	});
+	if (env.registry.some((entry) => entry.sessionId === sessionId && entry.alive && !env.ownedPids.has(entry.pid))) return refused("live_elsewhere", {
+		forkAllowed: true,
+		folder,
+		liveElsewhere: true
+	});
+	return {
+		sessionId,
+		allowed: true,
+		forkAllowed: true,
+		reason: null,
+		folder,
+		liveElsewhere: false,
+		liveTerminal: null,
+		redirectTo
+	};
+}
+/**
+* The plan of a resume (`fork` false: it needs `allowed`) or of a copy (`fork` true: it needs `forkAllowed`). Throws
+* `ResumeRefusal` with the reason of the decision when it does not.
+*/
+function resumePlanOf(decision, fork) {
+	if (!(fork ? decision.forkAllowed : decision.allowed) || decision.folder === null) throw new ResumeRefusal(decision.reason ?? "folder_unknown", decision.liveTerminal);
+	return {
+		sessionId: decision.sessionId,
+		folderPath: decision.folder.path,
+		folderKey: decision.folder.key,
+		args: fork ? [
+			"--resume",
+			decision.sessionId,
+			"--fork-session"
+		] : ["--resume", decision.sessionId],
+		mode: fork ? "fork" : "resume",
+		expectsSameId: !fork,
+		redirectTo: decision.redirectTo
+	};
+}
+var ResumeRefusal;
+var init_resume = __esmMin((() => {
+	init_src$1();
+	init_folder_key();
+	ResumeRefusal = class extends Error {
+		code;
+		/** For `live_in_terminal`: the terminal that holds the session. */
+		liveTerminal;
+		constructor(code, liveTerminal = null) {
+			super(`resume refused: ${code}`);
+			this.name = "ResumeRefusal";
+			this.code = code;
+			this.liveTerminal = liveTerminal;
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/folders/user-folders.ts
+function isPlain(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+/** The identity of a stored folder: its key, and the whole path too when the key is only the cut prefix of a long name. */
+function identityOf$1(path_, key) {
+	return key.prefix ? `${key.key}|${path_.toLowerCase()}` : key.key;
+}
+function sameKey(entryPath, key) {
+	const entryKey = folderKeyOfPath(entryPath);
+	return entryKey.key === key || entryKey.prefix && dirMatchesKey(key, entryKey);
+}
+function toFolder(rawPath, addedAt, win32) {
+	if (rawPath.length > 1024) return null;
+	const normalized = windowsFolderPath(rawPath, win32);
+	if (normalized === null) return null;
+	const parsed = typeof addedAt === "string" ? Date.parse(addedAt) : NaN;
+	const addedAtMs = Number.isFinite(parsed) ? parsed : 0;
+	return {
+		path: normalized,
+		key: folderKeyOfPath(normalized).key,
+		addedAt: new Date(addedAtMs).toISOString(),
+		addedAtMs
+	};
+}
+function parseState(text, max, win32) {
+	let parsed;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return {
+			state: "corrupt",
+			folders: [],
+			keepBad: true,
+			unreadable: false
+		};
+	}
+	if (!isPlain(parsed)) return {
+		state: "corrupt",
+		folders: [],
+		keepBad: true,
+		unreadable: false
+	};
+	const version = parsed["schema_version"];
+	if (typeof version === "number" && Number.isInteger(version) && version > 1) return {
+		state: "newer_version",
+		folders: [],
+		keepBad: false,
+		unreadable: false
+	};
+	const entries = parsed["folders"];
+	if (version !== 1 || !Array.isArray(entries)) return {
+		state: "corrupt",
+		folders: [],
+		keepBad: true,
+		unreadable: false
+	};
+	const folders = [];
+	const seen = /* @__PURE__ */ new Set();
+	const candidates = entries;
+	for (const entry of candidates) {
+		if (folders.length >= max) break;
+		if (!isPlain(entry) || typeof entry["path"] !== "string") continue;
+		const folder = toFolder(entry["path"], entry["addedAt"], win32);
+		if (folder === null) continue;
+		const id = identityOf$1(folder.path, folderKeyOfPath(folder.path));
+		if (seen.has(id)) continue;
+		seen.add(id);
+		folders.push(folder);
+	}
+	return {
+		state: "ok",
+		folders,
+		keepBad: false,
+		unreadable: false
+	};
+}
+function createUserFolders(options) {
+	const fs = options.fs ?? nodeUserFoldersFs;
+	const max = options.max ?? 200;
+	const win32 = options.win32 ?? hostPlatform === "win32";
+	const badFile = `${options.file}.bad`;
+	let current = {
+		state: "absent",
+		folders: [],
+		keepBad: false,
+		unreadable: false
+	};
+	let chain = Promise.resolve();
+	async function readFileState() {
+		const read = await fs.readText(options.file, USER_FOLDERS_READ_MAX_BYTES);
+		switch (read.kind) {
+			case "absent": return {
+				state: "absent",
+				folders: [],
+				keepBad: false,
+				unreadable: false
+			};
+			case "too_large": return {
+				state: "corrupt",
+				folders: [],
+				keepBad: true,
+				unreadable: false
+			};
+			case "unreadable": return {
+				state: "corrupt",
+				folders: [],
+				keepBad: false,
+				unreadable: true
+			};
+			case "text": return parseState(read.text, max, win32);
+		}
+	}
+	async function reload() {
+		current = await readFileState();
+	}
+	/** One change at a time, in call order; a failed change does not stop the next one. */
+	function serialized(job) {
+		const run = chain.then(job, job);
+		chain = run.catch(() => void 0);
+		return run;
+	}
+	async function persist(folders) {
+		if (current.state === "newer_version" || current.unreadable) throw new FolderError("state_unwritable");
+		try {
+			if (current.keepBad) await fs.keepCopy(options.file, badFile);
+			const at = new Date(options.now()).toISOString();
+			const body = {
+				schema_version: 1,
+				updatedAt: at,
+				folders: folders.map((folder) => ({
+					path: folder.path,
+					addedAt: folder.addedAt
+				}))
+			};
+			await fs.writeAtomic(options.file, `${JSON.stringify(body, null, 2)}\n`);
+		} catch (error) {
+			throw new FolderError("state_unwritable", null, error);
+		}
+		current = {
+			state: "ok",
+			folders,
+			keepBad: false,
+			unreadable: false
+		};
+	}
+	return {
+		async load() {
+			await serialized(async () => {
+				try {
+					await reload();
+				} catch {
+					current = {
+						state: "corrupt",
+						folders: [],
+						keepBad: false,
+						unreadable: true
+					};
+				}
+			});
+		},
+		list: () => current.folders,
+		status: () => ({
+			state: current.state,
+			count: current.folders.length
+		}),
+		async add(rawPath) {
+			const issue = rawPath.length > 1024 ? "too_long" : folderPathIssue(rawPath, win32);
+			const normalized = issue === null ? windowsFolderPath(rawPath, win32) : null;
+			if (issue !== null || normalized === null) throw new FolderError("folder_invalid", issue ?? "relative");
+			return serialized(async () => {
+				await reload();
+				const key = folderKeyOfPath(normalized);
+				const id = identityOf$1(normalized, key);
+				const existing = current.folders.find((folder) => identityOf$1(folder.path, folderKeyOfPath(folder.path)) === id);
+				if (existing !== void 0) return existing;
+				if (current.state === "newer_version" || current.unreadable) throw new FolderError("state_unwritable");
+				if (!await fs.isDirectory(normalized)) throw new FolderError("folder_invalid", "not_directory");
+				if (current.folders.length >= max) throw new FolderError("folder_limit");
+				const addedAtMs = options.now();
+				const added = {
+					path: normalized,
+					key: key.key,
+					addedAt: new Date(addedAtMs).toISOString(),
+					addedAtMs
+				};
+				await persist([...current.folders, added]);
+				return added;
+			});
+		},
+		async remove(key) {
+			await serialized(async () => {
+				await reload();
+				if (current.state === "newer_version" || current.unreadable) throw new FolderError("state_unwritable");
+				const kept = current.folders.filter((folder) => !sameKey(folder.path, key));
+				if (kept.length === current.folders.length) throw new FolderError("folder_not_found");
+				await persist(kept);
+			});
+		}
+	};
+}
+var USER_FOLDERS_SCHEMA_VERSION, USER_FOLDERS_MAX, USER_FOLDERS_READ_MAX_BYTES, USER_FOLDER_PATH_MAX, FolderError, nodeUserFoldersFs;
+var init_user_folders = __esmMin((() => {
+	init_src$1();
+	init_file_identity();
+	init_folder_key();
+	init_fsx();
+	init_host$1();
+	USER_FOLDERS_SCHEMA_VERSION = 1;
+	USER_FOLDERS_MAX = 200;
+	USER_FOLDERS_READ_MAX_BYTES = 262144;
+	USER_FOLDER_PATH_MAX = 1024;
+	FolderError = class extends Error {
+		code;
+		/** For `folder_invalid`: the first reason the path was refused. */
+		issue;
+		constructor(code, issue = null, cause) {
+			super(`folder error: ${code}`, cause === void 0 ? void 0 : { cause });
+			this.name = "FolderError";
+			this.code = code;
+			this.issue = issue;
+		}
+	};
+	nodeUserFoldersFs = {
+		async readText(file, maxBytes) {
+			try {
+				const info = await stat(file);
+				if (!info.isFile()) return { kind: "unreadable" };
+				if (info.size > maxBytes) return { kind: "too_large" };
+				const bytes = await readFile(file);
+				return bytes.length > maxBytes ? { kind: "too_large" } : {
+					kind: "text",
+					text: bytes.toString("utf8")
+				};
+			} catch (error) {
+				return classifyFsError(errorCodeOf$2(error)) === "missing" ? { kind: "absent" } : { kind: "unreadable" };
+			}
+		},
+		async isDirectory(target) {
+			try {
+				return (await stat(target)).isDirectory();
+			} catch {
+				return false;
+			}
+		},
+		async writeAtomic(file, data) {
+			await mkdir(path.dirname(file), { recursive: true });
+			await atomicWriteFile(file, data, { mode: 384 });
+		},
+		async keepCopy(file, copy) {
+			try {
+				await copyFile(file, copy, constants.COPYFILE_EXCL);
+			} catch (error) {
+				if (errorCodeOf$2(error) !== "EEXIST") throw error;
+			}
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/folders/service.ts
+/** The default check: a directory, links followed; only "gone" counts as false, any other failure is "not known". */
+async function nodeIsDirectory(target) {
+	try {
+		return (await stat(target)).isDirectory();
+	} catch (error) {
+		const code = errorCodeOf$2(error);
+		return code === "ENOENT" || code === "ENOTDIR" ? false : null;
+	}
+}
+/** The default check for a transcript file: a file, links followed. */
+async function nodeFileExists(file) {
+	try {
+		return (await stat(file)).isFile();
+	} catch {
+		return false;
+	}
+}
+function createFolderService(ctx, deps = {}) {
+	const projects = ctx.config.runtime.projects;
+	const win32 = deps.win32 ?? hostPlatform === "win32";
+	const recheckMs = deps.existsRecheckMs ?? 12e4;
+	const isDirectory = deps.isDirectory ?? nodeIsDirectory;
+	const daMemory = deps.daMemory ?? createDaMemoryReader({
+		dir: projects.daMemoryDir ?? defaultDaMemoryDir(),
+		cacheMs: projects.daCacheMs,
+		win32,
+		...deps.daFs === void 0 ? {} : { fs: deps.daFs }
+	});
+	const catalog = deps.catalog ?? createProjectCatalog({
+		projectsRoot: projectsRootOf(ctx.claudeHome),
+		intervalMs: projects.catalogIntervalMs,
+		now: () => ctx.clock.now(),
+		win32,
+		fs: deps.fs ?? nodeDiscoveryFs
+	});
+	const userFolders = deps.userFolders ?? createUserFolders({
+		file: path.join(ctx.instanceDir, "data", "folders.json"),
+		max: projects.userFoldersMax,
+		now: () => ctx.clock.now(),
+		win32
+	});
+	const homeDir = deps.homeDir === void 0 ? os.homedir() : deps.homeDir;
+	const linker = deps.linker ?? NO_TERMINALS$1;
+	const registry = deps.registry ?? createRegistrySnapshot({
+		claudeHome: ctx.claudeHome,
+		pidAlive,
+		now: () => ctx.clock.now()
+	});
+	const fileExists = deps.fileExists ?? nodeFileExists;
+	const known = /* @__PURE__ */ new Map();
+	let loading = null;
+	let renewing = false;
+	let started = false;
+	/** The state file is read once, before the first list, add or remove. */
+	function loaded() {
+		loading ??= userFolders.load();
+		return loading;
+	}
+	async function check(target) {
+		try {
+			return await isDirectory(target);
+		} catch {
+			return null;
+		}
+	}
+	/** The paths whose existence the list shows: those of the DA memory and of the added folders. */
+	function pathsOf(da) {
+		const paths = /* @__PURE__ */ new Map();
+		for (const entry of [...da.map((folder) => folder.path), ...userFolders.list().map((folder) => folder.path)]) {
+			if (entry === null) continue;
+			const normalized = windowsFolderPath(entry, win32);
+			if (normalized !== null) paths.set(folderPathKey(normalized), normalized);
+		}
+		return paths;
+	}
+	async function measure(entries, nowMs) {
+		await mapLimit(entries, CHECK_PARALLEL, async ([key, target]) => {
+			const value = await check(target);
+			if (value === null) return;
+			known.set(key, {
+				value,
+				at: nowMs
+			});
+		});
+	}
+	/** Waits for the paths never checked; renews the stale ones behind the answer. */
+	async function existence(paths, nowMs) {
+		for (const key of known.keys()) if (!paths.has(key)) known.delete(key);
+		const fresh = [];
+		const stale = [];
+		for (const [key, target] of paths) {
+			const entry = known.get(key);
+			if (entry === void 0) fresh.push([key, target]);
+			else if (nowMs - entry.at >= recheckMs) stale.push([key, target]);
+		}
+		await measure(fresh, nowMs);
+		if (stale.length > 0 && !renewing) {
+			renewing = true;
+			measure(stale, nowMs).finally(() => {
+				renewing = false;
+			});
+		}
+		const result = /* @__PURE__ */ new Map();
+		for (const key of paths.keys()) {
+			const entry = known.get(key);
+			if (entry !== void 0) result.set(key, entry.value);
+		}
+		return result;
+	}
+	/** The merged rows and the sources they come from. */
+	async function snapshot() {
+		await loaded();
+		const status0 = catalog.status();
+		if (status0.scannedAt === null) await catalog.refresh();
+		else if (ctx.clock.now() - status0.scannedAt >= 2 * projects.catalogIntervalMs) catalog.refresh();
+		const nowMs = ctx.clock.now();
+		const daResult = await daMemory.read(nowMs);
+		const stats = ctx.queries.projectStats(ctx.scope, { windowFromMs: nowMs - ctx.config.monitor.window_hours * HOUR_MS$2 });
+		const exists = await existence(pathsOf(daResult.folders), nowMs);
+		const folders = mergeFolders({
+			da: daResult.folders,
+			catalog: catalog.entries(),
+			user: userFolders.list(),
+			stats,
+			nowMs,
+			exists,
+			homeDir,
+			win32
+		});
+		const claude = catalog.status();
+		const added = userFolders.status();
+		return {
+			nowMs,
+			list: {
+				folders,
+				sources: {
+					daMemory: {
+						status: daResult.status,
+						folders: daResult.folders.length,
+						readAt: isoMsZ(daResult.readAtMs)
+					},
+					claudeHome: {
+						status: claude.state,
+						folders: catalog.entries().length,
+						scannedAt: claude.scannedAt === null ? null : isoMsZ(claude.scannedAt),
+						truncated: claude.truncated
+					},
+					userFolders: {
+						status: added.state,
+						count: added.count
+					}
+				},
+				asOf: isoMsZ(nowMs)
+			}
+		};
+	}
+	/**
+	* What the resume decision reads, gathered now: the facts of the session, the root of its project in the catalog (scanned first
+	* when nobody did), the registry (an unreadable one is an empty list: nothing is shown live that cannot be proved) and the linker.
+	*/
+	async function resumeEnvironment(sessionId, withTranscript) {
+		const facts = ctx.queries.resumeFacts(ctx.scope, sessionId);
+		let catalogRoot = null;
+		let entries = [];
+		if (facts !== null) {
+			if (facts.projectKey !== null) {
+				if (catalog.status().scannedAt === null) await catalog.refresh();
+				catalogRoot = catalog.entries().find((entry) => entry.key === facts.projectKey)?.root ?? null;
+			}
+			try {
+				entries = (await registry.read()).entries;
+			} catch {
+				entries = [];
+			}
+		}
+		return {
+			facts,
+			catalogRoot,
+			registry: entries,
+			sessionOwner: (id) => linker.sessionOwner(id),
+			ownedPids: linker.ownedPids(),
+			isDirectory: check,
+			transcriptExists: withTranscript ? fileExists : null,
+			knowsSession: (id) => ctx.queries.resumeFacts(ctx.scope, id) !== null,
+			win32
+		};
+	}
+	return {
+		async start() {
+			if (started) return;
+			started = true;
+			await loaded();
+			catalog.start();
+			await Promise.all([catalog.refresh(), daMemory.read(ctx.clock.now())]);
+		},
+		async stop() {
+			if (!started) return;
+			started = false;
+			await catalog.stop();
+		},
+		async list() {
+			return (await snapshot()).list;
+		},
+		async add(rawPath) {
+			await loaded();
+			const added = await userFolders.add(rawPath);
+			const { list } = await snapshot();
+			const cut = folderKeyOfPath(added.path).prefix;
+			const row = list.folders.find((candidate) => candidate.userAdded && (candidate.key === added.key || cut && candidate.key.startsWith(`${added.key}-`)));
+			if (row !== void 0) return row;
+			const [alone] = mergeFolders({
+				da: [],
+				catalog: [],
+				user: [added],
+				stats: [],
+				nowMs: ctx.clock.now(),
+				homeDir: null,
+				win32
+			});
+			if (alone === void 0) throw new Error("the folder that was just added has no row");
+			return alone;
+		},
+		async remove(key) {
+			await loaded();
+			await userFolders.remove(key);
+		},
+		async refresh() {
+			known.clear();
+			await userFolders.load();
+			await catalog.refresh();
+		},
+		async resumeEligibility(sessionId) {
+			return decideResume(sessionId, await resumeEnvironment(sessionId, false));
+		},
+		async planResume(sessionId, options) {
+			const decision = await decideResume(sessionId, await resumeEnvironment(sessionId, true));
+			return resumePlanOf(decision, options?.fork === true);
+		}
+	};
+}
+var FOLDER_EXISTS_RECHECK_MS, CHECK_PARALLEL, HOUR_MS$2, NO_TERMINALS$1;
+var init_service = __esmMin((() => {
+	init_src$1();
+	init_registry$1();
+	init_file_identity();
+	init_discovery();
+	init_host$1();
+	init_process();
+	init_folder_key();
+	init_scope();
+	init_catalog();
+	init_da_memory();
+	init_merge();
+	init_resume();
+	init_user_folders();
+	FOLDER_EXISTS_RECHECK_MS = 12e4;
+	CHECK_PARALLEL = 8;
+	HOUR_MS$2 = 36e5;
+	NO_TERMINALS$1 = {
+		sessionOwner: () => null,
+		ownedPids: () => /* @__PURE__ */ new Set()
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/link/rules.ts
+/**
+* Whether a registry `cwd` is the folder of a terminal: the same key of the folder helpers (separators, case, a trailing separator,
+* the `/mnt/d` form) or, when the keys differ, the same real path. The real paths come from the caller (a junction or a short name
+* is only known after a file system call); an unknown real path never matches.
+*/
+function cwdMatches(entryCwd, terminalCwd, realpathOf) {
+	if (entryCwd === null) return false;
+	if (folderPathKey(entryCwd) === folderPathKey(terminalCwd)) return true;
+	const entryReal = realpathOf(entryCwd);
+	const terminalReal = realpathOf(terminalCwd);
+	return entryReal !== null && terminalReal !== null && folderPathKey(entryReal) === folderPathKey(terminalReal);
+}
+/**
+* Whether an entry started after the terminal was spawned (less the tolerance of the clocks). An entry with no start time is not
+* proved old. The resume id exception: a terminal that resumes a session without a fork accepts the entry of that session whatever
+* its start time says, because the registry may carry the start of the original session.
+*/
+function isNewSince(entry, terminal, toleranceMs) {
+	if (terminal.resumeSessionId !== null && !terminal.fork && entry.sessionId === terminal.resumeSessionId) return true;
+	return entry.startedAtMs === null || entry.startedAtMs >= terminal.spawnedAtMs - toleranceMs;
+}
+/**
+* Whether an entry is worth testing for a terminal: its process lives and is not a background session, its id is a session id, no
+* linked terminal holds its pid, it is new, and it names the folder of the terminal (a terminal that says `ignoreCwd` skips that
+* last test, and only that one).
+*/
+function preFilter(entry, terminal, options) {
+	return entry.alive && entry.kind !== "bg" && SID_RE.test(entry.sessionId) && !options.claimedPids.has(entry.pid) && isNewSince(entry, terminal, options.startToleranceMs) && (terminal.ignoreCwd || cwdMatches(entry.cwd, terminal.cwd, options.realpathOf));
+}
+/** Oldest start first; an entry with no start time last; then the lowest pid. */
+function byAge$1(a, b) {
+	const left = a.startedAtMs ?? Number.POSITIVE_INFINITY;
+	const right = b.startedAtMs ?? Number.POSITIVE_INFINITY;
+	if (left !== right) return left < right ? -1 : 1;
+	return a.pid - b.pid;
+}
+/** Oldest spawn first, then the name. */
+function bySpawn(a, b) {
+	if (a.spawnedAtMs !== b.spawnedAtMs) return a.spawnedAtMs - b.spawnedAtMs;
+	return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
+/**
+* The ladder over every pending terminal and every entry of the registry. Terminals are compared one folder at a time (the folder
+* key of their `cwd`); an entry given to one terminal is not given to another. The answer holds only the terminals that were linked
+* or found ambiguous: one that is missing stays as it was. The same facts give the same answer in whatever order they come.
+*/
+async function decideLinks(terminals, entries, options, tree) {
+	const verdicts = /* @__PURE__ */ new Map();
+	const foreign = /* @__PURE__ */ new Set();
+	const taken = /* @__PURE__ */ new Set();
+	const ordered = [...terminals].sort(bySpawn);
+	const sorted = [...entries].sort((a, b) => a.pid - b.pid);
+	function give(terminal, entry, basis) {
+		const confidence = basis === "registry-pid" || basis === "registry-tree" ? "high" : basis === "registry-order" ? "low" : "medium";
+		verdicts.set(terminal.name, {
+			kind: "linked",
+			entry,
+			basis,
+			confidence
+		});
+		taken.add(entry.pid);
+	}
+	const free = (entry) => !taken.has(entry.pid);
+	for (const terminal of ordered) {
+		const entry = sorted.find((candidate) => candidate.pid === terminal.pid);
+		if (entry !== void 0 && free(entry) && preFilter(entry, {
+			...terminal,
+			ignoreCwd: true
+		}, options)) give(terminal, entry, "registry-pid");
+	}
+	const groups = /* @__PURE__ */ new Map();
+	for (const terminal of ordered) {
+		if (verdicts.has(terminal.name)) continue;
+		const key = folderPathKey(terminal.cwd);
+		const group = groups.get(key);
+		if (group === void 0) groups.set(key, [terminal]);
+		else group.push(terminal);
+	}
+	for (const group of groups.values()) {
+		const candidates = new Map(group.map((terminal) => [terminal.name, sorted.filter((entry) => free(entry) && preFilter(entry, terminal, options))]));
+		if (![...candidates.values()].some((list) => list.length > 0)) continue;
+		const answers = await Promise.all(group.map((terminal) => tree(terminal.pid)));
+		const trees = [];
+		for (const answer of answers) if (answer !== null) trees.push(answer);
+		if (trees.length === group.length) {
+			const reachable = /* @__PURE__ */ new Set();
+			for (const reach of trees) for (const pid of reach) reachable.add(pid);
+			group.forEach((terminal, at) => {
+				const reach = trees[at];
+				const first = (candidates.get(terminal.name) ?? []).filter((entry) => free(entry) && reach?.has(entry.pid) === true).sort(byAge$1)[0];
+				if (first !== void 0) give(terminal, first, "registry-tree");
+			});
+			for (const list of candidates.values()) for (const entry of list) if (!reachable.has(entry.pid)) foreign.add(entry.pid);
+			continue;
+		}
+		const pool = /* @__PURE__ */ new Map();
+		for (const terminal of group) for (const entry of sorted) if (free(entry) && preFilter(entry, {
+			...terminal,
+			ignoreCwd: false
+		}, options)) pool.set(entry.pid, entry);
+		const found = [...pool.values()].sort(byAge$1);
+		const [only] = group;
+		const [one] = found;
+		if (found.length === 0) continue;
+		if (only !== void 0 && one !== void 0 && group.length === 1 && found.length === 1) give(only, one, only.resumeSessionId !== null && !only.fork && one.sessionId === only.resumeSessionId ? "resume-id" : "registry-cwd");
+		else if (found.length === group.length) group.forEach((terminal, at) => {
+			const entry = found[at];
+			if (entry !== void 0) give(terminal, entry, "registry-order");
+		});
+		else for (const terminal of group) verdicts.set(terminal.name, { kind: "ambiguous" });
+	}
+	return {
+		verdicts,
+		foreign
+	};
+}
+var init_rules = __esmMin((() => {
+	init_src$1();
+	init_protocol$1();
+}));
+
+//#endregion
+//#region packages/engine/src/link/linker.ts
+async function nodeRealpath(path) {
+	try {
+		return await realpath(path);
+	} catch {
+		return null;
+	}
+}
+function toLink(t) {
+	return {
+		status: t.status,
+		sessionId: t.sessionId,
+		previousSessionIds: [...t.previous],
+		basis: t.basis,
+		confidence: t.confidence,
+		since: t.sinceMs === null ? null : isoMsZ(t.sinceMs),
+		claudePid: t.claudePid,
+		transcript: t.transcript,
+		registryStatus: t.registryStatus,
+		waitingFor: t.waitingFor,
+		reason: t.reason,
+		shared: t.shared
+	};
+}
+function createTerminalLinker(deps) {
+	const { config, clock, logger } = deps;
+	const terminals = /* @__PURE__ */ new Map();
+	const listeners = /* @__PURE__ */ new Set();
+	const treeMemo = /* @__PURE__ */ new Map();
+	const realMemo = /* @__PURE__ */ new Map();
+	const realpathOf = deps.realpath ?? nodeRealpath;
+	const win32 = deps.win32 ?? hostPlatform === "win32";
+	let running = null;
+	let started = false;
+	let timer = null;
+	/** A logger that never throws into the pass: the line is optional, the link is not. */
+	function note(level, event, fields) {
+		try {
+			logger[level](event, fields);
+		} catch {}
+	}
+	function known(sessionId) {
+		try {
+			return deps.sessionKnown(sessionId);
+		} catch {
+			return false;
+		}
+	}
+	function alive(entry) {
+		return entry.alive && (deps.pidAlive === void 0 || deps.pidAlive(entry.pid));
+	}
+	const lookupTree = (root) => {
+		const now = clock.now();
+		const memo = treeMemo.get(root);
+		if (memo !== void 0 && (!memo.settled || now - memo.at < memo.ttl)) return memo.promise;
+		const record = {
+			at: now,
+			ttl: PROCESS_TREE_MEMO_MS,
+			settled: false,
+			promise: Promise.resolve(null)
+		};
+		record.promise = Promise.resolve().then(() => deps.tree.descendants(root)).catch(() => null).then((answer) => {
+			record.settled = true;
+			if (answer === null) record.ttl = PROCESS_TREE_FAILURE_MEMO_MS;
+			return answer;
+		});
+		treeMemo.set(root, record);
+		return record.promise;
+	};
+	async function resolveReal(path, now) {
+		const local = windowsFolderPath(path, win32);
+		if (local === null) return;
+		const memo = realMemo.get(path);
+		if (memo !== void 0 && now - memo.at < 6e4) return;
+		let value;
+		try {
+			value = await realpathOf(local);
+		} catch {
+			value = null;
+		}
+		if (realMemo.size >= REALPATH_MEMO_MAX) realMemo.clear();
+		realMemo.set(path, {
+			at: now,
+			value
+		});
+	}
+	/** The real paths a pass needs: the folders of the terminals, and the folder of every entry no terminal names by key. */
+	async function primeRealPaths(pending, entries, now) {
+		const keys = new Set(pending.map((t) => folderPathKey(t.probe.cwd)));
+		const wanted = new Set(pending.map((t) => t.probe.cwd));
+		const claimed = ownedPids();
+		for (const entry of entries) {
+			if (entry.cwd === null || !alive(entry) || entry.kind === "bg" || claimed.has(entry.pid)) continue;
+			if (!keys.has(folderPathKey(entry.cwd))) wanted.add(entry.cwd);
+		}
+		for (const path of wanted) await resolveReal(path, now);
+	}
+	/** Gives the terminal a session id; an id it had is remembered (at most eight, the oldest dropped) and one it returns to is current again. */
+	function setSession(t, sessionId) {
+		const old = t.sessionId;
+		const kept = t.previous.filter((id) => id !== sessionId && id !== old);
+		if (old !== null && old !== sessionId) kept.push(old);
+		t.previous = kept.slice(-8);
+		t.sessionId = sessionId;
+		t.lastHintAt = null;
+		t.transcript = known(sessionId) ? "tracked" : "none";
+	}
+	function applyLink(t, entry, basis, confidence, now) {
+		setSession(t, entry.sessionId);
+		t.status = "linked";
+		t.basis = basis;
+		t.confidence = confidence;
+		t.sinceMs = now;
+		t.claudePid = entry.pid;
+		t.registryStatus = entry.status;
+		t.waitingFor = entry.waitingFor;
+		t.reason = null;
+		note("debug", "link.linked", {
+			pid: entry.pid,
+			code: basis,
+			status: confidence
+		});
+	}
+	function applyGuess(t, sessionId, now) {
+		setSession(t, sessionId);
+		t.status = "linked";
+		t.basis = "transcript-time";
+		t.confidence = "low";
+		t.sinceMs = now;
+		t.claudePid = null;
+		t.registryStatus = null;
+		t.waitingFor = null;
+		t.reason = null;
+		note("debug", "link.linked", {
+			code: "transcript-time",
+			status: "low"
+		});
+	}
+	function applyAmbiguous(t) {
+		t.status = "ambiguous";
+		t.reason = "ambiguous";
+	}
+	function reasonOf(t, now, unreadable) {
+		if (unreadable) return "registry_unreadable";
+		return now - t.trackedAt >= config.linkFastWindowMs ? "no_registry" : null;
+	}
+	/** A terminal that is linked to a process follows the entry of that pid: its status, and a new session id after `/clear`. */
+	function follow(entries, now) {
+		const byPid = new Map(entries.map((entry) => [entry.pid, entry]));
+		for (const t of terminals.values()) {
+			if (t.status !== "linked" || t.claudePid === null) continue;
+			const entry = byPid.get(t.claudePid);
+			if (entry === void 0 || !alive(entry)) {
+				t.registryStatus = null;
+				t.waitingFor = null;
+				continue;
+			}
+			if (entry.sessionId !== t.sessionId) {
+				setSession(t, entry.sessionId);
+				t.sinceMs = now;
+				note("debug", "link.session_changed", { pid: entry.pid });
+			}
+			t.registryStatus = entry.status;
+			t.waitingFor = entry.waitingFor;
+		}
+	}
+	async function climb(entries, now, unreadable) {
+		const asked = /* @__PURE__ */ new Map();
+		for (const t of terminals.values()) if (unresolved(t)) asked.set(t.probe.name, t);
+		if (asked.size === 0) return;
+		const pending = [...asked.values()];
+		/** The terminals this pass found ambiguous. */
+		const decided = /* @__PURE__ */ new Set();
+		const ruleTerminals = pending.map((t) => {
+			const relaxed = now - t.trackedAt >= config.linkFastWindowMs && (t.lastRelaxedAt === null || now - t.lastRelaxedAt >= config.linkSlowPollMs);
+			if (relaxed) t.lastRelaxedAt = now;
+			return {
+				name: t.probe.name,
+				pid: t.probe.pid,
+				cwd: t.probe.cwd,
+				spawnedAtMs: t.probe.spawnedAtMs,
+				resumeSessionId: t.probe.resumeSessionId,
+				fork: t.probe.fork,
+				ignoreCwd: relaxed
+			};
+		});
+		if (!unreadable && entries.length > 0) {
+			await primeRealPaths(pending, entries, now);
+			const result = await decideLinks(ruleTerminals, entries.filter(alive), {
+				startToleranceMs: config.linkStartToleranceMs,
+				claimedPids: ownedPids(),
+				realpathOf: (path) => realMemo.get(path)?.value ?? null
+			}, lookupTree);
+			for (const [name, verdict] of result.verdicts) {
+				const t = terminals.get(name);
+				if (t === void 0 || t !== asked.get(name)) continue;
+				if (verdict.kind === "linked") applyLink(t, verdict.entry, verdict.basis, verdict.confidence, now);
+				else {
+					applyAmbiguous(t);
+					decided.add(name);
+				}
+			}
+		}
+		for (const [name, t] of asked) {
+			if (terminals.get(name) !== t || t.status === "linked" || decided.has(name)) continue;
+			t.status = "pending";
+			t.reason = reasonOf(t, now, unreadable);
+		}
+	}
+	function fallback(entries, now) {
+		const live = new Set(entries.filter(alive).map((entry) => entry.sessionId));
+		for (const t of terminals.values()) {
+			if (t.status !== "pending" || now - t.trackedAt < config.linkFastWindowMs || t.folder.prefix) continue;
+			if ([...terminals.values()].some((other) => other !== t && other.folder.key === t.folder.key && unresolved(other))) continue;
+			let ids;
+			try {
+				ids = deps.sessionsSince(t.folder.key, t.probe.spawnedAtMs - config.linkStartToleranceMs);
+			} catch {
+				continue;
+			}
+			const candidates = ids.filter((id) => sessionOwner(id) === null && !live.has(id));
+			const [only] = candidates;
+			if (candidates.length === 1 && only !== void 0) applyGuess(t, only, now);
+		}
+	}
+	function settleShared() {
+		const counts = /* @__PURE__ */ new Map();
+		for (const t of terminals.values()) if (t.status === "linked" && t.sessionId !== null) counts.set(t.sessionId, (counts.get(t.sessionId) ?? 0) + 1);
+		for (const t of terminals.values()) t.shared = t.status === "linked" && t.sessionId !== null && (counts.get(t.sessionId) ?? 0) > 1;
+	}
+	function askForTranscripts(now) {
+		const slow = config.linkSlowPollMs;
+		for (const t of terminals.values()) {
+			if (t.status !== "linked" || t.sessionId === null) continue;
+			t.transcript = known(t.sessionId) ? "tracked" : "none";
+			if (t.transcript === "tracked") continue;
+			if (t.lastHintAt !== null && now - t.lastHintAt < slow) continue;
+			t.lastHintAt = now;
+			try {
+				deps.hintSession(t.sessionId);
+			} catch {}
+		}
+	}
+	/** Tells the listeners about every link that is not what they last saw. */
+	function publish() {
+		const changed = [];
+		for (const [name, t] of terminals) {
+			const link = toLink(t);
+			const text = JSON.stringify(link);
+			if (text === t.published) continue;
+			t.published = text;
+			changed.push([name, link]);
+		}
+		for (const [name, link] of changed) for (const listener of listeners) try {
+			listener(name, link);
+		} catch {}
+	}
+	function forgetOldMemos(now) {
+		for (const [pid, memo] of treeMemo) if (memo.settled && now - memo.at >= memo.ttl) treeMemo.delete(pid);
+	}
+	async function pass() {
+		if (terminals.size === 0) return;
+		let entries = [];
+		let unreadable = false;
+		try {
+			entries = (await deps.registry.read()).entries;
+		} catch {
+			unreadable = true;
+			note("warn", "link.registry_unreadable", { code: "registry_unreadable" });
+		}
+		const now = clock.now();
+		if (!unreadable) follow(entries, now);
+		await climb(entries, now, unreadable);
+		fallback(entries, now);
+		askForTranscripts(now);
+		settleShared();
+		forgetOldMemos(now);
+		publish();
+	}
+	function tick() {
+		if (running !== null) return running;
+		const mine = pass().catch(() => {
+			note("warn", "link.pass_failed", { code: "pass_failed" });
+		}).finally(() => {
+			if (running === mine) running = null;
+		});
+		running = mine;
+		return mine;
+	}
+	function nextDelay() {
+		const now = clock.now();
+		for (const t of terminals.values()) if (unresolved(t) && now - t.trackedAt < config.linkFastWindowMs) return config.linkPollMs;
+		return config.linkSlowPollMs;
+	}
+	function schedule() {
+		if (timer !== null) {
+			clearTimeout(timer);
+			timer = null;
+		}
+		if (!started || terminals.size === 0) return;
+		timer = setTimeout(() => {
+			timer = null;
+			tick().then(schedule);
+		}, nextDelay());
+		timer.unref();
+	}
+	function ownedPids() {
+		const pids = /* @__PURE__ */ new Set();
+		for (const t of terminals.values()) if (t.status === "linked" && t.claudePid !== null) pids.add(t.claudePid);
+		return pids;
+	}
+	function sessionOwner(sessionId) {
+		let best = null;
+		for (const t of terminals.values()) {
+			if (t.status !== "linked" || t.sessionId !== sessionId) continue;
+			if (best === null || (t.sinceMs ?? 0) < (best.sinceMs ?? 0) || (t.sinceMs ?? 0) === (best.sinceMs ?? 0) && t.probe.name < best.probe.name) best = t;
+		}
+		if (best !== null) return best.probe.name;
+		for (const t of terminals.values()) if (t.status !== "linked" && t.probe.resumeSessionId === sessionId && !t.probe.fork) return t.probe.name;
+		return null;
+	}
+	return {
+		track(probe) {
+			const fresh = {
+				probe,
+				trackedAt: clock.now(),
+				folder: folderKeyOfPath(probe.cwd),
+				lastRelaxedAt: null,
+				lastHintAt: null,
+				status: "pending",
+				sessionId: null,
+				previous: [],
+				basis: null,
+				confidence: null,
+				sinceMs: null,
+				claudePid: null,
+				transcript: "none",
+				registryStatus: null,
+				waitingFor: null,
+				reason: null,
+				shared: false,
+				published: ""
+			};
+			fresh.published = JSON.stringify(toLink(fresh));
+			const old = terminals.get(probe.name);
+			if (old !== void 0) treeMemo.delete(old.probe.pid);
+			terminals.set(probe.name, fresh);
+			settleShared();
+			publish();
+			schedule();
+		},
+		forget(name) {
+			const old = terminals.get(name);
+			if (old === void 0) return;
+			terminals.delete(name);
+			treeMemo.delete(old.probe.pid);
+			settleShared();
+			publish();
+			schedule();
+		},
+		link(name) {
+			const t = terminals.get(name);
+			return t === void 0 ? null : toLink(t);
+		},
+		links() {
+			return new Map([...terminals].map(([name, t]) => [name, toLink(t)]));
+		},
+		sessionOwner,
+		ownedPids,
+		onChange(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		tick,
+		start() {
+			if (started) return;
+			started = true;
+			schedule();
+		},
+		async stop() {
+			started = false;
+			if (timer !== null) {
+				clearTimeout(timer);
+				timer = null;
+			}
+			if (running !== null) await running;
+		}
+	};
+}
+var PROCESS_TREE_MEMO_MS, PROCESS_TREE_FAILURE_MEMO_MS, REALPATH_MEMO_MS, REALPATH_MEMO_MAX, unresolved;
+var init_linker = __esmMin((() => {
+	init_src$1();
+	init_host$1();
+	init_folder_key();
+	init_rules();
+	PROCESS_TREE_MEMO_MS = 1500;
+	PROCESS_TREE_FAILURE_MEMO_MS = 5e3;
+	REALPATH_MEMO_MS = 6e4;
+	REALPATH_MEMO_MAX = 256;
+	unresolved = (t) => t.status !== "linked" || t.claudePid === null;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/limits.ts
+var REPLAY_FRAME_BYTES, VIEWER_BACKLOG_LIMIT_BYTES, LIVENESS_PROBE_MS, RESUME_ID_RE, FOLDER_MAX_CHARS_POSIX, FOLDER_INPUT_MAX_CHARS;
+var init_limits = __esmMin((() => {
+	REPLAY_FRAME_BYTES = 65536;
+	VIEWER_BACKLOG_LIMIT_BYTES = 4194304;
+	LIVENESS_PROBE_MS = 5e3;
+	RESUME_ID_RE = /^[0-9A-Za-z][0-9A-Za-z-]{7,63}$/;
+	FOLDER_MAX_CHARS_POSIX = 4096;
+	FOLDER_INPUT_MAX_CHARS = 8192;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/env.ts
+/** The value of `name` in `env`: on win32 under any case of the key (the exact spelling first), elsewhere exact. */
+function envValue(env, name, platform) {
+	const exact = env[name];
+	if (exact !== void 0 || !foldsCase(platform)) return exact;
+	const wanted = name.toUpperCase();
+	for (const key of Object.keys(env)) if (key.toUpperCase() === wanted) return env[key];
+}
+/**
+* The environment for a new `claude` session. Removed, unless named in `keep`: `CLAUDE_CODE_*`, `CLAUDECODE`,
+* `CLAUDE_SESSION_ID`, `NO_COLOR`, `FORCE_COLOR` and `MCS_HOOK_DISABLE` (case-insensitive on win32, exact elsewhere). Dropped
+* because no child can receive them: an undefined value, a NUL, a name that is empty or holds `=`. On win32 the first spelling
+* of two keys that differ only in case wins, because node-pty builds the environment block from the keys and would pass both.
+* Everything else passes through. The input is not changed.
+*/
+function buildTerminalEnv(source, o) {
+	const fold = foldsCase(o.platform) ? (name) => name.toUpperCase() : (name) => name;
+	const keep = new Set(o.keep.map(fold));
+	const fixed = new Set(FIXED.map(([name]) => fold(name)));
+	const seen = /* @__PURE__ */ new Set();
+	const entries = /* @__PURE__ */ new Map();
+	for (const name of Object.keys(source)) {
+		const value = source[name];
+		if (value === void 0) continue;
+		if (name === "" || name.includes("=") || name.includes("\0") || value.includes("\0")) continue;
+		const key = fold(name);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		if ((key.startsWith(STRIPPED_PREFIX) || STRIPPED_NAMES.has(key)) && !keep.has(key)) continue;
+		if (fixed.has(key)) continue;
+		entries.set(name, value);
+	}
+	for (const [name, value] of FIXED) entries.set(name, value);
+	return Object.fromEntries(entries);
+}
+var foldsCase, STRIPPED_PREFIX, STRIPPED_NAMES, FIXED;
+var init_env = __esmMin((() => {
+	init_limits();
+	foldsCase = (platform) => platform === "win32";
+	STRIPPED_PREFIX = "CLAUDE_CODE_";
+	STRIPPED_NAMES = /* @__PURE__ */ new Set([
+		"CLAUDECODE",
+		"CLAUDE_SESSION_ID",
+		"NO_COLOR",
+		"FORCE_COLOR",
+		"MCS_HOOK_DISABLE"
+	]);
+	FIXED = [
+		["TERM", "xterm-256color"],
+		["COLORTERM", "truecolor"],
+		["TERM_PROGRAM", "CAW"],
+		["NoDefaultCurrentDirectoryInExePath", "1"]
+	];
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/errors.ts
+var MESSAGES, TerminalError;
+var init_errors$2 = __esmMin((() => {
+	MESSAGES = {
+		UNSUPPORTED_OS: "The terminal is not supported on this operating system.",
+		NATIVE_MISSING: "The terminal component is missing from this installation.",
+		NATIVE_LOAD_FAILED: "The terminal component could not be loaded.",
+		CLAUDE_NOT_FOUND: "The claude command was not found on the search path.",
+		COMMAND_UNSUPPORTED: "The claude command is of a kind the terminal cannot start.",
+		ARGS_UNSAFE: "An argument cannot be passed safely to the claude command.",
+		FOLDER_INVALID: "The folder is not a valid working folder.",
+		FOLDER_NOT_FOUND: "The folder does not exist.",
+		SESSION_LIMIT: "The limit of terminal sessions is reached.",
+		SPAWN_FAILED: "The terminal process could not be started.",
+		START_TIMEOUT: "The terminal process did not start in time.",
+		SESSION_NOT_FOUND: "There is no terminal session with this name.",
+		SESSION_ENDED: "The terminal session has ended.",
+		NAME_INVALID: "The session name is not valid.",
+		MESSAGE_TOO_LARGE: "The input is too large.",
+		SHUTTING_DOWN: "The terminal service is shutting down."
+	};
+	TerminalError = class extends Error {
+		code;
+		constructor(code, options) {
+			super(MESSAGES[code], options);
+			this.name = "TerminalError";
+			this.code = code;
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/command.ts
+function stripSurroundingQuotes$1(text) {
+	let start = 0;
+	let end = text.length;
+	while (start < end && text.charCodeAt(start) === DOUBLE_QUOTE$1) start += 1;
+	while (end > start && text.charCodeAt(end - 1) === DOUBLE_QUOTE$1) end -= 1;
+	return text.slice(start, end);
+}
+function windowsExtensions(env) {
+	const own = (envValue(env, "PATHEXT", "win32") ?? "").split(";").filter((entry) => PATHEXT_ENTRY.test(entry));
+	return own.length > 0 ? own : DEFAULT_PATHEXT.split(";");
+}
+function resolveOnWindows(o) {
+	const { command } = o;
+	if (command.trim() === "" || NOT_A_COMMAND.test(command)) return null;
+	if ((/^[A-Za-z]:/u.test(command) ? command.slice(2) : command).includes(":")) return null;
+	const extensions = windowsExtensions(o.env);
+	const lower = command.toLowerCase();
+	const names = extensions.some((ext) => lower.endsWith(ext.toLowerCase())) ? [command, ...extensions.map((ext) => command + ext)] : extensions.map((ext) => command + ext);
+	const found = (candidate) => o.fs.isFile(candidate) ? {
+		path: candidate,
+		ext: path.win32.extname(candidate).toLowerCase()
+	} : null;
+	if (PATH_FORM.test(command)) {
+		if (!FULLY_QUALIFIED.test(command)) return null;
+		for (const name of names) {
+			const hit = found(path.win32.normalize(name));
+			if (hit !== null) return hit;
+		}
+		return null;
+	}
+	const searchPath = envValue(o.env, "PATH", "win32");
+	if (searchPath === void 0) return null;
+	for (const entry of searchPath.split(";")) {
+		const dir = stripSurroundingQuotes$1(entry.trim()).trim();
+		if (dir === "" || !FULLY_QUALIFIED.test(dir)) continue;
+		for (const name of names) {
+			const hit = found(path.win32.join(dir, name));
+			if (hit !== null) return hit;
+		}
+	}
+	return null;
+}
+function resolveOnPosix(o) {
+	const { command } = o;
+	if (command === "" || command.includes("\0")) return null;
+	const usable = (candidate) => o.fs.isExecutable?.(candidate) ?? o.fs.isFile(candidate);
+	if (command.includes("/")) return path.posix.isAbsolute(command) && usable(command) ? {
+		path: command,
+		ext: ""
+	} : null;
+	const searchPath = envValue(o.env, "PATH", o.platform);
+	if (searchPath === void 0) return null;
+	for (const entry of searchPath.split(":")) {
+		if (!entry.startsWith("/")) continue;
+		const candidate = path.posix.join(entry, command);
+		if (usable(candidate)) return {
+			path: candidate,
+			ext: ""
+		};
+	}
+	return null;
+}
+/**
+* Finds `claude` the way Python `shutil.which` does (what MTOP used). Windows: the PATH of the server (`Path` or `PATH`, any
+* case), PATHEXT in order (default `.COM;.EXE;.BAT;.CMD`), the first existing file wins; relative PATH entries and a relative
+* command path are ignored. A POSIX host: the first executable file on PATH, or the absolute path itself. `null` when there is
+* no such file (the service reports CLAUDE_NOT_FOUND).
+*/
+function resolveClaudeCommand(o) {
+	return o.platform === "win32" ? resolveOnWindows(o) : resolveOnPosix(o);
+}
+/**
+* The argument rules of CommandLineToArgvW (and of the MSVC runtime, which `claude.exe` and node use): quote when the text is
+* empty or holds a space, a tab, a line break or a quote; inside the quotes a quote becomes `\"`, and the backslashes that
+* precede a quote, or the closing quote, are doubled.
+*/
+function quoteWindowsArg(arg) {
+	if (arg !== "" && !/[ \t\n\v"]/u.test(arg)) return arg;
+	let out = "\"";
+	let backslashes = 0;
+	for (const ch of arg) if (ch === "\\") backslashes += 1;
+	else if (ch === "\"") {
+		out += `${"\\".repeat(backslashes * 2 + 1)}"`;
+		backslashes = 0;
+	} else {
+		out += "\\".repeat(backslashes) + ch;
+		backslashes = 0;
+	}
+	return `${out}${"\\".repeat(backslashes * 2)}"`;
+}
+/**
+* True when cmd.exe cannot read anything into the text. cmd expands `%VAR%` and `!VAR!` even inside quotes and gives `^ & | < > ( )`
+* a meaning outside them, so the shim route allows letters and digits of any script, a space and `_ . , : = @ + / \ -` only.
+*/
+function isCmdSafeArg(arg) {
+	return CMD_SAFE_ARG.test(arg);
+}
+function cmdExeOf(env, fs) {
+	const root = [envValue(env, "SystemRoot", "win32"), envValue(env, "windir", "win32")].find((value) => value !== void 0 && value !== "");
+	if (root === void 0 || !FULLY_QUALIFIED.test(root)) throw new TerminalError("COMMAND_UNSUPPORTED");
+	const cmd = path.win32.join(root, "System32", "cmd.exe");
+	if (!fs.isFile(cmd)) throw new TerminalError("COMMAND_UNSUPPORTED");
+	return cmd;
+}
+/**
+* How to start the resolved program. `args` are the configured arguments; `resume` is a Claude session id that becomes
+* `--resume <id>` after them. Windows: `.exe` and `.com` run directly with an argv array. `.cmd` and `.bat` run as the string
+* `cmd.exe /d /s /c ""<shim>" <quoted args>"` (the array form fails: node-pty wraps the first element in escaped quotes and
+* cmd answers "not recognized"; `/s` strips only the outer pair). The kind is read from the path itself, never from `ext`.
+* Refused with COMMAND_UNSUPPORTED: any other extension, a shim path with `%`, a quote or a control character, no cmd.exe.
+* Refused with ARGS_UNSAFE: an argument with a control character, on the shim route one outside `isCmdSafeArg`, a resume id
+* that does not match RESUME_ID_RE. No error message names a path or an argument. `display` is the program as resolved.
+*/
+function buildLaunch(resolved, args, o) {
+	const all = [...args];
+	if (o.resume !== void 0) {
+		if (!RESUME_ID_RE.test(o.resume)) throw new TerminalError("ARGS_UNSAFE");
+		all.push("--resume", o.resume);
+		if (o.fork === true) all.push("--fork-session");
+	} else if (o.fork === true) throw new TerminalError("ARGS_UNSAFE");
+	if (all.some((arg) => CONTROL_CHARACTER$1.test(arg))) throw new TerminalError("ARGS_UNSAFE");
+	const direct = () => ({
+		kind: "exe",
+		file: resolved.path,
+		args: all,
+		display: resolved.path
+	});
+	if (o.platform !== "win32") return direct();
+	const ext = path.win32.extname(resolved.path).toLowerCase();
+	if (ext === ".exe" || ext === ".com") return direct();
+	if (ext !== ".cmd" && ext !== ".bat") throw new TerminalError("COMMAND_UNSUPPORTED");
+	if (UNSAFE_SHIM_PATH.test(resolved.path)) throw new TerminalError("COMMAND_UNSUPPORTED");
+	const file = cmdExeOf(o.env, o.fs);
+	if (!all.every(isCmdSafeArg)) throw new TerminalError("ARGS_UNSAFE");
+	const tail = all.map((arg) => ` ${quoteWindowsArg(arg)}`).join("");
+	return {
+		kind: "shim",
+		file,
+		args: `/d /s /c ""${resolved.path}"${tail}"`,
+		display: resolved.path
+	};
+}
+var DEFAULT_PATHEXT, PATHEXT_ENTRY, FULLY_QUALIFIED, PATH_FORM, NOT_A_COMMAND, CONTROL_CHARACTER$1, UNSAFE_SHIM_PATH, DOUBLE_QUOTE$1, CMD_SAFE_ARG;
+var init_command = __esmMin((() => {
+	init_env();
+	init_errors$2();
+	init_limits();
+	DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+	PATHEXT_ENTRY = /^\.[^\\/:*?"<>|\s\p{Cc}]+$/u;
+	FULLY_QUALIFIED = /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/u;
+	PATH_FORM = /[\\/]|^[A-Za-z]:/u;
+	NOT_A_COMMAND = /["<>|?*\p{Cc}]/u;
+	CONTROL_CHARACTER$1 = /\p{Cc}/u;
+	UNSAFE_SHIM_PATH = /["%\p{Cc}]/u;
+	DOUBLE_QUOTE$1 = 34;
+	CMD_SAFE_ARG = /^[\p{L}\p{N} _.,:=@+/\\-]*$/u;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/folder.ts
+/** Removes every double quote at both ends (Python `strip('"')`), without a regular expression over the text. */
+function stripSurroundingQuotes(text) {
+	let start = 0;
+	let end = text.length;
+	while (start < end && text.charCodeAt(start) === DOUBLE_QUOTE) start += 1;
+	while (end > start && text.charCodeAt(end - 1) === DOUBLE_QUOTE) end -= 1;
+	return text.slice(start, end);
+}
+/** Windows reserves a device name with or without an extension, and ignores trailing spaces: `NUL.txt`, `CON `. */
+function isReservedDeviceName(segment) {
+	const dot = segment.indexOf(".");
+	const base = (dot === -1 ? segment : segment.slice(0, dot)).trimEnd();
+	return RESERVED_DEVICE_NAME.test(base);
+}
+function normalizeWindows(text) {
+	if (FORMAT_CHARACTER.test(text)) return null;
+	let spelled = text;
+	const wsl = WSL_DRIVE_PATH.exec(spelled);
+	if (wsl !== null) spelled = `${(wsl[1] ?? "").toUpperCase()}:\\${wsl[2] ?? ""}`;
+	spelled = stripExtendedPrefix(spelled.replaceAll("/", "\\"));
+	if (!DRIVE_PREFIX.test(spelled)) return null;
+	const drive = spelled.charAt(0).toUpperCase();
+	const rest = spelled.slice(2);
+	if (rest.includes(":")) return null;
+	if (rest.split("\\").some(isReservedDeviceName)) return null;
+	const normalized = path.win32.normalize(`${drive}:${rest === "" ? "\\" : rest}`);
+	const folder = normalized.length > 3 ? normalized.replace(/\\+$/u, "") : normalized;
+	return folder.length > 240 ? null : folder;
+}
+function normalizePosix(text) {
+	if (!text.startsWith("/")) return null;
+	const normalized = path.posix.normalize(text);
+	const folder = normalized.length > 1 ? normalized.replace(/\/+$/u, "") : normalized;
+	return folder.length > 4096 ? null : folder;
+}
+/**
+* The spelling of a working folder that the service uses (`D:\x`), or `null` when it cannot be one (the service maps that to
+* FOLDER_INVALID). On Windows: surrounding quotes and spaces are removed, `/mnt/d/x` and `D:/x` become `D:\x`, the drive letter
+* is upper case, no trailing separator except the root, `..` and `.` are collapsed. Refused: empty, a control character, a
+* relative path (MTOP used the server folder; never here), UNC and device paths, a ":" after the drive, a reserved device
+* name, a Unicode format character (bidi marks, zero width), more than 240 characters. A POSIX host takes absolute paths only.
+* The path is not resolved through links: the UI groups by the spelling, and `folderKey` only compares.
+*/
+function normalizeFolder(raw, platform) {
+	if (raw.length > 8192) return null;
+	const text = stripSurroundingQuotes(raw.trim()).trim();
+	if (text === "" || CONTROL_CHARACTER.test(text)) return null;
+	return platform === "win32" ? normalizeWindows(text) : normalizePosix(text);
+}
+var CONTROL_CHARACTER, FORMAT_CHARACTER, WSL_DRIVE_PATH, DRIVE_PREFIX, RESERVED_DEVICE_NAME, DOUBLE_QUOTE;
+var init_folder = __esmMin((() => {
+	init_host$1();
+	init_paths$3();
+	init_limits();
+	CONTROL_CHARACTER = /\p{Cc}/u;
+	FORMAT_CHARACTER = /\p{Cf}/u;
+	WSL_DRIVE_PATH = /^\/mnt\/([A-Za-z])(?:\/(.*))?$/u;
+	DRIVE_PREFIX = /^[A-Za-z]:(?:\\|$)/u;
+	RESERVED_DEVICE_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3]|CONIN\$|CONOUT\$)$/iu;
+	DOUBLE_QUOTE = 34;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/names.ts
+/**
+* The folder name in the alphabet of a session name (MTOP `session_base`): the last path segment, every code point outside
+* `[A-Za-z0-9_-]` replaced by `_`, at most 60 characters, `session` when nothing is left.
+*/
+function sessionBase(folder) {
+	const segments = folder.split(/[\\/]+/u).filter((segment) => segment !== "");
+	const base = (segments[segments.length - 1] ?? "").replace(OUTSIDE_NAME_CHARS, "_").slice(0, 60);
+	return base === "" ? "session" : base;
+}
+var NAME_BASE_RE, OUTSIDE_NAME_CHARS, NameAllocator;
+var init_names = __esmMin((() => {
+	init_errors$2();
+	init_limits();
+	NAME_BASE_RE = new RegExp(`^[A-Za-z0-9_-]{1,${String(60)}}$`);
+	OUTSIDE_NAME_CHARS = /[^A-Za-z0-9_-]/gu;
+	NameAllocator = class {
+		#counters = /* @__PURE__ */ new Map();
+		#issued = /* @__PURE__ */ new Set();
+		/** Throws NAME_INVALID when `base` is not 1 to 60 characters of `[A-Za-z0-9_-]` (use `sessionBase` to make one). */
+		next(base) {
+			if (!NAME_BASE_RE.test(base)) throw new TerminalError("NAME_INVALID");
+			let n = this.#counters.get(base) ?? 0;
+			for (;;) {
+				n += 1;
+				const suffix = `-${String(n)}`;
+				const name = base.slice(0, 64 - suffix.length) + suffix;
+				if (!this.#issued.has(name)) {
+					this.#issued.add(name);
+					this.#counters.set(base, n);
+					return name;
+				}
+			}
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/replay.ts
+function isContinuationByte(byte) {
+	return byte !== void 0 && (byte & 192) === 128;
+}
+/**
+* The bytes a viewer receives when it attaches. When the buffer was trimmed, the replay restarts just after the first line
+* feed within the first 4 KiB (when there is none, the snapshot stays as it is) and starts with `ESC [ 0 m`. Then the terminal
+* queries are removed, see `stripTerminalQueries`. The snapshot is not changed.
+*/
+function prepareReplay(snapshot, trimmed) {
+	let bytes = snapshot;
+	if (trimmed) {
+		const lineFeed = bytes.subarray(0, LINE_SEARCH_BYTES).indexOf(LF$6);
+		if (lineFeed !== -1) bytes = bytes.subarray(lineFeed + 1);
+		bytes = Buffer.concat([SGR_RESET, stripTerminalQueries(bytes)]);
+		return bytes;
+	}
+	return stripTerminalQueries(bytes);
+}
+/** The number a run of decimal digits spells, or -1 for an empty run or a byte that is not a digit. */
+function decimalValue(bytes, start, end) {
+	if (start >= end || end - start > 6) return -1;
+	let value = 0;
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i] ?? 0;
+		if (byte < DIGIT_ZERO || byte > DIGIT_NINE) return -1;
+		value = value * 10 + (byte - DIGIT_ZERO);
+	}
+	return value;
+}
+/** True when every byte of the range is a digit, `;` or `:` (the parameter alphabet of CSI). */
+function onlyParameterBytes(bytes, start, end) {
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i] ?? 0;
+		if ((byte < DIGIT_ZERO || byte > DIGIT_NINE) && byte !== SEMICOLON && byte !== COLON) return false;
+	}
+	return true;
+}
+/** Index of the first `;` or `:` in the range, or the end of it. */
+function firstSeparator(bytes, start, end) {
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i];
+		if (byte === SEMICOLON || byte === COLON) return i;
+	}
+	return end;
+}
+/** Classifies a complete CSI: parameter bytes in [pStart, pEnd), intermediate bytes in [iStart, iEnd), then the final byte. */
+function isCsiQuery(bytes, pStart, pEnd, iEnd, final) {
+	const first = bytes[pStart] ?? 0;
+	const hasMarker = pStart < pEnd && first >= MARKER_MIN && first <= MARKER_MAX;
+	const marker = hasMarker ? first : 0;
+	const paramsStart = hasMarker ? pStart + 1 : pStart;
+	if (!onlyParameterBytes(bytes, paramsStart, pEnd)) return false;
+	const intermediates = iEnd - pEnd;
+	switch (final) {
+		case 99: return intermediates === 0 && (marker === 0 || marker === GREATER || marker === EQUALS);
+		case 110: {
+			if (intermediates !== 0) return false;
+			if (marker === QUESTION) return true;
+			if (marker !== 0) return false;
+			const ps = decimalValue(bytes, paramsStart, pEnd);
+			return ps === 5 || ps === 6;
+		}
+		case 112: return intermediates === 1 && bytes[pEnd] === DOLLAR && (marker === 0 || marker === QUESTION);
+		case 117: return intermediates === 0 && marker === QUESTION && paramsStart === pEnd;
+		case LOWER_Q: return intermediates === 0 && marker === GREATER;
+		case 116: {
+			if (intermediates !== 0 || marker !== 0) return false;
+			const ps = decimalValue(bytes, paramsStart, firstSeparator(bytes, paramsStart, pEnd));
+			return WINDOW_REPORTS.has(ps);
+		}
+		default: return false;
+	}
+}
+/** `ESC [` at `esc`. A byte that cannot belong to a CSI ends the scan there, unconsumed: it may start the next sequence. */
+function scanCsi(bytes, esc, out) {
+	const n = bytes.length;
+	const pStart = esc + 2;
+	let p = pStart;
+	while (p < n && (bytes[p] ?? 0) >= 48 && (bytes[p] ?? 0) <= 63) p += 1;
+	const pEnd = p;
+	while (p < n && (bytes[p] ?? 0) >= 32 && (bytes[p] ?? 0) <= 47) p += 1;
+	out.query = false;
+	if (p >= n) {
+		out.end = n;
+		return;
+	}
+	const final = bytes[p] ?? 0;
+	if (final < 64 || final > 126) {
+		out.end = p;
+		return;
+	}
+	out.end = p + 1;
+	out.query = isCsiQuery(bytes, pStart, pEnd, p, final);
+}
+/** True when an OSC payload is a query: a known number and a field that is exactly `?`. */
+function isOscQuery(bytes, start, end) {
+	let semicolon = start;
+	while (semicolon < end && bytes[semicolon] !== SEMICOLON) semicolon += 1;
+	if (semicolon >= end || !OSC_QUERY_NUMBERS.has(decimalValue(bytes, start, semicolon))) return false;
+	let field = semicolon + 1;
+	for (let i = semicolon + 1; i <= end; i += 1) if (i === end || bytes[i] === SEMICOLON) {
+		if (i - field === 1 && bytes[field] === QUESTION) return true;
+		field = i + 1;
+	}
+	return false;
+}
+/** `ESC ]` at `esc`: ends at BEL or ST. A new ESC that is no ST ends the scan there, unconsumed (the terminal aborts the string). */
+function scanOsc(bytes, esc, out) {
+	const n = bytes.length;
+	const start = esc + 2;
+	out.query = false;
+	for (let p = start; p < n; p += 1) {
+		const byte = bytes[p];
+		if (byte === BEL) {
+			out.end = p + 1;
+			out.query = isOscQuery(bytes, start, p);
+			return;
+		}
+		if (byte === ESC$1) {
+			if (p + 1 >= n) out.end = n;
+			else if (bytes[p + 1] === BACKSLASH) {
+				out.end = p + 2;
+				out.query = isOscQuery(bytes, start, p);
+			} else out.end = p;
+			return;
+		}
+	}
+	out.end = n;
+}
+/** `ESC P` at `esc`: only DECRQSS (`DCS $ q Pt ST`) is a query. Any other DCS is kept; its body is plain bytes to this scan. */
+function scanDcs(bytes, esc, out) {
+	const n = bytes.length;
+	const start = esc + 2;
+	out.query = false;
+	const next = bytes.indexOf(ESC$1, start);
+	if (next === -1 || next + 1 >= n) out.end = n;
+	else if (bytes[next + 1] === BACKSLASH) {
+		out.end = next + 2;
+		out.query = next - start >= 2 && bytes[start] === DOLLAR && bytes[start + 1] === LOWER_Q;
+	} else out.end = next;
+}
+/**
+* Removes the sequences that make a terminal answer: DA1, DA2 and DA3 (`CSI c`, `CSI > c`, `CSI = c`), DSR (`CSI 5 n`,
+* `CSI 6 n`, `CSI ? Ps n`), DECRQM (`CSI ? Ps $ p`, `CSI Ps $ p`), the kitty keyboard query (`CSI ? u`), XTVERSION
+* (`CSI > q`), the window reports (`CSI 11 t` to `CSI 21 t`), OSC colour and clipboard queries (`OSC Ps ; ? BEL|ST`) and
+* DECRQSS (`DCS $ q ... ST`). Every sequence that sets state or draws is kept, and so is a sequence that is cut off or broken
+* (a terminal would not answer it either). Only the 7-bit forms (ESC and a letter) are read.
+*
+* One pass over the bytes, never a regular expression over the buffer: this runs over up to 1 MiB at every attach in the process
+* that hosts all sessions, and an adversarial snapshot (`ESC [` a million times, an OSC that never ends) must cost time linear
+* in its size. A scan that fails resumes at the byte that stopped it, so no byte is scanned twice. The input is not changed;
+* when there is nothing to remove, the same Buffer comes back.
+*/
+function stripTerminalQueries(bytes) {
+	const parts = [];
+	const scan = {
+		end: 0,
+		query: false
+	};
+	let copyFrom = 0;
+	let i = bytes.indexOf(ESC$1);
+	while (i !== -1 && i + 1 < bytes.length) {
+		const introducer = bytes[i + 1];
+		if (introducer === LEFT_BRACKET) scanCsi(bytes, i, scan);
+		else if (introducer === RIGHT_BRACKET) scanOsc(bytes, i, scan);
+		else if (introducer === UPPER_P) scanDcs(bytes, i, scan);
+		else {
+			i = bytes.indexOf(ESC$1, i + 1);
+			continue;
+		}
+		if (scan.query) {
+			if (i > copyFrom) parts.push(bytes.subarray(copyFrom, i));
+			copyFrom = scan.end;
+		}
+		i = bytes.indexOf(ESC$1, scan.end);
+	}
+	if (parts.length === 0 && copyFrom === 0) return bytes;
+	parts.push(bytes.subarray(copyFrom));
+	return Buffer.concat(parts);
+}
+/**
+* The replay in frames of at most `maxFrame` bytes (default and cap: 65,536). A frame is a view into `bytes`. Frames may split
+* a character or an escape sequence: xterm.js keeps the unfinished part of its input between writes.
+*/
+function* replayFrames(bytes, maxFrame = REPLAY_FRAME_BYTES) {
+	if (!Number.isInteger(maxFrame) || maxFrame < 1) throw new RangeError("A replay frame holds at least one byte.");
+	const size = Math.min(maxFrame, REPLAY_FRAME_BYTES);
+	for (let offset = 0; offset < bytes.length; offset += size) yield bytes.subarray(offset, offset + size);
+}
+var ESC$1, BEL, LF$6, LEFT_BRACKET, RIGHT_BRACKET, BACKSLASH, UPPER_P, MAX_CONTINUATION_BYTES, LINE_SEARCH_BYTES, SGR_RESET, ReplayBuffer, MARKER_MIN, MARKER_MAX, QUESTION, GREATER, EQUALS, DOLLAR, LOWER_Q, DIGIT_ZERO, DIGIT_NINE, SEMICOLON, COLON, WINDOW_REPORTS, OSC_QUERY_NUMBERS;
+var init_replay = __esmMin((() => {
+	init_limits();
+	ESC$1 = 27;
+	BEL = 7;
+	LF$6 = 10;
+	LEFT_BRACKET = 91;
+	RIGHT_BRACKET = 93;
+	BACKSLASH = 92;
+	UPPER_P = 80;
+	MAX_CONTINUATION_BYTES = 3;
+	LINE_SEARCH_BYTES = 4096;
+	SGR_RESET = Buffer.from([
+		ESC$1,
+		LEFT_BRACKET,
+		48,
+		109
+	]);
+	ReplayBuffer = class {
+		#capacity;
+		#chunks = [];
+		#size = 0;
+		#trimmed = false;
+		constructor(capacityBytes) {
+			if (!Number.isInteger(capacityBytes) || capacityBytes < 1) throw new RangeError("The capacity of a replay buffer is a positive integer.");
+			this.#capacity = capacityBytes;
+		}
+		/** Bytes held now. */
+		get size() {
+			return this.#size;
+		}
+		/** True once output was dropped: the snapshot no longer starts at the beginning of the session. */
+		get trimmed() {
+			return this.#trimmed;
+		}
+		/** Keeps a copy of the chunk. A chunk larger than the capacity keeps only its tail, cut at a UTF-8 start byte. */
+		append(chunk) {
+			if (chunk.length === 0) return;
+			if (chunk.length > this.#capacity) {
+				this.#chunks = [Buffer.from(chunk.subarray(chunk.length - this.#capacity))];
+				this.#size = this.#capacity;
+				this.#trimmed = true;
+				this.#alignHead();
+				return;
+			}
+			this.#chunks.push(Buffer.from(chunk));
+			this.#size += chunk.length;
+			if (this.#size <= this.#capacity) return;
+			let drop = 0;
+			while (this.#size > this.#capacity && drop < this.#chunks.length) {
+				this.#size -= this.#chunks[drop]?.length ?? 0;
+				drop += 1;
+			}
+			this.#chunks = this.#chunks.slice(drop);
+			this.#trimmed = true;
+			this.#alignHead();
+		}
+		/** A copy of the bytes held. */
+		snapshot() {
+			return Buffer.concat(this.#chunks, this.#size);
+		}
+		/** Releases the memory, as a session does when it ends. */
+		clear() {
+			this.#chunks = [];
+			this.#size = 0;
+			this.#trimmed = false;
+		}
+		/** Skips the stray continuation bytes of a character whose start byte was dropped (at most three, as in valid UTF-8). */
+		#alignHead() {
+			let skipped = 0;
+			while (skipped < MAX_CONTINUATION_BYTES) {
+				const head = this.#chunks[0];
+				if (head === void 0) return;
+				if (!isContinuationByte(head[0])) return;
+				if (head.length === 1) this.#chunks.shift();
+				else this.#chunks[0] = head.subarray(1);
+				this.#size -= 1;
+				skipped += 1;
+			}
+		}
+	};
+	MARKER_MIN = 60;
+	MARKER_MAX = 63;
+	QUESTION = 63;
+	GREATER = 62;
+	EQUALS = 61;
+	DOLLAR = 36;
+	LOWER_Q = 113;
+	DIGIT_ZERO = 48;
+	DIGIT_NINE = 57;
+	SEMICOLON = 59;
+	COLON = 58;
+	WINDOW_REPORTS = /* @__PURE__ */ new Set([
+		11,
+		13,
+		14,
+		15,
+		16,
+		18,
+		19,
+		20,
+		21
+	]);
+	OSC_QUERY_NUMBERS = /* @__PURE__ */ new Set([
+		4,
+		5,
+		10,
+		11,
+		12,
+		13,
+		14,
+		15,
+		16,
+		17,
+		18,
+		19,
+		52
+	]);
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/session.ts
+function clamp(value, min, max) {
+	return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+/** A terminal size within 20..500 columns and 5..200 rows, fractions cut; null when a value is not a finite number. */
+function clampSessionSize(cols, rows) {
+	if (!Number.isFinite(cols) || !Number.isFinite(rows)) return null;
+	return {
+		cols: clamp(cols, 20, 500),
+		rows: clamp(rows, 5, 200)
+	};
+}
+function viewerReason(reason) {
+	return reason === "lost" ? "exited" : reason;
+}
+var KILL_TREE_WAIT_MS, Session;
+var init_session = __esmMin((() => {
+	init_errors$2();
+	init_limits();
+	init_replay();
+	KILL_TREE_WAIT_MS = 2e3;
+	Session = class {
+		#name;
+		#cwd;
+		#pty;
+		#startedAt;
+		#maxInputBytes;
+		#killTimeoutMs;
+		#clock;
+		#killTree;
+		#onUpdated;
+		#onEnded;
+		#logger;
+		/** In attach order (a Map iterates in insertion order). */
+		#viewers = /* @__PURE__ */ new Map();
+		#unsubscribe = [];
+		#ended;
+		#resolveEnded = () => void 0;
+		/** Null once the session is over: the replay is released, nothing can attach any more. */
+		#replay;
+		#size;
+		#pendingSize = null;
+		#resizeTimer = null;
+		#killTimer = null;
+		#killReason = null;
+		#exit = null;
+		constructor(options) {
+			this.#name = options.name;
+			this.#cwd = options.cwd;
+			this.#pty = options.pty;
+			this.#startedAt = options.startedAt;
+			this.#maxInputBytes = options.maxInputBytes;
+			this.#killTimeoutMs = options.killTimeoutMs;
+			this.#clock = options.clock;
+			this.#killTree = options.killTree;
+			this.#onUpdated = options.onUpdated;
+			this.#onEnded = options.onEnded;
+			this.#logger = options.logger;
+			this.#replay = new ReplayBuffer(options.replayBytes);
+			this.#size = clampSessionSize(options.cols, options.rows) ?? {
+				cols: 20,
+				rows: 5
+			};
+			this.#ended = new Promise((resolve) => {
+				this.#resolveEnded = resolve;
+			});
+			this.#unsubscribe.push(this.#pty.onData((chunk) => {
+				this.#pump(chunk);
+			}), this.#pty.onExit((exit) => {
+				this.#onPtyExit(exit);
+			}));
+		}
+		info() {
+			return {
+				name: this.#name,
+				cwd: this.#cwd,
+				pid: this.#pty.pid,
+				startedAt: this.#startedAt,
+				cols: this.#size.cols,
+				rows: this.#size.rows,
+				viewers: this.#viewers.size
+			};
+		}
+		attach(viewer, opts) {
+			if (this.#exit !== null || this.#replay === null) throw new TerminalError("SESSION_ENDED");
+			if (this.#viewers.has(viewer)) return {
+				replayedBytes: 0,
+				cols: this.#size.cols,
+				rows: this.#size.rows
+			};
+			let replayedBytes = 0;
+			if (opts?.replay !== false) {
+				const bytes = prepareReplay(this.#replay.snapshot(), this.#replay.trimmed);
+				try {
+					for (const frame of replayFrames(bytes)) {
+						viewer.send(frame);
+						replayedBytes += frame.length;
+					}
+				} catch {
+					this.#end(viewer, { reason: "error" });
+					this.#logger?.warn("terminal.viewer_evicted", { code: "error" });
+					return {
+						replayedBytes,
+						cols: this.#size.cols,
+						rows: this.#size.rows
+					};
+				}
+			}
+			this.#viewers.set(viewer, true);
+			this.#updated();
+			return {
+				replayedBytes,
+				cols: this.#size.cols,
+				rows: this.#size.rows
+			};
+		}
+		detach(viewer) {
+			if (this.#viewers.delete(viewer)) this.#updated();
+		}
+		write(data) {
+			if (this.#exit !== null) return;
+			const size = typeof data === "string" ? Buffer.byteLength(data, "utf8") : data.length;
+			if (size > this.#maxInputBytes) throw new TerminalError("MESSAGE_TOO_LARGE");
+			if (size === 0) return;
+			try {
+				this.#pty.write(data);
+			} catch {}
+		}
+		resize(cols, rows) {
+			if (this.#exit !== null) return;
+			const wanted = clampSessionSize(cols, rows);
+			if (wanted === null) return;
+			const pending = this.#pendingSize;
+			if (pending !== null && pending.cols === wanted.cols && pending.rows === wanted.rows) return;
+			if (wanted.cols === this.#size.cols && wanted.rows === this.#size.rows) {
+				this.#pendingSize = null;
+				this.#clearResizeTimer();
+				return;
+			}
+			this.#pendingSize = wanted;
+			this.#clearResizeTimer();
+			this.#resizeTimer = setTimeout(() => {
+				this.#applyResize();
+			}, 60);
+			this.#resizeTimer.unref();
+		}
+		/**
+		* Ends the process. Idempotent: every call returns the same promise, and the first `reason` wins (`shutdown` is the service
+		* going down, `killed` everything else). Steps: `pty.kill()`, wait `killTimeoutMs` for the exit, then the injected tree kill,
+		* wait {@link KILL_TREE_WAIT_MS}, then give up and finalise as `lost`.
+		*/
+		kill(reason = "killed") {
+			if (this.#exit === null && this.#killReason === null) {
+				this.#killReason = reason;
+				this.#logger?.info("terminal.kill", {
+					pid: this.#pty.pid,
+					phase: "request"
+				});
+				this.#killTimer = setTimeout(() => {
+					this.#escalate();
+				}, this.#killTimeoutMs);
+				try {
+					this.#pty.kill();
+				} catch {}
+			}
+			return this.#ended;
+		}
+		#pump(chunk) {
+			if (this.#exit !== null || this.#replay === null) return;
+			this.#replay.append(chunk);
+			const evicted = [];
+			for (const viewer of [...this.#viewers.keys()]) {
+				if (!this.#viewers.has(viewer)) continue;
+				try {
+					viewer.send(chunk);
+					if ((viewer.pendingBytes?.() ?? 0) > 4194304) evicted.push({
+						viewer,
+						reason: "slow"
+					});
+				} catch {
+					evicted.push({
+						viewer,
+						reason: "error"
+					});
+				}
+			}
+			for (const { viewer, reason } of evicted) {
+				if (!this.#viewers.delete(viewer)) continue;
+				this.#end(viewer, { reason });
+				this.#logger?.warn("terminal.viewer_evicted", { code: reason });
+			}
+			if (evicted.length > 0) this.#updated();
+		}
+		#end(viewer, reason) {
+			try {
+				viewer.end(reason);
+			} catch {}
+		}
+		#updated() {
+			try {
+				this.#onUpdated();
+			} catch {}
+		}
+		#clearResizeTimer() {
+			if (this.#resizeTimer === null) return;
+			clearTimeout(this.#resizeTimer);
+			this.#resizeTimer = null;
+		}
+		#applyResize() {
+			this.#resizeTimer = null;
+			const wanted = this.#pendingSize;
+			this.#pendingSize = null;
+			if (this.#exit !== null || wanted === null) return;
+			try {
+				this.#pty.resize(wanted.cols, wanted.rows);
+			} catch {}
+			this.#size = wanted;
+			this.#updated();
+		}
+		#escalate() {
+			this.#killTimer = null;
+			if (this.#exit !== null) return;
+			const pid = this.#pty.pid;
+			this.#logger?.warn("terminal.kill", {
+				pid,
+				phase: "escalate"
+			});
+			if (pid > 0) try {
+				this.#killTree(pid).catch(() => void 0);
+			} catch {}
+			this.#killTimer = setTimeout(() => {
+				this.#lose();
+			}, KILL_TREE_WAIT_MS);
+		}
+		#lose() {
+			this.#killTimer = null;
+			if (this.#exit !== null) return;
+			this.#logger?.error("terminal.kill", {
+				pid: this.#pty.pid,
+				phase: "lost"
+			});
+			this.#finalise({
+				code: null,
+				reason: "lost"
+			});
+		}
+		#onPtyExit(exit) {
+			this.#finalise({
+				code: exit.code,
+				reason: this.#killReason ?? "exited"
+			});
+		}
+		#finalise(exit) {
+			if (this.#exit !== null) return;
+			this.#exit = exit;
+			this.#clearResizeTimer();
+			this.#pendingSize = null;
+			if (this.#killTimer !== null) {
+				clearTimeout(this.#killTimer);
+				this.#killTimer = null;
+			}
+			for (const stop of this.#unsubscribe) stop();
+			this.#unsubscribe.length = 0;
+			this.#replay = null;
+			const viewers = [...this.#viewers.keys()];
+			this.#viewers.clear();
+			const reason = {
+				reason: viewerReason(exit.reason),
+				exit
+			};
+			for (const viewer of viewers) this.#end(viewer, reason);
+			this.#logger?.info("terminal.exited", {
+				pid: this.#pty.pid,
+				...exit.code === null ? {} : { code: exit.code },
+				durationMs: Math.max(0, this.#clock.now() - this.#startedAt)
+			});
+			try {
+				this.#onEnded(exit);
+			} catch {}
+			this.#resolveEnded(exit);
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/manager.ts
+function stripTrailingSeparators(text) {
+	let end = text.length;
+	while (end > 0 && (text.charAt(end - 1) === "\\" || text.charAt(end - 1) === "/")) end -= 1;
+	return text.slice(0, end);
+}
+/**
+* `text` with the home folder written as `~` when it starts with it (at a folder boundary; the case is ignored where the file
+* system ignores it). An empty home or the root of a drive leaves the text alone.
+*/
+function shortenHome(text, home, platform) {
+	const base = stripTrailingSeparators(home);
+	if (base === "" || base.endsWith(":") || text.length < base.length) return text;
+	const fold = isCaseInsensitive(platform) ? (value) => value.toLowerCase() : (value) => value;
+	if (fold(text.slice(0, base.length)) !== fold(base)) return text;
+	const rest = text.slice(base.length);
+	if (rest === "") return "~";
+	const next = rest.charAt(0);
+	return next === "\\" || next === "/" ? `~${rest}` : text;
+}
+function launchKindOf(program, platform) {
+	if (platform !== "win32") return "exe";
+	const ext = path.win32.extname(program).toLowerCase();
+	if (ext === ".exe" || ext === ".com") return "exe";
+	if (ext === ".cmd" || ext === ".bat") return "shim";
+	return null;
+}
+/**
+* What the terminal knows about the program it would start, without starting anything (`status()` and `diagnoseTerminal`):
+* whether it is found, how it would be launched (`exe`, `shim`, or null for a kind that cannot be started) and its path with the
+* home folder shortened. Spawns nothing; about 40 `stat` calls.
+*/
+function claudeFacts(o) {
+	const resolved = resolveClaudeCommand({
+		command: o.command,
+		env: o.env,
+		platform: o.platform,
+		fs: o.fs
+	});
+	if (resolved === null) return {
+		found: false,
+		kind: null,
+		display: null
+	};
+	return {
+		found: true,
+		kind: launchKindOf(resolved.path, o.platform),
+		display: shortenHome(resolved.path, o.home, o.platform)
+	};
+}
+/**
+* What a failed spawn or start becomes. A TerminalError keeps its code (and nothing else of it is used); any other value is a
+* native or script error whose message may hold a file path, so it is dropped and the error is a plain SPAWN_FAILED.
+*/
+function startFailure(error) {
+	return error instanceof TerminalError ? error : new TerminalError("SPAWN_FAILED");
+}
+function compareSessions(a, b) {
+	if (a.startedAt !== b.startedAt) return a.startedAt - b.startedAt;
+	if (a.name === b.name) return 0;
+	return a.name < b.name ? -1 : 1;
+}
+/** Resolves when `work` settles or after `ms`, whichever comes first; the timer never outlives the call. */
+function settleWithin(work, ms) {
+	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, ms);
+		const done = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		work.then(done, done);
+	});
+}
+function killQuietly(pty) {
+	try {
+		pty.kill();
+	} catch {}
+}
+function createTerminalService(deps) {
+	const { config, logger, clock, platform } = deps;
+	const names = new NameAllocator();
+	const live = /* @__PURE__ */ new Map();
+	const starting = /* @__PURE__ */ new Map();
+	/** Sessions that ended as `lost` while their process was still alive: they stay counted until it is gone. */
+	const lost = /* @__PURE__ */ new Map();
+	/** Consecutive failed probes per live session. */
+	const misses = /* @__PURE__ */ new Map();
+	/** Sessions the watchdog found dead: their pid may be reused, so no tree kill is sent to it. */
+	const deadByWatchdog = /* @__PURE__ */ new Set();
+	const pidsCache = /* @__PURE__ */ new Map();
+	const listeners = /* @__PURE__ */ new Set();
+	const inflight = /* @__PURE__ */ new Set();
+	let draining = false;
+	/** A read that the compiler does not narrow: `draining` changes from other calls while a create awaits its child. */
+	const isDraining = () => draining;
+	let version = 0;
+	let watchdog = null;
+	let shutdownPromise = null;
+	function emit(change) {
+		for (const listener of [...listeners]) try {
+			listener(change);
+		} catch {
+			try {
+				logger.warn("terminal.listener_failed", { code: "listener_threw" });
+			} catch {}
+		}
+	}
+	function emitSession(type, session) {
+		version += 1;
+		emit({
+			type,
+			session,
+			version
+		});
+	}
+	function emitEnded(session, exit) {
+		version += 1;
+		emit({
+			type: "ended",
+			session,
+			exit,
+			version
+		});
+	}
+	function pruneLost() {
+		for (const [name, pid] of [...lost]) {
+			if (deps.pidAlive(pid)) continue;
+			lost.delete(name);
+			deps.registry?.remove(pid);
+		}
+	}
+	function stopWatchdog() {
+		if (watchdog === null) return;
+		clearInterval(watchdog);
+		watchdog = null;
+	}
+	function stopWatchdogWhenIdle() {
+		if (live.size === 0 && lost.size === 0) stopWatchdog();
+	}
+	function probe() {
+		for (const [name, session] of [...live]) {
+			if (deps.pidAlive(session.info().pid)) {
+				misses.delete(name);
+				continue;
+			}
+			const count = (misses.get(name) ?? 0) + 1;
+			misses.set(name, count);
+			if (count >= 2 && !deadByWatchdog.has(name)) {
+				deadByWatchdog.add(name);
+				session.kill("killed");
+			}
+		}
+		pruneLost();
+		stopWatchdogWhenIdle();
+	}
+	function ensureWatchdog() {
+		if (watchdog !== null) return;
+		watchdog = setInterval(probe, LIVENESS_PROBE_MS);
+		watchdog.unref();
+	}
+	function onSessionEnded(name, session, exit) {
+		if (live.get(name) !== session) return;
+		live.delete(name);
+		misses.delete(name);
+		const foundDead = deadByWatchdog.delete(name);
+		pidsCache.delete(name);
+		const info = session.info();
+		if (exit.reason === "lost" && !foundDead && deps.pidAlive(info.pid)) lost.set(name, info.pid);
+		else deps.registry?.remove(info.pid);
+		emitEnded(info, exit);
+		stopWatchdogWhenIdle();
+	}
+	function register(name, cwd, pty, size) {
+		const startedAt = clock.now();
+		const session = new Session({
+			name,
+			cwd,
+			pty,
+			startedAt,
+			cols: size.cols,
+			rows: size.rows,
+			replayBytes: config.replayBytes,
+			maxInputBytes: config.maxInputBytes,
+			killTimeoutMs: config.killTimeoutMs,
+			clock,
+			killTree: (pid) => deadByWatchdog.has(name) ? Promise.resolve() : deps.killTree(pid),
+			onUpdated: () => {
+				emitSession("updated", session.info());
+			},
+			onEnded: (exit) => {
+				onSessionEnded(name, session, exit);
+			},
+			logger
+		});
+		live.set(name, session);
+		starting.delete(name);
+		deps.registry?.add(pty.pid, startedAt);
+		ensureWatchdog();
+		const info = session.info();
+		emitSession("created", info);
+		logger.info("terminal.started", {
+			pid: pty.pid,
+			count: live.size
+		});
+		return info;
+	}
+	/** Waits for the first output of the child, the start timeout and a cancellation by `shutdown`, whichever comes first. */
+	async function awaitStart(entry, pty) {
+		let timer;
+		try {
+			await new Promise((resolve, reject) => {
+				entry.abort = () => {
+					reject(new TerminalError("SHUTTING_DOWN"));
+				};
+				timer = setTimeout(() => {
+					reject(new TerminalError("START_TIMEOUT"));
+				}, config.startTimeoutMs);
+				pty.started.then(() => {
+					resolve();
+				}, (error) => {
+					reject(startFailure(error));
+				});
+			});
+		} finally {
+			clearTimeout(timer);
+			entry.abort = null;
+		}
+	}
+	function logSpawnFailure(error) {
+		if (error.code !== "SHUTTING_DOWN") logger.warn("terminal.spawn_failed", { code: error.code });
+	}
+	async function start(req) {
+		if (draining) throw new TerminalError("SHUTTING_DOWN");
+		const { support } = deps.backend;
+		if (!support.supported) throw new TerminalError(CODE_OF_REASON$1[support.reason]);
+		if (starting.size + live.size >= config.maxSessions) throw new TerminalError("SESSION_LIMIT");
+		const folder = normalizeFolder(req.folder, platform);
+		if (folder === null) throw new TerminalError("FOLDER_INVALID");
+		if (!deps.fs.isDirectory(folder)) throw new TerminalError("FOLDER_NOT_FOUND");
+		const env = deps.env();
+		const resolved = resolveClaudeCommand({
+			command: config.command,
+			env,
+			platform,
+			fs: deps.fs
+		});
+		if (resolved === null) throw new TerminalError("CLAUDE_NOT_FOUND");
+		const launch = buildLaunch(resolved, config.args, {
+			env,
+			platform,
+			fs: deps.fs,
+			...req.resume === void 0 ? {} : { resume: req.resume },
+			...req.fork === void 0 ? {} : { fork: req.fork }
+		});
+		const childEnv = buildTerminalEnv(env, {
+			keep: config.envKeep,
+			platform
+		});
+		const size = clampSessionSize(req.cols !== void 0 && Number.isFinite(req.cols) ? req.cols : 120, req.rows !== void 0 && Number.isFinite(req.rows) ? req.rows : 30) ?? {
+			cols: 120,
+			rows: 30
+		};
+		const name = names.next(sessionBase(folder));
+		const entry = {
+			pty: null,
+			abort: null
+		};
+		starting.set(name, entry);
+		let pty;
+		try {
+			pty = deps.backend.spawn(launch.file, launch.args, folder, size.cols, size.rows, childEnv);
+		} catch (error) {
+			starting.delete(name);
+			const failure = startFailure(error);
+			logSpawnFailure(failure);
+			throw failure;
+		}
+		entry.pty = pty;
+		try {
+			await awaitStart(entry, pty);
+			if (isDraining()) throw new TerminalError("SHUTTING_DOWN");
+		} catch (error) {
+			killQuietly(pty);
+			starting.delete(name);
+			const failure = startFailure(error);
+			logSpawnFailure(failure);
+			throw failure;
+		}
+		return register(name, folder, pty, size);
+	}
+	function create(req) {
+		const attempt = start(req);
+		inflight.add(attempt);
+		const settled = () => {
+			inflight.delete(attempt);
+		};
+		attempt.then(settled, settled);
+		return attempt;
+	}
+	function status() {
+		const { support } = deps.backend;
+		return {
+			supported: support.supported,
+			reason: support.supported ? null : support.reason,
+			backend: deps.backend.name,
+			claude: claudeFacts({
+				command: config.command,
+				env: deps.env(),
+				platform,
+				fs: deps.fs,
+				home: deps.home
+			}),
+			sessions: starting.size + live.size,
+			maxSessions: config.maxSessions,
+			conptyDll: config.conptyDll
+		};
+	}
+	function list() {
+		return [...live.values()].map((session) => session.info()).sort(compareSessions);
+	}
+	function liveCount() {
+		pruneLost();
+		stopWatchdogWhenIdle();
+		return starting.size + live.size + lost.size;
+	}
+	async function lookupPids(root) {
+		let found;
+		try {
+			found = await deps.descendants(root);
+		} catch {
+			found = null;
+		}
+		const all = /* @__PURE__ */ new Set([root]);
+		for (const pid of found ?? []) if (Number.isInteger(pid) && pid > 0) all.add(pid);
+		return [...all].sort((a, b) => a - b);
+	}
+	function claudePids(name) {
+		const session = live.get(name);
+		if (session === void 0 || deadByWatchdog.has(name)) return Promise.resolve([]);
+		const now = clock.now();
+		const cached = pidsCache.get(name);
+		if (cached !== void 0 && now - cached.at < 5e3) return cached.pids;
+		const pids = lookupPids(session.info().pid);
+		pidsCache.set(name, {
+			at: now,
+			pids
+		});
+		return pids;
+	}
+	async function kill(name) {
+		const session = live.get(name);
+		if (session === void 0) return false;
+		await session.kill("killed");
+		return true;
+	}
+	async function killEverything(reason) {
+		await Promise.all([...live.values()].map((session) => session.kill(reason).catch(() => void 0)));
+	}
+	function beginDrain() {
+		draining = true;
+	}
+	async function sweepOrphans() {
+		const { registry } = deps;
+		if (registry === null) return NO_SWEEP;
+		let result;
+		try {
+			result = await registry.sweep();
+		} catch {
+			return NO_SWEEP;
+		}
+		if (result.files > 0) {
+			logger.info("terminal.sweep", {
+				phase: "files",
+				count: result.files
+			});
+			logger.info("terminal.sweep", {
+				phase: "killed",
+				count: result.killed
+			});
+			logger.info("terminal.sweep", {
+				phase: "skipped",
+				count: result.skipped
+			});
+		}
+		return result;
+	}
+	async function doShutdown() {
+		stopWatchdog();
+		for (const entry of starting.values()) entry.abort?.();
+		await settleWithin(Promise.allSettled([...inflight]), config.startTimeoutMs);
+		await settleWithin(killEverything("shutdown"), config.killTimeoutMs + SHUTDOWN_GRACE_MS);
+		try {
+			await deps.registry?.close();
+		} catch {}
+	}
+	function shutdown() {
+		draining = true;
+		shutdownPromise ??= doShutdown();
+		return shutdownPromise;
+	}
+	function emergencyKillSync() {
+		draining = true;
+		const roots = [];
+		for (const [name, session] of live) if (!deadByWatchdog.has(name)) roots.push(session.info().pid);
+		for (const pid of lost.values()) if (deps.pidAlive(pid)) roots.push(pid);
+		for (const entry of starting.values()) if (entry.pty !== null) roots.push(entry.pty.pid);
+		for (const pid of roots) {
+			if (pid <= 0) continue;
+			try {
+				deps.killSync(pid);
+			} catch {}
+		}
+	}
+	return {
+		status,
+		create,
+		list,
+		get: (name) => live.get(name),
+		kill,
+		killAll: () => killEverything("killed"),
+		liveCount,
+		beginDrain,
+		onChange: (listener) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		claudePids,
+		sweepOrphans,
+		shutdown,
+		emergencyKillSync
+	};
+}
+var CLAUDE_PIDS_TTL_MS, WATCHDOG_MISSES, SHUTDOWN_GRACE_MS, CODE_OF_REASON$1, NO_SWEEP;
+var init_manager = __esmMin((() => {
+	init_host$1();
+	init_command();
+	init_env();
+	init_errors$2();
+	init_folder();
+	init_limits();
+	init_names();
+	init_session();
+	CLAUDE_PIDS_TTL_MS = 5e3;
+	WATCHDOG_MISSES = 2;
+	SHUTDOWN_GRACE_MS = 3e3;
+	CODE_OF_REASON$1 = {
+		"unsupported-os": "UNSUPPORTED_OS",
+		"os-too-old": "UNSUPPORTED_OS",
+		"native-missing": "NATIVE_MISSING",
+		"native-load-failed": "NATIVE_LOAD_FAILED"
+	};
+	NO_SWEEP = {
+		files: 0,
+		killed: 0,
+		skipped: 0
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/native-targets.ts
+/** The shipped target of a host, or null when no addon ships for it (the terminal then says it is not supported). */
+function targetOf$2(platform, arch) {
+	const key = `${platform}-${arch}`;
+	return SHIPPED_TARGETS.find((target) => target === key) ?? null;
+}
+/** The path module of a target: its files live on the host that the target names, whatever runs this code. */
+function pathOf(target) {
+	return target.startsWith("win32-") ? path.win32 : path.posix;
+}
+/** `<runtimeDir>/native/<target>`: the platform package of a bundle, minus its `.pdb` files. */
+function nativeDirOf(layout, target) {
+	return pathOf(target).join(layout.runtimeDir, "native", target);
+}
+/** `<runtimeDir>/native/<target>/lib/index.js`: the file the loader requires by path. */
+function nativeEntryOf(layout, target) {
+	return pathOf(target).join(nativeDirOf(layout, target), "lib", "index.js");
+}
+/**
+* Whether a Windows release supports ConPTY. `release` is `os.release()`: `<major>.<minor>.<build>`, for example `10.0.26200`.
+* Anything that does not start that way is refused, so a host that cannot be told is treated as too old.
+*/
+function windowsBuildOk(release) {
+	const match = RELEASE_RE.exec(release);
+	if (match === null) return false;
+	const major = Number(match[1]);
+	const build = Number(match[3]);
+	if (major > 10) return true;
+	return major === 10 && build >= 17763;
+}
+var NODE_PTY_PACKAGE, SHIPPED_TARGETS, MIN_WINDOWS_BUILD, RELEASE_RE;
+var init_native_targets = __esmMin((() => {
+	NODE_PTY_PACKAGE = "@lydell/node-pty";
+	SHIPPED_TARGETS = ["win32-x64", "win32-arm64"];
+	MIN_WINDOWS_BUILD = 17763;
+	RELEASE_RE = /^(\d{1,6})\.(\d{1,6})\.(\d{1,9})(?!\d)/;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/node-pty-loader.ts
+/** The loader seams of this process: the host, this module, the real file system and a `require` based at this module. */
+function realLoaderDeps() {
+	const moduleUrl = import.meta.url;
+	const nodeRequire = createRequire(moduleUrl);
+	return {
+		moduleUrl,
+		platform: hostPlatform,
+		arch: process.arch,
+		layoutOf: (url) => layoutOfModule(url),
+		exists: (file) => existsSync(file),
+		require: (id) => nodeRequire(id)
+	};
+}
+function codeOf$2(value) {
+	if (typeof value !== "object" || value === null || !("code" in value)) return null;
+	const { code } = value;
+	return typeof code === "string" && SAFE_CODE_RE.test(code) ? code : null;
+}
+/**
+* The `code` of a thrown value, or of its `cause` when it has none of its own (the package wrapper of node-pty rethrows the
+* `MODULE_NOT_FOUND` of a missing platform package as a plain Error). A value that is not a plain token gives null.
+*/
+function errorCodeOf(error) {
+	const own = codeOf$2(error);
+	if (own !== null) return own;
+	return typeof error === "object" && error !== null && "cause" in error ? codeOf$2(error.cause) : null;
+}
+/** The only thing of a native error that may travel in a TerminalError: its code. */
+function safeCause(error) {
+	return { code: errorCodeOf(error) };
+}
+function isNodePtyModule(value) {
+	return (typeof value === "object" || typeof value === "function") && value !== null && "spawn" in value && typeof value.spawn === "function";
+}
+function checked(value) {
+	if (!isNodePtyModule(value)) throw new TerminalError("NATIVE_LOAD_FAILED", { cause: { code: null } });
+	return value;
+}
+function fromBundle(deps, layout) {
+	const target = targetOf$2(deps.platform, deps.arch);
+	if (target === null) throw new TerminalError("UNSUPPORTED_OS");
+	const entry = nativeEntryOf(layout, target);
+	if (!deps.exists(entry)) throw new TerminalError("NATIVE_MISSING");
+	return {
+		module: checked(deps.require(entry)),
+		via: "bundle",
+		dir: nativeDirOf(layout, target)
+	};
+}
+function fromNodeModules(deps) {
+	return {
+		module: checked(deps.require(NODE_PTY_PACKAGE)),
+		via: "node_modules",
+		dir: null
+	};
+}
+/**
+* Loads the addon. Throws a TerminalError and nothing else: UNSUPPORTED_OS (a bundle with no folder for this host),
+* NATIVE_MISSING (no folder, no package, a file that `require` cannot find) or NATIVE_LOAD_FAILED (anything else).
+*/
+function loadNodePty(deps) {
+	try {
+		const layout = deps.layoutOf(deps.moduleUrl);
+		return layout.mode === "bundle" ? fromBundle(deps, layout) : fromNodeModules(deps);
+	} catch (error) {
+		if (error instanceof TerminalError) throw error;
+		const cause = safeCause(error);
+		throw new TerminalError(cause.code === "MODULE_NOT_FOUND" ? "NATIVE_MISSING" : "NATIVE_LOAD_FAILED", { cause });
+	}
+}
+var SAFE_CODE_RE;
+var init_node_pty_loader = __esmMin((() => {
+	init_host$1();
+	init_layout();
+	init_errors$2();
+	init_native_targets();
+	SAFE_CODE_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/unsupported-backend.ts
+/** The reason that a backend error code stands for, or null for a code that is not about the backend. */
+function unsupportedReasonOf(code) {
+	if (code === "UNSUPPORTED_OS") return "unsupported-os";
+	if (code === "NATIVE_MISSING") return "native-missing";
+	if (code === "NATIVE_LOAD_FAILED") return "native-load-failed";
+	return null;
+}
+var CODE_OF_REASON, UnsupportedBackend;
+var init_unsupported_backend = __esmMin((() => {
+	init_errors$2();
+	CODE_OF_REASON = {
+		"unsupported-os": "UNSUPPORTED_OS",
+		"os-too-old": "UNSUPPORTED_OS",
+		"native-missing": "NATIVE_MISSING",
+		"native-load-failed": "NATIVE_LOAD_FAILED"
+	};
+	UnsupportedBackend = class {
+		name = "unsupported";
+		support;
+		reason;
+		constructor(reason) {
+			this.reason = reason;
+			this.support = {
+				supported: false,
+				reason
+			};
+		}
+		/** Always throws: there is nothing to start a process with. */
+		spawn = () => {
+			throw new TerminalError(CODE_OF_REASON[this.reason]);
+		};
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/node-pty-backend.ts
+function isolated(listener, value) {
+	try {
+		listener(value);
+	} catch {}
+}
+/** Output as bytes. node-pty gives a string on Windows and a Buffer where `encoding` is null; anything else is dropped. */
+function toBuffer(data) {
+	if (typeof data === "string") return Buffer.from(data, "utf8");
+	if (data instanceof Uint8Array) return Buffer.from(data);
+	return null;
+}
+function logNative(logger, level, fields) {
+	if (logger === void 0) return;
+	try {
+		logger[level]("terminal.native", fields);
+	} catch {}
+}
+/**
+* The backend of this host. In order: no shipped target (`unsupported-os`), a Windows build below 17763 (`os-too-old`), then the
+* addon is loaded: `native-missing` or `native-load-failed` when it cannot be, else the real backend. It never throws.
+*/
+function createNodePtyBackend(options) {
+	if (targetOf$2(options.platform, options.arch) === null) return new UnsupportedBackend("unsupported-os");
+	if (options.platform === "win32" && !windowsBuildOk(options.release)) return new UnsupportedBackend("os-too-old");
+	const load = options.load ?? (() => loadNodePty({
+		...realLoaderDeps(),
+		platform: options.platform,
+		arch: options.arch
+	}));
+	let loaded;
+	try {
+		loaded = load();
+	} catch (error) {
+		const reason = (error instanceof TerminalError ? unsupportedReasonOf(error.code) : null) ?? "native-load-failed";
+		const code = errorCodeOf(error instanceof TerminalError ? error.cause : error);
+		logNative(options.logger, "warn", {
+			phase: reason === "native-missing" ? "missing" : "failed",
+			...code === null ? {} : { code }
+		});
+		return new UnsupportedBackend(reason);
+	}
+	logNative(options.logger, "info", { phase: "loaded" });
+	return new NodePtyBackend(loaded, {
+		platform: options.platform,
+		...options.useConptyDll === void 0 ? {} : { useConptyDll: options.useConptyDll },
+		...options.startTimeoutMs === void 0 ? {} : { startTimeoutMs: options.startTimeoutMs }
+	});
+}
+var PTY_TERM_NAME, DEFAULT_START_TIMEOUT_MS, HELD_OUTPUT_MAX_BYTES, NodePtyProcess, NodePtyBackend;
+var init_node_pty_backend = __esmMin((() => {
+	init_errors$2();
+	init_native_targets();
+	init_node_pty_loader();
+	init_unsupported_backend();
+	PTY_TERM_NAME = "xterm-256color";
+	DEFAULT_START_TIMEOUT_MS = 1e4;
+	HELD_OUTPUT_MAX_BYTES = 1048576;
+	NodePtyProcess = class {
+		started;
+		#term;
+		#dataListeners = /* @__PURE__ */ new Set();
+		#exitListeners = /* @__PURE__ */ new Set();
+		#subscriptions = [];
+		#held = [];
+		#heldBytes = 0;
+		#state = "pending";
+		#pid = 0;
+		#exit = null;
+		#timer = null;
+		#resolveStarted = () => void 0;
+		#rejectStarted = () => void 0;
+		constructor(term, startTimeoutMs) {
+			this.#term = term;
+			this.started = new Promise((resolve, reject) => {
+				this.#resolveStarted = resolve;
+				this.#rejectStarted = reject;
+			});
+			this.started.catch(() => void 0);
+			this.#subscriptions.push(term.onData((data) => {
+				this.#onNativeData(data);
+			}));
+			this.#subscriptions.push(term.onExit((event) => {
+				this.#onNativeExit(event.exitCode);
+			}));
+			this.#timer = setTimeout(() => {
+				this.#onStartTimeout();
+			}, startTimeoutMs);
+			this.#timer.unref();
+		}
+		/** 0 until `started` resolved. */
+		get pid() {
+			return this.#pid;
+		}
+		onData(listener) {
+			this.#dataListeners.add(listener);
+			if (this.#held.length > 0) {
+				const held = this.#held;
+				this.#held = [];
+				this.#heldBytes = 0;
+				for (const chunk of held) isolated(listener, chunk);
+			}
+			return () => {
+				this.#dataListeners.delete(listener);
+			};
+		}
+		onExit(listener) {
+			const exit = this.#exit;
+			if (exit !== null) {
+				let active = true;
+				queueMicrotask(() => {
+					if (active) isolated(listener, exit);
+				});
+				return () => {
+					active = false;
+				};
+			}
+			this.#exitListeners.add(listener);
+			return () => {
+				this.#exitListeners.delete(listener);
+			};
+		}
+		write(data) {
+			if (this.#exit !== null) return;
+			try {
+				this.#term.write(typeof data === "string" ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength));
+			} catch {}
+		}
+		resize(cols, rows) {
+			if (this.#exit !== null) return;
+			try {
+				this.#term.resize(cols, rows);
+			} catch {}
+		}
+		kill() {
+			if (this.#exit !== null) return;
+			try {
+				this.#term.kill();
+			} catch {}
+		}
+		#clearTimer() {
+			if (this.#timer === null) return;
+			clearTimeout(this.#timer);
+			this.#timer = null;
+		}
+		#onNativeData(data) {
+			if (this.#exit !== null || this.#state === "failed") return;
+			const chunk = toBuffer(data);
+			if (chunk === null || chunk.length === 0) return;
+			if (this.#state === "pending") {
+				this.#state = "started";
+				this.#pid = this.#term.pid;
+				this.#clearTimer();
+				this.#resolveStarted({ pid: this.#pid });
+			}
+			if (this.#dataListeners.size === 0) {
+				if (this.#heldBytes + chunk.length <= 1048576) {
+					this.#held.push(chunk);
+					this.#heldBytes += chunk.length;
+				}
+				return;
+			}
+			for (const listener of [...this.#dataListeners]) isolated(listener, chunk);
+		}
+		#onNativeExit(exitCode) {
+			if (this.#exit !== null) return;
+			const exit = { code: Number.isInteger(exitCode) ? exitCode : null };
+			this.#exit = exit;
+			this.#clearTimer();
+			for (const subscription of this.#subscriptions) try {
+				subscription.dispose();
+			} catch {}
+			if (this.#state === "pending") {
+				this.#state = "failed";
+				this.#rejectStarted(new TerminalError("SPAWN_FAILED", { cause: { exitCode: exit.code } }));
+			}
+			for (const listener of [...this.#exitListeners]) isolated(listener, exit);
+		}
+		#onStartTimeout() {
+			this.#timer = null;
+			if (this.#state !== "pending") return;
+			this.#state = "failed";
+			this.kill();
+			this.#rejectStarted(new TerminalError("START_TIMEOUT"));
+		}
+	};
+	NodePtyBackend = class {
+		name = "node-pty";
+		support = { supported: true };
+		/** Where the addon came from (`check` shows it). */
+		via;
+		dir;
+		#module;
+		#windows;
+		#useConptyDll;
+		#startTimeoutMs;
+		constructor(loaded, options) {
+			this.#module = loaded.module;
+			this.via = loaded.via;
+			this.dir = loaded.dir;
+			this.#windows = options.platform === "win32";
+			this.#useConptyDll = options.useConptyDll ?? false;
+			const wait = options.startTimeoutMs;
+			this.#startTimeoutMs = wait !== void 0 && Number.isFinite(wait) && wait > 0 ? wait : DEFAULT_START_TIMEOUT_MS;
+		}
+		spawn(cmd, args, cwd, cols, rows, env) {
+			const base = {
+				name: PTY_TERM_NAME,
+				cols,
+				rows,
+				cwd,
+				env: { ...env }
+			};
+			const options = this.#windows ? {
+				...base,
+				useConptyDll: this.#useConptyDll
+			} : {
+				...base,
+				encoding: null
+			};
+			let term;
+			try {
+				term = this.#module.spawn(cmd, typeof args === "string" ? args : [...args], options);
+			} catch (error) {
+				throw new TerminalError("SPAWN_FAILED", { cause: safeCause(error) });
+			}
+			try {
+				return new NodePtyProcess(term, this.#startTimeoutMs);
+			} catch (error) {
+				try {
+					term.kill();
+				} catch {}
+				throw new TerminalError("SPAWN_FAILED", { cause: safeCause(error) });
+			}
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/registry.ts
+function registryFileName(owner) {
+	return `${String(owner.pid)}-${String(owner.startedAtMs)}.json`;
+}
+function errnoCode$2(error) {
+	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
+}
+/** The record of a file whose name and content agree, or null. */
+function parseRecord(bytes, match) {
+	let json;
+	try {
+		json = JSON.parse(bytes.toString("utf8"));
+	} catch {
+		return null;
+	}
+	const parsed = RegistryFileSchema.safeParse(json);
+	if (!parsed.success) return null;
+	const { owner } = parsed.data;
+	if (String(owner.pid) !== match[1] || String(owner.startedAtMs) !== match[2]) return null;
+	return parsed.data;
+}
+/**
+* Builds the registry of one owner process. `add` and `remove` are synchronous and cheap: the file is rewritten by one writer
+* at a time, changes made meanwhile are coalesced, and a failed write is logged by its code and retried at the next change.
+* The file exists only while there is a child. `sweep()` never throws.
+*/
+function createChildRegistry(options) {
+	const deps = {
+		pidAlive,
+		processStartTimes,
+		killTree: forceKillTree,
+		writeFile: (file, text) => atomicWriteFile(file, text, { mode: 384 }),
+		...options.deps
+	};
+	const dir = path.join(options.mcsHome, REGISTRY_DIR);
+	const ownName = registryFileName(options.owner);
+	const ownFile = path.join(dir, ownName);
+	const children = /* @__PURE__ */ new Map();
+	let closed = false;
+	let dirty = false;
+	let running = null;
+	function warn(error) {
+		try {
+			const code = errnoCode$2(error);
+			options.logger?.warn("terminal.registry", {
+				phase: "write_failed",
+				...code === void 0 ? {} : { code }
+			});
+		} catch {}
+	}
+	async function persist() {
+		if (children.size === 0) {
+			await unlinkWithRetry(ownFile);
+			return;
+		}
+		const file = {
+			schemaVersion: 1,
+			owner: {
+				pid: options.owner.pid,
+				startedAtMs: options.owner.startedAtMs
+			},
+			children: [...children].map(([pid, spawnedAtMs]) => ({
+				pid,
+				spawnedAtMs
+			}))
+		};
+		await mkdir(dir, { recursive: true });
+		await deps.writeFile(ownFile, `${JSON.stringify(file, null, 2)}\n`);
+	}
+	async function drain() {
+		try {
+			while (dirty) {
+				dirty = false;
+				try {
+					await persist();
+				} catch (error) {
+					warn(error);
+				}
+			}
+		} finally {
+			running = null;
+		}
+	}
+	function schedule() {
+		if (closed) return;
+		dirty = true;
+		running ??= drain();
+	}
+	async function flush() {
+		while (running !== null) await running;
+	}
+	function add(pid, spawnedAtMs) {
+		if (closed || !isValidPid(pid) || !Number.isSafeInteger(spawnedAtMs) || spawnedAtMs < 0) return;
+		if (!children.has(pid) && children.size >= 64) return;
+		children.set(pid, spawnedAtMs);
+		schedule();
+	}
+	function remove(pid) {
+		if (closed || !children.delete(pid)) return;
+		schedule();
+	}
+	async function close() {
+		closed = true;
+		dirty = false;
+		await flush();
+		try {
+			await unlinkWithRetry(ownFile);
+		} catch (error) {
+			warn(error);
+		}
+	}
+	async function removeFile(file, killed) {
+		try {
+			await unlinkWithRetry(file);
+			return {
+				kind: "removed",
+				killed
+			};
+		} catch {
+			return {
+				kind: "kept",
+				killed
+			};
+		}
+	}
+	async function startTimesOf(pids) {
+		try {
+			return await deps.processStartTimes(pids);
+		} catch {
+			return null;
+		}
+	}
+	async function sweepFile(file, match) {
+		let bytes;
+		try {
+			bytes = await readSmallFile(file, REGISTRY_FILE_MAX_BYTES);
+		} catch (error) {
+			if (errnoCode$2(error) === "ENOENT") return {
+				kind: "vanished",
+				killed: 0
+			};
+			if (error instanceof SmallFileError && error.code === "E_FILE_TOO_LARGE") return removeFile(file, 0);
+			return {
+				kind: "kept",
+				killed: 0
+			};
+		}
+		const record = parseRecord(bytes, match);
+		if (record === null) return removeFile(file, 0);
+		if (deps.pidAlive(record.owner.pid)) {
+			const times = await startTimesOf([record.owner.pid]);
+			if (times === null) return {
+				kind: "kept",
+				killed: 0
+			};
+			const start = times.get(record.owner.pid);
+			if (start !== void 0 && Math.abs(start - record.owner.startedAtMs) <= 5e3) return {
+				kind: "kept",
+				killed: 0
+			};
+		}
+		const living = record.children.filter((child) => deps.pidAlive(child.pid));
+		if (living.length === 0) return removeFile(file, 0);
+		const times = await startTimesOf(living.map((child) => child.pid));
+		if (times === null) return {
+			kind: "kept",
+			killed: 0
+		};
+		let killed = 0;
+		let failed = false;
+		for (const child of living) {
+			const created = times.get(child.pid);
+			if (created === void 0) continue;
+			if (created < child.spawnedAtMs - 1e4 || created > child.spawnedAtMs + 2e3) continue;
+			try {
+				await deps.killTree(child.pid);
+				killed += 1;
+			} catch {
+				failed = true;
+			}
+		}
+		return failed ? {
+			kind: "kept",
+			killed
+		} : removeFile(file, killed);
+	}
+	async function sweep() {
+		let files = 0;
+		let killed = 0;
+		let skipped = 0;
+		try {
+			let names;
+			try {
+				names = await readdir(dir);
+			} catch {
+				return {
+					files,
+					killed,
+					skipped
+				};
+			}
+			for (const name of names.sort()) {
+				const match = FILE_NAME_RE.exec(name);
+				if (match === null || name === ownName) continue;
+				let outcome;
+				try {
+					outcome = await sweepFile(path.join(dir, name), match);
+				} catch {
+					outcome = {
+						kind: "kept",
+						killed: 0
+					};
+				}
+				if (outcome.kind === "vanished") continue;
+				files += 1;
+				killed += outcome.killed;
+				if (outcome.kind === "kept") skipped += 1;
+			}
+		} catch {}
+		return {
+			files,
+			killed,
+			skipped
+		};
+	}
+	return {
+		add,
+		remove,
+		close,
+		sweep,
+		flush
+	};
+}
+var REGISTRY_DIR, REGISTRY_FILE_MAX_BYTES, REGISTRY_MAX_CHILDREN, SPAWN_WINDOW_BEFORE_MS, SPAWN_WINDOW_AFTER_MS, OWNER_START_TOLERANCE_MS, PidSchema, TimeSchema, RegistryFileSchema, FILE_NAME_RE;
+var init_registry = __esmMin((() => {
+	init_zod();
+	init_fsx();
+	init_process();
+	REGISTRY_DIR = "terminals";
+	REGISTRY_FILE_MAX_BYTES = 65536;
+	REGISTRY_MAX_CHILDREN = 64;
+	SPAWN_WINDOW_BEFORE_MS = 1e4;
+	SPAWN_WINDOW_AFTER_MS = 2e3;
+	OWNER_START_TOLERANCE_MS = 5e3;
+	PidSchema = number$1().int().refine(isValidPid);
+	TimeSchema = number$1().int().min(0).max(Number.MAX_SAFE_INTEGER);
+	RegistryFileSchema = strictObject({
+		schemaVersion: literal(1),
+		owner: strictObject({
+			pid: PidSchema,
+			startedAtMs: TimeSchema
+		}),
+		children: array(strictObject({
+			pid: PidSchema,
+			spawnedAtMs: TimeSchema
+		})).max(64)
+	});
+	FILE_NAME_RE = /^([1-9][0-9]{0,9})-([0-9]{1,16})\.json$/;
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/default.ts
+function statOf(target) {
+	try {
+		return statSync(target, { throwIfNoEntry: false });
+	} catch {
+		return;
+	}
+}
+function isFile$2(target) {
+	return statOf(target)?.isFile() === true;
+}
+/**
+* The backend of a host: the addon backend where one ships and loads, else an UnsupportedBackend that says why (`unsupported-os`,
+* `os-too-old`, `native-missing`, `native-load-failed`). Never throws; a host that cannot run the terminal never loads the addon.
+*/
+function selectTerminalBackend(o) {
+	return createNodePtyBackend({
+		platform: o.platform,
+		arch: o.arch,
+		release: o.release,
+		useConptyDll: o.config.conptyDll,
+		startTimeoutMs: o.config.startTimeoutMs,
+		logger: o.logger,
+		...o.load === void 0 ? {} : { load: o.load }
+	});
+}
+function createDefaultTerminalService(options) {
+	const platform = options.platform ?? hostPlatform;
+	const clock = options.clock ?? systemClock;
+	const env = options.env ?? (() => process.env);
+	const backend = options.backend ?? selectTerminalBackend({
+		config: options.config,
+		logger: options.logger,
+		platform,
+		arch: options.arch ?? process.arch,
+		release: options.release ?? os.release(),
+		...options.load === void 0 ? {} : { load: options.load }
+	});
+	const registry = backend.support.supported ? createChildRegistry({
+		mcsHome: options.mcsHome ?? resolveMcsHome(env()),
+		owner: {
+			pid: process.pid,
+			startedAtMs: Math.max(0, Math.round(clock.now() - process.uptime() * 1e3))
+		},
+		logger: options.logger
+	}) : null;
+	return createTerminalService({
+		backend,
+		config: options.config,
+		logger: options.logger,
+		clock,
+		platform,
+		env,
+		fs: realTerminalFs,
+		killTree: forceKillTree,
+		killSync: (pid) => {
+			process.kill(pid, "SIGKILL");
+		},
+		pidAlive,
+		descendants: listDescendantPids,
+		registry,
+		home: options.home ?? os.homedir()
+	});
+}
+var realTerminalFs;
+var init_default$1 = __esmMin((() => {
+	init_protocol$1();
+	init_src$1();
+	init_host$1();
+	init_process();
+	init_manager();
+	init_node_pty_backend();
+	init_registry();
+	realTerminalFs = {
+		isDirectory: (target) => statOf(target)?.isDirectory() === true,
+		isFile: isFile$2,
+		isExecutable: (target) => {
+			if (!isFile$2(target)) return false;
+			try {
+				accessSync(target, constants.X_OK);
+				return true;
+			} catch {
+				return false;
+			}
+		}
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/runtime/test-hooks.ts
+function variableOf(name) {
+	for (const hook of TEST_HOOK_NAMES) {
+		const variable = TEST_HOOK_VARIABLES[hook];
+		if (name === hook || name === variable) return variable;
+	}
+}
+/**
+* The value of the hook `name` (the short name such as `'BOOT_HANG'`, or the full variable name), or `undefined` when test
+* mode is off, the hook is not a documented one, or the variable is unset or empty. `env` defaults to the
+* process environment.
+*/
+function testHook(name, env = process.env) {
+	if (env["MCS_TEST"] !== "1") return void 0;
+	const variable = variableOf(name);
+	if (variable === void 0) return void 0;
+	const value = env[variable];
+	return value === void 0 || value === "" ? void 0 : value;
+}
+/**
+* How many fake sessions the hook asks for: the value of `MCS_TEST_FAKE_TERMINALS` when it is a positive whole number (at most
+* `FAKE_TERMINALS_MAX`), else 0 (the hook is off, test mode is off, or the value is not a count).
+*/
+function fakeTerminalCount(env = process.env) {
+	const value = testHook("FAKE_TERMINALS", env);
+	if (value === void 0 || !/^[1-9][0-9]*$/.test(value)) return 0;
+	return Math.min(Number(value), 64);
+}
+/**
+* The census with the scripted sessions of the hook added: the count grows by n and the list gets `fake-1`..`fake-n` in front
+* (they are the oldest), so the stop guard of the lifecycle tests can be proven on real processes without a pseudo console.
+* Nothing is ever started or ended: the drain goes to the wrapped census. While the hook is off the census is returned as it is.
+*/
+function withFakeTerminals(census, env = process.env) {
+	const n = fakeTerminalCount(env);
+	if (n === 0) return census;
+	const fakes = Array.from({ length: n }, (_, index) => ({
+		name: `fake-${String(index + 1)}`,
+		startedAt: FAKE_STARTED_AT
+	}));
+	return {
+		count: () => census.count() + n,
+		sessions: (limit) => [...fakes, ...census.sessions(limit)].slice(0, Math.max(0, limit)),
+		beginDrain: () => {
+			census.beginDrain();
+		}
+	};
+}
+/**
+* The hook of the folder picker: while test mode is on and `MCS_TEST_FOLDER_PICKER` names a script, the folder picker runs that
+* script with Node instead of showing the Windows dialog, and gives it `FAKE_PICKER_RESULT` of the environment (a path, nothing for
+* a cancel, or one of the failure words of the fake). `undefined` while the hook is off, so the real dialog is used.
+*/
+function folderPickerHook(env = process.env) {
+	const script = testHook("FOLDER_PICKER", env);
+	if (script === void 0) return void 0;
+	const answer = env["FAKE_PICKER_RESULT"];
+	return {
+		script,
+		env: answer === void 0 ? {} : { FAKE_PICKER_RESULT: answer }
+	};
+}
+var TEST_HOOK_NAMES, TEST_HOOK_VARIABLES, FAKE_TERMINALS_MAX, FAKE_STARTED_AT;
+var init_test_hooks = __esmMin((() => {
+	TEST_HOOK_NAMES = [
+		"IGNORE_CONTROL",
+		"BOOT_HANG",
+		"INIT_CRASH",
+		"OPEN_FILE",
+		"FAKE_TERMINALS",
+		"FOLDER_PICKER"
+	];
+	TEST_HOOK_VARIABLES = {
+		IGNORE_CONTROL: "MCS_TEST_IGNORE_CONTROL",
+		BOOT_HANG: "MCS_TEST_BOOT_HANG",
+		INIT_CRASH: "MCS_TEST_INIT_CRASH",
+		OPEN_FILE: "MCS_TEST_OPEN_FILE",
+		FAKE_TERMINALS: "MCS_TEST_FAKE_TERMINALS",
+		FOLDER_PICKER: "MCS_TEST_FOLDER_PICKER"
+	};
+	FAKE_TERMINALS_MAX = 64;
+	FAKE_STARTED_AT = "2026-01-01T00:00:00.000Z";
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/host.ts
+/**
+* The capabilities of a host for the shared reasons: a host that cannot run the terminal says why (`unsupported_os` for an operating
+* system that ships no addon or is too old, `addon_missing` for an addon that is missing or does not load); a host that can, but
+* finds no `claude`, says `claude_not_found`. An unavailable host offers nothing else (no picker, no resume, no sessions).
+*/
+function capabilitiesOf(facts, o) {
+	const unavailable = (reason) => ({
+		available: false,
+		reason,
+		folderPicker: false,
+		resume: false,
+		maxSessions: 0
+	});
+	if (!facts.supported) return unavailable(facts.reason === null ? "addon_missing" : UNAVAILABLE_REASON[facts.reason]);
+	if (!facts.claude.found) return unavailable("claude_not_found");
+	return {
+		available: true,
+		reason: null,
+		folderPicker: o.folderPicker,
+		resume: true,
+		maxSessions: o.maxSessions
+	};
+}
+/** The link of a terminal that the linker does not know (yet): the state `track` starts in. */
+function pendingLink() {
+	return {
+		status: "pending",
+		sessionId: null,
+		previousSessionIds: [],
+		basis: null,
+		confidence: null,
+		since: null,
+		claudePid: null,
+		transcript: "none",
+		registryStatus: null,
+		waitingFor: null,
+		reason: null,
+		shared: false
+	};
+}
+/** The engine's reason for ending a view, as a viewer is told. `slow` and `error` end the view, not the process: no code, the reason as the signal. */
+function exitOf(end) {
+	const evicted = end.reason === "slow" || end.reason === "error";
+	return {
+		code: end.exit?.code ?? null,
+		signal: evicted ? end.reason : null,
+		killed: end.reason === "killed"
+	};
+}
+function isoOf(ms) {
+	return isoMsZ(ms);
+}
+function createTerminalHost(deps) {
+	const { service, linker, picker, clock } = deps;
+	/** The viewers of each live session, for the size changes. */
+	const attached = /* @__PURE__ */ new Map();
+	const listeners = /* @__PURE__ */ new Set();
+	let closed = false;
+	function notify() {
+		for (const listener of [...listeners]) try {
+			listener();
+		} catch {}
+	}
+	function rowOf(info) {
+		const key = folderKeyOfPath(info.cwd);
+		return {
+			name: info.name,
+			path: info.cwd,
+			createdAt: isoOf(info.startedAt),
+			cols: info.cols,
+			rows: info.rows,
+			viewers: info.viewers,
+			link: linker.link(info.name) ?? pendingLink(),
+			folderKey: key.prefix || key.key === "" ? null : key.key
+		};
+	}
+	const stopService = service.onChange((change) => {
+		if (change.type === "ended") {
+			linker.forget(change.session.name);
+			attached.delete(change.session.name);
+		} else if (change.type === "updated") {
+			const viewers = attached.get(change.session.name);
+			if (viewers !== void 0) for (const entry of [...viewers]) {
+				if (entry.cols === change.session.cols && entry.rows === change.session.rows) continue;
+				entry.cols = change.session.cols;
+				entry.rows = change.session.rows;
+				entry.viewer.onSize(entry.cols, entry.rows);
+			}
+		}
+		notify();
+	});
+	const stopLinker = linker.onChange(() => {
+		notify();
+	});
+	async function createTracked(request) {
+		const spawnedAtMs = clock.now();
+		let info;
+		try {
+			info = await service.create(request);
+		} catch (error) {
+			if (error instanceof TerminalError && error.code === "SESSION_LIMIT") throw new TerminalApiError("terminal_limit", void 0, { cause: error });
+			throw error;
+		}
+		linker.track({
+			name: info.name,
+			pid: info.pid,
+			cwd: info.cwd,
+			spawnedAtMs,
+			resumeSessionId: request.resume ?? null,
+			fork: request.fork === true,
+			nameToken: null
+		});
+		return rowOf(info);
+	}
+	function portOf(name, session) {
+		return {
+			name,
+			attach(viewer) {
+				const frames = [];
+				let collecting = true;
+				const state = { detached: false };
+				const entry = {
+					viewer,
+					cols: 0,
+					rows: 0
+				};
+				const engineViewer = {
+					send(chunk) {
+						if (collecting) frames.push(chunk);
+						else viewer.onData(chunk);
+					},
+					end(reason) {
+						attached.get(name)?.delete(entry);
+						state.detached = true;
+						viewer.onExit(exitOf(reason));
+					}
+				};
+				const applied = session.attach(engineViewer, { replay: true });
+				collecting = false;
+				entry.cols = applied.cols;
+				entry.rows = applied.rows;
+				if (!state.detached) {
+					const set = attached.get(name) ?? /* @__PURE__ */ new Set();
+					set.add(entry);
+					attached.set(name, set);
+				}
+				return {
+					replay: Buffer.concat(frames),
+					cols: applied.cols,
+					rows: applied.rows,
+					detach() {
+						if (state.detached) return;
+						state.detached = true;
+						attached.get(name)?.delete(entry);
+						session.detach(engineViewer);
+					}
+				};
+			},
+			write: (data) => {
+				session.write(data);
+			},
+			resize: (cols, rows) => {
+				session.resize(cols, rows);
+			}
+		};
+	}
+	const sessions = {
+		list: () => service.list().map(rowOf),
+		get: (name) => {
+			const session = service.get(name);
+			return session === void 0 ? null : portOf(name, session);
+		},
+		create: (input) => createTracked({ folder: input.path }),
+		kill: (name) => service.kill(name),
+		subscribe: (listener) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		}
+	};
+	async function planOf(sessionId, fork) {
+		try {
+			return await deps.folders.planResume(sessionId, { fork });
+		} catch (error) {
+			if (!(error instanceof ResumeRefusal)) throw error;
+			if (error.code === "session_not_found") throw new TerminalApiError("session_not_found", void 0, { cause: error });
+			throw new TerminalApiError("resume_unavailable", [{
+				path: "sessionId",
+				issue: error.code
+			}], { cause: error });
+		}
+	}
+	return {
+		capabilities: () => {
+			const status = service.status();
+			return capabilitiesOf(status, {
+				folderPicker: picker !== null,
+				maxSessions: status.maxSessions
+			});
+		},
+		sessions,
+		picker,
+		resume: async ({ sessionId, fork }) => {
+			const plan = await planOf(sessionId, fork);
+			return createTracked({
+				folder: plan.folderPath,
+				resume: plan.sessionId,
+				...fork ? { fork: true } : {}
+			});
+		},
+		census: {
+			count: () => service.liveCount(),
+			sessions: (limit) => service.list().slice(0, Math.max(0, limit)).map((info) => ({
+				name: info.name,
+				startedAt: isoOf(info.startedAt)
+			})),
+			beginDrain: () => {
+				service.beginDrain();
+			}
+		},
+		close: () => {
+			if (closed) return;
+			closed = true;
+			stopService();
+			stopLinker();
+			listeners.clear();
+			attached.clear();
+		}
+	};
+}
+var API_MESSAGES, TerminalApiError, UNAVAILABLE_REASON;
+var init_host = __esmMin((() => {
+	init_src$1();
+	init_resume();
+	init_folder_key();
+	init_errors$2();
+	API_MESSAGES = {
+		terminal_unavailable: "The terminal is not available.",
+		claude_not_found: "The claude command was not found on the search path.",
+		folder_invalid: "The folder is not a valid working folder.",
+		terminal_limit: "The limit of terminal sessions is reached.",
+		terminal_not_found: "There is no terminal session with this name.",
+		session_not_found: "There is no monitored session with this id.",
+		resume_unavailable: "This session cannot be resumed in a terminal.",
+		picker_busy: "A folder dialog is already open."
+	};
+	TerminalApiError = class extends Error {
+		code;
+		details;
+		constructor(code, details, options) {
+			super(API_MESSAGES[code], options);
+			this.name = "TerminalError";
+			this.code = code;
+			this.details = details;
+		}
+	};
+	UNAVAILABLE_REASON = {
+		"unsupported-os": "unsupported_os",
+		"os-too-old": "unsupported_os",
+		"native-missing": "addon_missing",
+		"native-load-failed": "addon_missing"
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/folder-picker.ts
+/** Reads what the dialog printed: a normalised drive path, a cancel, or why the text is refused. Pure. */
+function parsePickedFolder(stdout) {
+	const lines = (stdout.startsWith(BYTE_ORDER_MARK) ? stdout.slice(1) : stdout).split(/\r\n|\n|\r/).filter((line) => line.trim() !== "");
+	const [line] = lines;
+	if (line === void 0) return { kind: "cancelled" };
+	if (lines.length > 1) return {
+		kind: "invalid",
+		issue: "not_one_line"
+	};
+	const path = windowsFolderPath(line, true);
+	if (path === null) return {
+		kind: "invalid",
+		issue: folderPathIssue(line, true) ?? "relative"
+	};
+	return {
+		kind: "path",
+		path
+	};
+}
+/**
+* The folder picker of this host, or `null` where there is no dialog: Windows has one; elsewhere only the test hook gives one (the
+* fake picker of the testkit). A picker that cannot start its program is still a picker: `pick` then says `terminal_unavailable`.
+*/
+function createFolderPicker(deps = {}) {
+	const platform = deps.platform ?? hostPlatform;
+	const env = deps.env ?? process.env;
+	const exec = deps.exec ?? execFileText;
+	const resolvePowershell = deps.resolvePowershell ?? (() => resolveExecutable("powershell"));
+	const hook = folderPickerHook(env);
+	if (hook === void 0 && platform !== "win32") return null;
+	let open = false;
+	async function launchOf() {
+		if (hook !== void 0) return {
+			file: process.execPath,
+			args: [hook.script],
+			extraEnv: hook.env
+		};
+		const powershell = await resolvePowershell();
+		return powershell === null ? null : {
+			file: powershell,
+			args: ["-STA", ...powershellEncodedArgs(PICKER_SCRIPT)]
+		};
+	}
+	async function run(signal) {
+		const launch = await launchOf();
+		if (launch === null) throw new TerminalApiError("terminal_unavailable");
+		const result = await exec({
+			kind: "powershell.picker",
+			file: launch.file,
+			args: launch.args,
+			timeoutMs: PICKER_TIMEOUT_MS,
+			maxOutputBytes: PICKER_OUTPUT_MAX_BYTES,
+			encoding: "utf8",
+			...launch.extraEnv === void 0 || Object.keys(launch.extraEnv).length === 0 ? {} : { extraEnv: launch.extraEnv }
+		}, signal);
+		if (result.error === "ABORTED") return null;
+		if (result.error === "OUTPUT_LIMIT") throw new TerminalApiError("folder_invalid", [{
+			path: "path",
+			issue: "too_long"
+		}]);
+		if (!result.ok) throw new TerminalApiError("terminal_unavailable");
+		const picked = parsePickedFolder(result.stdout);
+		if (picked.kind === "invalid") throw new TerminalApiError("folder_invalid", [{
+			path: "path",
+			issue: picked.issue
+		}]);
+		return picked.kind === "path" ? picked.path : null;
+	}
+	return { async pick(signal) {
+		if (open) throw new TerminalApiError("picker_busy");
+		if (signal.aborted) return null;
+		open = true;
+		try {
+			return await run(signal);
+		} finally {
+			open = false;
+		}
+	} };
+}
+var PICKER_TIMEOUT_MS, PICKER_OUTPUT_MAX_BYTES, PICKER_SCRIPT, BYTE_ORDER_MARK;
+var init_folder_picker = __esmMin((() => {
+	init_src$1();
+	init_test_hooks();
+	init_exec();
+	init_host$1();
+	init_host();
+	PICKER_TIMEOUT_MS = 6e5;
+	PICKER_OUTPUT_MAX_BYTES = 4096;
+	PICKER_SCRIPT = [
+		"$ErrorActionPreference = 'Stop'",
+		"Add-Type -AssemblyName System.Windows.Forms",
+		"[System.Windows.Forms.Application]::EnableVisualStyles()",
+		"$owner = New-Object System.Windows.Forms.Form",
+		"$owner.TopMost = $true",
+		"$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+		"$dialog.ShowNewFolderButton = $true",
+		"if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {",
+		"  $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($dialog.SelectedPath + \"`n\")",
+		"  $stdout = [Console]::OpenStandardOutput()",
+		"  $stdout.Write($bytes, 0, $bytes.Length)",
+		"  $stdout.Flush()",
+		"}",
+		"$owner.Dispose()"
+	].join("\n");
+	BYTE_ORDER_MARK = "﻿";
+}));
+
+//#endregion
+//#region packages/engine/src/runtime/access-service.ts
+function sha256(text) {
+	return createHash("sha256").update(text, "utf8").digest();
+}
+function positiveInteger(name, value) {
+	if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`createAccessService: ${name} must be a positive integer, got ${String(value)}`);
+	return value;
+}
+function resolveLimits(given) {
+	const merged = {
+		...ACCESS_LIMITS,
+		...given
+	};
+	positiveInteger("ticketTtlMs", merged.ticketTtlMs);
+	positiveInteger("maxTickets", merged.maxTickets);
+	positiveInteger("maxCredentials", merged.maxCredentials);
+	positiveInteger("credentialIdleMs", merged.credentialIdleMs);
+	positiveInteger("credentialMaxAgeMs", merged.credentialMaxAgeMs);
+	positiveInteger("failureWindowMs", merged.failureWindowMs);
+	positiveInteger("maxFailures", merged.maxFailures);
+	positiveInteger("touchIntervalMs", merged.touchIntervalMs);
+	return merged;
+}
+function createAccessService(options) {
+	const { clock } = options;
+	const limits = resolveLimits(options.limits);
+	const random = options.random ?? randomBytes;
+	const controlToken = options.controlToken ?? null;
+	/** Oldest first. */
+	let tickets = [];
+	/** By the hex of the hash; insertion order is sign-in order, so the first entry is the oldest. */
+	const credentials = /* @__PURE__ */ new Map();
+	/** Times of the wrong codes inside the window, oldest first. */
+	const failures = [];
+	const listeners = /* @__PURE__ */ new Set();
+	function sweepTickets(now) {
+		tickets = tickets.filter((ticket) => now < ticket.expiresAtMs);
+	}
+	function expiryOf(credential) {
+		return Math.min(credential.createdAtMs + limits.credentialMaxAgeMs, credential.touchedAtMs + limits.credentialIdleMs);
+	}
+	/** Removes a credential and tells the listeners. A listener that throws must not keep the others from hearing it. */
+	function drop(key, credential) {
+		if (!credentials.delete(key)) return;
+		for (const listener of [...listeners]) try {
+			listener(credential.id);
+		} catch {}
+	}
+	function sweepCredentials(now) {
+		for (const [key, credential] of [...credentials]) if (now >= expiryOf(credential)) drop(key, credential);
+	}
+	function mint() {
+		const now = clock.now();
+		sweepTickets(now);
+		while (tickets.length >= limits.maxTickets) tickets.shift();
+		const code = random(SECRET_BYTES).toString("base64url");
+		const expiresAtMs = now + limits.ticketTtlMs;
+		tickets.push({
+			hash: sha256(code),
+			expiresAtMs
+		});
+		return {
+			code,
+			expiresAtMs,
+			ttlSeconds: Math.round(limits.ticketTtlMs / 1e3)
+		};
+	}
+	/** Compares the hash of `code` with every outstanding ticket, with no early exit; the index of the match or -1. */
+	function matchTicket(code) {
+		if (typeof code !== "string" || !ACCESS_CODE_RE.test(code)) return -1;
+		const candidate = sha256(code);
+		let found = -1;
+		tickets.forEach((ticket, index) => {
+			if (timingSafeEqual(candidate, ticket.hash)) found = index;
+		});
+		return found;
+	}
+	function exchange(code) {
+		const now = clock.now();
+		sweepTickets(now);
+		sweepCredentials(now);
+		const index = matchTicket(code);
+		if (index >= 0) {
+			tickets.splice(index, 1);
+			const credential = random(SECRET_BYTES).toString("base64url");
+			const id = random(ID_BYTES).toString("base64url");
+			while (credentials.size >= limits.maxCredentials) {
+				const oldest = credentials.entries().next();
+				if (oldest.done === true) break;
+				drop(oldest.value[0], oldest.value[1]);
+			}
+			const hash = sha256(credential);
+			credentials.set(hash.toString("hex"), {
+				id,
+				hash,
+				createdAtMs: now,
+				touchedAtMs: now
+			});
+			return {
+				ok: true,
+				credential,
+				credentialId: id,
+				expiresAtMs: now + limits.credentialMaxAgeMs
+			};
+		}
+		while (failures.length > 0 && (failures[0] ?? now) + limits.failureWindowMs <= now) failures.shift();
+		if (failures.length >= limits.maxFailures) {
+			const oldest = failures[0] ?? now;
+			return {
+				ok: false,
+				reason: "rate_limited",
+				retryAfterMs: Math.max(1, oldest + limits.failureWindowMs - now)
+			};
+		}
+		failures.push(now);
+		return {
+			ok: false,
+			reason: "invalid"
+		};
+	}
+	function verify(value) {
+		const now = clock.now();
+		sweepCredentials(now);
+		if (typeof value !== "string" || !CREDENTIAL_RE.test(value)) return null;
+		const candidate = sha256(value);
+		const credential = credentials.get(candidate.toString("hex"));
+		if (credential === void 0 || !timingSafeEqual(candidate, credential.hash)) return null;
+		if (now - credential.touchedAtMs >= limits.touchIntervalMs) credential.touchedAtMs = now;
+		return {
+			credentialId: credential.id,
+			expiresAtMs: expiryOf(credential)
+		};
+	}
+	function verifyBearer(header) {
+		if (typeof header !== "string" || header.length > BEARER_MAX_CHARS) return false;
+		const token = typeof controlToken === "function" ? controlToken() : controlToken;
+		if (token === null || token === "") return false;
+		const given = BEARER_RE.exec(header)?.[1];
+		if (given === void 0) return false;
+		return timingSafeEqual(sha256(given), sha256(token));
+	}
+	function revoke(credentialId) {
+		for (const [key, credential] of credentials) if (credential.id === credentialId) {
+			drop(key, credential);
+			return;
+		}
+	}
+	function onRevoked(listener) {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	}
+	return {
+		mint,
+		exchange,
+		verify,
+		verifyBearer,
+		revoke,
+		onRevoked
+	};
+}
+var ACCESS_LIMITS, SECRET_BYTES, ID_BYTES, CREDENTIAL_RE, BEARER_RE, BEARER_MAX_CHARS;
+var init_access_service = __esmMin((() => {
+	init_protocol$1();
+	ACCESS_LIMITS = {
+		ticketTtlMs: 12e4,
+		maxTickets: 4,
+		maxCredentials: 16,
+		credentialIdleMs: 432e5,
+		credentialMaxAgeMs: 864e5,
+		failureWindowMs: 6e4,
+		maxFailures: 8,
+		touchIntervalMs: 6e4
+	};
+	SECRET_BYTES = 32;
+	ID_BYTES = 9;
+	CREDENTIAL_RE = /^[A-Za-z0-9_-]{43}$/;
+	BEARER_RE = /^bearer ([A-Za-z0-9._~+/-]+=*)$/i;
+	BEARER_MAX_CHARS = 512;
+}));
+
+//#endregion
+//#region packages/engine/src/runtime/create-user-services.ts
+/**
+* The control token of the instance as a function that reads it at each call: boot writes `run/control.token` after the runtime
+* (and so this factory) was created, and a new boot replaces it. A link, a missing, unreadable or oversized file and any content
+* that is not 64 lower-case hex digits are `null`. Synchronous (the access service asks it synchronously) and cheap: one small file.
+*/
+function controlTokenOf(file) {
+	return () => {
+		try {
+			assertNotLink(file);
+			if (statSync(file).size > TOKEN_FILE_MAX_BYTES) return null;
+			const text = readFileSync(file, "utf8").trim();
+			return CONTROL_TOKEN_RE.test(text) ? text : null;
+		} catch {
+			return null;
+		}
+	};
+}
+/** The importer hint and the database fallback of the linker, over the query layer of the context. */
+function sessionQueries(ctx) {
+	let since = null;
+	return {
+		sessionKnown: (sessionUid) => ctx.queries.resumeFacts(ctx.scope, sessionUid) !== null,
+		sessionsSince: (projectKey, sinceMs) => {
+			since ??= ctx.db.driver.prepare(`SELECT s.session_uid AS uid FROM sessions s JOIN projects p ON p.id = s.project_id
+          WHERE p.project_key = :key AND s.first_seen_at >= :since
+          ORDER BY s.first_seen_at, s.session_uid LIMIT 50`);
+			return since.all({
+				key: projectKey,
+				since: sinceMs
+			}).map((row) => row.uid);
+		}
+	};
+}
+function createUserServices(ctx, services, options = {}) {
+	const alive = options.pidAlive ?? pidAlive;
+	const exitHook = options.exitHook ?? process;
+	const sweepBudgetMs = options.sweepBudgetMs ?? 1e4;
+	const terminal = options.terminalService ?? createDefaultTerminalService({
+		config: ctx.config.runtime.terminal,
+		logger: ctx.logger,
+		clock: ctx.clock,
+		mcsHome: ctx.mcsHome,
+		...options.terminal
+	});
+	const registry = options.registry ?? createRegistrySnapshot({
+		claudeHome: ctx.claudeHome,
+		pidAlive: alive,
+		now: () => ctx.clock.now()
+	});
+	const tree = options.tree ?? { descendants: async (rootPid) => {
+		const found = await listDescendantPids(rootPid);
+		return found === null ? null : new Set(found);
+	} };
+	const linker = createTerminalLinker({
+		registry,
+		tree,
+		clock: ctx.clock,
+		config: ctx.config.runtime.projects,
+		...sessionQueries(ctx),
+		hintSession: (sessionUid) => {
+			services.ingest.hintSession(sessionUid);
+		},
+		pidAlive: alive,
+		logger: ctx.logger
+	});
+	const folders = createFolderService(ctx, {
+		linker,
+		registry,
+		...options.folders
+	});
+	const picker = options.picker !== void 0 ? options.picker : createFolderPicker(options.env === void 0 ? {} : { env: options.env });
+	const host = createTerminalHost({
+		service: terminal,
+		folders,
+		linker,
+		picker,
+		clock: ctx.clock
+	});
+	const access = createAccessService({
+		clock: ctx.clock,
+		controlToken: options.controlToken ?? controlTokenOf(path.join(ctx.instanceDir, "run", "control.token"))
+	});
+	/** `process.on('exit')`: no await and no spawn is possible there, only a synchronous kill of every process that may still run. */
+	const onExit = () => {
+		terminal.emergencyKillSync();
+	};
+	/** Waits for the sweep at most the budget. A slow or failing sweep is a warning (a code word, never the text of an error). */
+	async function sweepWithinBudget() {
+		let timer;
+		const budget = new Promise((resolve) => {
+			timer = setTimeout(() => {
+				resolve("late");
+			}, sweepBudgetMs);
+		});
+		try {
+			const swept = Promise.resolve().then(() => terminal.sweepOrphans()).then(() => "done", () => "failed");
+			const outcome = await Promise.race([swept, budget]);
+			if (outcome === "late") ctx.logger.warn("terminal_sweep_budget", { durationMs: sweepBudgetMs });
+			else if (outcome === "failed") ctx.logger.warn("terminal_sweep_failed", { code: "sweep_failed" });
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+	return {
+		census: host.census,
+		access,
+		accessService: access,
+		terminal: host,
+		folders,
+		components: [
+			{
+				name: "folders",
+				start: () => folders.start(),
+				stop: () => folders.stop()
+			},
+			{
+				name: "terminal-link",
+				start: () => {
+					linker.start();
+				},
+				stop: () => linker.stop()
+			},
+			{
+				name: "terminal",
+				start: async () => {
+					exitHook.on("exit", onExit);
+					await sweepWithinBudget();
+				},
+				stop: async () => {
+					exitHook.off("exit", onExit);
+					try {
+						await terminal.shutdown();
+					} finally {
+						host.close();
+					}
+				}
+			}
+		]
+	};
+}
+var SWEEP_BUDGET_MS, TOKEN_FILE_MAX_BYTES, CONTROL_TOKEN_RE;
+var init_create_user_services = __esmMin((() => {
+	init_registry$1();
+	init_service();
+	init_linker();
+	init_process();
+	init_default$1();
+	init_folder_picker();
+	init_host();
+	init_fsio();
+	init_access_service();
+	SWEEP_BUDGET_MS = 1e4;
+	TOKEN_FILE_MAX_BYTES = 4096;
+	CONTROL_TOKEN_RE = /^[0-9a-f]{64}$/;
+}));
+
+//#endregion
 //#region packages/engine/src/runtime/instance-runtime.ts
 function codeOf$1(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
@@ -45065,6 +51885,8 @@ function createInstanceRuntime(ctx, options = {}) {
 		...options.factories
 	};
 	for (const [name, factory] of STUB_SERVICES) if (factories[factory] === STUB_FACTORIES[factory]) ctx.logger.warn("runtime_stub_service", { phase: name });
+	const [userName, userFactory] = USER_STUB_SERVICE;
+	if (ctx.kind === "user" && factories[userFactory] === STUB_FACTORIES[userFactory]) ctx.logger.warn("runtime_stub_service", { phase: userName });
 	const ingest = factories.createIngestService(ctx);
 	const sweeper = factories.createLifecycleSweeper(ctx, { writer: ingest.writer });
 	const scheduler = factories.createDbScheduler(ctx);
@@ -45078,6 +51900,7 @@ function createInstanceRuntime(ctx, options = {}) {
 		scheduler,
 		panels
 	};
+	const user = ctx.kind === "user" ? factories.createUserServices(ctx, services) : null;
 	let tickInFlight = null;
 	let attemptsArmed = false;
 	let attemptsTimer = null;
@@ -45157,6 +51980,7 @@ function createInstanceRuntime(ctx, options = {}) {
 			}
 		},
 		...factories.createAlertComponents(ctx, services),
+		...user?.components ?? [],
 		watchdog
 	];
 	/**
@@ -45293,19 +52117,22 @@ function createInstanceRuntime(ctx, options = {}) {
 		},
 		ingestReplay: async (fromSegment) => ({ segments: (await ingest.replay(fromSegment)).segmentsReset }),
 		health: () => ctx.queries.health(ctx.scope),
-		panels
+		panels,
+		user
 	};
 }
-var NO_STATS, closedWriter, STUB_FACTORIES, registeredFactories, STUB_SERVICES, ATTEMPTS_TICK_MS, START_FAILURE_STOP_MS, MAX_TIMER_MS, IDLE_TIMEOUT_ERROR;
+var NO_STATS, closedWriter, STUB_FACTORIES, registeredFactories, STUB_SERVICES, USER_STUB_SERVICE, ATTEMPTS_TICK_MS, START_FAILURE_STOP_MS, MAX_TIMER_MS, IDLE_TIMEOUT_ERROR;
 var init_instance_runtime = __esmMin((() => {
 	init_src$1();
 	init_context();
 	init_state_watchdog();
-	init_service$3();
+	init_user_services();
+	init_service$4();
 	init_sweeper();
 	init_schedule();
+	init_service$2();
 	init_service$1();
-	init_service();
+	init_create_user_services();
 	NO_STATS = {
 		queued: 0,
 		queuedBytes: 0,
@@ -45335,6 +52162,7 @@ var init_instance_runtime = __esmMin((() => {
 			untilIdle: () => Promise.resolve(),
 			nudge: () => void 0,
 			replay: () => Promise.resolve({ segmentsReset: 0 }),
+			hintSession: () => void 0,
 			stats: () => NO_STATS
 		}),
 		createLifecycleSweeper: () => ({
@@ -45358,7 +52186,8 @@ var init_instance_runtime = __esmMin((() => {
 			close: () => void 0
 		}),
 		publishRouteFile: () => Promise.resolve(),
-		createAlertComponents: () => []
+		createAlertComponents: () => [],
+		createUserServices: () => EMPTY_USER_SERVICES
 	};
 	registeredFactories = {};
 	STUB_SERVICES = [
@@ -45368,6 +52197,7 @@ var init_instance_runtime = __esmMin((() => {
 		["panels", "createPanelService"],
 		["route-file", "publishRouteFile"]
 	];
+	USER_STUB_SERVICE = ["user-services", "createUserServices"];
 	ATTEMPTS_TICK_MS = 2e3;
 	START_FAILURE_STOP_MS = 2e3;
 	MAX_TIMER_MS = 2 ** 31 - 1;
@@ -45378,45 +52208,13 @@ var init_instance_runtime = __esmMin((() => {
 	registeredFactories.publishRouteFile = publishRouteFile;
 	registeredFactories.createPanelService = createPanelService;
 	registeredFactories.createAlertComponents = createAlertComponents;
-}));
-
-//#endregion
-//#region packages/engine/src/runtime/test-hooks.ts
-function variableOf(name) {
-	for (const hook of TEST_HOOK_NAMES) {
-		const variable = TEST_HOOK_VARIABLES[hook];
-		if (name === hook || name === variable) return variable;
-	}
-}
-/**
-* The value of the hook `name` (the short name such as `'BOOT_HANG'`, or the full variable name), or `undefined` when test
-* mode is off, the hook is not one of the documented three, or the variable is unset or empty. `env` defaults to the
-* process environment.
-*/
-function testHook(name, env = process.env) {
-	if (env["MCS_TEST"] !== "1") return void 0;
-	const variable = variableOf(name);
-	if (variable === void 0) return void 0;
-	const value = env[variable];
-	return value === void 0 || value === "" ? void 0 : value;
-}
-var TEST_HOOK_NAMES, TEST_HOOK_VARIABLES;
-var init_test_hooks = __esmMin((() => {
-	TEST_HOOK_NAMES = [
-		"IGNORE_CONTROL",
-		"BOOT_HANG",
-		"INIT_CRASH"
-	];
-	TEST_HOOK_VARIABLES = {
-		IGNORE_CONTROL: "MCS_TEST_IGNORE_CONTROL",
-		BOOT_HANG: "MCS_TEST_BOOT_HANG",
-		INIT_CRASH: "MCS_TEST_INIT_CRASH"
-	};
+	registeredFactories.createUserServices = createUserServices;
 }));
 
 //#endregion
 //#region packages/engine/src/ops/lifecycle.ts
 var lifecycle_exports = /* @__PURE__ */ __exportAll({
+	readToken: () => readToken,
 	restart: () => restart,
 	serveForeground: () => serveForeground,
 	start: () => start,
@@ -45446,7 +52244,7 @@ function peekDatabase(file) {
 		return null;
 	}
 }
-function effects(deps) {
+function effects$1(deps) {
 	return {
 		probe: deps.probe ?? probeInstance,
 		processes: deps.processes ?? REAL_PROCESSES,
@@ -45476,10 +52274,16 @@ function exitName(code, signal) {
 function secondsText(ms) {
 	return String(Math.round(ms / 100) / 10);
 }
-function childEnv(env) {
+/**
+* The environment of the server process. A task instance runs with `MCS_HOOK_DISABLE=1` (its own hooks must not feed back
+* into it); a user instance runs without it, whatever the caller has set, because the `claude` processes of its terminal
+* descend from the server and their hooks are the person's (06 1.7).
+*/
+function childEnv(env, kind) {
 	const out = {};
 	for (const [name, value] of Object.entries(env)) if (value !== void 0) out[name] = value;
-	out["MCS_HOOK_DISABLE"] = "1";
+	if (kind === "user") delete out["MCS_HOOK_DISABLE"];
+	else out["MCS_HOOK_DISABLE"] = "1";
 	return out;
 }
 /**
@@ -45619,7 +52423,7 @@ function startedOutcome(base, outcome, probe, message, warnings, opened = null) 
 		warnings
 	};
 }
-function describePid(pid) {
+function describePid$1(pid) {
 	return pid === null ? "pid unknown" : `pid ${String(pid)}`;
 }
 /** Waits (01 4.7 step 6 "starting") until another start finishes: running, or an error. */
@@ -45627,12 +52431,12 @@ async function followOtherStart(ctx, e, ws, first, timeoutMs) {
 	const deadline = e.now() + timeoutMs;
 	let probe = first;
 	while (probe.state === "starting") {
-		if (e.now() >= deadline) throw new McsError("START_TIMEOUT", `the runtime that was starting (${describePid(probe.pid)}) did not become healthy within ${secondsText(timeoutMs)} s`, { hint: `mcs doctor --task ${ws.slug}` });
+		if (e.now() >= deadline) throw new McsError("START_TIMEOUT", `the runtime that was starting (${describePid$1(probe.pid)}) did not become healthy within ${secondsText(timeoutMs)} s`, { hint: `mcs doctor --task ${ws.slug}` });
 		await e.sleep(POLL_MS);
 		probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
 	}
 	if (probe.state === "running") return probe;
-	throw new McsError("START_FAILED", `the runtime that was starting (${describePid(first.pid)}) did not become ready (${probe.state})`, { hint: `mcs doctor --task ${ws.slug}` });
+	throw new McsError("START_FAILED", `the runtime that was starting (${describePid$1(first.pid)}) did not become ready (${probe.state})`, { hint: `mcs doctor --task ${ws.slug}` });
 }
 function checkDatabase(e, ws) {
 	const peek = e.peekDb(workspacePath(ws, "data", "monitor.db"));
@@ -45647,7 +52451,7 @@ function checkDatabase(e, ws) {
 * reported, never replaced.
 */
 async function start(ctx, input = {}, deps = {}) {
-	const e = effects(deps);
+	const e = effects$1(deps);
 	const target = await resolveTarget(ctx, input.task, "create");
 	const { ws } = target;
 	const message = target.created ? [`created default workspace '${ws.slug}'`] : [];
@@ -45684,15 +52488,15 @@ async function start(ctx, input = {}, deps = {}) {
 		return startedOutcome(base, "already-running", probe, message, warnings);
 	}
 	if (probe.state === "unmanaged-running") throw unmanagedRunning(ws, probe);
-	if (probe.state === "stopping") throw new McsError("START_FAILED", `runtime ${describePid(probe.pid)} is still stopping`, { hint: `run \`mcs doctor --task ${ws.slug}\`` });
-	if (probe.state === "unhealthy") throw new McsError("START_FAILED", `runtime ${describePid(probe.pid)} answers its control channel but not HTTP`, {
+	if (probe.state === "stopping") throw new McsError("START_FAILED", `runtime ${describePid$1(probe.pid)} is still stopping`, { hint: `run \`mcs doctor --task ${ws.slug}\`` });
+	if (probe.state === "unhealthy") throw new McsError("START_FAILED", `runtime ${describePid$1(probe.pid)} answers its control channel but not HTTP`, {
 		hint: `run \`mcs doctor --task ${ws.slug}\` or \`mcs restart --task ${ws.slug}\``,
 		details: { state: probe.state }
 	});
-	return launch(ctx, e, ws, base, message, warnings, input, startTimeoutMs);
+	return launch(ctx, e, ws, base, message, warnings, input, startTimeoutMs, instanceKindOf(instance));
 }
 /** 01 4.7 steps 7 to 11: boot.log, the detached spawn, the wait for a healthy child, success or a killed child. */
-async function launch(ctx, e, ws, base, message, warnings, input, timeoutMs) {
+async function launch(ctx, e, ws, base, message, warnings, input, timeoutMs, kind) {
 	const main = serverMainOf(ctx);
 	const fd = await openBootLog(ws);
 	const watch = {
@@ -45703,7 +52507,7 @@ async function launch(ctx, e, ws, base, message, warnings, input, timeoutMs) {
 	try {
 		child = e.spawnDetached(process.execPath, serveArgv(main, ws, base.instanceId, input), {
 			cwd: ws.dir,
-			env: childEnv(ctx.env),
+			env: childEnv(ctx.env, kind),
 			stdoutFd: fd,
 			stderrFd: fd
 		});
@@ -45806,6 +52610,7 @@ async function markRouteStopped(ctx, instanceId, spoolHours) {
 	}
 }
 function stopResult(base, outcome, probe, message, extra = {}) {
+	const ended = extra.ended ?? 0;
 	return {
 		outcome,
 		slug: base.slug,
@@ -45813,8 +52618,9 @@ function stopResult(base, outcome, probe, message, extra = {}) {
 		url: probe?.url ?? null,
 		forced: extra.forced ?? false,
 		reason: extra.reason ?? null,
+		terminalsEnded: ended,
 		exitCode: 0,
-		message: [message]
+		message: ended > 0 ? [message, endedLine(ended)] : [message]
 	};
 }
 /** Removes `state.json` as the probe read it (compare-and-delete): a file written since belongs to somebody else. */
@@ -45822,18 +52628,84 @@ async function removeStaleState(ws, probe) {
 	if (probe.stateFileBytes !== null) await compareAndDelete(workspacePath(ws, "state.json"), probe.stateFileBytes);
 }
 /**
+* Asks the instance how many terminals it holds (`terminals`, token required, works in every phase). An older server that does
+* not know the op answers `BAD_REQUEST` or `UNSUPPORTED`: it has no terminals, so that is zero live. Anything else that is not a
+* `terminals` reply is unknown.
+*/
+async function queryCensus(e, instanceId, token) {
+	const attempt = await e.control(controlAddressOf(instanceId), {
+		v: 1,
+		op: "terminals",
+		instanceId,
+		token
+	}, { timeoutMs: CONTROL_TIMEOUT_MS });
+	switch (attempt.kind) {
+		case "reply": {
+			const reply = attempt.response;
+			return reply.op === "terminals" ? {
+				live: reply.live,
+				sessions: reply.sessions.map((session) => session.name)
+			} : UNKNOWN_CENSUS;
+		}
+		case "refusal": return attempt.error === "BAD_REQUEST" || attempt.error === "UNSUPPORTED" ? NO_TERMINALS : UNKNOWN_CENSUS;
+		case "absent":
+		case "silent": return UNKNOWN_CENSUS;
+	}
+}
+function namesText(names) {
+	const shown = names.slice(0, NAMES_SHOWN).join(", ");
+	return names.length > NAMES_SHOWN ? `${shown}, +${String(names.length - NAMES_SHOWN)} more` : shown;
+}
+/**
+* The refusal of a stop that would end terminals (exit 3). `unknown`: the count could not be had; `late`: the server refused a
+* shutdown that the census had allowed, and the second census could not name a count. The wording follows 06 3.3.
+*/
+function terminalsRefusal(census, purpose, cause) {
+	const { gerund, command } = PURPOSE_WORDS[purpose];
+	const details = {
+		live: census.live,
+		sessions: [...census.sessions]
+	};
+	if (cause === "late") return new McsError("TERMINALS_LIVE", `terminal sessions are live; ${gerund} would end them`, {
+		hint: `close them in the app, or run \`${command}\` to end them now`,
+		details
+	});
+	if (cause === "unknown" || census.live === null) return new McsError("TERMINALS_LIVE", `the app does not answer, so its terminal sessions cannot be counted; ${gerund} may end live terminals`, {
+		hint: `run \`${command}\` to kill it (the process is verified first)`,
+		details
+	});
+	const live = census.live;
+	const sessions = live === 1 ? "terminal session is" : "terminal sessions are";
+	const names = census.sessions.length === 0 ? "" : ` (${namesText(census.sessions)})`;
+	const them = live === 1 ? "it" : "them";
+	return new McsError("TERMINALS_LIVE", `${String(live)} ${sessions} live${names}; ${gerund} would end ${them}`, {
+		hint: `close ${them} in the app, or run \`${command}\` to end ${them} now`,
+		details
+	});
+}
+/**
 * `ops.lifecycle.stop` (01 4.9). Graceful first (control `shutdown` with the token of the instance, then a wait for the
 * exit). The forced path is the only one that kills: the command line of the pid must carry the runtime marker of this
 * instance (`hasRuntimeMarker`); a pid without that proof is never killed. A monitor that this runtime did not start
 * (`unmanaged-running`) is refused with `NOT_OUR_PROCESS` and never signalled (ADR 0066).
+*
+* A user instance (instance.json `kind: user`, 06 3.2) is asked first how many terminals it holds: any live terminal, or a count
+* that cannot be had, refuses the stop with `TERMINALS_LIVE` (exit 3) unless `force` is set, and the shutdown carries `force`.
+* The server decides in the end (a late refusal asks again and never kills), a forced kill ends the whole process tree, and a
+* task instance is neither asked nor sent anything new.
 */
 async function stop(ctx, input = {}, deps = {}) {
-	const e = effects(deps);
+	const e = effects$1(deps);
 	const { ws } = await resolveTarget(ctx, input.task, "existing");
 	const instance = await readInstanceFile(ws);
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
 	const config = await configOrNull(ctx, ws);
 	const waitMs = input.timeoutMs ?? config?.runtime.process.stopTimeoutMs ?? FALLBACK_STOP_TIMEOUT_MS;
+	const guard = {
+		kind: instance === null ? "task" : instanceKindOf(instance),
+		force: input.force === true,
+		purpose: input.purpose ?? "stop"
+	};
 	switch (probe.state) {
 		case "stopped": return stopResult(ws, "nothing-to-stop", probe, `nothing to stop (no state file ${workspacePath(ws, "state.json")})`);
 		case "stale":
@@ -45851,7 +52723,7 @@ async function stop(ctx, input = {}, deps = {}) {
 		case "running":
 		case "starting":
 		case "stopping":
-		case "unhealthy": return stopRuntime(ctx, e, ws, instance, probe, waitMs, config);
+		case "unhealthy": return stopRuntime(ctx, e, ws, instance, probe, waitMs, config, guard);
 	}
 }
 function forcedReasonOf(attempt) {
@@ -45862,15 +52734,27 @@ function forcedReasonOf(attempt) {
 		case "silent": return `the control channel is silent (${attempt.reason})`;
 	}
 }
-async function stopRuntime(ctx, e, ws, instance, probe, waitMs, config) {
+async function stopRuntime(ctx, e, ws, instance, probe, waitMs, config, guard) {
 	const pid = probe.pid;
 	if (pid === null || !isValidPid(pid)) throw new McsError("STOP_FAILED", "hung runtime without a known pid", { hint: `run \`mcs doctor --task ${ws.slug}\`` });
 	const instanceId = instance?.instanceId ?? probe.identity?.instanceId ?? null;
 	if (instanceId === null) throw new McsError("STOP_FAILED", `cannot tell which instance pid ${String(pid)} belongs to`, { hint: `run \`mcs doctor --task ${ws.slug}\`` });
+	const user = guard.kind === "user";
+	let census = NO_TERMINALS;
 	let forcedReason = null;
-	if (probe.state === "unhealthy" && probe.identity === null) forcedReason = "the runtime holds the control channel but does not answer";
-	else if (probe.state !== "stopping") {
+	if (probe.state === "unhealthy" && probe.identity === null) {
+		if (user && !guard.force) throw terminalsRefusal(UNKNOWN_CENSUS, guard.purpose, "unknown");
+		if (user) census = UNKNOWN_CENSUS;
+		forcedReason = "the runtime holds the control channel but does not answer";
+	} else if (probe.state !== "stopping") {
 		const token = await readToken(ws);
+		if (user && (probe.state === "running" || probe.state === "unhealthy")) {
+			census = token === null ? UNKNOWN_CENSUS : await queryCensus(e, instanceId, token);
+			if (!guard.force) {
+				if (census.live === null) throw terminalsRefusal(census, guard.purpose, "unknown");
+				if (census.live > 0) throw terminalsRefusal(census, guard.purpose, "counted");
+			}
+		}
 		if (token === null) forcedReason = "there is no control token";
 		else {
 			const attempt = await e.control(controlAddressOf(instanceId), {
@@ -45878,32 +52762,42 @@ async function stopRuntime(ctx, e, ws, instance, probe, waitMs, config) {
 				op: "shutdown",
 				instanceId,
 				token,
-				reason: "stop"
+				reason: "stop",
+				...user && guard.force ? { force: true } : {}
 			}, { timeoutMs: CONTROL_TIMEOUT_MS });
+			if (user && attempt.kind === "refusal" && attempt.error === "TERMINALS_LIVE") {
+				const fresh = await queryCensus(e, instanceId, token);
+				throw fresh.live !== null && fresh.live > 0 ? terminalsRefusal(fresh, guard.purpose, "counted") : terminalsRefusal(UNKNOWN_CENSUS, guard.purpose, "late");
+			}
 			forcedReason = attempt.kind === "absent" ? null : forcedReasonOf(attempt);
 		}
 	}
+	const ended = census.live ?? 0;
 	if (forcedReason === null) {
 		if (await e.processes.waitForExit(pid, waitMs)) {
 			await removeStateOf(ws, pid);
-			return stopResult(ws, "stopped", probe, `stopped runtime pid ${String(pid)} (${probe.url ?? "?"})`);
+			return stopResult(ws, "stopped", probe, `stopped runtime pid ${String(pid)} (${probe.url ?? "?"})`, { ended });
 		}
 		forcedReason = `still alive after ${String(waitMs)} ms`;
 	}
-	return forceStop(ctx, e, ws, instanceId, probe, pid, forcedReason, config);
+	return forceStop(ctx, e, ws, instanceId, probe, pid, forcedReason, config, {
+		tree: user,
+		ended
+	});
 }
-async function forceStop(ctx, e, ws, instanceId, probe, pid, reason, config) {
+async function forceStop(ctx, e, ws, instanceId, probe, pid, reason, config, kill) {
 	const line = await e.processes.commandLineOf(pid);
 	if (line === null) throw new McsError("NOT_OUR_PROCESS", `the command line of pid ${String(pid)} could not be read; nothing was killed`, { hint: `run \`mcs doctor --task ${ws.slug}\`` });
 	if (!hasRuntimeMarker(line, instanceId)) throw new McsError("NOT_OUR_PROCESS", `pid ${String(pid)} does not carry this instance's runtime marker; nothing was killed`, { hint: `run \`mcs doctor --task ${ws.slug}\`` });
-	await e.processes.forceKill(pid);
+	await (kill.tree ? e.processes.forceKillTree(pid) : e.processes.forceKill(pid));
 	if (!await e.processes.waitForExit(pid, FORCED_KILL_WAIT_MS)) throw new McsError("STOP_FAILED", `pid ${String(pid)} still alive after stop request`);
 	await removeStateOf(ws, pid);
 	await deleteIfUnchanged(workspacePath(ws, "run", "control.token"));
 	await markRouteStopped(ctx, instanceId, config?.runtime.hooks.spoolWhileStoppedHours ?? null);
 	return stopResult(ws, "stopped-forced", probe, `stopped runtime pid ${String(pid)} (${probe.url ?? "?"}) (forced: ${reason})`, {
 		forced: true,
-		reason
+		reason,
+		ended: kill.ended
 	});
 }
 /** One GET, parsed and validated against a shared response schema; the problem says what is wrong, in one phrase. */
@@ -46000,7 +52894,7 @@ async function currentStamp(ctx) {
 * runs; a monitor that this runtime did not start is reported from the probe alone (nothing is fetched from it).
 */
 async function status$1(ctx, input = {}, deps = {}) {
-	const e = effects(deps);
+	const e = effects$1(deps);
 	const { ws } = await resolveTarget(ctx, input.task, "existing");
 	const instance = await readInstanceFile(ws);
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
@@ -46030,7 +52924,7 @@ async function buildReport(ctx, e, ws, instance, probe) {
 	};
 }
 function hintOf(ws, probe) {
-	if (probe.state === "unhealthy") return probe.identity === null ? `a runtime holds the control channel but does not answer; run \`mcs stop --task ${ws.slug}\` (it verifies the process before it kills)` : `runtime ${describePid(probe.pid)} answers its control channel but not HTTP; run \`mcs doctor --task ${ws.slug}\` or \`mcs restart --task ${ws.slug}\``;
+	if (probe.state === "unhealthy") return probe.identity === null ? `a runtime holds the control channel but does not answer; run \`mcs stop --task ${ws.slug}\` (it verifies the process before it kills)` : `runtime ${describePid$1(probe.pid)} answers its control channel but not HTTP; run \`mcs doctor --task ${ws.slug}\` or \`mcs restart --task ${ws.slug}\``;
 	if (probe.state === "starting") return "the runtime is starting; run status again in a moment";
 	if (probe.state === "stopping") return "the runtime is stopping";
 	if (probe.state === "unmanaged-running") return `a monitor that was not started by this runtime runs here (${unmanagedWhere(probe)}); stop it with the tool that started it`;
@@ -46095,7 +52989,7 @@ function instanceIdField(body) {
 * that carry an instance id carry this instance's. Every problem is reported, not only the first.
 */
 async function verify$1(ctx, input = {}, deps = {}) {
-	const e = effects(deps);
+	const e = effects$1(deps);
 	const { ws } = await resolveTarget(ctx, input.task, "existing");
 	const instance = await readInstanceFile(ws);
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
@@ -46166,7 +53060,7 @@ async function openWhenReady(ctx, e, ws, timeoutMs, cancelled) {
 * signals, as the signal itself). The exit code of the server is mapped: 0 to 0, anything else is an error that names it.
 */
 async function serveForeground(ctx, input = {}, deps = {}) {
-	const e = effects(deps);
+	const e = effects$1(deps);
 	const target = await resolveTarget(ctx, input.task, "create");
 	const { ws } = target;
 	const message = target.created ? [`created default workspace '${ws.slug}'`] : [];
@@ -46177,7 +53071,7 @@ async function serveForeground(ctx, input = {}, deps = {}) {
 	if (input.stateFile !== void 0) warnings.push(`--state-file is ignored by the Node runtime (it always uses ${workspacePath(ws, "state.json")})`);
 	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
 	if (probe.state === "unmanaged-running") throw unmanagedRunning(ws, probe);
-	if (isLiveState(probe.state)) throw new McsError("INSTANCE_RUNNING", `the instance '${ws.slug}' is already running (${describePid(probe.pid)}, ${probe.state})`, { hint: `mcs stop --task ${ws.slug}` });
+	if (isLiveState(probe.state)) throw new McsError("INSTANCE_RUNNING", `the instance '${ws.slug}' is already running (${describePid$1(probe.pid)}, ${probe.state})`, { hint: `mcs stop --task ${ws.slug}` });
 	const config = await resolveConfig({
 		workspace: ws,
 		env: ctx.env,
@@ -46190,7 +53084,7 @@ async function serveForeground(ctx, input = {}, deps = {}) {
 	const main = serverMainOf(ctx);
 	const child = e.spawnForeground(process.execPath, serveArgv(main, ws, instance.instanceId, input), {
 		cwd: ws.dir,
-		env: childEnv(ctx.env)
+		env: childEnv(ctx.env, instanceKindOf(instance))
 	});
 	const ended = new Promise((resolve) => {
 		child.once("exit", (code, signal) => {
@@ -46249,7 +53143,7 @@ async function serveForeground(ctx, input = {}, deps = {}) {
 		interrupted
 	};
 }
-var LF$5, DEFAULT_SLUG, DEFAULT_NAME, FALLBACK_STOP_TIMEOUT_MS, FORCED_KILL_WAIT_MS, POLL_MS, BOOT_LOG_TAIL_LINES, BOOT_LOG_LINE_CHARS, HTTP_TIMEOUT_MS, CONTROL_TIMEOUT_MS, TOKEN_RE, HOUR_MS$1, REAL_PROCESSES, INSTANCE_LOCKED, staleMessage, SESSION_PAGES_MAX, SESSION_PAGE_SIZE, outdatedHint, VERIFY_ENDPOINTS, FORWARDED_SIGNALS;
+var LF$5, DEFAULT_SLUG, DEFAULT_NAME, FALLBACK_STOP_TIMEOUT_MS, FORCED_KILL_WAIT_MS, POLL_MS, BOOT_LOG_TAIL_LINES, BOOT_LOG_LINE_CHARS, HTTP_TIMEOUT_MS, CONTROL_TIMEOUT_MS, TOKEN_RE, HOUR_MS$1, REAL_PROCESSES, INSTANCE_LOCKED, endedLine, staleMessage, UNKNOWN_CENSUS, NO_TERMINALS, NAMES_SHOWN, PURPOSE_WORDS, SESSION_PAGES_MAX, SESSION_PAGE_SIZE, outdatedHint, VERIFY_ENDPOINTS, FORWARDED_SIGNALS;
 var init_lifecycle = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
@@ -46258,14 +53152,14 @@ var init_lifecycle = __esmMin((() => {
 	init_routes_file();
 	init_exec();
 	init_fsx();
-	init_host();
+	init_host$1();
 	init_layout();
 	init_markers();
 	init_process();
 	init_adopt();
 	init_fsio();
 	init_list();
-	init_paths();
+	init_paths$1();
 	init_probe();
 	init_workspace();
 	LF$5 = String.fromCharCode(10);
@@ -46284,10 +53178,35 @@ var init_lifecycle = __esmMin((() => {
 		pidAlive,
 		commandLineOf,
 		forceKill,
+		forceKillTree,
 		waitForExit
 	};
 	INSTANCE_LOCKED = SERVER_EXIT_CODES.INSTANCE_LOCKED;
+	endedLine = (count) => `ended ${String(count)} terminal session${count === 1 ? "" : "s"}`;
 	staleMessage = (pid) => `pid ${pid === null ? "?" : String(pid)} is not this instance's runtime (already stopped or pid reused); removed the stale state file, nothing was killed`;
+	UNKNOWN_CENSUS = {
+		live: null,
+		sessions: []
+	};
+	NO_TERMINALS = {
+		live: 0,
+		sessions: []
+	};
+	NAMES_SHOWN = 5;
+	PURPOSE_WORDS = {
+		stop: {
+			gerund: "stopping",
+			command: "caw stop --force"
+		},
+		restart: {
+			gerund: "restarting",
+			command: "caw restart --force"
+		},
+		upgrade: {
+			gerund: "upgrading",
+			command: "caw upgrade --user --yes --restart --force"
+		}
+	};
 	SESSION_PAGES_MAX = 5;
 	SESSION_PAGE_SIZE = 200;
 	outdatedHint = (slug) => `the runtime code changed since this instance started: run \`mcs restart --task ${slug}\` (or \`mcs upgrade --task ${slug} --restart\` when the database needs an upgrade)`;
@@ -46530,6 +53449,46 @@ async function transcriptsDirOf(e) {
 	} catch {}
 	return detectTranscriptsDir(e.ctx.repo, projectsRoot(e.ctx.env));
 }
+async function readScopeFacts(e) {
+	const none = {
+		all: false,
+		hooksEnabled: false
+	};
+	if (e.ws === null) return none;
+	try {
+		const resolved = await resolveConfig({
+			workspace: e.ws,
+			env: e.ctx.env,
+			cli: {},
+			skillDir: e.ctx.skillDir
+		});
+		const instance = await readInstanceFile(e.ws);
+		return {
+			all: isAllScope(resolved.runtime.projects.scope, instanceKindOfConfig(resolved)),
+			hooksEnabled: instance?.hooks.enabled === true
+		};
+	} catch {
+		return none;
+	}
+}
+/** What the workspace says about its scope and its hooks, read once per run of the checks. */
+function scopeOf$1(e) {
+	let known = scopeFactsOf.get(e);
+	if (known === void 0) {
+		known = readScopeFacts(e);
+		scopeFactsOf.set(e, known);
+	}
+	return known;
+}
+/** The files that the parse check reads for an instance of every project: the newest of the newest project folder. */
+async function newestOfNewestProject(e, root) {
+	try {
+		const [newest] = await e.seams.newestFiles(root, "", 1);
+		return newest === void 0 ? [] : await e.seams.newestFiles(newest, ".jsonl", TRANSCRIPTS_SAMPLE);
+	} catch {
+		return [];
+	}
+}
 function needsTask(id, ws) {
 	return ws === null ? ok(id, "no task selected (skipped)") : null;
 }
@@ -46537,16 +53496,18 @@ function needsTask(id, ws) {
 function configOf(ctx, ws, deps) {
 	return check$1(ctx, ws === null ? {} : { task: ws.slug }, deps);
 }
-var NODE_FLOOR, DISK_FREE_MIN_BYTES, TRANSCRIPTS_SAMPLE, TRANSCRIPT_TAIL_BYTES, LF$4, nodeDoctorSeams, ok, fail, nodeVersion, nodeSqlite, runtimeLayout, bundleIntegrity, claudeHome, transcriptsDir, transcriptsParse, mcsHomeWritable, diskFree, configValid, portFree, workspaceWritable, instanceIdentity, databaseIntegrity, stateCurrent, runtimeOutdated, workspaceGitignored, OPEN_GROUPS, workspacePermissions, hooksDefault, BUILTIN_CHECKS;
+var NODE_FLOOR, DISK_FREE_MIN_BYTES, TRANSCRIPTS_SAMPLE, TRANSCRIPT_TAIL_BYTES, LF$4, nodeDoctorSeams, ok, fail$1, nodeVersion, nodeSqlite, runtimeLayout, bundleIntegrity, claudeHome, scopeFactsOf, transcriptsDir, transcriptsParse, mcsHomeWritable, diskFree, configValid, portFree, workspaceWritable, instanceIdentity, databaseIntegrity, stateCurrent, runtimeOutdated, workspaceGitignored, OPEN_GROUPS, workspacePermissions, hooksScope, hooksDefault, BUILTIN_CHECKS;
 var init_doctor_checks = __esmMin((() => {
 	init_protocol$1();
+	init_resolve();
 	init_driver();
 	init_discovery();
 	init_exec();
-	init_host();
+	init_host$1();
 	init_layout();
+	init_scope();
 	init_adopt();
-	init_paths();
+	init_paths$1();
 	init_config();
 	init_instances$1();
 	init_probe();
@@ -46665,20 +53626,20 @@ var init_doctor_checks = __esmMin((() => {
 		level: "error",
 		detail
 	});
-	fail = (id, level, detail, fix) => ({
+	fail$1 = (id, level, detail, fix) => ({
 		id,
 		ok: false,
 		level,
 		detail,
 		fix
 	});
-	nodeVersion = (e) => Promise.resolve(versionAtLeast(e.seams.nodeVersion, "22.22.0") ? ok("node.version", `node ${e.seams.nodeVersion} (floor ${NODE_FLOOR})`) : fail("node.version", "error", `node ${e.seams.nodeVersion} is older than ${NODE_FLOOR}`, `install Node ${NODE_FLOOR} or newer`));
+	nodeVersion = (e) => Promise.resolve(versionAtLeast(e.seams.nodeVersion, "22.22.0") ? ok("node.version", `node ${e.seams.nodeVersion} (floor ${NODE_FLOOR})`) : fail$1("node.version", "error", `node ${e.seams.nodeVersion} is older than ${NODE_FLOOR}`, `install Node ${NODE_FLOOR} or newer`));
 	nodeSqlite = (e) => {
 		try {
 			e.seams.openMemoryDb();
 			return Promise.resolve(ok("node.sqlite", "node:sqlite opens a database"));
 		} catch (error) {
-			return Promise.resolve(fail("node.sqlite", "error", `node:sqlite is not usable: ${messageOf$2(error)}`, `install Node ${NODE_FLOOR} or newer (node:sqlite is built in)`));
+			return Promise.resolve(fail$1("node.sqlite", "error", `node:sqlite is not usable: ${messageOf$2(error)}`, `install Node ${NODE_FLOOR} or newer (node:sqlite is built in)`));
 		}
 	};
 	runtimeLayout = async (e) => {
@@ -46687,7 +53648,7 @@ var init_doctor_checks = __esmMin((() => {
 		try {
 			layout = e.seams.layoutOf(e.ctx.runtimeDir);
 		} catch (error) {
-			return fail("runtime.layout", "error", messageOf$2(error), fix);
+			return fail$1("runtime.layout", "error", messageOf$2(error), fix);
 		}
 		const missing = [];
 		for (const file of [
@@ -46695,7 +53656,7 @@ var init_doctor_checks = __esmMin((() => {
 			layout.hookEntry,
 			layout.migrationsDir
 		]) if (!await e.seams.exists(file)) missing.push(path.basename(file));
-		return missing.length === 0 ? ok("runtime.layout", `${layout.mode} layout`) : fail("runtime.layout", "error", `${layout.mode} layout is missing ${missing.join(", ")}`, fix);
+		return missing.length === 0 ? ok("runtime.layout", `${layout.mode} layout`) : fail$1("runtime.layout", "error", `${layout.mode} layout is missing ${missing.join(", ")}`, fix);
 	};
 	bundleIntegrity = async (e) => {
 		const id = "runtime.bundle-integrity";
@@ -46704,16 +53665,16 @@ var init_doctor_checks = __esmMin((() => {
 		try {
 			layout = e.seams.layoutOf(e.ctx.runtimeDir);
 		} catch (error) {
-			return fail(id, "error", `no runtime layout: ${messageOf$2(error)}`, fix);
+			return fail$1(id, "error", `no runtime layout: ${messageOf$2(error)}`, fix);
 		}
 		if (layout.mode === "source") return ok(id, "source layout: no bundle to verify");
 		let files;
 		try {
 			files = stampFilesOf(JSON.parse((await e.seams.readFile(layout.stampFile)).toString("utf8")));
 		} catch (error) {
-			return fail(id, "error", `cannot read ${path.basename(layout.stampFile)}: ${messageOf$2(error)}`, fix);
+			return fail$1(id, "error", `cannot read ${path.basename(layout.stampFile)}: ${messageOf$2(error)}`, fix);
 		}
-		if (files === null) return fail(id, "error", `${path.basename(layout.stampFile)} has no file list`, fix);
+		if (files === null) return fail$1(id, "error", `${path.basename(layout.stampFile)} has no file list`, fix);
 		const present = new Set((await e.seams.listFiles(layout.runtimeDir)).filter((rel) => rel !== path.basename(layout.stampFile)));
 		const changed = [];
 		const missing = [];
@@ -46732,18 +53693,29 @@ var init_doctor_checks = __esmMin((() => {
 			listed$1("missing", missing),
 			listed$1("extra", extra)
 		].filter((p) => p !== null);
-		return parts.length === 0 ? ok(id, `${String(Object.keys(files).length)} files match the build stamp`) : fail(id, "error", parts.join("; "), fix);
+		return parts.length === 0 ? ok(id, `${String(Object.keys(files).length)} files match the build stamp`) : fail$1(id, "error", parts.join("; "), fix);
 	};
 	claudeHome = async (e) => {
 		const home = claudeHomeOf(e.ctx.env);
-		return await e.seams.exists(home) ? ok("claude.home", "Claude home found") : fail("claude.home", "warn", "no Claude home folder", "start Claude Code once, or set CLAUDE_CONFIG_DIR to its folder");
+		return await e.seams.exists(home) ? ok("claude.home", "Claude home found") : fail$1("claude.home", "warn", "no Claude home folder", "start Claude Code once, or set CLAUDE_CONFIG_DIR to its folder");
 	};
-	transcriptsDir = async (e) => await transcriptsDirOf(e) === null ? fail("transcripts.dir", "warn", "no transcripts folder for this repository", "run a Claude Code session in the repository, or set transcripts_dir with `mcs configure`") : ok("transcripts.dir", "transcripts folder found");
+	scopeFactsOf = /* @__PURE__ */ new WeakMap();
+	transcriptsDir = async (e) => {
+		if ((await scopeOf$1(e)).all) return await e.seams.exists(projectsRoot(e.ctx.env)) ? ok("transcripts.dir", "projects folder of the Claude home found: every project is read") : fail$1("transcripts.dir", "warn", "no projects folder in the Claude home", "run Claude Code once, or set CLAUDE_CONFIG_DIR to its folder");
+		return await transcriptsDirOf(e) === null ? fail$1("transcripts.dir", "warn", "no transcripts folder for this repository", "run a Claude Code session in the repository, or set transcripts_dir with `mcs configure`") : ok("transcripts.dir", "transcripts folder found");
+	};
 	transcriptsParse = async (e) => {
 		const id = "transcripts.parse";
-		const dir = await transcriptsDirOf(e);
-		if (dir === null) return fail(id, "warn", "no transcripts folder to read", "see transcripts.dir");
-		const files = await e.seams.newestFiles(dir, ".jsonl", TRANSCRIPTS_SAMPLE);
+		let files;
+		if ((await scopeOf$1(e)).all) {
+			const root = projectsRoot(e.ctx.env);
+			if (!await e.seams.exists(root)) return fail$1(id, "warn", "no projects folder to read", "see transcripts.dir");
+			files = await newestOfNewestProject(e, root);
+		} else {
+			const dir = await transcriptsDirOf(e);
+			if (dir === null) return fail$1(id, "warn", "no transcripts folder to read", "see transcripts.dir");
+			files = await e.seams.newestFiles(dir, ".jsonl", TRANSCRIPTS_SAMPLE);
+		}
 		let total = 0;
 		let bad = 0;
 		for (const file of files) {
@@ -46761,7 +53733,7 @@ var init_doctor_checks = __esmMin((() => {
 			}
 		}
 		const detail = `${String(files.length)} files, ${String(total)} lines, ${String(bad)} unreadable`;
-		return bad === 0 || bad < Math.max(5, Math.floor(total / 100)) ? ok(id, detail) : fail(id, "warn", detail, "check that the transcripts folder holds Claude Code session files");
+		return bad === 0 || bad < Math.max(5, Math.floor(total / 100)) ? ok(id, detail) : fail$1(id, "warn", detail, "check that the transcripts folder holds Claude Code session files");
 	};
 	mcsHomeWritable = async (e) => {
 		const id = "mcshome.writable";
@@ -46770,7 +53742,7 @@ var init_doctor_checks = __esmMin((() => {
 		try {
 			home = resolveMcsHome(e.ctx.env, { win32: e.seams.platform === "win32" });
 		} catch (error) {
-			return fail(id, "error", messageOf$2(error), fix);
+			return fail$1(id, "error", messageOf$2(error), fix);
 		}
 		let probe = home;
 		while (!await e.seams.exists(probe)) {
@@ -46778,12 +53750,12 @@ var init_doctor_checks = __esmMin((() => {
 			if (up === probe) break;
 			probe = up;
 		}
-		return await e.seams.writable(probe) ? ok(id, probe === home ? "MCS_HOME is writable" : "MCS_HOME can be created") : fail(id, "error", "MCS_HOME is not writable", fix);
+		return await e.seams.writable(probe) ? ok(id, probe === home ? "MCS_HOME is writable" : "MCS_HOME can be created") : fail$1(id, "error", "MCS_HOME is not writable", fix);
 	};
 	diskFree = async (e) => {
 		const free = await e.seams.freeBytes(e.ws?.dir ?? e.ctx.repo);
 		const gib = (free / 1024 ** 3).toFixed(1);
-		return free >= DISK_FREE_MIN_BYTES ? ok("disk.free", `${gib} GiB free`) : fail("disk.free", "warn", `${gib} GiB free (below 1 GiB)`, "free disk space on the drive of the workspace");
+		return free >= DISK_FREE_MIN_BYTES ? ok("disk.free", `${gib} GiB free`) : fail$1("disk.free", "warn", `${gib} GiB free (below 1 GiB)`, "free disk space on the drive of the workspace");
 	};
 	configValid = async (e) => {
 		const id = "config.valid";
@@ -46791,7 +53763,7 @@ var init_doctor_checks = __esmMin((() => {
 			const result = await e.config();
 			return ok(id, `configuration of ${result.source} is valid (${String(result.regex.checked)} regexes)`);
 		} catch (error) {
-			return fail(id, "error", messageOf$2(error), `mcs check --task ${e.ws?.slug ?? "<slug>"}, then fix the file it names`);
+			return fail$1(id, "error", messageOf$2(error), `mcs check --task ${e.ws?.slug ?? "<slug>"}, then fix the file it names`);
 		}
 	};
 	portFree = async (e) => {
@@ -46806,21 +53778,21 @@ var init_doctor_checks = __esmMin((() => {
 		}
 		const probe = await e.probe();
 		if (isLiveState(probe.state) && probe.port === port) return ok(id, `port ${String(port)} is held by this instance`);
-		return await e.seams.canBind(port) ? ok(id, `port ${String(port)} is free`) : fail(id, "warn", `port ${String(port)} is in use by another process`, `stop the other process, or choose another port: mcs configure --task ${e.ws.slug} --set port=<n>`);
+		return await e.seams.canBind(port) ? ok(id, `port ${String(port)} is free`) : fail$1(id, "warn", `port ${String(port)} is in use by another process`, `stop the other process, or choose another port: mcs configure --task ${e.ws.slug} --set port=<n>`);
 	};
 	workspaceWritable = async (e) => {
 		const id = "workspace.writable";
 		if (e.ws === null) return ok(id, "no task selected (skipped)");
-		return await e.seams.writable(e.ws.dir) ? ok(id, "workspace is writable") : fail(id, "error", "the workspace folder is not writable", "give your user write access to the workspace folder");
+		return await e.seams.writable(e.ws.dir) ? ok(id, "workspace is writable") : fail$1(id, "error", "the workspace folder is not writable", "give your user write access to the workspace folder");
 	};
 	instanceIdentity = async (e) => {
 		const id = "instance.identity";
 		if (e.ws === null) return ok(id, "no task selected (skipped)");
 		try {
 			const instance = await readInstanceFile(e.ws);
-			return instance === null ? fail(id, "warn", "no instance.json (not initialized for the Node runtime)", `mcs init --slug ${e.ws.slug}`) : ok(id, `instance ${instance.instanceId.slice(0, 8)}`);
+			return instance === null ? fail$1(id, "warn", "no instance.json (not initialized for the Node runtime)", `mcs init --slug ${e.ws.slug}`) : ok(id, `instance ${instance.instanceId.slice(0, 8)}`);
 		} catch (error) {
-			return fail(id, "error", messageOf$2(error), `mcs instances repair --task ${e.ws.slug}`);
+			return fail$1(id, "error", messageOf$2(error), `mcs instances repair --task ${e.ws.slug}`);
 		}
 	};
 	databaseIntegrity = async (e) => {
@@ -46831,9 +53803,9 @@ var init_doctor_checks = __esmMin((() => {
 		const fix = `mcs stop --task ${e.ws.slug}, then restore a backup or rebuild the database`;
 		try {
 			const answer = e.seams.quickCheck(file);
-			return answer === "ok" ? ok(id, "quick_check ok") : fail(id, "error", `quick_check: ${answer}`, fix);
+			return answer === "ok" ? ok(id, "quick_check ok") : fail$1(id, "error", `quick_check: ${answer}`, fix);
 		} catch (error) {
-			return fail(id, "error", `cannot open the database read-only: ${messageOf$2(error)}`, fix);
+			return fail$1(id, "error", `cannot open the database read-only: ${messageOf$2(error)}`, fix);
 		}
 	};
 	stateCurrent = async (e) => {
@@ -46845,10 +53817,10 @@ var init_doctor_checks = __esmMin((() => {
 			case "starting":
 			case "stopping":
 			case "stopped": return ok(id, probe.state);
-			case "unhealthy": return fail(id, "warn", `unhealthy: ${probe.reason}`, `mcs restart --task ${e.ws.slug}`);
+			case "unhealthy": return fail$1(id, "warn", `unhealthy: ${probe.reason}`, `mcs restart --task ${e.ws.slug}`);
 			case "stale":
-			case "foreign-pid": return fail(id, "warn", `${probe.state}: ${probe.reason}`, `mcs stop --task ${e.ws.slug}`);
-			case "unmanaged-running": return fail(id, "warn", `${probe.state}: ${probe.reason}`, "stop that monitor with the tool that started it");
+			case "foreign-pid": return fail$1(id, "warn", `${probe.state}: ${probe.reason}`, `mcs stop --task ${e.ws.slug}`);
+			case "unmanaged-running": return fail$1(id, "warn", `${probe.state}: ${probe.reason}`, "stop that monitor with the tool that started it");
 		}
 	};
 	runtimeOutdated = async (e) => {
@@ -46858,7 +53830,7 @@ var init_doctor_checks = __esmMin((() => {
 		const running = probe.identity?.codeStamp;
 		if (!isLiveState(probe.state) || running === void 0) return ok(id, "no running runtime");
 		const stamp = await e.seams.codeStamp(e.ctx.runtimeDir);
-		return stamp === null || stamp === running ? ok(id, "the running runtime is current") : fail(id, "warn", "the runtime code changed since this instance started", `mcs restart --task ${e.ws.slug}`);
+		return stamp === null || stamp === running ? ok(id, "the running runtime is current") : fail$1(id, "warn", "the runtime code changed since this instance started", `mcs restart --task ${e.ws.slug}`);
 	};
 	workspaceGitignored = async (e) => {
 		const id = "workspace.gitignored";
@@ -46868,10 +53840,10 @@ var init_doctor_checks = __esmMin((() => {
 			"-q",
 			e.ws.dir
 		], e.ctx.repo);
-		if (result === null) return fail(id, "warn", "git is not installed (not checked)", "install git to check this");
+		if (result === null) return fail$1(id, "warn", "git is not installed (not checked)", "install git to check this");
 		if (result.code === 0) return ok(id, "workspace is git-ignored");
-		if (result.code === 1) return fail(id, "warn", "the workspace is not git-ignored", "add .claude/monitor/ to the .gitignore of the repository");
-		return fail(id, "warn", "not a git repository, or git failed (not checked)", "run doctor inside a git repository to check this");
+		if (result.code === 1) return fail$1(id, "warn", "the workspace is not git-ignored", "add .claude/monitor/ to the .gitignore of the repository");
+		return fail$1(id, "warn", "not a git repository, or git failed (not checked)", "run doctor inside a git repository to check this");
 	};
 	OPEN_GROUPS = /(Everyone|BUILTIN\\Users|NT AUTHORITY\\Authenticated Users):[^\r\n]*\((?:[^)]*,)?(?:M|F|W)(?:,[^)]*)?\)/i;
 	workspacePermissions = async (e) => {
@@ -46880,12 +53852,19 @@ var init_doctor_checks = __esmMin((() => {
 		const fix = e.seams.platform === "win32" ? "remove the write grants of Everyone, Users and Authenticated Users from the workspace folder (icacls)" : `chmod -R go-w ${path.basename(e.ws.dir)} (in the tasks folder)`;
 		if (e.seams.platform === "win32") {
 			const result = await e.seams.run("icacls", [e.ws.dir], e.ctx.repo);
-			if (result?.ok !== true) return fail(id, "warn", "icacls is not available (not checked)", "run doctor on a system with icacls");
+			if (result?.ok !== true) return fail$1(id, "warn", "icacls is not available (not checked)", "run doctor on a system with icacls");
 			const match = OPEN_GROUPS.exec(result.stdout);
-			return match === null ? ok(id, "workspace is not writable by other users") : fail(id, "warn", `${match[1] ?? "a group"} may write to the workspace`, fix);
+			return match === null ? ok(id, "workspace is not writable by other users") : fail$1(id, "warn", `${match[1] ?? "a group"} may write to the workspace`, fix);
 		}
 		const mode = await e.seams.mode(e.ws.dir);
-		return (mode & 18) === 0 ? ok(id, "workspace is not writable by other users") : fail(id, "warn", `mode ${(mode & 511).toString(8)} lets other users write`, fix);
+		return (mode & 18) === 0 ? ok(id, "workspace is not writable by other users") : fail$1(id, "warn", `mode ${(mode & 511).toString(8)} lets other users write`, fix);
+	};
+	hooksScope = async (e) => {
+		const id = "hooks.scope";
+		if (e.ws === null) return ok(id, "no task selected (skipped)");
+		const facts = await scopeOf$1(e);
+		if (!facts.all) return ok(id, "one repository: hooks and transcripts agree");
+		return facts.hooksEnabled ? fail$1(id, "warn", "hooks are enabled, but this instance reads every project and gets no hook events", `turn the hooks off: mcs hooks disable --task ${e.ws.slug}`) : ok(id, "every project is read from the transcripts; hooks are off");
 	};
 	hooksDefault = () => Promise.resolve({
 		id: "hooks",
@@ -46902,6 +53881,7 @@ var init_doctor_checks = __esmMin((() => {
 		["claude.home", claudeHome],
 		["transcripts.dir", transcriptsDir],
 		["transcripts.parse", transcriptsParse],
+		["hooks.scope", hooksScope],
 		["config.valid", configValid],
 		["port.free", portFree],
 		["workspace.writable", workspaceWritable],
@@ -46924,6 +53904,10 @@ var doctor_exports$1 = /* @__PURE__ */ __exportAll({
 	doctorLines: () => doctorLines,
 	run: () => run$2
 });
+function selects(only, id) {
+	if (only === void 0) return true;
+	return only.some((entry) => entry.endsWith(".") ? id.startsWith(entry) : id === entry);
+}
 function failedCheck(id, detail) {
 	return {
 		id,
@@ -46975,10 +53959,15 @@ async function run$2(ctx, input = {}, deps = {}, seams = {}) {
 	};
 	const extra = deps.extraChecks ?? {};
 	const checks = [];
+	const ask = async (id, provider) => {
+		const answer = await withTimeout(id, () => provider(ctx, ws), provider.timeoutMs ?? 2e3);
+		if (answer !== null) checks.push(answer);
+	};
 	for (const [id, check] of BUILTIN_CHECKS) {
+		if (!selects(input.only, id)) continue;
 		const provider = extra[id];
 		if (provider !== void 0) {
-			checks.push(await withTimeout(id, () => provider(ctx, ws), PROVIDER_TIMEOUT_MS));
+			await ask(id, provider);
 			continue;
 		}
 		try {
@@ -46990,8 +53979,8 @@ async function run$2(ctx, input = {}, deps = {}, seams = {}) {
 	const builtin = new Set(BUILTIN_CHECKS.map(([id]) => id));
 	for (const id of Object.keys(extra).sort()) {
 		const provider = extra[id];
-		if (builtin.has(id) || provider === void 0) continue;
-		checks.push(await withTimeout(id, () => provider(ctx, ws), PROVIDER_TIMEOUT_MS));
+		if (builtin.has(id) || provider === void 0 || !selects(input.only, id)) continue;
+		await ask(id, provider);
 	}
 	const report = {
 		task: ws?.slug ?? null,
@@ -47216,7 +54205,7 @@ async function readEntryText(db, scope, ref, opts = {}) {
 	try {
 		handle = await open(row.path, "r");
 	} catch (error) {
-		return classifyFsError(errorCodeOf$1(error)) === "missing" ? NOT_FOUND : FAILED;
+		return classifyFsError(errorCodeOf$2(error)) === "missing" ? NOT_FOUND : FAILED;
 	}
 	try {
 		const st = await handle.stat({ bigint: true });
@@ -47280,18 +54269,18 @@ function hooksFailed(reason, message, extra = {}) {
 		}
 	});
 }
-function isPlainObject$2(value) {
+function isPlainObject$3(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** The handler list of a group (`{ matcher?, hooks: [...] }`); `null` for anything else. */
 function handlersOf(group) {
-	if (!isPlainObject$2(group)) return null;
+	if (!isPlainObject$3(group)) return null;
 	const handlers = group["hooks"];
 	return Array.isArray(handlers) ? handlers : null;
 }
 /** True for a handler that carries our marker: an exec-form argument, or a word of a shell-form command (02 3.3). */
 function isOurs(handler) {
-	if (!isPlainObject$2(handler) || handler["type"] !== "command") return false;
+	if (!isPlainObject$3(handler) || handler["type"] !== "command") return false;
 	const args = handler["args"];
 	if (Array.isArray(args) && args.includes("--mcs-hook")) return true;
 	const command = handler["command"];
@@ -47374,12 +54363,12 @@ function parseSettings(text) {
 		const where = locationOf(body, error);
 		throw hooksFailed("SETTINGS_INVALID_JSON", `the settings file is not valid JSON${where === null ? "" : ` (near ${where})`}; nothing was written`, { hint: "fix the file by hand, or point --settings-file at another file" });
 	}
-	if (!isPlainObject$2(value)) throw hooksFailed("SETTINGS_NOT_OBJECT", "the top level of the settings file is not a JSON object; nothing was written");
+	if (!isPlainObject$3(value)) throw hooksFailed("SETTINGS_NOT_OBJECT", "the top level of the settings file is not a JSON object; nothing was written");
 	return value;
 }
 /** Canonical text of a JSON value (object keys sorted), to compare two entries without regard to key order. */
 function canonical(value) {
-	return JSON.stringify(value, (_key, v) => isPlainObject$2(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
+	return JSON.stringify(value, (_key, v) => isPlainObject$3(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
 }
 /** True when two handlers are the same JSON value, whatever the order of their keys. */
 function sameHandler(a, b) {
@@ -47388,8 +54377,8 @@ function sameHandler(a, b) {
 /** Our handlers in a settings object, by event, in file order. Events without one are absent from the map. */
 function ourHandlers(settings) {
 	const found = /* @__PURE__ */ new Map();
-	const hooks = isPlainObject$2(settings) ? settings["hooks"] : void 0;
-	if (!isPlainObject$2(hooks)) return found;
+	const hooks = isPlainObject$3(settings) ? settings["hooks"] : void 0;
+	if (!isPlainObject$3(hooks)) return found;
 	for (const [event, groups] of Object.entries(hooks)) {
 		if (!Array.isArray(groups)) continue;
 		const ours = [];
@@ -47413,7 +54402,7 @@ function planHooks(text, op, desired) {
 	const obj = parseSettings(text);
 	const hadHooks = Object.hasOwn(obj, "hooks");
 	const hooksValue = hadHooks ? obj["hooks"] : {};
-	if (!isPlainObject$2(hooksValue)) throw hooksFailed("SETTINGS_HOOKS_NOT_OBJECT", "the \"hooks\" key of the settings file is not a JSON object; nothing was written");
+	if (!isPlainObject$3(hooksValue)) throw hooksFailed("SETTINGS_HOOKS_NOT_OBJECT", "the \"hooks\" key of the settings file is not a JSON object; nothing was written");
 	const hooks = hooksValue;
 	const beforeLines = hadHooks ? hooksLines(hooks) : [];
 	const wanted = op === "install" ? desired : /* @__PURE__ */ new Map();
@@ -47439,7 +54428,7 @@ function planHooks(text, op, desired) {
 		const remaining = [];
 		for (const group of groups) {
 			const handlers = handlersOf(group);
-			if (handlers !== null && isPlainObject$2(group)) {
+			if (handlers !== null && isPlainObject$3(group)) {
 				const left = handlers.filter((handler) => !isOurs(handler));
 				if (left.length === 0 && handlers.length > 0) {
 					emptied = true;
@@ -47855,8 +54844,8 @@ var init_settings_io = __esmMin((() => {
 	init_protocol$1();
 	init_discovery();
 	init_fsx();
-	init_host();
-	init_paths$2();
+	init_host$1();
+	init_paths$3();
 	init_plan();
 	SETTINGS_MAX_BYTES = 8388608;
 	realSettingsIo = {
@@ -48339,7 +55328,7 @@ function scriptInputOf(ctx, install) {
 		tmpdir: ctx.seams.tmpdir
 	};
 }
-function resultOf$2(ctx, plan, action, backup, script) {
+function resultOf$3(ctx, plan, action, backup, script) {
 	return {
 		scope: ctx.input.scope,
 		settingsPath: normalizePath(ctx.settingsPath),
@@ -48371,7 +55360,7 @@ async function dryRun(ctx, installPlan) {
 	const script = installPlan ?? await uninstallScriptPlan(ctx);
 	const { plan } = await readAndPlan(ctx);
 	return {
-		result: resultOf$2(ctx, plan, plan.changed ? "plan" : "noop", null, script),
+		result: resultOf$3(ctx, plan, plan.changed ? "plan" : "noop", null, script),
 		audit: null
 	};
 }
@@ -48498,7 +55487,7 @@ async function applyChange(ctx) {
 			} });
 		}
 		return {
-			result: resultOf$2(ctx, plan, "applied", backup, await finishHome(ctx, plan, script, backup)),
+			result: resultOf$3(ctx, plan, "applied", backup, await finishHome(ctx, plan, script, backup)),
 			audit: auditOf$1(ctx, plan, backup)
 		};
 	}
@@ -48506,7 +55495,7 @@ async function applyChange(ctx) {
 /** The settings file needs no change; the stable copy and the manifest are still brought in line (ADR 0070 item 3). */
 async function unchanged(ctx, plan) {
 	return {
-		result: resultOf$2(ctx, plan, "noop", null, await finishHome(ctx, plan, ctx.install === null ? null : await installHookScript(scriptInputOf(ctx, ctx.install)), null)),
+		result: resultOf$3(ctx, plan, "noop", null, await finishHome(ctx, plan, ctx.install === null ? null : await installHookScript(scriptInputOf(ctx, ctx.install)), null)),
 		audit: null
 	};
 }
@@ -48518,7 +55507,7 @@ function homeFailure(plan, cause) {
 		cause
 	});
 }
-function sameInstall(a, b) {
+function sameInstall$1(a, b) {
 	return a.settingsPath === b.settingsPath && a.scope === b.scope && a.events === b.events && a.handlerVersion === b.handlerVersion && a.nodePath === b.nodePath && a.hookEntryPath === b.hookEntryPath && a.async === b.async;
 }
 async function finishHome(ctx, plan, installed, backup) {
@@ -48540,7 +55529,7 @@ async function finishHome(ctx, plan, installed, backup) {
 		try {
 			const { manifest } = await readManifest(ctx.mcsHome);
 			const known = findInstall(manifest, settingsKey);
-			if (!plan.changed && known !== void 0 && sameInstall(known, record)) return installed;
+			if (!plan.changed && known !== void 0 && sameInstall$1(known, record)) return installed;
 			const next = plan.changed || known === void 0 ? record : {
 				...record,
 				at: known.at,
@@ -48908,7 +55897,7 @@ function seamsOf(over) {
 		...over
 	};
 }
-function isPlainObject$1(value) {
+function isPlainObject$2(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** Printable ASCII only and at most `max` characters: text from a settings file or a child never reaches a terminal as it is. */
@@ -48931,7 +55920,7 @@ function absolute(file, what) {
 	return path.resolve(file);
 }
 function execFormOf(handler) {
-	if (!isPlainObject$1(handler)) return null;
+	if (!isPlainObject$2(handler)) return null;
 	const command = handler["command"];
 	const args = handler["args"];
 	if (typeof command !== "string" || !Array.isArray(args)) return null;
@@ -48949,14 +55938,14 @@ function execFormOf(handler) {
 		script
 	};
 }
-async function isFile(file) {
+async function isFile$1(file) {
 	try {
 		return (await stat(file)).isFile();
 	} catch {
 		return false;
 	}
 }
-function failure(result, limitMs) {
+function failure$1(result, limitMs) {
 	switch (result.error) {
 		case null: return null;
 		case "TIMEOUT": return `did not finish within ${String(limitMs)} ms and was killed`;
@@ -48977,7 +55966,7 @@ async function loadSettings(io, file) {
 			detail: "the settings file does not exist"
 		};
 		const settings = parseSettings(decodeSettings(snapshot.bytes));
-		if (Object.hasOwn(settings, "hooks") && !isPlainObject$1(settings["hooks"])) return {
+		if (Object.hasOwn(settings, "hooks") && !isPlainObject$2(settings["hooks"])) return {
 			ok: false,
 			detail: "the \"hooks\" key of the settings file is not a JSON object"
 		};
@@ -49023,7 +56012,7 @@ async function checkPaths(entries, mcsHome, source) {
 	}
 	if (shellForm > 0) problems.push(`${String(shellForm)} entries are not in the exec form (command plus args) that install writes`);
 	for (const command of commands) if (!path.isAbsolute(command)) problems.push(`the command ${shown$1(command)} is not an absolute path`);
-	else if (!await isFile(command)) problems.push(`the Node executable ${shown$1(command)} does not exist`);
+	else if (!await isFile$1(command)) problems.push(`the Node executable ${shown$1(command)} does not exist`);
 	const stable = stableScriptPath(mcsHome);
 	for (const script of scripts) if (!samePath(script, stable)) problems.push(`an entry runs ${shown$1(script)} instead of the stable copy ${shown$1(stable)}`);
 	const copy = await inspectHookScript(mcsHome).catch(() => null);
@@ -49061,7 +56050,7 @@ async function checkVersion(form, seams) {
 		result = null;
 	}
 	if (result === null) return done("V4", false, "the installed command could not be run");
-	const problem = failure(result, limit);
+	const problem = failure$1(result, limit);
 	if (problem !== null) return done("V4", false, `the installed command ${problem}`);
 	const printed = result.stdout.trim();
 	if (printed !== "4.0.0") return done("V4", false, `the installed handler prints "${shown$1(printed, 32)}" but this runtime is ${HANDLER_VERSION}; ${REPAIR}`);
@@ -49107,7 +56096,7 @@ async function probeInSpool(spoolDir, segments, probeId) {
 			if (!text.includes(probeId)) continue;
 			try {
 				const line = JSON.parse(text);
-				if (isPlainObject$1(line) && line["kind"] === "probe" && line["session_id"] === probeId) return name;
+				if (isPlainObject$2(line) && line["kind"] === "probe" && line["session_id"] === probeId) return name;
 			} catch {}
 		}
 	}
@@ -49144,7 +56133,7 @@ async function checkProbe(form, route, instance, probeId, mcsHome, seams) {
 		check: done("V6", false, "the installed Notification entry could not be run"),
 		spooled: false
 	};
-	const problem = failure(result, limit);
+	const problem = failure$1(result, limit);
 	if (problem !== null) return {
 		check: done("V6", false, `the installed Notification entry ${problem}`),
 		spooled: false
@@ -49268,20 +56257,20 @@ function routeFileExists(mcsHome, instanceId) {
 		return false;
 	}
 }
-var PROBE_TIMEOUT_MS, VERSION_TIMEOUT_MS, ROUND_TRIP_MS, ROUND_TRIP_POLL_MS, SPOOL_SCAN_BYTES, VERIFY_OUTPUT_CAP, PROBE_PAYLOAD_MAX_BYTES, done, REPAIR;
+var PROBE_TIMEOUT_MS, VERSION_TIMEOUT_MS$1, ROUND_TRIP_MS, ROUND_TRIP_POLL_MS, SPOOL_SCAN_BYTES, VERIFY_OUTPUT_CAP, PROBE_PAYLOAD_MAX_BYTES, done, REPAIR;
 var init_verify$2 = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	init_routes_file();
 	init_probe();
 	init_exec();
-	init_paths$2();
+	init_paths$3();
 	init_handler_log();
 	init_plan();
 	init_script_copy();
 	init_settings_io();
 	PROBE_TIMEOUT_MS = 1500;
-	VERSION_TIMEOUT_MS = 2e3;
+	VERSION_TIMEOUT_MS$1 = 2e3;
 	ROUND_TRIP_MS = 3e3;
 	ROUND_TRIP_POLL_MS = 100;
 	SPOOL_SCAN_BYTES = 65536;
@@ -49665,7 +56654,7 @@ var init_hooks = __esmMin((() => {
 	init_routes_file();
 	init_discovery();
 	init_layout();
-	init_paths();
+	init_paths$1();
 	init_adopt();
 	init_backup$1();
 	init_doctor_checks();
@@ -49761,7 +56750,7 @@ async function dryRunPlan(ctx, ws, instanceId, from, deps) {
 }
 /** The control operation of a running instance: the server resets the cursors from its writer queue and replies the count. */
 async function replayThroughServer(ws, instanceId, from, deps) {
-	const token = await controlTokenOf(ws);
+	const token = await controlTokenOf$1(ws);
 	if (token === null) throw new McsError("DB_ERROR", "the running server cannot be asked to replay: it left no control token", { hint: `mcs doctor --task ${ws.slug}` });
 	const attempt = await (deps.control ?? requestControl)(controlAddressOf(instanceId), {
 		v: 1,
@@ -49834,12 +56823,12 @@ var init_ingest = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
 	init_writer$1();
-	init_open$1();
+	init_open$2();
 	init_spool_cursors();
-	init_errors$3();
-	init_replay();
+	init_errors$4();
+	init_replay$1();
 	init_segments();
-	init_paths();
+	init_paths$1();
 	init_backup$1();
 	init_probe();
 	init_workspace();
@@ -50513,6 +57502,20 @@ function createApiReader(options) {
 	const get = options.httpGet ?? httpGetWithHeaders;
 	const openStream = options.openStream ?? loopbackStream;
 	const timeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+	/**
+	* The control token for a request to `route`, as the option object of the call: `{ bearer }` only for a `reader` route and only
+	* when the source has a token, else nothing. The token goes to no other route, so that what an open route answers with never
+	* had it. A source that throws is no source.
+	*/
+	async function bearerFor(route) {
+		if (route.access !== "reader" || options.controlToken === void 0) return {};
+		try {
+			const token = await options.controlToken();
+			return token === null ? {} : { bearer: token };
+		} catch {
+			return {};
+		}
+	}
 	/** The failure of a request that got no answer. */
 	function unreachable(reason) {
 		if (reason === "refused") return new McsError("INSTANCE_NOT_RUNNING", "the instance stopped answering while it was being read", {
@@ -50562,7 +57565,8 @@ function createApiReader(options) {
 		try {
 			attempt = await get(url, {
 				timeoutMs: o.timeoutMs ?? timeoutMs,
-				maxBytes: MAX_BODY_BYTES
+				maxBytes: MAX_BODY_BYTES,
+				...await bearerFor(route)
 			});
 		} catch (error) {
 			throw new McsError("API_ERROR", "the request to the instance was refused by the reader", {
@@ -50606,7 +57610,10 @@ function createApiReader(options) {
 		}
 		let attempt;
 		try {
-			attempt = await openStream(url, { idleTimeoutMs: EXPORT_IDLE_TIMEOUT_MS });
+			attempt = await openStream(url, {
+				idleTimeoutMs: EXPORT_IDLE_TIMEOUT_MS,
+				...await bearerFor(routes.export)
+			});
 		} catch (error) {
 			throw new McsError("API_ERROR", "the request to the instance was refused by the reader", {
 				cause: error,
@@ -50718,7 +57725,7 @@ var DEFAULT_TIMEOUT_MS, MAX_BODY_BYTES, SEARCH_GRACE_MS, EXPORT_IDLE_TIMEOUT_MS,
 var init_api_reader = __esmMin((() => {
 	init_src$1();
 	init_probe();
-	init_open();
+	init_open$1();
 	DEFAULT_TIMEOUT_MS = 15e3;
 	MAX_BODY_BYTES = 67108864;
 	SEARCH_GRACE_MS = 1e4;
@@ -50737,6 +57744,16 @@ var init_api_reader = __esmMin((() => {
 			});
 			return;
 		}
+		let authorization;
+		try {
+			authorization = bearerHeaderOf(o.bearer);
+		} catch {
+			resolve({
+				ok: false,
+				reason: "error"
+			});
+			return;
+		}
 		const port = Number(new URL(base).port);
 		const req = request({
 			host: "127.0.0.1",
@@ -50747,7 +57764,8 @@ var init_api_reader = __esmMin((() => {
 			headers: {
 				Host: `127.0.0.1:${String(port)}`,
 				Accept: "application/x-ndjson",
-				Connection: "close"
+				Connection: "close",
+				...authorization
 			}
 		}, (res) => {
 			const headers = {};
@@ -51036,17 +58054,17 @@ var init_db_reader = __esmMin((() => {
 	init_reader();
 	init_resolve();
 	init_backup$3();
-	init_errors$4();
-	init_open$1();
+	init_errors$5();
+	init_open$2();
 	init_completion$1();
 	init_export$1();
 	init_backup$1();
 	init_query();
 	init_transitions();
-	init_service$2();
+	init_service$3();
 	init_index_service();
-	init_paths();
-	init_open();
+	init_paths$1();
+	init_open$1();
 	SCRATCH_SUFFIXES = [
 		"",
 		"-wal",
@@ -51067,6 +58085,7 @@ async function openInstanceReader(ws, deps) {
 	if (probe.state === "running" && probe.url !== null && isLoopbackBase(probe.url)) return createApiReader({
 		base: probe.url,
 		instanceId: instance.instanceId,
+		controlToken: createControlTokenSource(workspacePath(ws, "run", "control.token")),
 		...deps.httpGet === void 0 ? {} : { httpGet: deps.httpGet },
 		...deps.openStream === void 0 ? {} : { openStream: deps.openStream },
 		...deps.requestTimeoutMs === void 0 ? {} : { requestTimeoutMs: deps.requestTimeoutMs }
@@ -51100,11 +58119,12 @@ function readerReasonOf(error) {
 	return typeof reason === "string" ? reason : null;
 }
 var USAGE_CODES, NOT_FOUND_CODES, BUSY_HINTS, CODE_TEXT;
-var init_open = __esmMin((() => {
+var init_open$1 = __esmMin((() => {
 	init_src$1();
 	init_zod();
 	init_backup$1();
 	init_probe();
+	init_paths$1();
 	init_api_reader();
 	init_db_reader();
 	USAGE_CODES = /* @__PURE__ */ new Set([
@@ -51515,7 +58535,7 @@ var FLAG_OF, PRESET_TEXT, EXPECTS, SESSIONS_LIMIT_MAX, SESSIONS_LIMIT_DEFAULT, E
 var init_data = __esmMin((() => {
 	init_src$1();
 	init_protocol$1();
-	init_open();
+	init_open$1();
 	init_workspace();
 	FLAG_OF = {
 		state: "--state",
@@ -51763,8 +58783,8 @@ var init_export_file = __esmMin((() => {
 	init_src$1();
 	init_discovery();
 	init_fsx();
-	init_host();
-	init_paths();
+	init_host$1();
+	init_paths$1();
 	init_data();
 	LF$1 = 10;
 	RENAME_BUDGET_MS = 3e3;
@@ -51917,11 +58937,15 @@ function assertNotDowngrade(instance) {
 	if (compareSemver(instance.runtimeVersion, "4.0.0") > 0) throw new McsError("DOWNGRADE_REFUSED", `this instance was upgraded by runtime ${instance.runtimeVersion}, newer than this runtime (${RUNTIME_VERSION}); nothing was changed`, { hint: "run the command with the newer runtime, or restore a backup made before that upgrade" });
 }
 /** Stops the server for `--restart`: ours is stopped, one of another runtime is refused, anything else is just left. */
-async function stopForRestart(ctx, ws, deps, restart) {
+async function stopForRestart(ctx, ws, deps, restart, force) {
 	const probe = await probeOf$1(ctx, ws, deps);
 	if (!isLiveState(probe.state)) return false;
 	if (!restart || probe.state === "unmanaged-running") throw liveError(ws, probe, probe.state !== "unmanaged-running");
-	const stopped = await (deps.lifecycle?.stop ?? stop)(ctx, { task: ws.slug });
+	const stopped = await (deps.lifecycle?.stop ?? stop)(ctx, {
+		task: ws.slug,
+		purpose: "upgrade",
+		...force ? { force: true } : {}
+	});
 	if (stopped.exitCode !== 0) throw new McsError("STOP_FAILED", `the server could not be stopped: ${stopped.message.join(" ")}`, { hint: `mcs stop --task ${ws.slug}` });
 	await assertNotLive(ctx, ws, deps);
 	return true;
@@ -51937,7 +58961,7 @@ function withStoppedNote(error, ws) {
 }
 async function applyUpgrade(ctx, ws, instance, plan, input, deps) {
 	const restart = input.restart === true;
-	const stopped = await stopForRestart(ctx, ws, deps, restart);
+	const stopped = await stopForRestart(ctx, ws, deps, restart, input.force === true);
 	const migrated = (plan.db?.steps.length ?? 0) > 0;
 	try {
 		let backup;
@@ -52239,7 +59263,7 @@ var init_instance_upgrade = __esmMin((() => {
 	init_backup$2();
 	init_adopt();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	init_backup$1();
 	init_lifecycle();
 	init_probe();
@@ -53939,7 +60963,7 @@ async function sweepOf(ctx, mode, deps) {
 		counts: countsOf(workspaces)
 	};
 }
-function plural(n, one) {
+function plural$1(n, one) {
 	return `${String(n)} ${n === 1 ? one : `${one}s`}`;
 }
 /** The default output of a sweep: the lines of each workspace, the skipped folders, one tally line and one closing hint. */
@@ -53958,7 +60982,7 @@ function sweepLines(sweep) {
 		`${String(current)} ${dry ? "current" : "already current"}`,
 		`${String(blocked)} blocked`
 	];
-	lines.push(`${plural(total, "task workspace")}: ${tally.join(", ")}${dry ? " (dry run, nothing written)" : ""}`);
+	lines.push(`${plural$1(total, "task workspace")}: ${tally.join(", ")}${dry ? " (dry run, nothing written)" : ""}`);
 	if (dry && needsMigration > 0) lines.push("run `mcs migrate-workspace --all --apply --yes` to convert them (a backup is written first)");
 	return lines;
 }
@@ -53974,7 +60998,7 @@ async function apply(ctx, input, deps = {}) {
 }
 function formatDetail(report) {
 	const translated = report.patterns.filter((p) => p.action === "translate").length;
-	const parts = [...translated > 0 ? [`${plural(translated, "pattern")} in the old syntax`] : [], ...report.actions.some((a) => a.startsWith("add instance.json")) ? ["no instance.json"] : []];
+	const parts = [...translated > 0 ? [`${plural$1(translated, "pattern")} in the old syntax`] : [], ...report.actions.some((a) => a.startsWith("add instance.json")) ? ["no instance.json"] : []];
 	return `written before 4.0 and not converted yet${parts.length === 0 ? "" : ` (${parts.join(", ")})`}`;
 }
 /**
@@ -54027,7 +61051,7 @@ var init_migrate_workspace$1 = __esmMin((() => {
 	init_adopt();
 	init_fsio();
 	init_list();
-	init_paths();
+	init_paths$1();
 	init_probe();
 	init_workspace();
 	ADOPT_DIRS = [
@@ -54173,7 +61197,7 @@ var init_key_support = __esmMin((() => {
 		window_hours: supported("How far back sessions and events are shown.", QUERY, "engine/src/query/sessions.ts"),
 		active_seconds: supported("How recent an event must be for a session to count as active.", "engine/src/lifecycle/facts.ts"),
 		pending_tool_grace_seconds: supported("How long a tool call may stay open before the session is called stuck.", "engine/src/lifecycle/facts.ts"),
-		include_unmatched: supported("Keeps sessions that no rule matched visible instead of hiding them.", "engine/src/query/sessions.ts"),
+		include_unmatched: supported("Keeps sessions that no rule matched visible instead of hiding them.", "engine/src/projects/scope.ts"),
 		session_rules: supported("Pattern rules that choose and label the sessions of this task.", "engine/src/ingest/transcripts/classify.ts"),
 		session_ids: supported("Session ids that are always part of this task.", "engine/src/ingest/transcripts/classify.ts"),
 		panels: supported("Switches the optional panels on and off.", PANEL_ROUTE, PANEL_MAP),
@@ -54647,7 +61671,7 @@ function targetsOf(candidates) {
 		bytes: c.bytes
 	}));
 }
-function resultOf$1(task, scope, applied, plan, extra = {}) {
+function resultOf$2(task, scope, applied, plan, extra = {}) {
 	const targets = extra.targets ?? targetsOf(plan.candidates);
 	return {
 		task,
@@ -54728,9 +61752,9 @@ async function audit(ctx, ws, scope, deleted, folder, remaining, deps) {
 }
 async function runInitLeftovers(ctx, apply, deps) {
 	const plan = await planInitLeftovers(ctx);
-	if (!apply) return resultOf$1(null, "init-leftovers", false, plan);
+	if (!apply) return resultOf$2(null, "init-leftovers", false, plan);
 	const done = await deleteAll(ctx.root, plan, deps);
-	return resultOf$1(null, "init-leftovers", true, {
+	return resultOf$2(null, "init-leftovers", true, {
 		...plan,
 		skipped: done.skipped
 	}, {
@@ -54741,10 +61765,10 @@ async function runInitLeftovers(ctx, apply, deps) {
 async function runFileScope(ctx, ws, input, apply, deps) {
 	const { scope } = input;
 	const plan = scope === "stale-state" ? await planStaleState(ctx, ws, deps) : scope === "logs" ? await planLogs(ctx, ws, input.olderThanDays) : await planBackups(ctx, ws, input.keep);
-	if (!apply) return resultOf$1(ws.slug, scope, false, plan);
+	if (!apply) return resultOf$2(ws.slug, scope, false, plan);
 	const done = await deleteAll(ws.dir, plan, deps);
 	if (scope !== "stale-state") await audit(ctx, ws, scope, done.deleted, scope === "logs" ? "logs" : BACKUPS_REL, done.remaining, deps);
-	return resultOf$1(ws.slug, scope, true, {
+	return resultOf$2(ws.slug, scope, true, {
 		...plan,
 		skipped: done.skipped
 	}, {
@@ -54760,7 +61784,7 @@ async function runSpool(ctx, ws, input, apply, deps) {
 		skipped: [],
 		note: "no database: no spool segment can be shown to have been read, so none is listed"
 	};
-	if (!await hasDatabase(ws)) return resultOf$1(ws.slug, "spool", false, empty);
+	if (!await hasDatabase(ws)) return resultOf$2(ws.slug, "spool", false, empty);
 	const hours = input.olderThanDays === void 0 ? (await resolveConfig({
 		workspace: ws,
 		env: ctx.env,
@@ -54770,7 +61794,7 @@ async function runSpool(ctx, ws, input, apply, deps) {
 	const db = openDatabase(ctx, ws, instance.instanceId, apply ? "maintenance" : "readonly", deps);
 	try {
 		const plan = await planSpool(ctx, ws, db, hours);
-		if (!apply) return resultOf$1(ws.slug, "spool", false, plan);
+		if (!apply) return resultOf$2(ws.slug, "spool", false, plan);
 		const done = await deleteAll(ws.dir, plan, deps);
 		const repo = new SpoolCursorsRepo(db);
 		const scope = { instanceId: db.instanceId };
@@ -54778,7 +61802,7 @@ async function runSpool(ctx, ws, input, apply, deps) {
 			for (const c of done.deleted) repo.delete(scope, tx, path.basename(c.rel));
 		});
 		await audit(ctx, ws, "spool", done.deleted, SPOOL_REL, done.remaining, deps);
-		return resultOf$1(ws.slug, "spool", true, {
+		return resultOf$2(ws.slug, "spool", true, {
 			...plan,
 			skipped: done.skipped
 		}, {
@@ -54792,7 +61816,7 @@ async function runSpool(ctx, ws, input, apply, deps) {
 async function runData(ctx, ws, input, apply, deps) {
 	const instance = await requireInstance(ws);
 	await assertNotLive(ctx, ws, deps);
-	const none = (note) => resultOf$1(ws.slug, "data", false, {
+	const none = (note) => resultOf$2(ws.slug, "data", false, {
 		candidates: [],
 		skipped: [],
 		note
@@ -54818,7 +61842,7 @@ async function runData(ctx, ws, input, apply, deps) {
 		note: null
 	};
 	const nothing = plan.sessions === 0 && plan.rows.events === 0;
-	if (!apply || nothing) return resultOf$1(ws.slug, "data", false, {
+	if (!apply || nothing) return resultOf$2(ws.slug, "data", false, {
 		...emptyPlan,
 		note: nothing ? "nothing is older than the cutoff" : null
 	}, {
@@ -54849,7 +61873,7 @@ async function runData(ctx, ws, input, apply, deps) {
 		outcome: `applied; backup ${made.id}`
 	}, ctx.clock.now());
 	const pruned = await pruneAfter(ctx, ws, [made.id]);
-	return resultOf$1(ws.slug, "data", true, emptyPlan, {
+	return resultOf$2(ws.slug, "data", true, emptyPlan, {
 		count: applied.sessions,
 		bytes: applied.freedBytes ?? 0,
 		backup: made.id,
@@ -54930,16 +61954,16 @@ var init_cleanup$1 = __esmMin((() => {
 	init_src$1();
 	init_writer$1();
 	init_resolve();
-	init_open$1();
+	init_open$2();
 	init_spool_cursors();
 	init_write();
 	init_segments();
 	init_retention();
-	init_paths$2();
+	init_paths$3();
 	init_fsx();
 	init_init$1();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	init_backup$1();
 	init_workspace();
 	MINUTE_MS = 6e4;
@@ -55376,9 +62400,9 @@ var init_diagnostics$1 = __esmMin((() => {
 	init_discovery();
 	init_logger();
 	init_fsx();
-	init_host();
+	init_host$1();
 	init_adopt();
-	init_paths();
+	init_paths$1();
 	init_doctor$1();
 	init_doctor_checks();
 	init_lifecycle();
@@ -55428,11 +62452,1491 @@ var init_diagnostics$1 = __esmMin((() => {
 }));
 
 //#endregion
+//#region packages/engine/src/platform/browser.ts
+async function realIsFile(file) {
+	try {
+		return (await stat(file)).isFile();
+	} catch {
+		return false;
+	}
+}
+/**
+* Edge first, then Chrome; the install folders `%ProgramFiles(x86)%`, `%ProgramFiles%` and `%LOCALAPPDATA%` in that order, then
+* `msedge.exe` and `chrome.exe` on `PATH` (absolute entries only). Windows only: `null` elsewhere and when neither is found.
+*/
+async function findAppBrowser(seams = {}) {
+	if ((seams.platform ?? hostPlatform) !== "win32") return null;
+	const env = seams.env ?? process.env;
+	const isFile = seams.isFile ?? realIsFile;
+	const roots = [];
+	for (const name of ROOT_VARIABLES) {
+		const value = env[name];
+		if (value !== void 0 && value !== "" && path.win32.isAbsolute(value)) roots.push(value);
+	}
+	for (const { kind, relative } of APP_BROWSERS) for (const root of roots) {
+		const file = path.win32.join(root, relative);
+		if (await isFile(file)) return {
+			kind,
+			file
+		};
+	}
+	const searchPath = (env["PATH"] ?? "").split(path.win32.delimiter);
+	for (const { kind, onPath } of APP_BROWSERS) for (const entry of searchPath) {
+		const dir = entry.trim().replace(/^"+|"+$/g, "");
+		if (dir === "" || !path.win32.isAbsolute(dir)) continue;
+		const file = path.win32.join(dir, onPath);
+		if (await isFile(file)) return {
+			kind,
+			file
+		};
+	}
+	return null;
+}
+/** The arguments of the app window: the page, a profile of its own, a size and no first-run pages. */
+function appWindowArgs(url, profileDir) {
+	return [
+		`--app=${url}`,
+		`--user-data-dir=${profileDir}`,
+		"--window-size=1440,900",
+		"--no-first-run",
+		"--no-default-browser-check"
+	];
+}
+/** True for `http://127.0.0.1:<port>/` with an optional `#code=<code>` and a port that exists. */
+function isLoginUrl(url) {
+	if (typeof url !== "string" || !LOGIN_URL_RE.test(url)) return false;
+	const port = Number(/^http:\/\/127\.0\.0\.1:([0-9]+)\//.exec(url)?.[1]);
+	return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+/**
+* The environment of the browser: the one of the caller without the settings of this product (`MCS_*`, `CAW_*`), which a
+* browser has no use for. The browser needs the rest (`LOCALAPPDATA`, `USERPROFILE`, `PATH`, ...) to find its own files.
+*/
+function browserEnv(source) {
+	const env = {};
+	for (const [name, value] of Object.entries(source)) {
+		if (value === void 0 || /^(?:MCS|CAW)_/i.test(name)) continue;
+		env[name] = value;
+	}
+	return env;
+}
+/** True when the child has a process id (Node assigns it when the program started); the `error` event is swallowed here. */
+function started(child) {
+	child.once("error", () => void 0);
+	return child.pid !== void 0;
+}
+async function openTab(url, seams) {
+	const opener = await (seams.resolveExecutable ?? resolveExecutable)("opener");
+	if (opener === null) return {
+		opened: false,
+		reason: "unsupported"
+	};
+	const result = await (seams.execFileText ?? execFileText)({
+		kind: "opener",
+		file: opener,
+		args: [url],
+		timeoutMs: OPEN_TIMEOUT_MS,
+		maxOutputBytes: 4096,
+		encoding: "utf8"
+	});
+	return result.ok || result.code === 1 ? {
+		opened: true,
+		how: "default-browser"
+	} : {
+		opened: false,
+		reason: "spawn-failed"
+	};
+}
+/**
+* Shows `url`, which must be a login URL (`bad-url` otherwise, before anything else happens). `mode: 'window'` starts an Edge
+* or Chrome app window with `profileDir` and falls back to a tab, saying why in `fallback`, when there is no such browser or it
+* did not start; `mode: 'tab'` asks the desktop opener. With the test hook `OPEN_FILE` of `runtime/test-hooks.ts` (test mode only) the URL is
+* appended to that file instead and nothing is started.
+*/
+async function openLoginUrl(input, seams = {}) {
+	const { url, mode, profileDir } = input;
+	if (!isLoginUrl(url)) return {
+		opened: false,
+		reason: "bad-url"
+	};
+	const env = seams.env ?? process.env;
+	const recorder = testHook("OPEN_FILE", env);
+	if (recorder !== void 0) {
+		if (!path.isAbsolute(recorder)) return {
+			opened: false,
+			reason: "spawn-failed"
+		};
+		try {
+			await (seams.appendFile ?? ((file, text) => appendFile(file, text, "utf8")))(recorder, `${url}\n`);
+		} catch {
+			return {
+				opened: false,
+				reason: "spawn-failed"
+			};
+		}
+		return {
+			opened: true,
+			how: "test-file"
+		};
+	}
+	if (mode === "tab") return openTab(url, seams);
+	if (!path.isAbsolute(profileDir) || profileDir.includes("\0")) throw new RangeError("profileDir must be an absolute path");
+	const browser = await findAppBrowser(seams);
+	if (browser === null) return withFallback(await openTab(url, seams), "no-browser");
+	if (started((seams.spawnVisible ?? spawnDetachedVisible)(browser.file, appWindowArgs(url, profileDir), { env: browserEnv(env) }))) return {
+		opened: true,
+		how: "app-window"
+	};
+	return withFallback(await openTab(url, seams), "spawn-failed");
+}
+function withFallback(outcome, fallback) {
+	return outcome.opened ? {
+		...outcome,
+		fallback
+	} : outcome;
+}
+var APP_BROWSERS, ROOT_VARIABLES, OPEN_TIMEOUT_MS;
+var init_browser = __esmMin((() => {
+	init_protocol$1();
+	init_test_hooks();
+	init_exec();
+	init_host$1();
+	APP_BROWSERS = [{
+		kind: "edge",
+		relative: path.win32.join("Microsoft", "Edge", "Application", "msedge.exe"),
+		onPath: "msedge.exe"
+	}, {
+		kind: "chrome",
+		relative: path.win32.join("Google", "Chrome", "Application", "chrome.exe"),
+		onPath: "chrome.exe"
+	}];
+	ROOT_VARIABLES = [
+		"ProgramFiles(x86)",
+		"ProgramFiles",
+		"LOCALAPPDATA"
+	];
+	OPEN_TIMEOUT_MS = 1e4;
+}));
+
+//#endregion
+//#region packages/engine/src/user-instance/paths.ts
+/**
+* `resolveMcsHome` returns a string with mixed separators on Windows (a backslash path that ends in a forward slash and
+* `mcs`), so it is always run through `path.resolve`. It throws without a home: that is `CONFIG_INVALID`, as `mcsHomeOf`
+* of the instance context says.
+*/
+function homeOf(env) {
+	try {
+		return path.resolve(resolveMcsHome(env));
+	} catch (error) {
+		throw new McsError("CONFIG_INVALID", error instanceof Error ? error.message : "no MCS home folder", { cause: error });
+	}
+}
+/** `<MCS_HOME>/instances`: the tasks root of the user instance, absolute. */
+function userRootOf(env) {
+	return path.join(homeOf(env), USER_ROOT_DIRNAME);
+}
+/** `<MCS_HOME>/instances/user`: the workspace folder of the user instance. */
+function userInstanceDirOf(env) {
+	return path.join(userRootOf(env), USER_INSTANCE_SLUG);
+}
+/** `<instance>/run/browser-profile`: the profile of the optional app window, kept apart from the person's own browser. */
+function userBrowserProfileDirOf(env) {
+	return path.join(userInstanceDirOf(env), "run", "browser-profile");
+}
+/**
+* True when `root` is the user root: canonical equality, with the case rule of the host (links and junctions are
+* followed). Boot refuses a `kind: "user"` workspace anywhere else, so a hand-edited task cannot become a terminal host.
+*/
+function isUserRoot(root, env) {
+	return samePath(root, userRootOf(env));
+}
+/** The operation context of the user instance: the repository and the tasks root are both the user root. */
+function userOpContext(base) {
+	const root = userRootOf(base.env);
+	return {
+		...base,
+		repo: root,
+		root
+	};
+}
+var USER_INSTANCE_SLUG, USER_ROOT_DIRNAME, USER_DEFAULT_PORT, USER_INSTANCE_NAME;
+var init_paths = __esmMin((() => {
+	init_src$1();
+	init_protocol$1();
+	init_paths$3();
+	USER_INSTANCE_SLUG = "user";
+	USER_ROOT_DIRNAME = "instances";
+	USER_DEFAULT_PORT = 7690;
+	USER_INSTANCE_NAME = "Claude Agent Workspace";
+}));
+
+//#endregion
+//#region packages/engine/src/user-instance/ensure.ts
+/**
+* The user instance of this person, made when it does not exist:
+*
+* 1. the user root `<MCS_HOME>/instances` is created, a link there is refused (`WORKSPACE_SYMLINK`);
+* 2. when the root has a workspace `user`, it is reused: an `instance.json` of kind `user` is left as it is, a workspace
+*    without one is adopted as a user instance, any other kind is refused (`WORKSPACE_INVALID`). `port` is never passed
+*    again: `init` would answer `WORKSPACE_EXISTS_CONFIG_DIFFERS` once the person has changed it;
+* 3. otherwise `initWorkspace` makes it with the title, the slug `user`, the default port 7690 and `kind: 'user'`, and the
+*    README is replaced once by the text of a user instance.
+*
+* Only `ctx.env`, `ctx.clock` and the folders of the repository are used; `ctx.repo` and `ctx.root` are not read, so any
+* context of the caller will do (`userOpContext` builds the one that matches).
+*/
+async function ensureUserInstance(ctx, deps = {}) {
+	const root = userRootOf(ctx.env);
+	assertNotLink(root);
+	await mkdir(root, { recursive: true });
+	if ((await listWorkspaceSlugs(root)).includes("user")) {
+		const ws = await openWorkspace({ root }, USER_INSTANCE_SLUG);
+		const existing = await readInstanceFile(ws);
+		if (existing !== null && instanceKindOf(existing) !== "user") throw new McsError("WORKSPACE_INVALID", `${ws.dir} is a ${instanceKindOf(existing)} instance, not the user instance; the folder name 'user' is reserved`, { details: { slug: ws.slug } });
+		return {
+			ws,
+			instance: (await adoptWorkspace(ws, {
+				clock: ctx.clock,
+				kind: "user",
+				...deps.newId === void 0 ? {} : { newId: deps.newId }
+			})).instance,
+			created: false
+		};
+	}
+	const result = await initWorkspace({
+		repo: root,
+		root,
+		name: USER_INSTANCE_NAME,
+		slug: USER_INSTANCE_SLUG,
+		description: DESCRIPTION$1,
+		port: USER_DEFAULT_PORT,
+		kind: "user",
+		clock: ctx.clock,
+		...deps.newId === void 0 ? {} : { newId: deps.newId }
+	});
+	if (result.created) await writeWorkspaceFile(workspacePath(result.ws, "README.md"), README_TEXT);
+	return {
+		ws: result.ws,
+		instance: result.instance,
+		created: result.created
+	};
+}
+var DESCRIPTION$1, README_TEXT;
+var init_ensure = __esmMin((() => {
+	init_src$1();
+	init_workspace();
+	init_adopt();
+	init_fsio();
+	init_init$1();
+	init_list();
+	init_paths$1();
+	init_paths();
+	DESCRIPTION$1 = "The user-wide Claude Agent Workspace instance. Created by caw; do not rename.";
+	README_TEXT = `# ${USER_INSTANCE_NAME}\n\nThis folder is the user-wide instance of the Claude Agent Workspace: one per Windows user, created by \`caw\` the first time it is needed. It holds the database of session metadata, the audit trail, the logs and the run files of that one instance. Do not rename or move it.
+
+- \`task.json\` identity, \`config.json\` overrides of the shared defaults (the port), \`runtime.json\` Node runtime overrides, \`instance.json\` runtime identity (\`kind\` is \`user\`), \`audit/\` change and decision log, \`data/\` database, \`logs/\` runtime logs, \`run/\` control token and browser profile.
+- Inspect: \`caw status\`, \`caw config get\`, \`caw check\`.
+- Never copy transcripts here; they are read in place.
+`;
+}));
+
+//#endregion
+//#region packages/engine/src/ops/autostart.ts
+/** `<APPDATA>\Microsoft\Windows\Start Menu\Programs\Startup`, or `null` without an absolute `APPDATA`. */
+function startupDirOf(env) {
+	const appData = env["APPDATA"];
+	if (appData === void 0 || appData === "" || !path.isAbsolute(appData)) return null;
+	return path.join(appData, ...STARTUP_PARTS);
+}
+function argumentsOf(launcherPath) {
+	return `"${launcherPath}" start --no-open`;
+}
+function sameText(a, b) {
+	return a.toLowerCase() === b.toLowerCase();
+}
+async function isFile(file) {
+	try {
+		return (await stat(file)).isFile();
+	} catch {
+		return false;
+	}
+}
+function off(note) {
+	return {
+		...UNSUPPORTED,
+		supported: true,
+		note
+	};
+}
+function decodeBase64(text) {
+	if (!BASE64.test(text)) return null;
+	return Buffer.from(text, "base64").toString("utf8");
+}
+async function readShortcut(lnk, deps) {
+	const powershell = await (deps.resolveExecutable ?? resolveExecutable)("powershell");
+	if (powershell === null) return null;
+	const result = await (deps.execFileText ?? execFileText)({
+		kind: "powershell.shortcut",
+		file: powershell,
+		args: powershellEncodedArgs(READ_SHORTCUT_SCRIPT),
+		timeoutMs: SCRIPT_TIMEOUT_MS,
+		maxOutputBytes: SCRIPT_MAX_OUTPUT_BYTES,
+		encoding: "utf8",
+		extraEnv: { CAW_LNK_PATH: lnk }
+	});
+	if (!result.ok) return null;
+	const parts = result.stdout.trim().split("	");
+	if (parts.length !== 2) return null;
+	const target = decodeBase64(parts[0] ?? "");
+	const args = decodeBase64(parts[1] ?? "");
+	return target === null || args === null ? null : {
+		target,
+		arguments: args
+	};
+}
+function failure(startup, o, reason) {
+	const how = `Create it by hand in ${startup}: a shortcut to "${o.nodePath}" with the arguments ${argumentsOf(o.launcherPath)}, run minimized.`;
+	return new McsError("INTERNAL", `could not create the autostart shortcut: ${reason}.`, { hint: how });
+}
+async function createShortcut(ctx, startup, o, deps) {
+	const lnk = path.join(startup, AUTOSTART_SHORTCUT_NAME);
+	const powershell = await (deps.resolveExecutable ?? resolveExecutable)("powershell");
+	if (powershell === null) throw failure(startup, o, "Windows PowerShell was not found");
+	await mkdir(startup, { recursive: true });
+	const workDir = ctx.env["USERPROFILE"] ?? ctx.env["HOME"] ?? path.dirname(o.launcherPath);
+	if (!(await (deps.execFileText ?? execFileText)({
+		kind: "powershell.shortcut",
+		file: powershell,
+		args: powershellEncodedArgs("$ErrorActionPreference='Stop'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:CAW_LNK_PATH); $s.TargetPath=$env:CAW_LNK_TARGET; $s.Arguments=$env:CAW_LNK_ARGS; $s.WorkingDirectory=$env:CAW_LNK_WORKDIR; $s.WindowStyle=7; $s.Description=$env:CAW_LNK_DESC; $s.Save()"),
+		timeoutMs: SCRIPT_TIMEOUT_MS,
+		maxOutputBytes: SCRIPT_MAX_OUTPUT_BYTES,
+		encoding: "utf8",
+		extraEnv: {
+			CAW_LNK_PATH: lnk,
+			CAW_LNK_TARGET: o.nodePath,
+			CAW_LNK_ARGS: argumentsOf(o.launcherPath),
+			CAW_LNK_WORKDIR: workDir,
+			CAW_LNK_DESC: DESCRIPTION
+		}
+	})).ok) throw failure(startup, o, "Windows refused the shortcut object (WScript.Shell may be disabled by a policy)");
+	if (!await isFile(lnk)) throw failure(startup, o, "the shortcut is not there after the script ran");
+}
+/** True when the text holds a quote, a line break or any other control character: none may reach a shortcut. */
+function hasUnsafeCharacter(text) {
+	for (const char of text) {
+		const code = char.codePointAt(0) ?? 0;
+		if (code < 32 || code === 127 || char === "\"") return true;
+	}
+	return false;
+}
+function validateTarget(o) {
+	let problem = null;
+	if (!path.isAbsolute(o.nodePath) || path.extname(o.nodePath).toLowerCase() !== ".exe") problem = "nodePath must be an absolute path of an .exe";
+	else if (!path.isAbsolute(o.launcherPath)) problem = "launcherPath must be an absolute path";
+	else if (hasUnsafeCharacter(o.nodePath) || hasUnsafeCharacter(o.launcherPath)) problem = "a path holds a quote or a control character";
+	if (problem !== null) throw new McsError("USAGE", `cannot make the autostart shortcut: ${problem}`);
+}
+/**
+* The state of the autostart shortcut. `supported: false` off Windows. A shortcut is `enabled` when its file exists; its
+* target and arguments are read back, `matchesLauncher` says that the arguments name `launcherPath` (case-insensitive) and
+* `note` explains a stale target or another launcher. A shortcut that cannot be read is still `enabled`, with a note.
+*/
+async function autostartStatus(ctx, o, deps = {}) {
+	if ((deps.platform ?? hostPlatform) !== "win32") return UNSUPPORTED;
+	const startup = startupDirOf(ctx.env);
+	if (startup === null) return off(NO_APPDATA_NOTE);
+	const lnk = path.join(startup, AUTOSTART_SHORTCUT_NAME);
+	if (!await isFile(lnk)) return off(null);
+	const shortcut = await readShortcut(lnk, deps);
+	if (shortcut === null) return {
+		...off("the shortcut exists but could not be read"),
+		enabled: true,
+		shortcut: lnk
+	};
+	const targetExists = shortcut.target !== "" && await isFile(shortcut.target);
+	const matchesLauncher = sameText(shortcut.arguments, argumentsOf(o.launcherPath));
+	let note = null;
+	if (!targetExists) note = "the shortcut points to a program that does not exist; run `caw autostart enable` to refresh it";
+	else if (!matchesLauncher) note = "the shortcut points to another launcher; run `caw autostart enable` to refresh it";
+	return {
+		supported: true,
+		enabled: true,
+		shortcut: lnk,
+		target: shortcut.target,
+		arguments: shortcut.arguments,
+		targetExists,
+		matchesLauncher,
+		note
+	};
+}
+/**
+* Makes the shortcut, replacing an earlier one. `UNSUPPORTED_PLATFORM` off Windows, `CONFIG_INVALID` without an `APPDATA`,
+* `USAGE` for a node or launcher path that could change what the shortcut runs, `INTERNAL` with the manual instruction when
+* Windows does not make the shortcut.
+*/
+async function enableAutostart(ctx, o, deps = {}) {
+	if ((deps.platform ?? hostPlatform) !== "win32") throw new McsError("UNSUPPORTED_PLATFORM", "autostart is available on Windows only");
+	const startup = startupDirOf(ctx.env);
+	if (startup === null) throw new McsError("CONFIG_INVALID", NO_APPDATA_NOTE);
+	validateTarget(o);
+	await createShortcut(ctx, startup, o, deps);
+	return autostartStatus(ctx, o, deps);
+}
+/** Removes the shortcut (a plain file removal) and answers the status without one; the same when there was none. */
+async function disableAutostart(ctx, deps = {}) {
+	if ((deps.platform ?? hostPlatform) !== "win32") return UNSUPPORTED;
+	const startup = startupDirOf(ctx.env);
+	if (startup === null) return off(NO_APPDATA_NOTE);
+	await rm(path.join(startup, AUTOSTART_SHORTCUT_NAME), { force: true });
+	return off(null);
+}
+/**
+* The folder family of an install, or `null` for a place that is no install (a checkout, a worktree, a QA stack): the
+* plugin cache `plugins/cache/<marketplace>/<plugin>` (every version of one plugin shares it) and the installed skill
+* folder `.claude/skills/<name>`.
+*/
+function installFamilyOf(file) {
+	const parts = path.normalize(file).split(path.sep);
+	const lower = parts.map((part) => part.toLowerCase());
+	for (let i = 0; i < parts.length; i += 1) {
+		if (lower[i] === "plugins" && lower[i + 1] === "cache" && i + 4 < parts.length) return lower.slice(0, i + 4).join(path.sep);
+		if (lower[i] === ".claude" && lower[i + 1] === "skills" && i + 3 < parts.length) return lower.slice(0, i + 3).join(path.sep);
+	}
+	return null;
+}
+function sameInstall(a, b) {
+	const family = installFamilyOf(a);
+	return family !== null && family === installFamilyOf(b);
+}
+/**
+* Heals the shortcut when autostart is on (06 2.7, amendment A5): `absent` when it is off or unsupported; `current` when it
+* already names this Node and this launcher; `refreshed` when it was rewritten, which happens when the Node differs, when
+* the recorded launcher no longer exists, or when it lies in the same install family as this launcher (a newer plugin
+* version). Anything else is `foreign-target` and is neither read as ours nor rewritten: another launcher that still
+* exists, arguments of another shape, a shortcut that cannot be read. That outcome is logged as a warning (no value), and
+* the caller tells the person to run `caw autostart enable`.
+*/
+async function refreshAutostartIfEnabled(ctx, o, deps = {}) {
+	if ((deps.platform ?? hostPlatform) !== "win32") return "absent";
+	const startup = startupDirOf(ctx.env);
+	if (startup === null) return "absent";
+	const lnk = path.join(startup, AUTOSTART_SHORTCUT_NAME);
+	if (!await isFile(lnk)) return "absent";
+	const foreign = () => {
+		ctx.log.warn("autostart.foreign_target");
+		return "foreign-target";
+	};
+	const shortcut = await readShortcut(lnk, deps);
+	if (shortcut === null) return foreign();
+	const recorded = RECORDED_LAUNCHER.exec(shortcut.arguments)?.[1];
+	if (recorded === void 0) return foreign();
+	const sameLauncher = sameText(recorded, o.launcherPath);
+	if (sameLauncher && sameText(shortcut.target, o.nodePath)) return "current";
+	if (!sameLauncher && await isFile(recorded) && !sameInstall(recorded, o.launcherPath)) return foreign();
+	validateTarget(o);
+	await createShortcut(ctx, startup, o, deps);
+	return "refreshed";
+}
+var AUTOSTART_SHORTCUT_NAME, DESCRIPTION, STARTUP_PARTS, SCRIPT_TIMEOUT_MS, SCRIPT_MAX_OUTPUT_BYTES, CREATE_SHORTCUT_SCRIPT, READ_SHORTCUT_SCRIPT, UNSUPPORTED, NO_APPDATA_NOTE, BASE64, RECORDED_LAUNCHER;
+var init_autostart$1 = __esmMin((() => {
+	init_src$1();
+	init_exec();
+	init_host$1();
+	AUTOSTART_SHORTCUT_NAME = "Claude Agent Workspace.lnk";
+	DESCRIPTION = "Claude Agent Workspace: starts the app in the background at sign-in";
+	STARTUP_PARTS = [
+		"Microsoft",
+		"Windows",
+		"Start Menu",
+		"Programs",
+		"Startup"
+	];
+	SCRIPT_TIMEOUT_MS = 2e4;
+	SCRIPT_MAX_OUTPUT_BYTES = 8192;
+	CREATE_SHORTCUT_SCRIPT = "$ErrorActionPreference='Stop'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:CAW_LNK_PATH); $s.TargetPath=$env:CAW_LNK_TARGET; $s.Arguments=$env:CAW_LNK_ARGS; $s.WorkingDirectory=$env:CAW_LNK_WORKDIR; $s.WindowStyle=7; $s.Description=$env:CAW_LNK_DESC; $s.Save()";
+	READ_SHORTCUT_SCRIPT = "$ErrorActionPreference='Stop'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:CAW_LNK_PATH); $e=[System.Text.Encoding]::UTF8; [Console]::Out.Write([Convert]::ToBase64String($e.GetBytes($s.TargetPath)) + [string][char]9 + [Convert]::ToBase64String($e.GetBytes($s.Arguments)))";
+	UNSUPPORTED = {
+		supported: false,
+		enabled: false,
+		shortcut: null,
+		target: null,
+		arguments: null,
+		targetExists: null,
+		matchesLauncher: null,
+		note: null
+	};
+	NO_APPDATA_NOTE = "the Startup folder is unknown: APPDATA is not set to an absolute path";
+	BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+	RECORDED_LAUNCHER = /^"([^"]+)" start --no-open$/;
+}));
+
+//#endregion
+//#region packages/engine/src/ops/app.ts
+var app_exports = /* @__PURE__ */ __exportAll({
+	openUser: () => openUser,
+	restartUser: () => restartUser,
+	serveUser: () => serveUser,
+	startUser: () => startUser,
+	statusUser: () => statusUser,
+	stopUser: () => stopUser,
+	userInstanceExists: () => userInstanceExists,
+	verifyUser: () => verifyUser
+});
+async function realSettings$1(ctx, ws, cli) {
+	const config = await resolveConfig({
+		workspace: ws,
+		env: ctx.env,
+		cli: cli.port === void 0 ? {} : { port: cli.port },
+		skillDir: ctx.skillDir
+	});
+	return {
+		effectivePort: config.effectivePort,
+		openAppWindow: config.runtime.app.openAppWindow
+	};
+}
+function effects(deps) {
+	const upgradeDeps = {
+		...deps.probe === void 0 ? {} : { probe: deps.probe },
+		...deps.control === void 0 ? {} : { control: deps.control }
+	};
+	return {
+		ensure: deps.ensure ?? ((ctx) => ensureUserInstance(ctx)),
+		lifecycle: deps.lifecycle ?? {
+			start,
+			stop,
+			status: status$1,
+			verify: verify$1,
+			serveForeground
+		},
+		probe: deps.probe ?? probeInstance,
+		control: deps.control ?? requestControl,
+		upgrade: deps.upgrade ?? ((ctx, input) => run$1(ctx, input, upgradeDeps)),
+		openBrowser: deps.openBrowser ?? ((input) => openLoginUrl(input)),
+		autostart: deps.autostart ?? ((ctx, target) => refreshAutostartIfEnabled(ctx, target)),
+		autostartStatus: deps.autostartStatus ?? ((ctx, o) => autostartStatus(ctx, o)),
+		settings: deps.settings ?? realSettings$1,
+		stamp: deps.stamp ?? readCodeStamp,
+		nodePath: deps.nodePath ?? process.execPath
+	};
+}
+/** True when `<MCS_HOME>/instances/user/task.json` exists: the workspace of the app was made. Only the environment is read. */
+async function userInstanceExists(ctx) {
+	const file = path.join(userInstanceDirOf(ctx.env), "task.json");
+	try {
+		await access(file);
+		return true;
+	} catch {
+		return false;
+	}
+}
+function describePid(pid) {
+	return pid === null ? "?" : String(pid);
+}
+function plural(count, one, many) {
+	return count === 1 ? one : many;
+}
+/** The port of an address like `http://127.0.0.1:7691`. */
+function portOf(url) {
+	let port = NaN;
+	try {
+		if (url !== null) port = Number(new URL(url).port);
+	} catch {}
+	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new McsError("START_FAILED", "the app does not report a usable address", { hint: "run `caw status`" });
+	return port;
+}
+async function liveTerminals(e, ws, instanceId) {
+	const token = await readToken(ws);
+	if (token === null) return null;
+	const attempt = await e.control(controlAddressOf(instanceId), {
+		v: 1,
+		op: "terminals",
+		instanceId,
+		token
+	}, { timeoutMs: CONTROL_CLIENT_TIMEOUT_MS });
+	return attempt.kind === "reply" && attempt.response.op === "terminals" ? {
+		live: attempt.response.live,
+		max: attempt.response.max
+	} : null;
+}
+/**
+* The person never runs `upgrade`: before the app starts, a plan says whether the runtime version or the database schema is
+* behind, and when it is the upgrade is applied (backup first, migrations, integrity check, `instance.json`, audit). A runtime
+* that is older than the instance (`DOWNGRADE_REFUSED`) and a database from a newer one propagate with their hints.
+*/
+async function upgradeIfNeeded(ctx, e) {
+	const plan = await e.upgrade(ctx, { task: USER_INSTANCE_SLUG });
+	if (plan.outcome !== "dry-run") return null;
+	return {
+		backup: (await e.upgrade(ctx, {
+			task: USER_INSTANCE_SLUG,
+			yes: true
+		})).backup,
+		runtimeFrom: plan.plan.runtimeFrom,
+		runtimeTo: plan.plan.runtimeTo
+	};
+}
+/** A problem that stopped a login: `details.reason` is the short form that a warning can carry. Never holds the token or a code. */
+function loginProblem(code, message, reason, hint) {
+	return new McsError(code, message, {
+		hint,
+		details: { reason }
+	});
+}
+async function mintCode(e, ws, instanceId) {
+	const token = await readToken(ws);
+	if (token === null) throw loginProblem("INSTANCE_NOT_RUNNING", "cannot ask the app for a login code: there is no control token", "there is no control token", "run `caw restart`, or `caw start` when the app is not running");
+	const attempt = await e.control(controlAddressOf(instanceId), {
+		v: 1,
+		op: "access",
+		instanceId,
+		token
+	}, { timeoutMs: CONTROL_CLIENT_TIMEOUT_MS });
+	if (attempt.kind === "reply" && attempt.response.op === "access") {
+		const { code, expiresAt, ttlSeconds } = attempt.response;
+		return {
+			code,
+			expiresAt,
+			ttlSeconds
+		};
+	}
+	const reason = attempt.kind === "refusal" ? attempt.error : attempt.kind === "reply" ? "an answer that is no login code" : attempt.kind === "absent" ? "the control channel is gone" : "no answer";
+	throw loginProblem("API_ERROR", `the app did not give a login code (${reason})`, reason, "run `caw restart`");
+}
+/**
+* Mints a code and either shows it (`print`) or opens the login URL. A browser that cannot be opened leaves the URL in `login`:
+* the code was never used, so showing it is the fallback. Throws the problem of a code that cannot be had.
+*/
+async function showLogin(ctx, e, o) {
+	const minted = await mintCode(e, o.ws, o.instanceId);
+	const url = buildLoginUrl(o.port, minted.code);
+	const login = {
+		url,
+		expiresAt: minted.expiresAt,
+		ttlSeconds: minted.ttlSeconds
+	};
+	if (o.mode === "print") return {
+		...NOTHING_SHOWN,
+		login,
+		message: [`login: ${url}  (single use, ${String(minted.ttlSeconds)} s)`]
+	};
+	const mode = o.browser ?? (o.settings.openAppWindow ? "window" : "tab");
+	const outcome = await e.openBrowser({
+		url,
+		mode,
+		profileDir: userBrowserProfileDirOf(ctx.env)
+	});
+	if (!outcome.opened) return {
+		...NOTHING_SHOWN,
+		login,
+		opened: false,
+		warnings: [`could not open a browser (${outcome.reason})`]
+	};
+	const browser = outcome.how === "app-window" ? "app-window" : "default-browser";
+	return {
+		login: null,
+		browser,
+		opened: true,
+		message: [`opened: ${browser === "app-window" ? "app window" : "default browser tab"}`],
+		warnings: outcome.fallback === void 0 ? [] : [`an app window was requested but ${FALLBACK_WHY[outcome.fallback]}; opened a browser tab instead`]
+	};
+}
+function runningResult(ensured, probe) {
+	return {
+		outcome: "already-running",
+		slug: ensured.ws.slug,
+		dir: ensured.ws.dir,
+		instanceId: ensured.instance.instanceId,
+		engine: "node",
+		url: probe.url,
+		pid: probe.pid,
+		createdDefault: false,
+		adopted: false,
+		opened: null,
+		exitCode: 0,
+		message: [],
+		warnings: []
+	};
+}
+async function outdatedWarning(e, ws, instanceId) {
+	const terminals = await liveTerminals(e, ws, instanceId);
+	if (terminals === null || terminals.live === 0) return "the running app is outdated; run `caw restart` to use the new code";
+	const n = terminals.live;
+	return `the running app is outdated; run \`caw restart --force\` to use the new code (${String(n)} terminal ${plural(n, "session is", "sessions are")} live and would end)`;
+}
+/**
+* Everything of a start up to the open flow (06 2.4): the workspace, the probe, the upgrade, the start or the report of the running
+* app, the autostart healing and the port note.
+*/
+async function begin(ctx, e, input) {
+	const ensured = await e.ensure(ctx);
+	const { ws } = ensured;
+	const instanceId = ensured.instance.instanceId;
+	const message = [];
+	const warnings = [];
+	const probe = await e.probe(ws, { runtimeDir: ctx.runtimeDir });
+	let started;
+	let upgraded = null;
+	let outdated = false;
+	if (probe.state === "running") {
+		started = runningResult(ensured, probe);
+		const running = probe.identity?.codeStamp;
+		const stamp = await e.stamp(ctx.runtimeDir);
+		if (running !== void 0 && stamp !== null && stamp !== running) {
+			outdated = true;
+			warnings.push(await outdatedWarning(e, ws, instanceId));
+		}
+	} else {
+		if (!isLiveState(probe.state)) upgraded = await upgradeIfNeeded(ctx, e);
+		started = await e.lifecycle.start(ctx, {
+			task: USER_INSTANCE_SLUG,
+			...input.port === void 0 ? {} : { port: input.port },
+			...input.logLevel === void 0 ? {} : { logLevel: input.logLevel },
+			...input.timeoutMs === void 0 ? {} : { timeoutMs: input.timeoutMs }
+		});
+	}
+	const port = portOf(started.url);
+	const fresh = started.outcome === "started";
+	if (!fresh && input.port !== void 0 && input.port !== port) warnings.push(`--port ${String(input.port)} is ignored: the app is already running on port ${String(port)}`);
+	if (upgraded !== null) message.push(`upgraded the app: runtime ${upgraded.runtimeFrom} -> ${upgraded.runtimeTo} (backup ${upgraded.backup ?? "-"})`);
+	message.push(`${fresh ? "started" : "already running"}: ${appBrowserUrl(port)} (pid ${describePid(started.pid)})`);
+	const settings = await e.settings(ctx, ws, fresh && input.port !== void 0 ? { port: input.port } : {});
+	const portNote = port === settings.effectivePort ? null : `${String(settings.effectivePort)} was busy; using ${String(port)}`;
+	if (portNote !== null) message.push(`note: ${portNote}`);
+	try {
+		const healed = await e.autostart(ctx, {
+			launcherPath: ctx.launcherPath,
+			nodePath: e.nodePath
+		});
+		if (healed === "refreshed") message.push("refreshed the autostart shortcut");
+		if (healed === "foreign-target") warnings.push("the autostart shortcut points to another launcher; run `caw autostart enable` to refresh it");
+	} catch (error) {
+		warnings.push(`could not refresh the autostart shortcut${error instanceof McsError ? `: ${error.message}` : ""}`);
+	}
+	return {
+		ws,
+		instanceId,
+		created: ensured.created,
+		started,
+		port,
+		configuredPort: settings.effectivePort,
+		portNote,
+		outdated,
+		upgraded,
+		settings,
+		message,
+		warnings
+	};
+}
+/**
+* `caw start` of the user instance (06 2.4): makes the workspace, upgrades a stale runtime or database (backup first), starts the
+* app or reports the one that runs, heals the autostart shortcut, notes a busy port, and with `open` opens the browser at a login
+* URL (`print` shows the URL instead). A running app that is outdated is warned about and never restarted.
+*/
+async function startUser(ctx, input = {}, deps = {}) {
+	const uctx = userContext(ctx);
+	const e = effects(deps);
+	const begun = await begin(uctx, e, input);
+	const mode = input.print === true ? "print" : input.open === true ? "open" : null;
+	let shown = NOTHING_SHOWN;
+	if (mode !== null) try {
+		shown = await showLogin(uctx, e, {
+			ws: begun.ws,
+			instanceId: begun.instanceId,
+			port: begun.port,
+			settings: begun.settings,
+			mode,
+			browser: input.browser
+		});
+	} catch (error) {
+		if (mode === "print" || !(error instanceof McsError)) throw error;
+		const reason = error.details?.["reason"];
+		shown = {
+			...NOTHING_SHOWN,
+			warnings: [`could not get a login code (${typeof reason === "string" ? reason : error.code}); run \`caw open\` to try again`]
+		};
+	}
+	return {
+		...begun.started,
+		scope: "user",
+		createdDefault: begun.created,
+		opened: shown.opened,
+		exitCode: 0,
+		message: [
+			...begun.message,
+			...shown.message,
+			...mode === null ? [NEXT_LINE] : []
+		],
+		warnings: [...begun.warnings, ...shown.warnings],
+		browserUrl: appBrowserUrl(begun.port),
+		configuredPort: begun.configuredPort,
+		portNote: begun.portNote,
+		outdated: begun.outdated,
+		upgraded: begun.upgraded,
+		login: shown.login,
+		browser: shown.browser
+	};
+}
+async function stopFor(ctx, e, input, purpose, deps) {
+	if (!await userInstanceExists(ctx)) return {
+		scope: "user",
+		outcome: "nothing-to-stop",
+		slug: USER_INSTANCE_SLUG,
+		pid: null,
+		url: null,
+		forced: false,
+		reason: null,
+		terminalsEnded: 0,
+		exitCode: 0,
+		message: ["nothing to stop (the app was never started)"]
+	};
+	return {
+		...await e.lifecycle.stop(ctx, {
+			task: USER_INSTANCE_SLUG,
+			purpose,
+			...input.timeoutMs === void 0 ? {} : { timeoutMs: input.timeoutMs },
+			...input.force === true ? { force: true } : {}
+		}, deps),
+		scope: "user"
+	};
+}
+/**
+* `caw stop` of the user instance: the guarded stop of `lifecycle.stop` (live terminals refuse with `TERMINALS_LIVE`, exit 3,
+* unless `force`). An app that was never started is `nothing to stop`, and nothing is made.
+*/
+function stopUser(ctx, input = {}, deps = {}) {
+	return stopFor(userContext(ctx), effects(deps), input, "stop", deps);
+}
+/**
+* `caw restart`: the guarded stop, and only when it succeeded the same start as `startUser`, which also upgrades: a restart that
+* applies an update migrates too.
+*/
+async function restartUser(ctx, input = {}, deps = {}) {
+	const uctx = userContext(ctx);
+	const stopped = await stopFor(uctx, effects(deps), input.force === true ? { force: true } : {}, "restart", deps);
+	const started = await startUser(uctx, {
+		...input.port === void 0 ? {} : { port: input.port },
+		...input.logLevel === void 0 ? {} : { logLevel: input.logLevel },
+		...input.timeoutMs === void 0 ? {} : { timeoutMs: input.timeoutMs },
+		...input.open === void 0 ? {} : { open: input.open },
+		...input.browser === void 0 ? {} : { browser: input.browser },
+		...input.print === void 0 ? {} : { print: input.print }
+	}, deps);
+	return {
+		scope: "user",
+		stop: stopped,
+		start: started,
+		exitCode: started.exitCode,
+		message: [...stopped.message, ...started.message],
+		warnings: started.warnings
+	};
+}
+function autostartValue(state) {
+	if (!state.supported) return "unsupported";
+	return state.enabled ? "on" : "off";
+}
+/**
+* `caw status` of the user instance: the legacy report of `lifecycle.status` and the scope, the configured port and the note of a
+* busy one, the live terminals, the autostart state, the folder and the logs. An app that was never started is not running, with a
+* hint and without a workspace made. Exit 0 iff the app runs.
+*/
+async function statusUser(ctx, deps = {}) {
+	const uctx = userContext(ctx);
+	const e = effects(deps);
+	const dir = userInstanceDirOf(uctx.env);
+	const autostart = await e.autostartStatus(uctx, { launcherPath: uctx.launcherPath });
+	const warnings = autostart.enabled && autostart.note !== null ? [autostart.note] : [];
+	if (!await userInstanceExists(uctx)) return {
+		report: {
+			scope: "user",
+			running: false,
+			state_file: path.join(dir, "state.json"),
+			hint: NEVER_STARTED,
+			engine: null,
+			probe: "stopped",
+			instance_id: null,
+			configured_port: USER_DEFAULT_PORT,
+			port_note: null,
+			terminals: null,
+			autostart: autostartValue(autostart),
+			home: dir,
+			logs_dir: path.join(dir, "logs")
+		},
+		exitCode: 1,
+		warnings
+	};
+	const ws = userWorkspace(uctx);
+	const { report, exitCode } = await e.lifecycle.status(uctx, { task: USER_INSTANCE_SLUG }, deps);
+	const settings = await e.settings(uctx, ws, {});
+	let portNote = null;
+	if (report.url !== void 0) {
+		const port = portOf(report.url);
+		if (port !== settings.effectivePort) portNote = `${String(settings.effectivePort)} was busy; using ${String(port)}`;
+	}
+	const terminals = report.running && report.instance_id !== null ? await liveTerminals(e, ws, report.instance_id) : null;
+	return {
+		report: {
+			...report,
+			scope: "user",
+			configured_port: settings.effectivePort,
+			port_note: portNote,
+			terminals,
+			autostart: autostartValue(autostart),
+			home: ws.dir,
+			logs_dir: path.join(ws.dir, "logs")
+		},
+		exitCode,
+		warnings
+	};
+}
+/**
+* `caw open`: starts the app when it does not run (not with `noStart`), mints a code and opens the browser at the login URL;
+* `print` shows the URL instead. Unlike a start, a code that cannot be had is an error here.
+*/
+async function openUser(ctx, input = {}, deps = {}) {
+	const uctx = userContext(ctx);
+	const e = effects(deps);
+	if (input.noStart === true) {
+		if (!(await userInstanceExists(uctx) && (await e.probe(userWorkspace(uctx), { runtimeDir: uctx.runtimeDir })).state === "running")) throw new McsError("INSTANCE_NOT_RUNNING", "the app is not running (--no-start)", { hint: "run `caw start`, or leave out --no-start" });
+	}
+	const begun = await begin(uctx, e, input.timeoutMs === void 0 ? {} : { timeoutMs: input.timeoutMs });
+	const shown = await showLogin(uctx, e, {
+		ws: begun.ws,
+		instanceId: begun.instanceId,
+		port: begun.port,
+		settings: begun.settings,
+		mode: input.print === true ? "print" : "open",
+		browser: input.browser
+	});
+	return {
+		scope: "user",
+		url: appBrowserUrl(begun.port),
+		port: begun.port,
+		start: begun.started,
+		login: shown.login,
+		browser: shown.browser,
+		exitCode: 0,
+		message: [...begun.message, ...shown.message],
+		warnings: [...begun.warnings, ...shown.warnings]
+	};
+}
+/**
+* `caw serve`: the instance in the foreground. The workspace is made and a stale runtime or database upgraded first, unless a
+* monitor is live (the lifecycle then refuses with `INSTANCE_RUNNING`). Ctrl+C is forwarded as a `signal` shutdown, which is never
+* guarded.
+*/
+async function serveUser(ctx, input = {}, deps = {}) {
+	const uctx = userContext(ctx);
+	const e = effects(deps);
+	const { ws } = await e.ensure(uctx);
+	const probe = await e.probe(ws, { runtimeDir: uctx.runtimeDir });
+	if (!isLiveState(probe.state)) await upgradeIfNeeded(uctx, e);
+	return e.lifecycle.serveForeground(uctx, {
+		task: USER_INSTANCE_SLUG,
+		...input.port === void 0 ? {} : { port: input.port },
+		...input.logLevel === void 0 ? {} : { logLevel: input.logLevel }
+	}, deps);
+}
+/** `caw verify`: the five endpoint checks against the user instance; an app that was never started is `INSTANCE_NOT_RUNNING`. */
+async function verifyUser(ctx, deps = {}) {
+	const uctx = userContext(ctx);
+	if (!await userInstanceExists(uctx)) throw new McsError("INSTANCE_NOT_RUNNING", "the app was never started: there is nothing to verify", { hint: "run `caw start`" });
+	return effects(deps).lifecycle.verify(uctx, { task: USER_INSTANCE_SLUG }, deps);
+}
+var NEXT_LINE, NEVER_STARTED, userContext, userWorkspace, NOTHING_SHOWN, FALLBACK_WHY;
+var init_app = __esmMin((() => {
+	init_src$1();
+	init_protocol$1();
+	init_resolve();
+	init_browser();
+	init_ensure();
+	init_paths();
+	init_paths$1();
+	init_autostart$1();
+	init_instance_upgrade();
+	init_instances$1();
+	init_lifecycle();
+	init_probe();
+	NEXT_LINE = "next: caw open  (caw open --print gives a login URL)";
+	NEVER_STARTED = "never started: run `caw start`";
+	userContext = (ctx) => userOpContext(ctx);
+	userWorkspace = (ctx) => resolveWorkspace(ctx.root, USER_INSTANCE_SLUG);
+	NOTHING_SHOWN = {
+		login: null,
+		browser: null,
+		opened: null,
+		message: [],
+		warnings: []
+	};
+	FALLBACK_WHY = {
+		"no-browser": "Edge or Chrome was not found",
+		"spawn-failed": "it did not start"
+	};
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/diagnose.ts
+function buildOf(release) {
+	const match = RELEASE_BUILD_RE.exec(release);
+	return match?.[1] === void 0 ? null : Number(match[1]);
+}
+/**
+* The folder of the installed platform package of the addon for `target` (a package of the install's dependency folder, named
+* after `NODE_PTY_PACKAGE` and the target) as seen from the module `from` (a file URL; default: this module), or null
+* when it is not installed. The comment spells out no install path and no platform package name on purpose: the bundle
+* keeps comments, and the bundle test rejects both in any `.mjs`. The package's `exports` is a plain string
+* (`./lib/index.js`), so `require.resolve` of its `package.json` fails with ERR_PACKAGE_PATH_NOT_EXPORTED;
+* `findPackageJSON` reads the folder without going through `exports`.
+*/
+function installedPackageDir(target, from = import.meta.url) {
+	try {
+		const manifest = findPackageJSON(`${NODE_PTY_PACKAGE}-${target}`, from);
+		return manifest === void 0 ? null : path.dirname(manifest);
+	} catch {
+		return null;
+	}
+}
+function conptyFilesPresent(loaded, target, fs, packageDirOf) {
+	const dir = loaded.via === "bundle" ? loaded.dir : packageDirOf(target);
+	if (dir === null) return null;
+	const conpty = path.win32.join(dir, "prebuilds", target, "conpty");
+	return fs.isFile(path.win32.join(conpty, "conpty.dll")) && fs.isFile(path.win32.join(conpty, "OpenConsole.exe"));
+}
+/**
+* The state of the terminal on this host, in the order the backend decides it: no shipped target (`unsupported-os`), a Windows build
+* below 17763 (`os-too-old`), then the addon is loaded (`native-missing`, `native-load-failed`). Never throws and starts nothing.
+*/
+function diagnoseTerminal(deps) {
+	const platform = deps.platform ?? hostPlatform;
+	const arch = deps.arch ?? process.arch;
+	const release = deps.release ?? os.release();
+	const fs = deps.fs ?? realTerminalFs;
+	const target = targetOf$2(platform, arch);
+	const windowsBuild = platform === "win32" ? {
+		build: buildOf(release),
+		ok: windowsBuildOk(release)
+	} : null;
+	const claude = claudeFacts({
+		command: deps.config.command,
+		env: deps.env ?? process.env,
+		platform,
+		fs,
+		home: deps.home ?? os.homedir()
+	});
+	let reason = null;
+	let loaded = null;
+	if (target === null) reason = "unsupported-os";
+	else if (windowsBuild !== null && !windowsBuild.ok) reason = "os-too-old";
+	else try {
+		loaded = (deps.load ?? (() => loadNodePty({
+			...realLoaderDeps(),
+			platform,
+			arch
+		})))();
+	} catch (error) {
+		reason = (error instanceof TerminalError ? unsupportedReasonOf(error.code) : null) ?? "native-load-failed";
+	}
+	const filesPresent = loaded !== null && target !== null && platform === "win32" ? conptyFilesPresent(loaded, target, fs, deps.packageDirOf ?? installedPackageDir) : null;
+	return {
+		supported: reason === null,
+		reason,
+		nodePty: {
+			via: loaded?.via ?? null,
+			loaded: loaded !== null
+		},
+		claude,
+		conptyDll: { filesPresent },
+		windowsBuild
+	};
+}
+var RELEASE_BUILD_RE;
+var init_diagnose = __esmMin((() => {
+	init_host$1();
+	init_default$1();
+	init_errors$2();
+	init_manager();
+	init_native_targets();
+	init_node_pty_loader();
+	init_unsupported_backend();
+	RELEASE_BUILD_RE = /^\d+\.\d+\.(\d{1,9})(?!\d)/;
+}));
+
+//#endregion
+//#region packages/engine/src/ops/app-checks.ts
+/**
+* The version `claude --version` prints, or `null`: best effort, and never a failure (06 8 risk R2). The program is found and
+* built by the terminal's own rules (`resolveClaudeCommand`, `buildLaunch`), with `--version` as the only argument: the configured
+* arguments stay out. An `.exe` runs directly; a `.cmd` shim runs as `cmd.exe /d /s /c "<shim> --version"`, which is only done for
+* a path that needs no quoting (the argument list of `execFileText` cannot carry the quotes that cmd.exe reads). Only the version
+* number leaves this function, never the rest of the output.
+*/
+async function claudeVersionOf(command, o) {
+	const resolved = resolveClaudeCommand({
+		command,
+		env: o.env,
+		platform: o.platform,
+		fs: o.fs
+	});
+	if (resolved === null) return null;
+	let file;
+	let args;
+	try {
+		const launch = buildLaunch(resolved, ["--version"], {
+			env: o.env,
+			platform: o.platform,
+			fs: o.fs
+		});
+		if (launch.kind === "exe") {
+			file = launch.file;
+			args = launch.args;
+		} else {
+			if (!PLAIN_SHIM_PATH.test(launch.display)) return null;
+			file = launch.file;
+			args = [
+				"/d",
+				"/s",
+				"/c",
+				`${launch.display} --version`
+			];
+		}
+	} catch {
+		return null;
+	}
+	const result = await o.exec({
+		kind: "claude",
+		file,
+		args,
+		timeoutMs: VERSION_TIMEOUT_MS,
+		maxOutputBytes: 4096,
+		encoding: "utf8"
+	});
+	if (!result.ok) return null;
+	return VERSION_RE.exec(firstLine(result.stdout))?.[0] ?? null;
+}
+/**
+* The groups of `icacls <folder>` output (`Everyone`, `Users`, `Authenticated Users`) that hold a right to read or write, in the
+* order of the output, each once. A denied entry, a right that only traverses or reads attributes, and every other account are no
+* finding. The names are the English ones: on another language of Windows nothing is found, and the check stays silent.
+*/
+function openRunFolderGroups(output) {
+	const found = [];
+	for (const line of output.split(/\r?\n/)) for (const [pattern, name] of OPEN_ACCOUNTS) {
+		const groups = pattern.exec(line)?.[1];
+		if (groups === void 0) continue;
+		const tokens = [...groups.matchAll(/\(([^()]*)\)/g)].flatMap((match) => (match[1] ?? "").split(","));
+		if (tokens.includes("DENY")) continue;
+		if (tokens.filter((token) => !FLAG_TOKENS.has(token)).some((right) => OPEN_RIGHTS.has(right)) && !found.includes(name)) found.push(name);
+	}
+	return found;
+}
+async function realSettings(ctx, ws) {
+	const resolve = (workspace) => resolveConfig({
+		workspace,
+		env: ctx.env,
+		cli: {},
+		skillDir: ctx.skillDir
+	});
+	let config;
+	let own = ws !== null;
+	try {
+		config = await resolve(ws);
+	} catch {
+		config = await resolve(null);
+		own = false;
+	}
+	return {
+		terminal: {
+			command: config.runtime.terminal.command,
+			conptyDll: config.runtime.terminal.conptyDll
+		},
+		openAppWindow: config.runtime.app.openAppWindow,
+		effectivePort: own ? config.effectivePort : USER_DEFAULT_PORT,
+		portScan: config.runtime.server.portScan
+	};
+}
+async function realExists(file) {
+	try {
+		await access(file);
+		return true;
+	} catch {
+		return false;
+	}
+}
+async function realIcacls(folder) {
+	const file = await resolveExecutable("icacls");
+	if (file === null) return null;
+	return execFileText({
+		kind: "icacls",
+		file,
+		args: [folder],
+		timeoutMs: ICACLS_TIMEOUT_MS,
+		maxOutputBytes: 65536,
+		encoding: "utf8"
+	});
+}
+/** True when `GET /api/state` answers 200 with a JSON object that has `folders`: MTOP's own answer (its `is_ours` test). */
+async function mtopAnswers(get, port) {
+	const attempt = await get(`http://127.0.0.1:${String(port)}/api/state`, { timeoutMs: MTOP_TIMEOUT_MS });
+	if (!attempt.ok || attempt.reply.status !== 200) return false;
+	const body = jsonBodyOf(attempt.reply);
+	return typeof body === "object" && body !== null && !Array.isArray(body) && "folders" in body;
+}
+/** True when the context is the one of the user instance: its tasks root is the user root. A context without a home is not. */
+function inUserScope(ctx) {
+	try {
+		return isUserRoot(ctx.root, ctx.env);
+	} catch {
+		return false;
+	}
+}
+function provider(run) {
+	const check = async (ctx, ws) => inUserScope(ctx) ? run(ctx, ws) : null;
+	return Object.assign(check, { timeoutMs: APP_CHECK_TIMEOUT_MS });
+}
+/**
+* The eight providers, keyed by id, for `DoctorDeps.extraChecks`. Each answers `null` outside the user scope. Every provider names
+* a time budget of its own (`timeoutMs`), longer than the default of the doctor, because some of them start a program.
+*/
+function appCheckProviders(deps = {}) {
+	const platform = deps.platform ?? hostPlatform;
+	const settingsOf = deps.settings ?? realSettings;
+	const diagnose = deps.diagnose ?? ((input) => diagnoseTerminal({
+		...input,
+		...deps.platform === void 0 ? {} : { platform: deps.platform }
+	}));
+	const claudeVersion = deps.claudeVersion ?? ((command, env) => claudeVersionOf(command, {
+		env,
+		platform,
+		fs: realTerminalFs,
+		exec: (spec) => execFileText(spec)
+	}));
+	const probe = deps.probe ?? ((ws, runtimeDir) => probeInstance(ws, { runtimeDir }));
+	const canBind = deps.canBind ?? nodeDoctorSeams.canBind;
+	const get = deps.httpGet ?? httpGet;
+	const exists = deps.exists ?? realExists;
+	const browserOf = deps.findAppBrowser ?? ((env) => findAppBrowser({ env }));
+	const autostart = deps.autostart ?? ((ctx, o) => autostartStatus(ctx, o));
+	const stampOf = deps.codeStamp ?? readCodeStamp;
+	const icacls = deps.icacls ?? realIcacls;
+	const diagnosisOf = async (ctx, ws) => {
+		const settings = await settingsOf(ctx, ws);
+		return {
+			settings,
+			diagnosis: diagnose({
+				config: settings.terminal,
+				env: ctx.env
+			})
+		};
+	};
+	return {
+		"app.claude": provider(async (ctx, ws) => {
+			const id = "app.claude";
+			const { settings, diagnosis } = await diagnosisOf(ctx, ws);
+			const { claude: found } = diagnosis;
+			if (!found.found) return fail(id, "error", `"${settings.terminal.command}" was not found (terminal.command)`, SET_COMMAND_FIX);
+			const display = found.display ?? settings.terminal.command;
+			if (found.kind === null) return fail(id, "error", `${display} cannot be started in the terminal (only .exe, .com, .cmd and .bat programs can)`, SET_COMMAND_FIX);
+			const version = await claudeVersion(settings.terminal.command, ctx.env);
+			return pass(id, "error", `claude found: ${display}${version === null ? "" : ` (${version})`}`);
+		}),
+		"app.pty": provider(async (ctx, ws) => {
+			const id = "app.pty";
+			const { diagnosis } = await diagnosisOf(ctx, ws);
+			const level = platform === "win32" ? "error" : "warn";
+			const reinstall = platform === "win32" ? REINSTALL_FIX : "the terminal is not supported on this OS; monitoring works";
+			if (!diagnosis.supported) switch (diagnosis.reason) {
+				case "os-too-old": return fail(id, level, "the Windows build is too old for the pseudo console", WINDOWS_FIX);
+				case "native-missing": return fail(id, level, "the terminal module (node-pty) was not found", reinstall);
+				case "native-load-failed": return fail(id, level, "the terminal module (node-pty) failed to load", reinstall);
+				case "unsupported-os":
+				case null: return fail(id, level, "no terminal module ships for this operating system or processor", reinstall);
+			}
+			if (diagnosis.conptyDll.filesPresent === false) return fail(id, level, "conpty.dll or OpenConsole.exe is missing next to the terminal module", reinstall);
+			const from = diagnosis.nodePty.via === "bundle" ? "the bundle" : "node_modules";
+			const files = diagnosis.conptyDll.filesPresent === true ? "; ConPTY files present" : platform === "win32" ? "; ConPTY files not checked" : "";
+			return pass(id, level, `terminal module loaded from ${from}${files}`);
+		}),
+		"app.windows": provider(async (ctx, ws) => {
+			const id = "app.windows";
+			const { diagnosis } = await diagnosisOf(ctx, ws);
+			const build = diagnosis.windowsBuild;
+			if (build === null) return pass(id, "error", "not Windows (not needed)");
+			if (build.build === null) return fail(id, "error", "the Windows build could not be read", WINDOWS_FIX);
+			return build.ok ? pass(id, "error", `Windows build ${String(build.build)} (the pseudo console needs ${String(MIN_WINDOWS_BUILD)} or newer)`) : fail(id, "error", `Windows build ${String(build.build)} is older than ${String(MIN_WINDOWS_BUILD)}`, WINDOWS_FIX);
+		}),
+		"app.port": provider(async (ctx, ws) => {
+			const id = "app.port";
+			const settings = await settingsOf(ctx, ws);
+			const configured = settings.effectivePort;
+			const mine = ws === null ? null : await probe(ws, ctx.runtimeDir);
+			const held = mine !== null && isLiveState(mine.state) && mine.port !== null;
+			if (held && mine.port === configured) return pass(id, "warn", `port ${String(configured)} is held by this instance`);
+			if (await canBind(configured)) return pass(id, "warn", `port ${String(configured)} is free`);
+			const elsewhere = await mtopAnswers(get, configured);
+			const who = `port ${String(configured)} is held by something else${elsewhere ? " (MTOP answers there)" : ""}`;
+			const fix = "caw start picks the next free port; set a fixed one with caw config set server.port N";
+			if (held) return fail(id, "warn", `${who}; this app runs on ${String(mine.port)}`, fix);
+			for (let candidate = configured + 1; candidate <= configured + settings.portScan; candidate += 1) if (await canBind(candidate)) return fail(id, "warn", `${who}; the next free port is ${String(candidate)}`, fix);
+			return fail(id, "warn", `${who}; no port is free up to ${String(configured + settings.portScan)}`, fix);
+		}),
+		"app.memory": provider(async (ctx) => {
+			const id = "app.memory";
+			return await exists(path.join(claudeHomeOf(ctx.env), "memory", "index.json")) ? pass(id, "warn", "DA memory index found") : fail(id, "warn", "no memory/index.json in the Claude home (DA memory)", "optional: without it the project list shows ~/.claude/projects only");
+		}),
+		"app.browser": provider(async (ctx, ws) => {
+			const id = "app.browser";
+			if (!(await settingsOf(ctx, ws)).openAppWindow) return pass(id, "warn", "the default browser tab is used (app.openAppWindow is false)");
+			const found = await browserOf(ctx.env);
+			return found === null ? fail(id, "warn", "app.openAppWindow is true but neither Edge nor Chrome was found", "falls back to the default browser; install Edge or Chrome, or caw config set app.openAppWindow false") : pass(id, "warn", `an app window opens in ${found.kind === "edge" ? "Edge" : "Chrome"}`);
+		}),
+		"app.autostart": provider(async (ctx) => {
+			const id = "app.autostart";
+			const status = await autostart(ctx, { launcherPath: ctx.launcherPath });
+			if (!status.supported) return pass(id, "warn", "autostart is available on Windows only");
+			if (!status.enabled) return pass(id, "warn", "autostart is off");
+			let problem = null;
+			if (status.target === null) problem = "the autostart shortcut exists but could not be read";
+			else if (status.targetExists === false) problem = "the autostart shortcut points to a program that does not exist";
+			else if (status.matchesLauncher === false) problem = "the autostart shortcut points to another launcher";
+			else if (status.note !== null) problem = status.note;
+			return problem === null ? pass(id, "warn", "autostart is on and current") : fail(id, "warn", problem, "caw autostart enable refreshes it");
+		}),
+		"app.instance": provider(async (ctx, ws) => {
+			const id = "app.instance";
+			if (ws === null) return pass(id, "warn", "the app instance has not been created yet (caw start creates it)");
+			const problems = [];
+			const state = await probe(ws, ctx.runtimeDir);
+			let line = "the app is not running";
+			switch (state.state) {
+				case "running": {
+					const running = state.identity?.codeStamp;
+					const stamp = await stampOf(ctx.runtimeDir);
+					if (running !== void 0 && stamp !== null && stamp !== running) problems.push({
+						detail: "the running app is outdated: the installed code changed since it started",
+						fix: "caw restart"
+					});
+					else line = "the app is running and current";
+					break;
+				}
+				case "starting":
+				case "stopping":
+					line = `the app is ${state.state}`;
+					break;
+				case "unhealthy":
+					problems.push({
+						detail: `the app does not answer properly (${state.reason})`,
+						fix: "caw restart"
+					});
+					break;
+				case "unmanaged-running": problems.push({
+					detail: `a program that this runtime did not start answers there (${state.reason})`,
+					fix: "stop that program with the tool that started it"
+				});
+			}
+			const runDir = path.join(ws.dir, "run");
+			if (platform === "win32" && await exists(runDir)) {
+				const listing = await icacls(runDir);
+				const open = listing?.ok === true ? openRunFolderGroups(listing.stdout) : [];
+				if (open.length > 0) problems.push({
+					detail: `${open.join(", ")} can read the run folder of the app, where the control token lives`,
+					fix: "restrict the run folder of the app instance to your own account (icacls <folder> /inheritance:r), or move MCS_HOME to a folder in your profile"
+				});
+			}
+			return problems.length === 0 ? pass(id, "warn", line) : fail(id, "warn", problems.map((problem) => problem.detail).join("; "), problems.map((problem) => problem.fix).join("; "));
+		})
+	};
+}
+var APP_CHECK_IDS, userCheckIds, APP_CHECK_TIMEOUT_MS, VERSION_TIMEOUT_MS, ICACLS_TIMEOUT_MS, MTOP_TIMEOUT_MS, pass, fail, PLAIN_SHIM_PATH, VERSION_RE, OPEN_ACCOUNTS, FLAG_TOKENS, OPEN_RIGHTS, WINDOWS_FIX, REINSTALL_FIX, SET_COMMAND_FIX;
+var init_app_checks = __esmMin((() => {
+	init_resolve();
+	init_discovery();
+	init_browser();
+	init_exec();
+	init_host$1();
+	init_command();
+	init_default$1();
+	init_diagnose();
+	init_native_targets();
+	init_paths();
+	init_autostart$1();
+	init_doctor_checks();
+	init_instances$1();
+	init_probe();
+	APP_CHECK_IDS = [
+		"app.claude",
+		"app.pty",
+		"app.windows",
+		"app.port",
+		"app.memory",
+		"app.browser",
+		"app.autostart",
+		"app.instance"
+	];
+	userCheckIds = [
+		"node.version",
+		"node.sqlite",
+		"runtime.layout",
+		"claude.home",
+		"mcshome.writable",
+		"app."
+	];
+	APP_CHECK_TIMEOUT_MS = 3e4;
+	VERSION_TIMEOUT_MS = 5e3;
+	ICACLS_TIMEOUT_MS = 1e4;
+	MTOP_TIMEOUT_MS = 2e3;
+	pass = (id, level, detail) => ({
+		id,
+		ok: true,
+		level,
+		detail
+	});
+	fail = (id, level, detail, fix) => ({
+		id,
+		ok: false,
+		level,
+		detail,
+		fix
+	});
+	PLAIN_SHIM_PATH = /^[A-Za-z]:[\\/][\p{L}\p{N}_.@+=\\/-]+$/u;
+	VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/;
+	OPEN_ACCOUNTS = [
+		[/(?:^|\s)Everyone:((?:\([^()]*\))+)\s*$/i, "Everyone"],
+		[/(?:^|\s)BUILTIN\\Users:((?:\([^()]*\))+)\s*$/i, "Users"],
+		[/(?:^|\s)NT AUTHORITY\\Authenticated Users:((?:\([^()]*\))+)\s*$/i, "Authenticated Users"]
+	];
+	FLAG_TOKENS = /* @__PURE__ */ new Set([
+		"OI",
+		"CI",
+		"IO",
+		"NP",
+		"I"
+	]);
+	OPEN_RIGHTS = /* @__PURE__ */ new Set([
+		"F",
+		"M",
+		"RX",
+		"R",
+		"W",
+		"GR",
+		"GA",
+		"GW",
+		"RD",
+		"WD",
+		"AD"
+	]);
+	WINDOWS_FIX = "Windows 10 1809 or newer is needed for the terminal";
+	REINSTALL_FIX = "reinstall the skill (the bundle folder is incomplete)";
+	SET_COMMAND_FIX = "install Claude Code, or: caw config set terminal.command <full path to claude>";
+}));
+
+//#endregion
 //#region packages/engine/src/index.ts
 var src_exports = /* @__PURE__ */ __exportAll({
+	ACCESS_LIMITS: () => ACCESS_LIMITS,
 	AGENT_KINDS: () => AGENT_KINDS,
 	AGENT_NOTIFICATION_STATUSES: () => AGENT_NOTIFICATION_STATUSES,
 	AGENT_RE: () => AGENT_RE,
+	APP_CHECK_IDS: () => APP_CHECK_IDS,
 	ATTEMPTS_DEFAULT_LIMIT: () => 30,
 	ATTEMPTS_LIMITS: () => ATTEMPTS_LIMITS,
 	ATTEMPTS_MAX_LIMIT: () => 200,
@@ -55441,6 +63945,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	AUDIT_ACTIONS: () => AUDIT_ACTIONS,
 	AUDIT_FILES: () => AUDIT_FILES,
 	AUDIT_READ_BYTES: () => AUDIT_READ_BYTES,
+	AUTOSTART_SHORTCUT_NAME: () => AUTOSTART_SHORTCUT_NAME,
 	AgentFactsSchema: () => AgentFactsSchema,
 	AtomicWriteError: () => AtomicWriteError,
 	BACKUPS_KEPT: () => 20,
@@ -55466,10 +63971,15 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	DEFAULT_TIME_FORMAT: () => DEFAULT_TIME_FORMAT,
 	DISABLE_ALL_HOOKS_SETTINGS: () => DISABLE_ALL_HOOKS_SETTINGS,
 	DbError: () => DbError,
+	EMPTY_CENSUS: () => EMPTY_CENSUS,
 	EMPTY_MANIFEST: () => EMPTY_MANIFEST,
+	EMPTY_USER_SERVICES: () => EMPTY_USER_SERVICES,
 	EVIDENCE_FACTS: () => EVIDENCE_FACTS,
 	EVIDENCE_SOURCES: () => EVIDENCE_SOURCES,
 	FILE_MIGRATIONS: () => FILE_MIGRATIONS,
+	FOLDER_EXISTS_RECHECK_MS: () => FOLDER_EXISTS_RECHECK_MS,
+	FOLDER_LIST_MAX: () => 500,
+	FolderError: () => FolderError,
 	HOOK_MARKER: () => HOOK_MARKER,
 	HOOK_SCRIPT_NAME: () => HOOK_SCRIPT_NAME,
 	INDEX_CHUNK_BYTES: () => INDEX_CHUNK_BYTES,
@@ -55497,6 +64007,9 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	NotFoundError: () => NotFoundError,
 	OPEN_EVIDENCE: () => OPEN_EVIDENCE,
 	PERMISSIONS_KEPT: () => 64,
+	PICKER_OUTPUT_MAX_BYTES: () => PICKER_OUTPUT_MAX_BYTES,
+	PICKER_SCRIPT: () => PICKER_SCRIPT,
+	PICKER_TIMEOUT_MS: () => PICKER_TIMEOUT_MS,
 	PRESENCES: () => PRESENCES,
 	PROJECT_NAME_MAX: () => 200,
 	PYTHON_SYNTAX_HINT: () => PYTHON_SYNTAX_HINT,
@@ -55513,15 +64026,21 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	SOURCE_HOOK: () => 1,
 	STALE_KINDS: () => STALE_KINDS,
 	START_SOURCES: () => START_SOURCES,
+	SWEEP_BUDGET_MS: () => SWEEP_BUDGET_MS,
 	SearchBusyError: () => SearchBusyError,
 	SessionFactsSchema: () => SessionFactsSchema,
 	SmallFileError: () => SmallFileError,
 	SpoolSegmentNotFoundError: () => SpoolSegmentNotFoundError,
 	TASK_MUTEX_TIMEOUT_MS: () => TASK_MUTEX_TIMEOUT_MS,
 	TURN_OUTCOMES: () => TURN_OUTCOMES,
+	TerminalApiError: () => TerminalApiError,
 	TimeFormatError: () => TimeFormatError,
 	ToolCallRowSchema: () => ToolCallRowSchema,
 	TranscriptError: () => TranscriptError,
+	USER_DEFAULT_PORT: () => USER_DEFAULT_PORT,
+	USER_INSTANCE_NAME: () => USER_INSTANCE_NAME,
+	USER_INSTANCE_SLUG: () => USER_INSTANCE_SLUG,
+	USER_ROOT_DIRNAME: () => USER_ROOT_DIRNAME,
 	WAIT_REASONS: () => WAIT_REASONS,
 	WORKSPACE_DIRS: () => WORKSPACE_DIRS,
 	WORKSPACE_JSON_FILES: () => WORKSPACE_JSON_FILES,
@@ -55533,6 +64052,8 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	agentFactsOfEvent: () => agentFactsOfEvent,
 	agentFactsWith: () => agentFactsWith,
 	alertContextOf: () => alertContextOf,
+	appCheckProviders: () => appCheckProviders,
+	appWindowArgs: () => appWindowArgs,
 	appendChange: () => appendChange,
 	appendDecision: () => appendDecision,
 	appendWorkspaceFile: () => appendWorkspaceFile,
@@ -55552,6 +64073,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	attemptsConfigHash: () => configHash,
 	attemptsSettings: () => attemptsSettings,
 	auditFilePath: () => auditFilePath,
+	autostartStatus: () => autostartStatus,
 	backupDb: () => backupDb,
 	backupFolder: () => backupFolder,
 	bindActivityFlush: () => bindActivityFlush,
@@ -55566,6 +64088,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	buildInstanceContext: () => buildInstanceContext,
 	buildPrefilter: () => buildPrefilter,
 	canonicalPath: () => canonicalPath,
+	capabilitiesOf: () => capabilitiesOf,
 	changeEntryText: () => changeEntryText,
 	changedWorkspaces: () => changedWorkspaces,
 	checkExportPath: () => checkExportPath,
@@ -55579,6 +64102,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	classifyLegacyOfFacts: () => classifyLegacyOfFacts,
 	claudeArgsWithoutHooks: () => claudeArgsWithoutHooks,
 	claudeHomeOf: () => claudeHomeOf,
+	claudeVersionOf: () => claudeVersionOf,
 	cleanupStaging: () => cleanupStaging,
 	clipCodePoints: () => clipCodePoints$1,
 	clipText: () => clipText,
@@ -55593,17 +64117,22 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	configKeyWarnings: () => configKeyWarnings,
 	controlAddressOf: () => controlAddressOf,
 	countEntries: () => countEntries,
+	createAccessService: () => createAccessService,
 	createAlertComponents: () => createAlertComponents,
 	createAlertInputTracker: () => createAlertInputTracker,
 	createAlertService: () => createAlertService,
 	createApiReader: () => createApiReader,
 	createAttemptsState: () => createAttemptsState,
 	createAttemptsStore: () => createAttemptsStore,
+	createControlTokenSource: () => createControlTokenSource,
+	createDaMemoryReader: () => createDaMemoryReader,
 	createDbScheduler: () => createDbScheduler,
 	createDbSchedulerWith: () => createDbSchedulerWith,
 	createEntryIndexService: () => createEntryIndexService,
 	createErrorRing: () => createErrorRing,
 	createEvidenceState: () => createEvidenceState,
+	createFolderPicker: () => createFolderPicker,
+	createFolderService: () => createFolderService,
 	createImportScheduler: () => createImportScheduler,
 	createIngestHealthEvaluator: () => createIngestHealthEvaluator,
 	createIngestService: () => createIngestService,
@@ -55621,11 +64150,16 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	createSearchService: () => createSearchService,
 	createSpoolDrainer: () => createSpoolDrainer,
 	createStateWatchdog: () => createStateWatchdog,
+	createTerminalHost: () => createTerminalHost,
 	createTranscriptImporter: () => createTranscriptImporter,
 	createTranscriptQueryPart: () => createTranscriptQueryPart,
 	createTranscriptWindowService: () => createTranscriptWindowService,
+	createUserFolders: () => createUserFolders,
+	createUserServices: () => createUserServices,
 	createWatchHint: () => createWatchHint,
+	decideShutdown: () => decideShutdown,
 	decisionEntryText: () => decisionEntryText,
+	defaultDaMemoryDir: () => defaultDaMemoryDir,
 	defaultMigrationsDir: () => defaultMigrationsDir,
 	defaultRuntimeDir: () => defaultRuntimeDir,
 	defaultSkillDir: () => defaultSkillDir,
@@ -55636,11 +64170,13 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	deriveWorkflow: () => deriveWorkflow,
 	desiredEntries: () => desiredEntries,
 	detectTranscriptsDir: () => detectTranscriptsDir,
+	disableAutostart: () => disableAutostart,
 	discoverTranscriptSession: () => discoverSession,
 	discoverTranscripts: () => discoverTranscripts,
 	displayEntries: () => displayEntries,
 	displayPath: () => displayPath,
 	dumpJson: () => dumpJson,
+	effectivePanels: () => effectivePanels,
 	effectiveRules: () => effectiveRules,
 	emitAlertInputs: () => emitAlertInputs,
 	emptyAgentFacts: () => emptyAgentFacts,
@@ -55649,6 +64185,8 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	emptySessionFacts: () => emptySessionFacts,
 	emptyToolCallRow: () => emptyToolCallRow,
 	emptyWorkflowFacts: () => emptyWorkflowFacts,
+	enableAutostart: () => enableAutostart,
+	ensureUserInstance: () => ensureUserInstance,
 	ensureWorkspaceDir: () => ensureWorkspaceDir,
 	entriesBetween: () => entriesBetween,
 	envelopeItem: () => envelopeItem,
@@ -55658,9 +64196,11 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	exportInstance: () => exportInstance,
 	exportToFile: () => exportToFile,
 	externalState: () => externalState,
+	findAppBrowser: () => findAppBrowser,
 	findInstall: () => findInstall,
 	firstLine: () => firstLine,
 	fmtAge: () => fmtAge,
+	folderPickerHook: () => folderPickerHook,
 	forceKill: () => forceKill,
 	foreignImports: () => foreignImports,
 	formatCommand: () => formatCommand,
@@ -55700,12 +64240,13 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	isMissingFileError: () => isMissingFileError,
 	isMsysPath: () => isMsysPath,
 	isOurs: () => isOurs,
-	isPlainObject: () => isPlainObject$3,
+	isPlainObject: () => isPlainObject$4,
 	isReopened: () => isReopened,
 	isRunningState: () => isRunningState,
 	isRuntimeMutable: () => isRuntimeMutable,
 	isSegmentName: () => isSegmentName,
 	isTestMode: () => isTestMode,
+	isUserRoot: () => isUserRoot,
 	isValidPid: () => isValidPid,
 	isWindowsReservedName: () => isWindowsReservedName,
 	joinLww: () => joinLww,
@@ -55739,6 +64280,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	matchesModel: () => matchesModel,
 	mergeAgentFacts: () => mergeAgentFacts,
 	mergeFacts: () => mergeFacts,
+	mergeFolders: () => mergeFolders,
 	mergeLayer: () => mergeLayer,
 	mergeModels: () => mergeModels,
 	mergeServerErrors: () => mergeServerErrors,
@@ -55757,7 +64299,10 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	openDbReader: () => openDbReader,
 	openInstanceDb: () => openInstanceDb,
 	openInstanceReader: () => openInstanceReader,
+	openLoginUrl: () => openLoginUrl,
+	openRunFolderGroups: () => openRunFolderGroups,
 	openSqlite: () => openSqlite,
+	opsApp: () => app_exports,
 	opsAudit: () => audit_exports$1,
 	opsBackup: () => backup_exports$1,
 	opsCleanup: () => cleanup_exports$1,
@@ -55777,7 +64322,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	parseAgentFacts: () => parseAgentFacts,
 	parseChainLine: () => parseChainLine,
 	parseHandlerLog: () => parseHandlerLog,
-	parseJson: () => parseJson,
+	parseJson: () => parseJson$2,
 	parseLegacyConfig: () => parseLegacyConfig,
 	parseSessionFacts: () => parseSessionFacts,
 	parseTimeWithFormat: () => parseTimeWithFormat,
@@ -55836,6 +64381,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	recentSessionsOf: () => recentSessionsOf,
 	recordTimestamp: () => recordTimestamp,
 	redactLine: () => redactLine,
+	refreshAutostartIfEnabled: () => refreshAutostartIfEnabled,
 	refreshRouteFile: () => refreshRouteFile,
 	registerMetricProvider: () => registerMetricProvider,
 	registerQueryPart: () => registerQueryPart,
@@ -55870,6 +64416,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	snapshotWorkspace: () => snapshotWorkspace,
 	snapshotWorkspaces: () => snapshotWorkspaces,
 	spawnDetached: () => spawnDetached,
+	spawnDetachedVisible: () => spawnDetachedVisible,
 	spawnForeground: () => spawnForeground,
 	stableScriptPath: () => stableScriptPath,
 	stampEvents: () => stampEvents,
@@ -55893,6 +64440,11 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	unifiedDiff: () => unifiedDiff,
 	uninstallHooks: () => uninstallHooks,
 	unlinkWithRetry: () => unlinkWithRetry,
+	userBrowserProfileDirOf: () => userBrowserProfileDirOf,
+	userCheckIds: () => userCheckIds,
+	userInstanceDirOf: () => userInstanceDirOf,
+	userOpContext: () => userOpContext,
+	userRootOf: () => userRootOf,
 	userTexts: () => userTexts,
 	validateCompletionTarget: () => validateCompletionTarget,
 	validateLegacy: () => validateLegacy,
@@ -55901,6 +64453,7 @@ var src_exports = /* @__PURE__ */ __exportAll({
 	viewChanged: () => viewChanged,
 	waitForExit: () => waitForExit,
 	walkNoLinks: () => walkNoLinks,
+	withFakeTerminals: () => withFakeTerminals,
 	withTaskMutex: () => withTaskMutex,
 	withWriteTx: () => withWriteTx,
 	workflowFactsOf: () => workflowFactsOf,
@@ -55916,33 +64469,33 @@ var src_exports = /* @__PURE__ */ __exportAll({
 });
 var init_src = __esmMin((() => {
 	init_json$1();
-	init_host();
+	init_host$1();
 	init_exec();
 	init_process();
 	init_fsx();
-	init_paths$2();
+	init_paths$3();
 	init_glob();
 	init_time_format();
 	init_regex$1();
 	init_watch_hint();
 	init_mutex();
 	init_markers();
-	init_paths$1();
+	init_paths$2();
 	init_logger();
 	init_driver();
-	init_errors$4();
-	init_open$1();
+	init_errors$5();
+	init_open$2();
 	init_migrations$1();
 	init_backup$3();
 	init_write();
 	init_defaults();
-	init_merge$1();
+	init_merge$2();
 	init_migrations();
 	init_provenance();
 	init_resolve();
 	init_validate_legacy();
 	init_fsio();
-	init_paths();
+	init_paths$1();
 	init_snapshot();
 	init_adopt();
 	init_init$1();
@@ -55966,23 +64519,23 @@ var init_src = __esmMin((() => {
 	init_doctor$1();
 	init_launch_claude();
 	init_facts();
-	init_merge();
+	init_merge$1();
 	init_derive_session();
 	init_derive_agent();
 	init_derive_workflow();
-	init_rules$1();
+	init_rules$2();
 	init_legacy();
 	init_next_check();
 	init_work_items();
 	init_completion$1();
-	init_errors$2();
-	init_overview();
 	init_errors$3();
+	init_overview();
+	init_errors$4();
 	init_dedupe();
 	init_writer();
 	init_routes_file();
 	init_segments();
-	init_replay();
+	init_replay$1();
 	init_spool_drainer();
 	init_entries();
 	init_index_service();
@@ -55992,10 +64545,10 @@ var init_src = __esmMin((() => {
 	init_importer();
 	init_scheduler();
 	init_entry_text();
-	init_service$3();
+	init_service$4();
 	init_sweeper();
 	init_fs();
-	init_registry();
+	init_registry$1();
 	init_jobs();
 	init_pid();
 	init_ingest_health();
@@ -56017,17 +64570,17 @@ var init_src = __esmMin((() => {
 	init_evidence();
 	init_ingest$1();
 	init_repo();
-	init_service$1();
 	init_service$2();
+	init_service$3();
 	init_scan();
 	init_cost();
 	init_series();
 	init_evaluator();
-	init_rules();
-	init_service();
+	init_rules$1();
+	init_service$1();
 	init_export$1();
 	init_retention();
-	init_open();
+	init_open$1();
 	init_api_reader();
 	init_db_reader();
 	init_data();
@@ -56042,6 +64595,22 @@ var init_src = __esmMin((() => {
 	init_key_support();
 	init_cleanup$1();
 	init_diagnostics$1();
+	init_access_service();
+	init_browser();
+	init_paths();
+	init_ensure();
+	init_autostart$1();
+	init_user_services();
+	init_app();
+	init_app_checks();
+	init_merge();
+	init_service();
+	init_user_folders();
+	init_da_memory();
+	init_scope();
+	init_create_user_services();
+	init_host();
+	init_folder_picker();
 }));
 
 //#endregion
@@ -56203,14 +64772,18 @@ function optionLines(table) {
 	const entries = Object.entries(table);
 	const width = Math.max(0, ...entries.map(([name, spec]) => optionLabel(name, spec).length));
 	return entries.map(([name, spec]) => {
-		const note = [spec.multiple === true ? "repeatable" : null, spec.choices === void 0 ? null : `one of ${spec.choices.join(", ")}`].filter((n) => n !== null);
+		const note = [
+			spec.multiple === true ? "repeatable" : null,
+			spec.choices === void 0 ? null : `one of ${spec.choices.join(", ")}`,
+			spec.scope === void 0 ? null : spec.scope === "user" ? "app instance only" : "task only"
+		].filter((n) => n !== null);
 		const text = note.length === 0 ? spec.description : `${spec.description} (${note.join("; ")})`;
 		return `  ${optionLabel(name, spec).padEnd(width)}  ${text}`;
 	});
 }
-/** `mcs <name> <synopsis>`: the usage line of a command. */
+/** `<cli> <name> <synopsis>`: the usage line of a command; the name of the program is `CLI_NAME`. */
 function usageLine(def) {
-	return def.synopsis === "" ? `mcs ${def.name}` : `mcs ${def.name} ${def.synopsis}`;
+	return def.synopsis === "" ? `${CLI_NAME} ${def.name}` : `${CLI_NAME} ${def.name} ${def.synopsis}`;
 }
 /** The help page of one command: usage, summary, its options, then the options every command takes. */
 function commandHelpLines(def, globals) {
@@ -56228,19 +64801,24 @@ function commandHelpLines(def, globals) {
 function generalHelpLines(defs, globals) {
 	const width = Math.max(0, ...defs.map((d) => d.name.length));
 	return [
-		"mcs: monitor Claude Code sessions (reads transcripts in place, serves a loopback dashboard).",
+		`${CLI_NAME}: ${PRODUCT_NAME} (monitors Claude Code sessions: reads transcripts in place, serves a loopback dashboard).`,
 		"",
-		"usage: mcs <command> [options]",
-		"       mcs help <command>",
+		`usage: ${CLI_NAME} <command> [options]`,
+		`       ${CLI_NAME} help <command>`,
 		"",
 		"commands:",
 		...defs.map((d) => `  ${d.name.padEnd(width)}  ${d.summary}`),
+		"",
+		"scope: start, stop, restart, status, serve, verify, doctor and check act on the app instance unless --task, --repo or --root",
+		"select a task; every other command acts on a task, and on the app with --user.",
 		"",
 		"common options (every command):",
 		...optionLines(globals)
 	];
 }
-var init_text = __esmMin((() => {}));
+var init_text = __esmMin((() => {
+	init_src$1();
+}));
 
 //#endregion
 //#region packages/cli/src/render/json.ts
@@ -56301,12 +64879,96 @@ function renderLegacy(value) {
 }
 
 //#endregion
+//#region packages/cli/src/scope.ts
+init_src$1();
+/**
+* `--user` is the app; `--task`, `--repo` or `--root` are a task; neither is the default scope of the command (a command that
+* names none is a task command). `--user` together with a task selector is a usage error: it would be a guess which one the
+* person meant. `hint` is the usage line the caller shows next to the error.
+*/
+function resolveScope(def, values, hint) {
+	const taskish = values.task !== void 0 || values.repo !== void 0 || values.root !== void 0;
+	if (values.user) {
+		if (taskish) throw new McsError("USAGE", "--user cannot be combined with --task, --repo or --root", { ...hint === void 0 ? {} : { hint } });
+		return {
+			scope: "user",
+			defaulted: false
+		};
+	}
+	if (taskish) return {
+		scope: "task",
+		defaulted: false
+	};
+	return {
+		scope: def.defaultScope ?? "task",
+		defaulted: true
+	};
+}
+/**
+* The operations of the engine know the app as a task with the slug `user`, so the commands they suggest carry `--task user`
+* (`mcs start --task user`). In the scope of the app that is wrong twice: a call with a task selector is a task call (the lifecycle
+* commands refuse `--task user` there, with "no task.json"), and the person never typed a task. The kernel therefore words every
+* text of an app call again, in one place, instead of each command repairing its own lines.
+*/
+const APP_DEFAULT_COMMANDS = /* @__PURE__ */ new Set([
+	"start",
+	"stop",
+	"restart",
+	"status",
+	"serve",
+	"verify",
+	"doctor",
+	"check"
+]);
+/**
+* `<program> <command words and values> --task user`: the program word, the first command word (its default scope decides), the
+* words in between (more command words, `--restart`, `--id X`), then the selector. A word never holds a space, a backtick or a quote,
+* so a hint that sits in backticks or quotes stops at its end.
+*/
+const TASK_USER_SELECTOR = /\b(mcs|caw) ([a-z][a-z-]*)((?: [^\s`'")]+)*?) --task user(?![\w-])/g;
+/**
+* The text as the person of the app should read it: the selector `--task user` of a suggested command is dropped when the command
+* defaults to the app (`mcs doctor --task user` -> `mcs doctor`) and becomes `--user` when it does not (`mcs backup restore --task
+* user --id X` -> `mcs backup restore --user --id X`), which is what the call needs to reach the app.
+*/
+function appCommandText(text) {
+	return text.replace(TASK_USER_SELECTOR, (_whole, program, command, between) => `${program} ${command}${between}${APP_DEFAULT_COMMANDS.has(command) ? "" : " --user"}`);
+}
+function isPlainObject$1(value) {
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
+}
+/** {@link appCommandText} on every string of a JSON-like value (arrays and plain objects are copied, anything else is kept). */
+function inAppScope(value) {
+	if (typeof value === "string") return appCommandText(value);
+	if (Array.isArray(value)) return value.map(inAppScope);
+	if (typeof value === "object" && value !== null && isPlainObject$1(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, inAppScope(item)]));
+	return value;
+}
+/** What a `TASK_NOT_FOUND` of the app means: the workspace of the app is made by the first start, nobody makes it by hand. */
+const APP_NOT_CREATED_HINT = "run `caw start` once to create the app instance";
+/**
+* An error of an app call as the person should read it: the words of {@link appCommandText}, and for `TASK_NOT_FOUND` (a command
+* that works on a task, used with `--user` before the app was ever started) the hint to start it, instead of the engine's
+* `mcs init --slug user`, which would make a task named `user`.
+*/
+function appErrorOf(error) {
+	const hint = error.code === "TASK_NOT_FOUND" ? APP_NOT_CREATED_HINT : error.hint === null ? null : appCommandText(error.hint);
+	return {
+		code: error.code,
+		message: appCommandText(error.message),
+		hint,
+		details: error.details === null ? null : Object.fromEntries(Object.entries(error.details).map(([key, item]) => [key, inAppScope(item)]))
+	};
+}
+
+//#endregion
 //#region packages/cli/src/commands/discover.ts
-var discover_exports = /* @__PURE__ */ __exportAll({ command: () => command$37 });
-var command$37;
+var discover_exports = /* @__PURE__ */ __exportAll({ command: () => command$38 });
+var command$38;
 var init_discover = __esmMin((() => {
 	init_src();
-	command$37 = {
+	command$38 = {
 		name: "discover",
 		summary: "show the transcripts, recent sessions, log candidates, tasks and runtime of this repository",
 		synopsis: "[--repo PATH]",
@@ -56323,11 +64985,11 @@ var init_discover = __esmMin((() => {
 
 //#endregion
 //#region packages/cli/src/commands/init.ts
-var init_exports = /* @__PURE__ */ __exportAll({ command: () => command$36 });
-var command$36;
+var init_exports = /* @__PURE__ */ __exportAll({ command: () => command$37 });
+var command$37;
 var init_init = __esmMin((() => {
 	init_src();
-	command$36 = {
+	command$37 = {
 		name: "init",
 		aliases: ["init-task"],
 		summary: "create a task workspace (or reuse the existing one, adding the Node runtime files when they are missing)",
@@ -56385,11 +65047,11 @@ var init_init = __esmMin((() => {
 
 //#endregion
 //#region packages/cli/src/commands/inspect.ts
-var inspect_exports = /* @__PURE__ */ __exportAll({ command: () => command$35 });
-var command$35;
+var inspect_exports = /* @__PURE__ */ __exportAll({ command: () => command$36 });
+var command$36;
 var init_inspect = __esmMin((() => {
 	init_src();
-	command$35 = {
+	command$36 = {
 		name: "inspect",
 		summary: "show the effective configuration, provenance, recent audit and runtime state of a task (without --task: list tasks)",
 		synopsis: "[--task SLUG]",
@@ -56421,11 +65083,11 @@ var init_inspect = __esmMin((() => {
 
 //#endregion
 //#region packages/cli/src/commands/configure.ts
-var configure_exports = /* @__PURE__ */ __exportAll({ command: () => command$34 });
-var command$34;
+var configure_exports = /* @__PURE__ */ __exportAll({ command: () => command$35 });
+var command$35;
 var init_configure = __esmMin((() => {
 	init_src();
-	command$34 = {
+	command$35 = {
 		name: "configure",
 		summary: "change the configuration of a task (validated as a whole, written atomically, audited)",
 		synopsis: "--task SLUG [--set KEY=JSON]... [--unset KEY]... [--reason TEXT] [--decision TEXT] [--dry-run]",
@@ -56486,11 +65148,11 @@ var init_configure = __esmMin((() => {
 
 //#endregion
 //#region packages/cli/src/commands/decide.ts
-var decide_exports = /* @__PURE__ */ __exportAll({ command: () => command$33 });
-var command$33;
+var decide_exports = /* @__PURE__ */ __exportAll({ command: () => command$34 });
+var command$34;
 var init_decide = __esmMin((() => {
 	init_src();
-	command$33 = {
+	command$34 = {
 		name: "decide",
 		summary: "record a decision (and the alternatives rejected) in audit/decisions.md of a task",
 		synopsis: "--task SLUG --title TEXT --decision TEXT [--rejected TEXT]",
@@ -56539,11 +65201,11 @@ var init_decide = __esmMin((() => {
 
 //#endregion
 //#region packages/cli/src/commands/audit.ts
-var audit_exports = /* @__PURE__ */ __exportAll({ command: () => command$32 });
-var command$32;
+var audit_exports = /* @__PURE__ */ __exportAll({ command: () => command$33 });
+var command$33;
 var init_audit = __esmMin((() => {
 	init_src();
-	command$32 = {
+	command$33 = {
 		name: "audit",
 		summary: "check task workspaces (identity, schema, configuration, audit trail, links, transcript copies); exit 1 on problems",
 		synopsis: "[--task SLUG]",
@@ -56565,29 +65227,105 @@ var init_audit = __esmMin((() => {
 }));
 
 //#endregion
-//#region packages/cli/src/commands/check.ts
-var check_exports = /* @__PURE__ */ __exportAll({ command: () => command$31 });
-var command$31;
-var init_check = __esmMin((() => {
-	init_src();
-	command$31 = {
-		name: "check",
-		summary: "validate the configuration (every file, every regex) and print a one-line summary",
+//#region packages/cli/src/commands/doctor.ts
+var doctor_exports = /* @__PURE__ */ __exportAll({
+	command: () => command$32,
+	makeCommand: () => makeCommand$31,
+	runForApp: () => runForApp
+});
+/**
+* Runs the doctor for the app. The workspace of the app is made by `start`, so before the first start there is none: its checks are
+* left out (the machine-wide and `app.*` checks do not need one) and `absent` says so. `only` limits the checks (`caw check`).
+*/
+async function runForApp(ctx, ops, app, only) {
+	const absent = !await app.userInstanceExists(ctx.op);
+	const input = {
+		...absent ? {} : { task: USER_INSTANCE_SLUG },
+		...only === void 0 ? {} : { only }
+	};
+	return {
+		report: await ops.run(ctx.op, input, ctx.deps),
+		absent
+	};
+}
+function makeCommand$31(ops = doctor_exports$1, app = app_exports) {
+	return {
+		name: "doctor",
+		summary: "check Node, the runtime, the Claude home, the app prerequisites and its workspace; with --task, the workspace, configuration, database and port of a task",
 		synopsis: "[--task SLUG]",
 		options: { task: {
 			type: "string",
 			valueName: "SLUG",
-			description: "task to check (default: the task \"default\" when it exists, else the shared defaults)"
+			description: "task scope: also run the checks of this task (without it the checks of the app run)"
 		} },
+		defaultScope: "user",
 		async run(ctx) {
+			if (ctx.scope === "user") {
+				const { report, absent } = await runForApp(ctx, ops, app);
+				const note = absent ? ["note: the app was never started (run `caw start`), so the checks of its workspace were skipped"] : [];
+				return {
+					data: report,
+					text: [...doctorLines(report), ...note],
+					exitCode: report.ok ? 0 : 1
+				};
+			}
 			const task = ctx.args.string("task");
-			const result = await check$1(ctx.op, task === void 0 ? {} : { task }, ctx.deps);
+			const report = await ops.run(ctx.op, task === void 0 ? {} : { task }, ctx.deps);
+			return {
+				data: report,
+				text: doctorLines(report),
+				exitCode: report.ok ? 0 : 1
+			};
+		}
+	};
+}
+var command$32;
+var init_doctor = __esmMin((() => {
+	init_src();
+	command$32 = makeCommand$31();
+}));
+
+//#endregion
+//#region packages/cli/src/commands/check.ts
+var check_exports = /* @__PURE__ */ __exportAll({
+	command: () => command$31,
+	makeCommand: () => makeCommand$30
+});
+function makeCommand$30(config = config_exports, doctor = doctor_exports$1, app = app_exports) {
+	return {
+		name: "check",
+		summary: "check what the app needs to run (Node, the runtime, claude, the terminal, the port); with --task, validate the configuration of a task (every file, every regex) and print a one-line summary",
+		synopsis: "[--task SLUG]",
+		options: { task: {
+			type: "string",
+			valueName: "SLUG",
+			description: "task to check (task scope; default: the task \"default\" when it exists, else the shared defaults)"
+		} },
+		defaultScope: "user",
+		async run(ctx) {
+			if (ctx.scope === "user") {
+				const { report, absent } = await runForApp(ctx, doctor, app, userCheckIds);
+				const note = absent ? ["note: the app was never started (run `caw start`), so its own configuration does not exist yet: the defaults were checked"] : [];
+				return {
+					data: report,
+					text: [...doctorLines(report), ...note],
+					exitCode: report.ok ? 0 : 1
+				};
+			}
+			const task = ctx.args.string("task");
+			const result = await config.check(ctx.op, task === void 0 ? {} : { task }, ctx.deps);
 			return {
 				data: result,
 				text: [result.line]
 			};
 		}
 	};
+}
+var command$31;
+var init_check = __esmMin((() => {
+	init_src();
+	init_doctor();
+	command$31 = makeCommand$30();
 }));
 
 //#endregion
@@ -56660,9 +65398,14 @@ var init_help = __esmMin((() => {
 //#region packages/cli/src/commands/start.ts
 var start_exports = /* @__PURE__ */ __exportAll({
 	START_OPTIONS: () => START_OPTIONS,
+	START_SYNOPSIS: () => START_SYNOPSIS,
 	command: () => command$28,
+	fallbackLoginLine: () => fallbackLoginLine,
 	makeCommand: () => makeCommand$29,
-	startInputOf: () => startInputOf
+	startInputOf: () => startInputOf,
+	userRestartResult: () => userRestartResult,
+	userStartInputOf: () => userStartInputOf,
+	userStartResult: () => userStartResult
 });
 function logLevelOf(text) {
 	return LOG_LEVELS.find((level) => level === text);
@@ -56681,13 +65424,67 @@ function startInputOf(args) {
 		...timeoutMs === void 0 ? {} : { timeoutMs }
 	};
 }
-function makeCommand$29(ops = lifecycle_exports) {
+/** The options of a start of the app: the browser opens unless `--no-open`; there is no task to name. */
+function userStartInputOf(args) {
+	const port = args.int("port");
+	const logLevel = logLevelOf(args.string("log-level"));
+	const timeoutMs = args.int("timeout-ms");
+	const browser = args.flag("window") ? "window" : args.flag("tab") ? "tab" : void 0;
+	return {
+		...port === void 0 ? {} : { port },
+		...logLevel === void 0 ? {} : { logLevel },
+		...timeoutMs === void 0 ? {} : { timeoutMs },
+		open: !args.flag("no-open"),
+		...browser === void 0 ? {} : { browser },
+		...args.flag("print") ? { print: true } : {}
+	};
+}
+/** The line of the fallback when no browser could be opened: the code was never used, so the person may use it. */
+function fallbackLoginLine(login) {
+	return `open: ${login.url}  (single use, ${String(login.ttlSeconds)} s)`;
+}
+/**
+* What `start` shows for the app. The login URL is in the data only with `--print`; when a browser could not be opened it is
+* shown as one line of text, and nowhere else.
+*/
+function userStartResult(result, print) {
+	const fallback = !print && result.opened === false && result.login !== null ? [fallbackLoginLine(result.login)] : [];
+	return {
+		data: print ? result : {
+			...result,
+			login: null
+		},
+		text: [...result.message, ...fallback],
+		warnings: result.warnings,
+		exitCode: result.exitCode
+	};
+}
+/** The same for `restart`: the login of its start follows the rules of {@link userStartResult}. */
+function userRestartResult(result, print) {
+	const login = result.start.login;
+	const fallback = !print && result.start.opened === false && login !== null ? [fallbackLoginLine(login)] : [];
+	return {
+		data: print ? result : {
+			...result,
+			start: {
+				...result.start,
+				login: null
+			}
+		},
+		text: [...result.message, ...fallback],
+		warnings: result.warnings,
+		exitCode: result.exitCode
+	};
+}
+function makeCommand$29(ops = lifecycle_exports, app = app_exports) {
 	return {
 		name: "start",
-		summary: "start the monitor of a task in the background (or report the one that already runs)",
-		synopsis: "[--task SLUG] [--port N] [--log-level LEVEL] [--open] [--timeout-ms MS]",
+		summary: "start the app in the background and open it in the browser; with --task, start the monitor of a task (or report the one that runs)",
+		synopsis: START_SYNOPSIS,
 		options: START_OPTIONS,
+		defaultScope: "user",
 		async run(ctx) {
+			if (ctx.scope === "user") return userStartResult(await app.startUser(ctx.op, userStartInputOf(ctx.args)), ctx.args.flag("print"));
 			const result = await ops.start(ctx.op, startInputOf(ctx.args));
 			return {
 				data: result,
@@ -56698,7 +65495,7 @@ function makeCommand$29(ops = lifecycle_exports) {
 		}
 	};
 }
-var LOG_LEVELS, START_OPTIONS, command$28;
+var LOG_LEVELS, START_OPTIONS, START_SYNOPSIS, command$28;
 var init_start = __esmMin((() => {
 	init_src();
 	LOG_LEVELS = [
@@ -56711,7 +65508,7 @@ var init_start = __esmMin((() => {
 		task: {
 			type: "string",
 			valueName: "SLUG",
-			description: "task to start (default: the task \"default\", created on demand)"
+			description: "task to start (task scope; \"default\" is created on demand); without --task, --repo and --root the app instance starts"
 		},
 		port: {
 			type: "string",
@@ -56727,15 +65524,37 @@ var init_start = __esmMin((() => {
 		},
 		open: {
 			type: "boolean",
-			description: "open the dashboard in the browser once the server is up"
+			conflictsWith: ["no-open"],
+			description: "open the dashboard in the browser once the server is up (the app does it unless --no-open)"
 		},
 		"timeout-ms": {
 			type: "string",
 			valueName: "MS",
 			integer: [1e3, 3e5],
 			description: "how long to wait for a healthy server (default: process.startTimeoutMs)"
+		},
+		"no-open": {
+			type: "boolean",
+			description: "the app: do not open a browser and mint no login code (a task ignores it)"
+		},
+		window: {
+			type: "boolean",
+			scope: "user",
+			conflictsWith: ["tab"],
+			description: "open the app in an Edge or Chrome app window (default: app.openAppWindow)"
+		},
+		tab: {
+			type: "boolean",
+			scope: "user",
+			description: "open the app in a tab of the default browser"
+		},
+		print: {
+			type: "boolean",
+			scope: "user",
+			description: "print a login URL (single use, a password) instead of opening a browser"
 		}
 	};
+	START_SYNOPSIS = "[--task SLUG] [--port N] [--log-level LEVEL] [--open | --no-open] [--window | --tab] [--print] [--timeout-ms MS]";
 	command$28 = makeCommand$29();
 }));
 
@@ -56745,27 +65564,45 @@ var stop_exports = /* @__PURE__ */ __exportAll({
 	command: () => command$27,
 	makeCommand: () => makeCommand$28
 });
-function makeCommand$28(ops = lifecycle_exports) {
+function makeCommand$28(ops = lifecycle_exports, app = app_exports) {
 	return {
 		name: "stop",
-		summary: "stop the monitor of a task (graceful; a process is killed only after its identity is verified)",
-		synopsis: "[--task SLUG] [--timeout-ms MS]",
+		summary: "stop the app (graceful; it refuses while terminals are live unless --force); with --task, stop the monitor of a task",
+		synopsis: "[--task SLUG] [--timeout-ms MS] [--force]",
 		options: {
 			task: {
 				type: "string",
 				valueName: "SLUG",
-				description: "task to stop (default: the task \"default\" when it exists)"
+				description: "task to stop (task scope; default: the task \"default\" when it exists)"
 			},
 			"timeout-ms": {
 				type: "string",
 				valueName: "MS",
 				integer: [1e3, 3e5],
 				description: "how long to wait for the server to exit (default: process.stopTimeoutMs)"
+			},
+			force: {
+				type: "boolean",
+				scope: "user",
+				description: "end the live terminal sessions instead of refusing with exit 3"
 			}
 		},
+		defaultScope: "user",
 		async run(ctx) {
-			const task = ctx.args.string("task");
 			const timeoutMs = ctx.args.int("timeout-ms");
+			if (ctx.scope === "user") {
+				const input = {
+					...timeoutMs === void 0 ? {} : { timeoutMs },
+					...ctx.args.flag("force") ? { force: true } : {}
+				};
+				const result = await app.stopUser(ctx.op, input);
+				return {
+					data: result,
+					text: result.message,
+					exitCode: result.exitCode
+				};
+			}
+			const task = ctx.args.string("task");
 			const input = {
 				...task === void 0 ? {} : { task },
 				...timeoutMs === void 0 ? {} : { timeoutMs }
@@ -56789,19 +65626,77 @@ var init_stop = __esmMin((() => {
 //#region packages/cli/src/commands/status.ts
 var status_exports$1 = /* @__PURE__ */ __exportAll({
 	command: () => command$26,
-	makeCommand: () => makeCommand$27
+	makeCommand: () => makeCommand$27,
+	uptimeText: () => uptimeText,
+	userStatusLines: () => userStatusLines
 });
-function makeCommand$27(ops = lifecycle_exports) {
+/** `2 h 3 min`: the two largest units that are not zero; a count that is not a number of seconds is `0 s`. */
+function uptimeText(seconds) {
+	const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+	const part = (count, unit) => count === 0 ? [] : [`${String(count)} ${unit}`];
+	if (total >= DAY) return [...part(Math.floor(total / DAY), "d"), ...part(Math.floor(total % DAY / HOUR), "h")].join(" ");
+	if (total >= HOUR) return [...part(Math.floor(total / HOUR), "h"), ...part(Math.floor(total % HOUR / MINUTE), "min")].join(" ");
+	if (total >= MINUTE) return `${String(Math.floor(total / MINUTE))} min`;
+	return `${String(total)} s`;
+}
+/** The address a person types: `http://127.0.0.1:<port>/`. An address that does not parse is shown as it is. */
+function browserUrlOf(url) {
+	try {
+		return appBrowserUrl(Number(new URL(url).port));
+	} catch {
+		return url;
+	}
+}
+function field(label, value) {
+	return `  ${`${label}:`.padEnd(LABEL_WIDTH$2)}${value}`;
+}
+function terminalsText(terminals) {
+	return terminals === null ? "unknown" : `${String(terminals.live)} live (max ${String(terminals.max)})`;
+}
+/**
+* The lines of `status` for the app (06 2.3): the name, the version and the state; then the address, the pid and the uptime, the
+* live terminals, whether the code is outdated, the autostart, the folder and the logs. An app that does not run says why (the hint
+* of the operation) instead of the figures of a process. The hint is printed as the operation worded it: the kernel words the
+* commands it suggests for the app (`--task user` is dropped, `scope.ts`).
+*/
+function userStatusLines(report) {
+	const running = report.running;
+	const version = report.runtime_version === void 0 ? "" : ` ${report.runtime_version}`;
+	const state = running ? "running" : report.probe === "stopped" ? "not running" : `not running (${report.probe})`;
+	const lines = [`${PRODUCT_NAME}${version}: ${state}`];
+	if (report.url !== void 0) lines.push(field("url", browserUrlOf(report.url)));
+	if (report.port_note !== null) lines.push(field("port", report.port_note));
+	if (report.pid !== void 0) {
+		const up = report.uptime_s === void 0 ? "" : ` (up ${uptimeText(report.uptime_s)})`;
+		lines.push(field("pid", `${String(report.pid)}${up}`));
+	}
+	if (running) lines.push(field("terminals", terminalsText(report.terminals)));
+	if (running && report.outdated !== void 0) lines.push(field("outdated", report.outdated ? "yes (run `caw restart`)" : "no"));
+	if (!running && report.hint !== void 0) lines.push(field("hint", report.hint));
+	lines.push(field("autostart", report.autostart), field("folder", report.home), field("logs", report.logs_dir));
+	return lines;
+}
+function makeCommand$27(ops = lifecycle_exports, app = app_exports) {
 	return {
 		name: "status",
-		summary: "show whether the monitor of a task runs: url, pid, uptime, sessions by state, recent errors (JSON)",
+		summary: "show whether the app runs: address, pid, uptime, live terminals, autostart; with --task, the monitor of a task (JSON)",
 		synopsis: "[--task SLUG]",
 		options: { task: {
 			type: "string",
 			valueName: "SLUG",
-			description: "task to look at (default: the task \"default\" when it exists)"
+			description: "task to look at (task scope; default: the task \"default\" when it exists)"
 		} },
+		defaultScope: "user",
 		async run(ctx) {
+			if (ctx.scope === "user") {
+				const result = await app.statusUser(ctx.op);
+				return {
+					data: result.report,
+					text: userStatusLines(result.report),
+					warnings: result.warnings,
+					exitCode: result.exitCode
+				};
+			}
 			const task = ctx.args.string("task");
 			const result = await ops.status(ctx.op, task === void 0 ? {} : { task });
 			return {
@@ -56812,9 +65707,15 @@ function makeCommand$27(ops = lifecycle_exports) {
 		}
 	};
 }
-var command$26;
+var MINUTE, HOUR, DAY, LABEL_WIDTH$2, command$26;
 var init_status$1 = __esmMin((() => {
 	init_src();
+	init_src$1();
+	init_protocol$1();
+	MINUTE = 60;
+	HOUR = 3600;
+	DAY = 24 * HOUR;
+	LABEL_WIDTH$2 = 12;
 	command$26 = makeCommand$27();
 }));
 
@@ -56824,13 +65725,21 @@ var restart_exports = /* @__PURE__ */ __exportAll({
 	command: () => command$25,
 	makeCommand: () => makeCommand$26
 });
-function makeCommand$26(ops = lifecycle_exports) {
+function makeCommand$26(ops = lifecycle_exports, app = app_exports) {
 	return {
 		name: "restart",
-		summary: "stop the monitor of a task and start it again (loads new code)",
-		synopsis: "[--task SLUG] [--port N] [--log-level LEVEL] [--open] [--timeout-ms MS]",
-		options: START_OPTIONS,
+		summary: "stop the app and start it again (loads new code; it refuses while terminals are live unless --force); with --task, restart the monitor of a task",
+		synopsis: `${START_SYNOPSIS} [--force]`,
+		options: RESTART_OPTIONS,
+		defaultScope: "user",
 		async run(ctx) {
+			if (ctx.scope === "user") {
+				const result = await app.restartUser(ctx.op, {
+					...userStartInputOf(ctx.args),
+					...ctx.args.flag("force") ? { force: true } : {}
+				});
+				return userRestartResult(result, ctx.args.flag("print"));
+			}
 			const result = await ops.restart(ctx.op, startInputOf(ctx.args));
 			return {
 				data: result,
@@ -56841,10 +65750,18 @@ function makeCommand$26(ops = lifecycle_exports) {
 		}
 	};
 }
-var command$25;
+var RESTART_OPTIONS, command$25;
 var init_restart = __esmMin((() => {
 	init_src();
 	init_start();
+	RESTART_OPTIONS = {
+		...START_OPTIONS,
+		force: {
+			type: "boolean",
+			scope: "user",
+			description: "end the live terminal sessions instead of refusing with exit 3"
+		}
+	};
 	command$25 = makeCommand$26();
 }));
 
@@ -56854,17 +65771,26 @@ var verify_exports$1 = /* @__PURE__ */ __exportAll({
 	command: () => command$24,
 	makeCommand: () => makeCommand$25
 });
-function makeCommand$25(ops = lifecycle_exports) {
+function makeCommand$25(ops = lifecycle_exports, app = app_exports) {
 	return {
 		name: "verify",
-		summary: "check that the running monitor of a task answers health, instance, sessions and overview with valid bodies",
+		summary: "check that the running app answers health, instance, sessions and overview with valid bodies; with --task, the monitor of a task",
 		synopsis: "[--task SLUG]",
 		options: { task: {
 			type: "string",
 			valueName: "SLUG",
-			description: "task to verify (default: the task \"default\" when it exists)"
+			description: "task to verify (task scope; default: the task \"default\" when it exists)"
 		} },
+		defaultScope: "user",
 		async run(ctx) {
+			if (ctx.scope === "user") {
+				const result = await app.verifyUser(ctx.op);
+				return {
+					data: result,
+					text: result.message,
+					exitCode: result.exitCode
+				};
+			}
 			const task = ctx.args.string("task");
 			const result = await ops.verify(ctx.op, task === void 0 ? {} : { task });
 			return {
@@ -56887,16 +65813,31 @@ var serve_exports = /* @__PURE__ */ __exportAll({
 	command: () => command$23,
 	makeCommand: () => makeCommand$24
 });
-function makeCommand$24(ops = lifecycle_exports) {
+function makeCommand$24(ops = lifecycle_exports, app = app_exports) {
 	return {
 		name: "serve",
-		summary: "run the monitor of a task in the foreground (Ctrl+C stops it gracefully)",
+		summary: "run the app in the foreground (Ctrl+C stops it gracefully); with --task, run the monitor of a task",
 		synopsis: "[--task SLUG] [--port N] [--log-level LEVEL] [--open] [--state-file FILE]",
 		options: SERVE_OPTIONS,
+		defaultScope: "user",
 		interruptible: "command",
 		async run(ctx) {
 			const stateFile = ctx.args.string("state-file");
 			const { task, port, logLevel, open } = startInputOf(ctx.args);
+			if (ctx.scope === "user") {
+				const input = {
+					...port === void 0 ? {} : { port },
+					...logLevel === void 0 ? {} : { logLevel }
+				};
+				const result = await app.serveUser(ctx.op, input);
+				const warnings = stateFile === void 0 ? result.warnings : [...result.warnings, STATE_FILE_IGNORED];
+				return {
+					data: result,
+					text: result.message,
+					warnings,
+					exitCode: result.exitCode
+				};
+			}
 			const input = {
 				...task === void 0 ? {} : { task },
 				...port === void 0 ? {} : { port },
@@ -56914,18 +65855,30 @@ function makeCommand$24(ops = lifecycle_exports) {
 		}
 	};
 }
-var SERVE_OPTIONS, command$23;
+var SERVE_OPTIONS, STATE_FILE_IGNORED, command$23;
 var init_serve = __esmMin((() => {
 	init_src();
 	init_start();
 	SERVE_OPTIONS = {
-		...Object.fromEntries(Object.entries(START_OPTIONS).filter(([name]) => name !== "timeout-ms")),
+		...Object.fromEntries(Object.entries(START_OPTIONS).filter(([name]) => ![
+			"timeout-ms",
+			"window",
+			"tab",
+			"print"
+		].includes(name))),
+		open: {
+			type: "boolean",
+			scope: "task",
+			conflictsWith: ["no-open"],
+			description: "open the dashboard of the task in the browser once it is up"
+		},
 		"state-file": {
 			type: "string",
 			valueName: "FILE",
 			description: "legacy flag: accepted and ignored (the Node runtime always uses <workspace>/state.json)"
 		}
 	};
+	STATE_FILE_IGNORED = "--state-file is ignored: the app always uses its own state.json";
 	command$23 = makeCommand$24();
 }));
 
@@ -56989,39 +65942,6 @@ var init_instances = __esmMin((() => {
 	init_src();
 	listCommand = makeListCommand();
 	repairCommand = makeRepairCommand();
-}));
-
-//#endregion
-//#region packages/cli/src/commands/doctor.ts
-var doctor_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$22,
-	makeCommand: () => makeCommand$23
-});
-function makeCommand$23(ops = doctor_exports$1) {
-	return {
-		name: "doctor",
-		summary: "check Node, the runtime, the Claude home, and with --task the workspace, configuration, database and port",
-		synopsis: "[--task SLUG]",
-		options: { task: {
-			type: "string",
-			valueName: "SLUG",
-			description: "also run the checks of this task"
-		} },
-		async run(ctx) {
-			const task = ctx.args.string("task");
-			const report = await ops.run(ctx.op, task === void 0 ? {} : { task }, ctx.deps);
-			return {
-				data: report,
-				text: doctorLines(report),
-				exitCode: report.ok ? 0 : 1
-			};
-		}
-	};
-}
-var command$22;
-var init_doctor = __esmMin((() => {
-	init_src();
-	command$22 = makeCommand$23();
 }));
 
 //#endregion
@@ -57178,10 +66098,10 @@ var init_shared = __esmMin((() => {
 //#endregion
 //#region packages/cli/src/commands/hooks/install.ts
 var install_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$21,
-	makeCommand: () => makeCommand$22
+	command: () => command$22,
+	makeCommand: () => makeCommand$23
 });
-function makeCommand$22(ops = hooks_exports, consent = realConsentIo) {
+function makeCommand$23(ops = hooks_exports, consent = realConsentIo) {
 	return {
 		name: "hooks install",
 		summary: "install the hook entries into a settings file (dry run unless --yes; asks on a terminal)",
@@ -57216,20 +66136,20 @@ function makeCommand$22(ops = hooks_exports, consent = realConsentIo) {
 		}
 	};
 }
-var command$21;
+var command$22;
 var init_install = __esmMin((() => {
 	init_src();
 	init_shared();
-	command$21 = makeCommand$22();
+	command$22 = makeCommand$23();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/hooks/uninstall.ts
 var uninstall_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$20,
-	makeCommand: () => makeCommand$21
+	command: () => command$21,
+	makeCommand: () => makeCommand$22
 });
-function makeCommand$21(ops = hooks_exports, consent = realConsentIo) {
+function makeCommand$22(ops = hooks_exports, consent = realConsentIo) {
 	return {
 		name: "hooks uninstall",
 		summary: "remove the hook entries from a settings file (dry run unless --yes; asks on a terminal)",
@@ -57258,18 +66178,18 @@ function makeCommand$21(ops = hooks_exports, consent = realConsentIo) {
 		}
 	};
 }
-var command$20;
+var command$21;
 var init_uninstall = __esmMin((() => {
 	init_src();
 	init_shared();
-	command$20 = makeCommand$21();
+	command$21 = makeCommand$22();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/hooks/verify.ts
 var verify_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$19,
-	makeCommand: () => makeCommand$20,
+	command: () => command$20,
+	makeCommand: () => makeCommand$21,
 	verifyLines: () => verifyLines
 });
 /** `[ok] V1: detail`, `[FAIL] V3: detail`, `[skip] V7: detail`. */
@@ -57278,7 +66198,7 @@ function verifyLines(result) {
 		return `[${check.ok === null ? "skip" : check.ok ? "ok" : "FAIL"}] ${check.check}: ${check.detail}`;
 	});
 }
-function makeCommand$20(ops = hooks_exports) {
+function makeCommand$21(ops = hooks_exports) {
 	return {
 		name: "hooks verify",
 		summary: "check the settings file, the paths, the handler version, the route file and a synthetic probe (writes no settings)",
@@ -57298,18 +66218,18 @@ function makeCommand$20(ops = hooks_exports) {
 		}
 	};
 }
-var command$19;
+var command$20;
 var init_verify = __esmMin((() => {
 	init_src();
 	init_shared();
-	command$19 = makeCommand$20();
+	command$20 = makeCommand$21();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/hooks/status.ts
 var status_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$18,
-	makeCommand: () => makeCommand$19,
+	command: () => command$19,
+	makeCommand: () => makeCommand$20,
 	statusLines: () => statusLines
 });
 function iso(ms) {
@@ -57342,7 +66262,7 @@ function statusLines(result) {
 	if (result.installs.length > 0) lines.push("to remove the hooks: mcs hooks uninstall [--scope user | --settings-file FILE] (a dry run; add --yes to apply)");
 	return lines;
 }
-function makeCommand$19(ops = hooks_exports) {
+function makeCommand$20(ops = hooks_exports) {
 	return {
 		name: "hooks status",
 		summary: "show where the hooks are installed, the state of the script copy and the handler log (writes nothing)",
@@ -57362,20 +66282,20 @@ function makeCommand$19(ops = hooks_exports) {
 		}
 	};
 }
-var command$18;
+var command$19;
 var init_status = __esmMin((() => {
 	init_src();
-	command$18 = makeCommand$19();
+	command$19 = makeCommand$20();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/hooks/toggle.ts
 var toggle_exports = /* @__PURE__ */ __exportAll({
-	disableCommand: () => disableCommand,
-	enableCommand: () => enableCommand,
-	makeCommand: () => makeCommand$18
+	disableCommand: () => disableCommand$1,
+	enableCommand: () => enableCommand$1,
+	makeCommand: () => makeCommand$19
 });
-function resultOf(result) {
+function resultOf$1(result) {
 	const word = result.enabled ? "enabled" : "disabled";
 	return {
 		data: result,
@@ -57383,7 +66303,7 @@ function resultOf(result) {
 		warnings: result.running ? [`the monitor of task '${result.task}' is running: restart it (mcs restart --task ${result.task}) so that it keeps this change`] : []
 	};
 }
-function makeCommand$18(enabled, ops = hooks_exports) {
+function makeCommand$19(enabled, ops = hooks_exports) {
 	const verb = enabled ? "enable" : "disable";
 	return {
 		name: `hooks ${verb}`,
@@ -57396,27 +66316,27 @@ function makeCommand$18(enabled, ops = hooks_exports) {
 			description: `the task to ${verb} hooks for`
 		} },
 		async run(ctx) {
-			return resultOf(await ops.setEnabled(ctx.op, {
+			return resultOf$1(await ops.setEnabled(ctx.op, {
 				task: ctx.args.string("task") ?? "",
 				enabled
 			}));
 		}
 	};
 }
-var enableCommand, disableCommand;
+var enableCommand$1, disableCommand$1;
 var init_toggle = __esmMin((() => {
 	init_src();
-	enableCommand = makeCommand$18(true);
-	disableCommand = makeCommand$18(false);
+	enableCommand$1 = makeCommand$19(true);
+	disableCommand$1 = makeCommand$19(false);
 }));
 
 //#endregion
 //#region packages/cli/src/commands/ingest-replay.ts
 var ingest_replay_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$17,
-	makeCommand: () => makeCommand$17
+	command: () => command$18,
+	makeCommand: () => makeCommand$18
 });
-function makeCommand$17(ops = ingest_exports) {
+function makeCommand$18(ops = ingest_exports) {
 	return {
 		name: "ingest replay",
 		summary: "read the spool segments of a task again (dry run unless --yes; duplicates are ignored by event_uid)",
@@ -57453,10 +66373,10 @@ function makeCommand$17(ops = ingest_exports) {
 		}
 	};
 }
-var command$17;
+var command$18;
 var init_ingest_replay = __esmMin((() => {
 	init_src();
-	command$17 = makeCommand$17();
+	command$18 = makeCommand$18();
 }));
 
 //#endregion
@@ -57464,10 +66384,10 @@ var init_ingest_replay = __esmMin((() => {
 var sessions_list_exports = /* @__PURE__ */ __exportAll({
 	cell: () => cell,
 	clip: () => clip,
-	command: () => command$16,
+	command: () => command$17,
 	compact: () => compact,
 	isoShort: () => isoShort,
-	makeCommand: () => makeCommand$16,
+	makeCommand: () => makeCommand$17,
 	modeNote: () => modeNote,
 	sessionsListLines: () => sessionsListLines,
 	table: () => table,
@@ -57570,7 +66490,7 @@ function sessionsListLines(result) {
 	if (result.items.some((session) => usageNotes(session.usageInclSubagents).length > 0)) lines.push(">= marks token counts that are a lower bound (part of a transcript was not read)");
 	return lines;
 }
-function makeCommand$16(ops = data_exports) {
+function makeCommand$17(ops = data_exports) {
 	return {
 		name: "sessions list",
 		summary: "list the sessions of a task: id, label, state, basis, last activity, tokens and errors",
@@ -57621,20 +66541,20 @@ function makeCommand$16(ops = data_exports) {
 		}
 	};
 }
-var LABEL_WIDTH$1, command$16;
+var LABEL_WIDTH$1, command$17;
 var init_sessions_list = __esmMin((() => {
 	init_src();
 	init_terminal();
 	LABEL_WIDTH$1 = 44;
-	command$16 = makeCommand$16();
+	command$17 = makeCommand$17();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/sessions-show.ts
 var sessions_show_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$15,
+	command: () => command$16,
 	durationText: () => durationText,
-	makeCommand: () => makeCommand$15,
+	makeCommand: () => makeCommand$16,
 	sessionsShowLines: () => sessionsShowLines
 });
 /** `3725000` as `1h 02m 05s`; the largest two units that matter. */
@@ -57741,7 +66661,7 @@ function sessionsShowLines(result) {
 	lines.push(`(${modeNote(result.mode)})`);
 	return lines;
 }
-function makeCommand$15(ops = data_exports) {
+function makeCommand$16(ops = data_exports) {
 	return {
 		name: "sessions show",
 		summary: "show one session: state with basis and evidence, tokens, agents and the newest events",
@@ -57786,20 +66706,20 @@ function makeCommand$15(ops = data_exports) {
 		}
 	};
 }
-var LABEL_WIDTH, TEXT_WIDTH, command$15;
+var LABEL_WIDTH, TEXT_WIDTH, command$16;
 var init_sessions_show = __esmMin((() => {
 	init_src();
 	init_sessions_list();
 	LABEL_WIDTH = 70;
 	TEXT_WIDTH = 300;
-	command$15 = makeCommand$15();
+	command$16 = makeCommand$16();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/usage.ts
 var usage_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$14,
-	makeCommand: () => makeCommand$14,
+	command: () => command$15,
+	makeCommand: () => makeCommand$15,
 	usageDayLines: () => usageDayLines,
 	usageLines: () => usageLines,
 	usageReportLines: () => usageReportLines,
@@ -57974,7 +66894,7 @@ function usageLines(result) {
 	if (result.by === "tool") return usageToolLines(result.tools, result.mode);
 	return usageReportLines(result.by, result.report, result.mode);
 }
-function makeCommand$14(ops = data_exports) {
+function makeCommand$15(ops = data_exports) {
 	return {
 		name: "usage",
 		summary: "token usage of a task by model, session, day or tool (with lower-bound and partial markers)",
@@ -58028,21 +66948,21 @@ function makeCommand$14(ops = data_exports) {
 		}
 	};
 }
-var NAME_WIDTH, command$14;
+var NAME_WIDTH, command$15;
 var init_usage = __esmMin((() => {
 	init_src();
 	init_src$1();
 	init_sessions_list();
 	NAME_WIDTH = 48;
-	command$14 = makeCommand$14();
+	command$15 = makeCommand$15();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/errors.ts
 var errors_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$13,
+	command: () => command$14,
 	errorsLines: () => errorsLines,
-	makeCommand: () => makeCommand$13
+	makeCommand: () => makeCommand$14
 });
 /** One line per error: time, source, code, where, then the message. */
 function errorsLines(result) {
@@ -58057,7 +66977,7 @@ function errorsLines(result) {
 		`${String(result.items.length)} errors, newest first (${modeNote(result.mode)})`
 	];
 }
-function makeCommand$13(ops = data_exports) {
+function makeCommand$14(ops = data_exports) {
 	return {
 		name: "errors",
 		summary: "show the recent errors of a task, newest first (ingestion errors; a running monitor adds its own)",
@@ -58096,20 +67016,20 @@ function makeCommand$13(ops = data_exports) {
 		}
 	};
 }
-var command$13;
+var command$14;
 var init_errors$1 = __esmMin((() => {
 	init_src();
 	init_sessions_list();
-	command$13 = makeCommand$13();
+	command$14 = makeCommand$14();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/backup.ts
 var backup_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$12,
-	makeCommand: () => makeCommand$12
+	command: () => command$13,
+	makeCommand: () => makeCommand$13
 });
-function makeCommand$12(ops = backup_exports$1) {
+function makeCommand$13(ops = backup_exports$1) {
 	return {
 		name: "backup",
 		aliases: ["backup create"],
@@ -58141,19 +67061,19 @@ function makeCommand$12(ops = backup_exports$1) {
 		}
 	};
 }
-var command$12;
+var command$13;
 var init_backup = __esmMin((() => {
 	init_src();
-	command$12 = makeCommand$12();
+	command$13 = makeCommand$13();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/backup-list.ts
 var backup_list_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$11,
-	makeCommand: () => makeCommand$11
+	command: () => command$12,
+	makeCommand: () => makeCommand$12
 });
-function makeCommand$11(ops = backup_exports$1) {
+function makeCommand$12(ops = backup_exports$1) {
 	return {
 		name: "backup list",
 		summary: "list the backups of a task (id, reason, time, versions, size); --verify re-checks every sha256",
@@ -58184,19 +67104,19 @@ function makeCommand$11(ops = backup_exports$1) {
 		}
 	};
 }
-var command$11;
+var command$12;
 var init_backup_list = __esmMin((() => {
 	init_src();
-	command$11 = makeCommand$11();
+	command$12 = makeCommand$12();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/backup-restore.ts
 var backup_restore_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$10,
-	makeCommand: () => makeCommand$10
+	command: () => command$11,
+	makeCommand: () => makeCommand$11
 });
-function makeCommand$10(ops = backup_exports$1) {
+function makeCommand$11(ops = backup_exports$1) {
 	return {
 		name: "backup restore",
 		summary: "restore the database from a backup (dry run unless --yes; the instance must be stopped)",
@@ -58238,19 +67158,19 @@ function makeCommand$10(ops = backup_exports$1) {
 		}
 	};
 }
-var command$10;
+var command$11;
 var init_backup_restore = __esmMin((() => {
 	init_src();
-	command$10 = makeCommand$10();
+	command$11 = makeCommand$11();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/upgrade.ts
 var upgrade_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$9,
-	makeCommand: () => makeCommand$9
+	command: () => command$10,
+	makeCommand: () => makeCommand$10
 });
-function makeCommand$9(ops = instance_upgrade_exports) {
+function makeCommand$10(ops = instance_upgrade_exports) {
 	return {
 		name: "upgrade",
 		summary: "upgrade a task to this runtime: backup, database migrations, instance.json (dry run unless --yes)",
@@ -58291,19 +67211,19 @@ function makeCommand$9(ops = instance_upgrade_exports) {
 		}
 	};
 }
-var command$9;
+var command$10;
 var init_upgrade = __esmMin((() => {
 	init_src();
-	command$9 = makeCommand$9();
+	command$10 = makeCommand$10();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/db-migrate.ts
 var db_migrate_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$8,
-	makeCommand: () => makeCommand$8
+	command: () => command$9,
+	makeCommand: () => makeCommand$9
 });
-function makeCommand$8(ops = instance_upgrade_exports) {
+function makeCommand$9(ops = instance_upgrade_exports) {
 	return {
 		name: "db migrate",
 		summary: "apply the pending database migrations after a backup (dry run unless --yes; the instance must be stopped)",
@@ -58338,19 +67258,19 @@ function makeCommand$8(ops = instance_upgrade_exports) {
 		}
 	};
 }
-var command$8;
+var command$9;
 var init_db_migrate = __esmMin((() => {
 	init_src();
-	command$8 = makeCommand$8();
+	command$9 = makeCommand$9();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/db-rebuild.ts
 var db_rebuild_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$7,
-	makeCommand: () => makeCommand$7
+	command: () => command$8,
+	makeCommand: () => makeCommand$8
 });
-function makeCommand$7(ops = instance_upgrade_exports) {
+function makeCommand$8(ops = instance_upgrade_exports) {
 	return {
 		name: "db rebuild",
 		summary: "move the database aside so that the next start rebuilds it from the sources on disk (needs --yes --confirm)",
@@ -58388,18 +67308,18 @@ function makeCommand$7(ops = instance_upgrade_exports) {
 		}
 	};
 }
-var command$7;
+var command$8;
 var init_db_rebuild = __esmMin((() => {
 	init_src();
-	command$7 = makeCommand$7();
+	command$8 = makeCommand$8();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/export.ts
 var export_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$6,
+	command: () => command$7,
 	exportLines: () => exportLines,
-	makeCommand: () => makeCommand$6
+	makeCommand: () => makeCommand$7
 });
 /** The text of `export`: where the file is, what it holds and how it was checked. */
 function exportLines(result) {
@@ -58413,7 +67333,7 @@ function exportLines(result) {
 		`(${modeNote(result.mode)})`
 	];
 }
-function makeCommand$6(ops = {
+function makeCommand$7(ops = {
 	exportQueryOf,
 	openWorkspace,
 	exportToFile
@@ -58508,20 +67428,20 @@ function makeCommand$6(ops = {
 		}
 	};
 }
-var command$6;
+var command$7;
 var init_export = __esmMin((() => {
 	init_src();
 	init_src$1();
 	init_sessions_list();
-	command$6 = makeCommand$6();
+	command$7 = makeCommand$7();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/verify-completion.ts
 var verify_completion_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$5,
+	command: () => command$6,
 	expectationMet: () => expectationMet,
-	makeCommand: () => makeCommand$5,
+	makeCommand: () => makeCommand$6,
 	verifyCompletionLines: () => verifyCompletionLines
 });
 /** True when `outcome` is the one that `expect` asks for. */
@@ -58544,7 +67464,7 @@ function verifyCompletionLines(result) {
 	if (c.evidence.length === 0) lines.push("no evidence recorded");
 	return lines;
 }
-function makeCommand$5(ops = data_exports) {
+function makeCommand$6(ops = data_exports) {
 	return {
 		name: "verify-completion",
 		summary: "check from observed evidence whether a run finished (exit 0 only when it matches --expect)",
@@ -58605,14 +67525,14 @@ function makeCommand$5(ops = data_exports) {
 		}
 	};
 }
-var TARGET_WIDTH, EVIDENCE_WIDTH, command$5;
+var TARGET_WIDTH, EVIDENCE_WIDTH, command$6;
 var init_verify_completion = __esmMin((() => {
 	init_src();
 	init_src$1();
 	init_sessions_list();
 	TARGET_WIDTH = 80;
 	EVIDENCE_WIDTH = 200;
-	command$5 = makeCommand$5();
+	command$6 = makeCommand$6();
 }));
 
 //#endregion
@@ -80647,10 +89567,10 @@ var init_server = __esmMin((() => {
 //#endregion
 //#region packages/cli/src/commands/mcp.ts
 var mcp_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$4,
-	makeCommand: () => makeCommand$4
+	command: () => command$5,
+	makeCommand: () => makeCommand$5
 });
-function makeCommand$4(deps = defaultDeps) {
+function makeCommand$5(deps = defaultDeps) {
 	return {
 		name: "mcp",
 		summary: "run the read-only MCP server of a task over stdio, or print the commands that register it with Claude Code",
@@ -80709,7 +89629,7 @@ function makeCommand$4(deps = defaultDeps) {
 		}
 	};
 }
-var defaultDeps, command$4;
+var defaultDeps, command$5;
 var init_mcp = __esmMin((() => {
 	init_src();
 	init_src$1();
@@ -80718,16 +89638,16 @@ var init_mcp = __esmMin((() => {
 		stdinIsTerminal: () => process.stdin.isTTY,
 		loadServer: () => Promise.resolve().then(() => (init_server(), server_exports))
 	};
-	command$4 = makeCommand$4();
+	command$5 = makeCommand$5();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/migrate-workspace.ts
 var migrate_workspace_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$3,
-	makeCommand: () => makeCommand$3
+	command: () => command$4,
+	makeCommand: () => makeCommand$4
 });
-function makeCommand$3(ops = migrate_workspace_exports$1) {
+function makeCommand$4(ops = migrate_workspace_exports$1) {
 	return {
 		name: "migrate-workspace",
 		summary: "convert pre-4.0 task workspaces (Python regex syntax, no instance.json), one with --task or all with --all; a dry run unless --apply",
@@ -80776,20 +89696,20 @@ function makeCommand$3(ops = migrate_workspace_exports$1) {
 		}
 	};
 }
-var command$3;
+var command$4;
 var init_migrate_workspace = __esmMin((() => {
 	init_src();
 	init_src$1();
-	command$3 = makeCommand$3();
+	command$4 = makeCommand$4();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/cleanup.ts
 var cleanup_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$2,
-	makeCommand: () => makeCommand$2
+	command: () => command$3,
+	makeCommand: () => makeCommand$3
 });
-function makeCommand$2(ops = cleanup_exports$1) {
+function makeCommand$3(ops = cleanup_exports$1) {
 	return {
 		name: "cleanup",
 		summary: "delete stale state, init leftovers, old logs, old backups, drained spool segments or old data (dry run unless --yes)",
@@ -80859,20 +89779,20 @@ function makeCommand$2(ops = cleanup_exports$1) {
 		}
 	};
 }
-var command$2;
+var command$3;
 var init_cleanup = __esmMin((() => {
 	init_src();
 	init_src$1();
-	command$2 = makeCommand$2();
+	command$3 = makeCommand$3();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/config-migrate.ts
 var config_migrate_exports = /* @__PURE__ */ __exportAll({
-	command: () => command$1,
-	makeCommand: () => makeCommand$1
+	command: () => command$2,
+	makeCommand: () => makeCommand$2
 });
-function makeCommand$1(ops = config_exports) {
+function makeCommand$2(ops = config_exports) {
 	return {
 		name: "config migrate",
 		summary: "migrate config.json, runtime.json and instance.json to the newest schema version (dry run unless --yes)",
@@ -80907,19 +89827,19 @@ function makeCommand$1(ops = config_exports) {
 		}
 	};
 }
-var command$1;
+var command$2;
 var init_config_migrate = __esmMin((() => {
 	init_src();
-	command$1 = makeCommand$1();
+	command$2 = makeCommand$2();
 }));
 
 //#endregion
 //#region packages/cli/src/commands/diagnostics.ts
 var diagnostics_exports = /* @__PURE__ */ __exportAll({
-	command: () => command,
-	makeCommand: () => makeCommand
+	command: () => command$1,
+	makeCommand: () => makeCommand$1
 });
-function makeCommand(ops = diagnostics_exports$1) {
+function makeCommand$1(ops = diagnostics_exports$1) {
 	return {
 		name: "diagnostics",
 		summary: "write a diagnostics report (checks, status, health, redacted configuration, log tail) that is safe to share",
@@ -80955,10 +89875,286 @@ function makeCommand(ops = diagnostics_exports$1) {
 		}
 	};
 }
-var command;
+var command$1;
 var init_diagnostics = __esmMin((() => {
 	init_src();
+	command$1 = makeCommand$1();
+}));
+
+//#endregion
+//#region packages/cli/src/commands/open.ts
+var open_exports = /* @__PURE__ */ __exportAll({
+	command: () => command,
+	makeCommand: () => makeCommand,
+	userOpenInputOf: () => userOpenInputOf,
+	userOpenResult: () => userOpenResult
+});
+/** The options as typed, without the ones that were not given (exactOptionalPropertyTypes). */
+function userOpenInputOf(args) {
+	const timeoutMs = args.int("timeout-ms");
+	const browser = args.flag("window") ? "window" : args.flag("tab") ? "tab" : void 0;
+	return {
+		...browser === void 0 ? {} : { browser },
+		...args.flag("print") ? { print: true } : {},
+		...args.flag("no-start") ? { noStart: true } : {},
+		...timeoutMs === void 0 ? {} : { timeoutMs }
+	};
+}
+/**
+* What `open` shows. The login is in the data only with `--print`; a browser that could not be opened leaves the login in the
+* result (the code was never used), which is shown as one line of text and nowhere else.
+*/
+function userOpenResult(result, print) {
+	const login = result.login;
+	const fallback = !print && login !== null ? [fallbackLoginLine(login)] : [];
+	return {
+		data: print ? result : {
+			...result,
+			login: null
+		},
+		text: [...result.message, ...fallback],
+		warnings: result.warnings,
+		exitCode: result.exitCode
+	};
+}
+function makeCommand(app = app_exports) {
+	return {
+		name: "open",
+		summary: "open the app in the browser (starting it when needed); --print gives a login URL instead",
+		synopsis: "[--window | --tab] [--print] [--no-start] [--timeout-ms MS]",
+		options: {
+			window: {
+				type: "boolean",
+				conflictsWith: ["tab"],
+				description: "open the app in an Edge or Chrome app window (default: app.openAppWindow)"
+			},
+			tab: {
+				type: "boolean",
+				description: "open the app in a tab of the default browser"
+			},
+			print: {
+				type: "boolean",
+				description: "print a login URL (single use, a password) instead of opening a browser"
+			},
+			"no-start": {
+				type: "boolean",
+				description: "do not start the app: fail with INSTANCE_NOT_RUNNING when it does not run"
+			},
+			"timeout-ms": {
+				type: "string",
+				valueName: "MS",
+				integer: [1e3, 3e5],
+				description: "how long to wait for a healthy server when it has to be started (default: process.startTimeoutMs)"
+			}
+		},
+		defaultScope: "user",
+		userOnly: true,
+		async run(ctx) {
+			return userOpenResult(await app.openUser(ctx.op, userOpenInputOf(ctx.args)), ctx.args.flag("print"));
+		}
+	};
+}
+var command;
+var init_open = __esmMin((() => {
+	init_src();
+	init_start();
 	command = makeCommand();
+}));
+
+//#endregion
+//#region packages/cli/src/commands/autostart.ts
+var autostart_exports = /* @__PURE__ */ __exportAll({
+	autostartLines: () => autostartLines,
+	disableCommand: () => disableCommand,
+	enableCommand: () => enableCommand,
+	makeCommands: () => makeCommands,
+	statusCommand: () => statusCommand
+});
+/** The text of 06 2.7: the state, then the shortcut and what it runs. */
+function autostartLines(status) {
+	if (!status.supported) return ["autostart: not supported on this system"];
+	if (!status.enabled) return ["autostart: off"];
+	const lines = ["autostart: on"];
+	if (status.shortcut !== null) lines.push(`  shortcut: ${status.shortcut}`);
+	if (status.target !== null) lines.push(`  runs:     "${status.target}"${status.arguments === null ? "" : ` ${status.arguments}`}`);
+	return lines;
+}
+/** A stale shortcut or a missing `APPDATA` is a note of the operation: a warning, never a failure. */
+function resultOf(status, extra = []) {
+	return {
+		data: status,
+		text: [...autostartLines(status), ...extra],
+		warnings: status.supported && status.note !== null ? [status.note] : []
+	};
+}
+function makeCommands(ops = REAL_OPS$1, nodePath = process.execPath) {
+	return {
+		enable: {
+			...COMMON,
+			name: "autostart enable",
+			summary: "start the app at sign-in (a Startup shortcut, Windows only; it starts without a browser)",
+			async run(ctx) {
+				return resultOf(await ops.enableAutostart(ctx.op, {
+					launcherPath: ctx.op.launcherPath,
+					nodePath
+				}), [AT_SIGN_IN]);
+			}
+		},
+		disable: {
+			...COMMON,
+			name: "autostart disable",
+			summary: "remove the Startup shortcut",
+			async run(ctx) {
+				return resultOf(await ops.disableAutostart(ctx.op));
+			}
+		},
+		status: {
+			...COMMON,
+			name: "autostart status",
+			summary: "show whether the app starts at sign-in, and what the shortcut runs",
+			async run(ctx) {
+				return resultOf(await ops.autostartStatus(ctx.op, { launcherPath: ctx.op.launcherPath }));
+			}
+		}
+	};
+}
+var REAL_OPS$1, AT_SIGN_IN, COMMON, COMMANDS, enableCommand, disableCommand, statusCommand;
+var init_autostart = __esmMin((() => {
+	init_src();
+	REAL_OPS$1 = {
+		autostartStatus,
+		enableAutostart,
+		disableAutostart
+	};
+	AT_SIGN_IN = "at sign-in the app starts in the background without a browser; run `caw open` for a login link";
+	COMMON = {
+		synopsis: "",
+		options: {},
+		defaultScope: "user",
+		userOnly: true
+	};
+	COMMANDS = makeCommands();
+	enableCommand = COMMANDS.enable;
+	disableCommand = COMMANDS.disable;
+	statusCommand = COMMANDS.status;
+}));
+
+//#endregion
+//#region packages/cli/src/commands/config-user.ts
+var config_user_exports = /* @__PURE__ */ __exportAll({
+	USER_CONFIG_KEYS: () => USER_CONFIG_KEYS,
+	getCommand: () => getCommand,
+	makeGetCommand: () => makeGetCommand,
+	makeSetCommand: () => makeSetCommand,
+	setCommand: () => setCommand
+});
+/** The key of the command line, or a usage error that names the keys that exist. */
+function keyOf(text) {
+	const key = USER_CONFIG_KEYS.find((candidate) => candidate === text);
+	if (key !== void 0) return key;
+	throw new McsError("USAGE", `unknown setting '${text ?? ""}'; the settings are ${USER_CONFIG_KEYS.join(", ")}`, { hint: OTHER_KEYS_HINT });
+}
+/** The words of the design: the lowest layer is called `default`. */
+function sourceOf(source) {
+	return source === "builtin" ? "default" : source;
+}
+function valueText(value) {
+	return typeof value === "string" ? value : JSON.stringify(value);
+}
+function settingOf(result, key) {
+	const entry = result.inspection.entries.find((candidate) => candidate.key === key);
+	return {
+		key,
+		value: entry?.value ?? null,
+		source: sourceOf(entry?.source ?? "builtin")
+	};
+}
+function inspectApp(ops, ctx) {
+	return ops.inspect(ctx.op, { task: USER_INSTANCE_SLUG }, ctx.deps);
+}
+function makeGetCommand(ops = REAL_OPS, ensure = REAL_ENSURE) {
+	return {
+		name: "config get",
+		summary: "show the value and the source of a setting of the app (or of all seven)",
+		synopsis: "[KEY]",
+		options: {},
+		positionals: { max: 1 },
+		defaultScope: "user",
+		userOnly: true,
+		async run(ctx) {
+			const asked = ctx.args.positionals[0];
+			const keys = asked === void 0 ? USER_CONFIG_KEYS : [keyOf(asked)];
+			await ensure(ctx.op);
+			const result = await inspectApp(ops, ctx);
+			const settings = keys.map((key) => settingOf(result, key));
+			return {
+				data: settings,
+				text: settings.map((setting) => {
+					const note = setting.key === "server.port" && setting.value === null ? `${setting.source}; the first port tried is ${String(result.inspection.effectivePort)}` : setting.source;
+					return `${setting.key} = ${valueText(setting.value)}  (${note})`;
+				})
+			};
+		}
+	};
+}
+function makeSetCommand(ops = REAL_OPS, ensure = REAL_ENSURE) {
+	return {
+		name: "config set",
+		summary: "change a setting of the app (the value is JSON, or plain text when it is not JSON)",
+		synopsis: "KEY VALUE",
+		options: {},
+		positionals: { max: 2 },
+		defaultScope: "user",
+		userOnly: true,
+		async run(ctx) {
+			const [asked, value] = ctx.args.positionals;
+			if (asked === void 0 || value === void 0) throw new McsError("USAGE", "config set needs a KEY and a VALUE", { hint: "usage: caw config set KEY VALUE" });
+			const key = keyOf(asked);
+			await ensure(ctx.op);
+			const report = await ops.configure(ctx.op, {
+				task: USER_INSTANCE_SLUG,
+				set: [`${key}=${value}`],
+				reason: SET_REASON
+			}, ctx.deps);
+			const setting = settingOf(await inspectApp(ops, ctx), key);
+			const restartNeeded = report.changed && report.restart_needed === true;
+			const text = report.changed ? [`saved ${key} = ${valueText(setting.value)}`] : [`unchanged: ${key} is already ${valueText(setting.value)}`];
+			if (restartNeeded) text.push("restart needed: the running app keeps the old value until caw restart");
+			const shadowed = report.changed && (setting.source === "env" || setting.source === "cli");
+			return {
+				data: {
+					...setting,
+					changed: report.changed,
+					restartNeeded
+				},
+				text,
+				warnings: shadowed ? [`${key} is also set by the ${setting.source}, which wins over the saved value`] : []
+			};
+		}
+	};
+}
+var USER_CONFIG_KEYS, REAL_OPS, REAL_ENSURE, SET_REASON, OTHER_KEYS_HINT, getCommand, setCommand;
+var init_config_user = __esmMin((() => {
+	init_src();
+	init_src$1();
+	USER_CONFIG_KEYS = [
+		"terminal.command",
+		"terminal.args",
+		"terminal.maxSessions",
+		"app.name",
+		"app.openAppWindow",
+		"server.port",
+		"server.portScan"
+	];
+	REAL_OPS = {
+		inspect: (ctx, input, deps) => inspect(ctx, input, deps),
+		configure: (ctx, input, deps) => configure(ctx, input, deps)
+	};
+	REAL_ENSURE = (ctx) => ensureUserInstance(ctx);
+	SET_REASON = "caw config set";
+	OTHER_KEYS_HINT = "any other key: `caw configure --user --set KEY=JSON`";
+	getCommand = makeGetCommand();
+	setCommand = makeSetCommand();
 }));
 
 //#endregion
@@ -81217,6 +90413,31 @@ const REGISTRY = [
 	{
 		names: ["diagnostics"],
 		load: () => Promise.resolve().then(() => (init_diagnostics(), diagnostics_exports))
+	},
+	{ deps: () => ({ extraChecks: appCheckProviders() }) },
+	{
+		names: ["open"],
+		load: () => Promise.resolve().then(() => (init_open(), open_exports))
+	},
+	{
+		names: ["autostart enable"],
+		load: async () => ({ command: (await Promise.resolve().then(() => (init_autostart(), autostart_exports))).enableCommand })
+	},
+	{
+		names: ["autostart disable"],
+		load: async () => ({ command: (await Promise.resolve().then(() => (init_autostart(), autostart_exports))).disableCommand })
+	},
+	{
+		names: ["autostart status"],
+		load: async () => ({ command: (await Promise.resolve().then(() => (init_autostart(), autostart_exports))).statusCommand })
+	},
+	{
+		names: ["config get"],
+		load: async () => ({ command: (await Promise.resolve().then(() => (init_config_user(), config_user_exports))).getCommand })
+	},
+	{
+		names: ["config set"],
+		load: async () => ({ command: (await Promise.resolve().then(() => (init_config_user(), config_user_exports))).setCommand })
 	}
 ];
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
@@ -81230,6 +90451,10 @@ const GLOBAL_OPTIONS = {
 		type: "string",
 		valueName: "PATH",
 		description: "tasks root (default: <repo>/.claude/monitor/tasks)"
+	},
+	user: {
+		type: "boolean",
+		description: `act on the ${PRODUCT_NAME} app instance (the default of start, stop, restart, status, serve, verify, doctor and check)`
 	},
 	json: {
 		type: "boolean",
@@ -81322,14 +90547,23 @@ function viewOf(values, positionals) {
 	};
 }
 const INTEGER_RE = /^[+-]?[0-9]+$/;
-function usageError(def, message) {
-	return new McsError("USAGE", message, { hint: `usage: ${usageLine(def)} (mcs help ${def.name})` });
+/** `usage: caw start [--port N] ... (caw help start)`: what follows a usage error. */
+function usageHint(def) {
+	return `usage: ${usageLine(def)} (${CLI_NAME} help ${def.name})`;
 }
-/** Checks the values against the tables: required options, choices, integer bounds, positional count. */
-function validate(def, args, values) {
+function usageError(def, message) {
+	return new McsError("USAGE", message, { hint: usageHint(def) });
+}
+/**
+* Checks the values against the tables: the options of the other scope, options that exclude each other, required options,
+* choices, integer bounds, positional count.
+*/
+function validate(def, args, values, scope) {
 	if (def.positionals === void 0 ? args.positionals.length > 0 : args.positionals.length > def.positionals.max) throw usageError(def, `unexpected argument '${args.positionals[def.positionals?.max ?? 0] ?? ""}'`);
 	for (const [name, spec] of Object.entries(def.options)) {
 		const value = values[name];
+		if (value !== void 0 && spec.scope !== void 0 && spec.scope !== scope) throw usageError(def, spec.scope === "user" ? `--${name} applies to the app instance, not to a task` : `--${name} applies to a task (--task SLUG), not to the app instance`);
+		for (const other of spec.conflictsWith ?? []) if (value !== void 0 && values[other] !== void 0) throw usageError(def, `--${name} cannot be combined with --${other}`);
 		if (spec.required === true && value === void 0) throw usageError(def, `${def.name} needs --${name} ${spec.valueName ?? "VALUE"}`);
 		for (const text of args.strings(name)) {
 			if (spec.choices !== void 0 && !spec.choices.includes(text)) throw usageError(def, `--${name} expects one of ${spec.choices.join(", ")}, got ${JSON.stringify(text)}`);
@@ -81341,6 +90575,12 @@ function validate(def, args, values) {
 		}
 	}
 }
+/** The task of a command in the scope of the app: the slug of the one user instance (`ctx.args.string('task')` keeps working). */
+const USER_TASK = USER_INSTANCE_SLUG;
+/**
+* Parses and validates the options. The scope of the call is resolved before the validation: in the scope of the app a command
+* that has a `task` option gets `task = user`, so a required `--task` is satisfied and every read of it works unchanged.
+*/
 function parseCommandArgs(def, rest) {
 	let values;
 	let positionals;
@@ -81359,24 +90599,37 @@ function parseCommandArgs(def, rest) {
 		if (message === null) throw error;
 		throw usageError(def, message);
 	}
-	const args = viewOf(values, positionals);
-	if (args.flag("help")) return {
-		args,
+	const typed = viewOf(values, positionals);
+	if (typed.flag("help")) return {
+		args: typed,
 		helpRequested: true
 	};
-	validate(def, args, values);
+	const resolution = resolveScope(def, {
+		user: typed.flag("user"),
+		task: typed.string("task"),
+		repo: typed.string("repo"),
+		root: typed.string("root")
+	}, usageHint(def));
+	if (def.userOnly === true && resolution.scope === "task") throw usageError(def, `${def.name} acts on the app instance only; it cannot be combined with --repo or --root`);
+	const effective = resolution.scope === "user" && Object.hasOwn(def.options, "task") ? {
+		...values,
+		task: USER_TASK
+	} : values;
+	const args = viewOf(effective, positionals);
+	validate(def, args, effective, resolution.scope);
 	return {
 		args,
-		helpRequested: false
+		helpRequested: false,
+		resolution
 	};
 }
-function opContextOf(args, paths) {
-	const repo = path.resolve(args.string("repo") ?? ".");
-	const rootArg = args.string("root");
+/**
+* The context of an operation. For the app (scope `user`) it is the user root, whatever the working directory is: `--repo` and
+* `--root` cannot be given in that scope. For a task it is the repository (`--repo` or the working directory) and its tasks root.
+*/
+function opContextOf(args, paths, scope) {
 	const level = process.env["MCS_DEBUG"] === "1" ? "debug" : "warn";
-	return {
-		repo,
-		root: rootArg === void 0 ? tasksRootOf(repo) : path.resolve(rootArg),
+	const base = {
 		skillDir: paths.skillDir,
 		runtimeDir: paths.runtimeDir,
 		launcherPath: paths.launcherPath,
@@ -81388,6 +90641,14 @@ function opContextOf(args, paths) {
 			rotate: false,
 			clock: systemClock
 		})
+	};
+	if (scope === "user") return userOpContext(base);
+	const repo = path.resolve(args.string("repo") ?? ".");
+	const rootArg = args.string("root");
+	return {
+		...base,
+		repo,
+		root: rootArg === void 0 ? tasksRootOf(repo) : path.resolve(rootArg)
 	};
 }
 /** What the kernel itself can provide: the build state of the runtime and the crash hook of `init` (01 2.10). */
@@ -81451,13 +90712,24 @@ function cliErrorOf(error) {
 	};
 }
 function reportFailure(run, error) {
-	const cli = cliErrorOf(error);
+	const raw = cliErrorOf(error);
+	const cli = run.scope === "user" ? appErrorOf(raw) : raw;
 	if (run.json) renderEnvelope(errorEnvelope(run.command === "" ? "mcs" : run.command, cli));
 	else {
 		renderError$1(cli);
 		if (process.env["MCS_DEBUG"] === "1" && error instanceof Error && error.stack !== void 0) printErrorLine(error.stack);
 	}
 	return cliExitCode(cli.code);
+}
+/** The result of an app call worded for the person of the app: every text, the warnings and the data (`appCommandText`). */
+function appResultOf(result) {
+	return {
+		...result,
+		data: inAppScope(result.data),
+		...result.text === void 0 ? {} : { text: result.text.map(appCommandText) },
+		...result.legacy === void 0 ? {} : { legacy: inAppScope(result.legacy) },
+		...result.warnings === void 0 ? {} : { warnings: result.warnings.map(appCommandText) }
+	};
 }
 function renderResult(def, json, result) {
 	if (json) renderEnvelope(resultEnvelope(def.name, result));
@@ -81470,7 +90742,24 @@ function renderResult(def, json, result) {
 }
 function unknownCommand(words, argv) {
 	const typed = words[0] ?? argv[0] ?? "";
-	return new McsError("USAGE", `unknown command '${typed}'`, { hint: "run 'mcs help' for the list of commands" });
+	return new McsError("USAGE", `unknown command '${typed}'`, { hint: helpHint() });
+}
+function helpHint() {
+	return `run '${CLI_NAME} help' for the list of commands`;
+}
+/**
+* The one note for people who still type `mcs` (06 2.2, ADR 0092): before the app existed, `mcs start`, `stop`, `status` and the rest
+* without a selector acted on the task `default`. The note ships in 4.1.0 and is shown by two releases (4.1 and 4.2): REMOVE it, its
+* use in `withScopeNote` and its tests in `main.test.ts` in 4.3.0 (the removal date of ADR 0092).
+*/
+const LEGACY_NAME_NOTE = `without --task, --repo or --root this command now acts on the ${PRODUCT_NAME} app (before it acted on the task 'default'); pass --task default to keep the old behaviour`;
+/** The result with the note appended to its warnings, when the program is `mcs` and nobody chose the app: the default did. */
+function withScopeNote(result, resolution, paths) {
+	if ((paths.program ?? "mcs") !== "mcs" || resolution.scope !== "user" || !resolution.defaulted) return result;
+	return {
+		...result,
+		warnings: [...result.warnings ?? [], LEGACY_NAME_NOTE]
+	};
 }
 async function dispatch(argv, paths, run) {
 	const first = argv[0];
@@ -81480,35 +90769,40 @@ async function dispatch(argv, paths, run) {
 	}
 	if (first === "-h" || first === "--help") return dispatch(["help", ...argv.slice(1)], paths, run);
 	if (first === "--version") {
-		printLine(`mcs ${RUNTIME_VERSION}`);
+		printLine(`${CLI_NAME} ${RUNTIME_VERSION}`);
 		return 0;
 	}
 	const found = findEntry(argv);
 	if (found === null) {
-		if (first.startsWith("-")) throw new McsError("USAGE", `expected a command, got option '${first}'`, { hint: "run 'mcs help' for the list of commands" });
+		if (first.startsWith("-")) throw new McsError("USAGE", `expected a command, got option '${first}'`, { hint: helpHint() });
 		throw unknownCommand(leadingWords(argv), argv);
 	}
 	const def = await loadCommand(found.entry);
 	run.command = def.name;
 	if (def.interruptible === "command") run.releaseInterrupt();
-	const { args, helpRequested } = parseCommandArgs(def, argv.slice(found.consumed));
+	const parsed = parseCommandArgs(def, argv.slice(found.consumed));
+	const { args } = parsed;
 	run.json = args.flag("json");
-	if (helpRequested) {
+	if (parsed.helpRequested) {
 		if (run.json) renderEnvelope(resultEnvelope(def.name, { data: describeCommand(def, GLOBAL_OPTIONS) }));
 		else renderLines(commandHelpLines(def, GLOBAL_OPTIONS));
 		return 0;
 	}
-	const op = opContextOf(args, paths);
+	const { resolution } = parsed;
+	run.scope = resolution.scope;
+	const op = opContextOf(args, paths, resolution.scope);
 	run.log = op.log;
 	const result = await def.run({
 		op,
 		args,
+		scope: resolution.scope,
 		deps: depsOf(op),
 		json: run.json,
 		globalOptions: GLOBAL_OPTIONS,
 		catalog
 	});
-	return renderResult(def, run.json, result);
+	const worded = resolution.scope === "user" ? appResultOf(result) : result;
+	return renderResult(def, run.json, withScopeNote(worded, resolution, paths));
 }
 /**
 * Runs one CLI call and returns its exit code (the caller sets `process.exitCode`; nothing here calls `process.exit`
@@ -81522,6 +90816,7 @@ async function main(argv, paths) {
 		command: leadingWords(argv)[0] ?? "",
 		json: wantsJson(argv),
 		log: null,
+		scope: null,
 		releaseInterrupt: () => {
 			process.off("SIGINT", onInterrupt);
 		}

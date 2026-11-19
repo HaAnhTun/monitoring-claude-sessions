@@ -1,14 +1,14 @@
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
-import { constants, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, statfsSync, writeSync } from "node:fs";
-import { access, chmod, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, statfs, unlink } from "node:fs/promises";
+import { accessSync, constants, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, statfsSync, writeSync } from "node:fs";
+import { access, chmod, copyFile, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, statfs, unlink } from "node:fs/promises";
 import path, { dirname, join, sep } from "node:path";
 import { setImmediate as setImmediate$1, setTimeout as setTimeout$1 } from "node:timers/promises";
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import net from "node:net";
+import net, { Socket } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createServer, request } from "node:http";
+import { ServerResponse, createServer, request } from "node:http";
 import os from "node:os";
 import { monitorEventLoopDelay, performance as performance$1 } from "node:perf_hooks";
 import { isUtf8 } from "node:buffer";
@@ -377,7 +377,7 @@ var Scanner = class {
 	}
 };
 /** Parse JSON text; see the module comment. Throws {@link JsonSyntaxError}. */
-function parseJson$1(text) {
+function parseJson$3(text) {
 	return new Scanner(text).parseDocument();
 }
 
@@ -6536,7 +6536,10 @@ const Semver = string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9
 
 //#endregion
 //#region packages/shared/src/errors.ts
-/** Every code that can appear in `CliEnvelope.error.code`. `USAGE` exits 2, all others exit 1. */
+/**
+* Every code that can appear in `CliEnvelope.error.code`. `USAGE` exits 2, `TERMINALS_LIVE` exits 3 (the stop was refused
+* because terminals are open, 06 3), all others exit 1.
+*/
 const CLI_ERROR_CODES = [
 	"USAGE",
 	"CONFIG_INVALID",
@@ -6572,6 +6575,8 @@ const CLI_ERROR_CODES = [
 	"OUTPUT_PATH_FORBIDDEN",
 	"NODE_TOO_OLD",
 	"HOOKS_FAILED",
+	"TERMINALS_LIVE",
+	"UNSUPPORTED_PLATFORM",
 	"NOT_FOUND",
 	"API_ERROR",
 	"INTERNAL"
@@ -6618,6 +6623,8 @@ function isoMsZ(ms) {
 
 //#endregion
 //#region packages/shared/src/files/instance.ts
+/** What an instance is for: a monitored `task` workspace, or the one `user` instance that hosts the app (06 1.3). */
+const InstanceKindSchema = _enum(["task", "user"]);
 const InstanceFileSchema = strictObject({
 	schema_version: literal(1),
 	/** `crypto.randomUUID()`; never changes except through `instances repair`. */
@@ -6632,10 +6639,19 @@ const InstanceFileSchema = strictObject({
 	dbSchemaVersion: number$1().int().min(0),
 	/** Written by this runtime; the Node runtime is the only engine (ADR 0066). */
 	engine: literal("node"),
+	/**
+	* Written only for `user`; an absent key means `task`, so a task file stays byte-identical (06 1.3). It lives in the
+	* identity file, not in the configuration: a one-line `config.json` edit must not turn a task into a terminal host.
+	*/
+	kind: InstanceKindSchema.optional(),
 	/** Whether the hook handler routes to this instance. */
 	hooks: strictObject({ enabled: boolean() }),
 	upgradedAt: IsoSecondsZ.nullable()
 });
+/** The kind of an instance file; a file without the key is a `task`. */
+function instanceKindOf(file) {
+	return file.kind ?? "task";
+}
 
 //#endregion
 //#region packages/shared/src/files/state.ts
@@ -6872,6 +6888,20 @@ const AnalyticsSectionKeys = { usageTrend: boolKey(true) };
 const AnalyticsSectionSchema = sectionSchema(AnalyticsSectionKeys);
 
 //#endregion
+//#region packages/shared/src/config/runtime/app.ts
+const name = {
+	/** Shown in the page header and title, and reported as `app.name` of the instance information. */
+	schema: string().min(1).max(80).regex(/^[\u0020-\u007e\u00a1-\uffff]+$/),
+	default: "Claude Agent Workspace"
+};
+const AppSectionKeys = {
+	name,
+	/** true: `start` and `open` use an Edge or Chrome app window; false: a tab of the default browser. */
+	openAppWindow: boolKey(false)
+};
+const AppSectionSchema = sectionSchema(AppSectionKeys);
+
+//#endregion
 //#region packages/shared/src/config/runtime/backup.ts
 const BackupSectionKeys = { 
 /** Automatic pruning of `data/backups`. */
@@ -7030,6 +7060,48 @@ const ProcessSectionKeys = {
 const ProcessSectionSchema = sectionSchema(ProcessSectionKeys);
 
 //#endregion
+//#region packages/shared/src/config/runtime/projects.ts
+/** The values of `projects.scope`. */
+const PROJECT_SCOPES = [
+	"auto",
+	"repo",
+	"all"
+];
+const scope = {
+	/** `repo` reads the one repository, `all` every folder under the Claude projects folder, `auto` decides by instance kind. */
+	schema: _enum(PROJECT_SCOPES),
+	default: "auto"
+};
+const daMemoryDir = {
+	/** Folder of the DA memory files; null is `<home>/.claude/memory`, whatever `CLAUDE_CONFIG_DIR` says. */
+	schema: string().min(1).max(1024).regex(/^[\u0020-\u007e\u00a1-\uffff]+$/).nullable(),
+	default: null
+};
+const ProjectsSectionKeys = {
+	scope,
+	/** Period of the full sweep of every project folder (scope `all`). */
+	fullSweepIntervalMs: intKey(5e3, 36e5, 6e4),
+	/** Period at which files without growth for five minutes are checked (scope `all`). */
+	coldStatIntervalMs: intKey(1e3, 6e5, 1e4),
+	/** Period of the refresh of the folder catalogue. */
+	catalogIntervalMs: intKey(5e3, 6e5, 3e4),
+	daMemoryDir,
+	/** How long one read of the DA memory is reused. */
+	daCacheMs: intKey(500, 6e4, 3e3),
+	/** The most folders a person may add by hand. */
+	userFoldersMax: intKey(1, 1e3, 200),
+	/** Poll of the registry for the link while a terminal is young. */
+	linkPollMs: intKey(100, 5e3, 250),
+	/** Poll after the fast window, and for terminals that are already linked. */
+	linkSlowPollMs: intKey(500, 6e4, 2e3),
+	/** Length of the fast poll window; the database fallback starts when it ends. */
+	linkFastWindowMs: intKey(5e3, 6e5, 3e4),
+	/** A registry entry may start this much before the spawn time and still count as the new session. */
+	linkStartToleranceMs: intKey(0, 3e4, 2e3)
+};
+const ProjectsSectionSchema = sectionSchema(ProjectsSectionKeys);
+
+//#endregion
 //#region packages/shared/src/config/runtime/retention.ts
 const RetentionSectionKeys = {
 	changesMaxAgeHours: intKey(1, 720, 24),
@@ -7071,6 +7143,47 @@ const SpoolSectionKeys = {
 const SpoolSectionSchema = sectionSchema(SpoolSectionKeys);
 
 //#endregion
+//#region packages/shared/src/config/runtime/terminal.ts
+/**
+* The most bytes one input message to a terminal may carry, and the default of `terminal.maxInputBytes`. It is also the
+* largest payload of the terminal socket: one limit, so a message that passes the gateway always passes the session.
+*/
+const INPUT_MAX_BYTES = 256 * KIB$1;
+const command = {
+	/** Program of every new session: a name on PATH or an absolute path. No quotes or control characters. */
+	schema: string().min(1).max(260).regex(/^[\u0020\u0021\u0023-\u007e\u00a1-\uffff]+$/),
+	default: "claude"
+};
+const args = {
+	/** Extra arguments in front of `--resume`, passed one by one and never through a shell. */
+	schema: array(string().max(500).refine((value) => !value.includes("\0"), "an argument cannot contain a NUL character")).max(32),
+	default: []
+};
+const envKeep = {
+	/** Names from the stripped set of the child environment that are kept (for example `CLAUDE_CODE_USE_BEDROCK`). */
+	schema: array(string().max(128).regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).max(32),
+	default: []
+};
+const TerminalSectionKeys = {
+	command,
+	args,
+	envKeep,
+	/** Live and starting sessions at once; a create over the limit is refused. */
+	maxSessions: intKey(1, 64, 8),
+	/** Replay buffer of one session, in bytes. */
+	replayBytes: intKey(64 * KIB$1, 16 * MIB$3, MIB$3),
+	/** Largest single write to a terminal; a bigger one is refused (the web client sends a paste in chunks). */
+	maxInputBytes: intKey(KIB$1, INPUT_MAX_BYTES, INPUT_MAX_BYTES),
+	/** How long to wait for the pseudo console to report the child as started. */
+	startTimeoutMs: intKey(1e3, 6e4, 1e4),
+	/** How long to wait for an exit after a kill before the whole process tree is killed. */
+	killTimeoutMs: intKey(500, 3e4, 3e3),
+	/** Use the `conpty.dll` and `OpenConsole.exe` that ship with the terminal package instead of the inbox conhost. */
+	conptyDll: boolKey(false)
+};
+const TerminalSectionSchema = sectionSchema(TerminalSectionKeys);
+
+//#endregion
 //#region packages/shared/src/config/runtime/index.ts
 /** The merged configuration: every key present, every default filled. `schema_version` is the file marker. */
 const RuntimeFileSchema = strictObject({
@@ -7090,7 +7203,10 @@ const RuntimeFileSchema = strictObject({
 	panelOptions: PanelOptionsSectionSchema,
 	retention: RetentionSectionSchema,
 	alerts: AlertsSectionSchema,
-	pricing: PricingSectionSchema
+	pricing: PricingSectionSchema,
+	terminal: TerminalSectionSchema,
+	app: AppSectionSchema,
+	projects: ProjectsSectionSchema
 });
 /** The file on disk: partial sections only, unknown keys rejected, no defaults injected. */
 const RuntimeOverridesSchema = strictObject({
@@ -7110,7 +7226,10 @@ const RuntimeOverridesSchema = strictObject({
 	panelOptions: sectionOverridesSchema(PanelOptionsSectionKeys),
 	retention: sectionOverridesSchema(RetentionSectionKeys),
 	alerts: sectionOverridesSchema(AlertsSectionKeys),
-	pricing: sectionOverridesSchema(PricingSectionKeys)
+	pricing: sectionOverridesSchema(PricingSectionKeys),
+	terminal: sectionOverridesSchema(TerminalSectionKeys),
+	app: sectionOverridesSchema(AppSectionKeys),
+	projects: sectionOverridesSchema(ProjectsSectionKeys)
 });
 const R_TOP_KEYS = [
 	"logLevel",
@@ -7128,7 +7247,10 @@ const R_TOP_KEYS = [
 	"panelOptions",
 	"retention",
 	"alerts",
-	"pricing"
+	"pricing",
+	"terminal",
+	"app",
+	"projects"
 ];
 /** Every object section merges per sub-key (01 2.2); only `logLevel` is a plain scalar. */
 const R_MERGED = new Set(R_TOP_KEYS.filter((k) => k !== "logLevel"));
@@ -7269,8 +7391,35 @@ const R_KEY_CATALOGUE = [
 	entry$1("alerts.rules.hook_gap", { default: rules$1.hook_gap }, { enabled: false }, "03", "03 10.1"),
 	entry$1("alerts.rules.hook_failing", { default: rules$1.hook_failing }, { cooldownMinutes: 5 }, "03", "03 10.1"),
 	entry$1("pricing.currency", PricingSectionKeys.currency, "EUR", "03", "03 8.3"),
-	entry$1("pricing.models", PricingSectionKeys.models, [priceSample], "03", "03 8.3")
+	entry$1("pricing.models", PricingSectionKeys.models, [priceSample], "03", "03 8.3"),
+	entry$1("terminal.command", TerminalSectionKeys.command, "claude-beta", "01", "01 1.6"),
+	entry$1("terminal.args", TerminalSectionKeys.args, ["--verbose"], "01", "01 1.6"),
+	entry$1("terminal.envKeep", TerminalSectionKeys.envKeep, ["CLAUDE_CODE_USE_BEDROCK"], "01", "01 1.6"),
+	entry$1("terminal.maxSessions", TerminalSectionKeys.maxSessions, 4, "01", "01 1.6"),
+	entry$1("terminal.replayBytes", TerminalSectionKeys.replayBytes, 2 * MIB$3, "01", "01 1.6"),
+	entry$1("terminal.maxInputBytes", TerminalSectionKeys.maxInputBytes, 65536, "01", "01 1.6"),
+	entry$1("terminal.startTimeoutMs", TerminalSectionKeys.startTimeoutMs, 2e4, "01", "01 1.6"),
+	entry$1("terminal.killTimeoutMs", TerminalSectionKeys.killTimeoutMs, 5e3, "01", "01 1.6"),
+	entry$1("terminal.conptyDll", TerminalSectionKeys.conptyDll, true, "01", "01 1.6"),
+	entry$1("app.name", AppSectionKeys.name, "Team Workspace", "01", "01 1.6"),
+	entry$1("app.openAppWindow", AppSectionKeys.openAppWindow, true, "01", "01 1.6"),
+	entry$1("projects.scope", ProjectsSectionKeys.scope, "all", "02", "02 2.1"),
+	entry$1("projects.fullSweepIntervalMs", ProjectsSectionKeys.fullSweepIntervalMs, 12e4, "02", "02 2.1"),
+	entry$1("projects.coldStatIntervalMs", ProjectsSectionKeys.coldStatIntervalMs, 2e4, "02", "02 2.1"),
+	entry$1("projects.catalogIntervalMs", ProjectsSectionKeys.catalogIntervalMs, 6e4, "03", "03 2.1"),
+	entry$1("projects.daMemoryDir", ProjectsSectionKeys.daMemoryDir, "memory-copy", "03", "03 2.1"),
+	entry$1("projects.daCacheMs", ProjectsSectionKeys.daCacheMs, 5e3, "03", "03 2.1"),
+	entry$1("projects.userFoldersMax", ProjectsSectionKeys.userFoldersMax, 50, "03", "03 2.1"),
+	entry$1("projects.linkPollMs", ProjectsSectionKeys.linkPollMs, 500, "06", "06 2.1"),
+	entry$1("projects.linkSlowPollMs", ProjectsSectionKeys.linkSlowPollMs, 4e3, "06", "06 2.1"),
+	entry$1("projects.linkFastWindowMs", ProjectsSectionKeys.linkFastWindowMs, 6e4, "06", "06 2.1"),
+	entry$1("projects.linkStartToleranceMs", ProjectsSectionKeys.linkStartToleranceMs, 1e3, "06", "06 2.1")
 ];
+
+//#endregion
+//#region packages/shared/src/protocol/access.ts
+/** The alphabet and length of a one-time access code. */
+const ACCESS_CODE_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
 //#endregion
 //#region packages/shared/src/protocol/control.ts
@@ -7291,13 +7440,17 @@ const CONTROL_ERROR_CODES = [
 	"INSTANCE_MISMATCH",
 	"NOT_READY",
 	"BACKUP_FAILED",
-	"INTERNAL"
+	"INTERNAL",
+	"TERMINALS_LIVE",
+	"UNSUPPORTED"
 ];
+/** A `terminals` reply lists at most this many sessions, oldest first. */
+const CONTROL_TERMINAL_SESSIONS_MAX = 50;
 /** A request is at most this many UTF-8 bytes. */
 const CONTROL_REQUEST_MAX_BYTES = 4096;
 /** The server closes a connection that stays idle this long. */
 const CONTROL_IDLE_TIMEOUT_MS = 2e3;
-/** Client timeout for `identify` and `shutdown`. */
+/** Client timeout for `identify`, `shutdown`, `terminals` and `access`. */
 const CONTROL_CLIENT_TIMEOUT_MS = 2e3;
 function parseObject$1(line) {
 	let value;
@@ -7318,6 +7471,9 @@ function isNonEmptyString(v) {
 function isCount(v) {
 	return typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 }
+function isPositiveCount(v) {
+	return isCount(v) && v > 0;
+}
 function isMember(list, v) {
 	return typeof v === "string" && list.some((x) => x === v);
 }
@@ -7329,6 +7485,22 @@ function utf8Length(text) {
 		bytes += cp < 128 ? 1 : cp < 2048 ? 2 : cp < 65536 ? 3 : 4;
 	}
 	return bytes;
+}
+function parseTerminalSessions(value) {
+	if (!Array.isArray(value) || value.length > 50) return null;
+	const sessions = [];
+	const items = value;
+	for (const item of items) {
+		if (typeof item !== "object" || item === null || Array.isArray(item)) return null;
+		const entry = Object.fromEntries(Object.entries(item));
+		const { name, startedAt } = entry;
+		if (!onlyKeys(entry, ["name", "startedAt"]) || !isNonEmptyString(name) || typeof startedAt !== "string") return null;
+		sessions.push({
+			name,
+			startedAt
+		});
+	}
+	return sessions;
 }
 /**
 * Parses one request line (without its terminator). Returns `null` for anything that is not exactly one valid
@@ -7347,20 +7519,47 @@ function parseControlRequest(line) {
 	if (!isNonEmptyString(instanceId) || !isNonEmptyString(token)) return null;
 	if (op === "shutdown") {
 		const { reason } = o;
-		return onlyKeys(o, [
+		if (!isMember(CONTROL_SHUTDOWN_REASONS, reason)) return null;
+		if (onlyKeys(o, [
 			"v",
 			"op",
 			"instanceId",
 			"token",
 			"reason"
-		]) && isMember(CONTROL_SHUTDOWN_REASONS, reason) ? {
+		])) return {
 			v: 1,
 			op,
 			instanceId,
 			token,
 			reason
+		};
+		return onlyKeys(o, [
+			"v",
+			"op",
+			"instanceId",
+			"token",
+			"reason",
+			"force"
+		]) && o["force"] === true ? {
+			v: 1,
+			op,
+			instanceId,
+			token,
+			reason,
+			force: true
 		} : null;
 	}
+	if (op === "terminals" || op === "access") return onlyKeys(o, [
+		"v",
+		"op",
+		"instanceId",
+		"token"
+	]) ? {
+		v: 1,
+		op,
+		instanceId,
+		token
+	} : null;
 	if (op === "backup") {
 		const { dest } = o;
 		return onlyKeys(o, [
@@ -7480,6 +7679,43 @@ function parseControlResponse(line) {
 			ok: true,
 			op,
 			segments
+		} : null;
+	}
+	if (op === "terminals") {
+		const { live, max } = o;
+		const sessions = parseTerminalSessions(o["sessions"]);
+		return onlyKeys(o, [
+			"v",
+			"ok",
+			"op",
+			"live",
+			"max",
+			"sessions"
+		]) && isCount(live) && isCount(max) && sessions !== null ? {
+			v: 1,
+			ok: true,
+			op,
+			live,
+			max,
+			sessions
+		} : null;
+	}
+	if (op === "access") {
+		const { code, expiresAt, ttlSeconds } = o;
+		return onlyKeys(o, [
+			"v",
+			"ok",
+			"op",
+			"code",
+			"expiresAt",
+			"ttlSeconds"
+		]) && typeof code === "string" && ACCESS_CODE_RE.test(code) && typeof expiresAt === "string" && isPositiveCount(ttlSeconds) ? {
+			v: 1,
+			ok: true,
+			op,
+			code,
+			expiresAt,
+			ttlSeconds
 		} : null;
 	}
 	return null;
@@ -7922,7 +8158,7 @@ const MAX_LINE_BYTES$1 = 67108864;
 
 //#endregion
 //#region packages/shared/src/protocol/sanitize.ts
-const BACKSLASH$5 = String.fromCharCode(92);
+const BACKSLASH$6 = String.fromCharCode(92);
 function isRecord$1(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -8026,7 +8262,7 @@ function compactJsonText(value) {
 * counted in code points, and a longer text keeps its first `n` code points plus ` ... [truncated K chars]`.
 * `n` follows Python slicing, so a negative `n` drops code points from the end.
 */
-function clip(value, n) {
+function clip$1(value, n) {
 	if (!Number.isInteger(n)) throw new RangeError("clip: n must be an integer");
 	const text = typeof value === "string" ? value : compactJsonText(value);
 	const codePoints = Array.from(text);
@@ -8090,7 +8326,7 @@ function applyRule(rule, text) {
 * 4096 code points first, so the work is bounded.
 */
 function redactDetailed(text) {
-	let current = clip(text, REDACT_INPUT_MAX_CP);
+	let current = clip$1(text, REDACT_INPUT_MAX_CP);
 	let redacted = false;
 	for (const rule of REDACTION_RULES) {
 		const next = applyRule(rule, current);
@@ -8155,7 +8391,7 @@ function summarizeToolInputDetailed(input) {
 	};
 	const redacted = redactDetailed((typeof key === "string" ? key : stringifyJson(key) ?? "").split("\n")[0] ?? "");
 	return {
-		text: clip(redacted.text, 160),
+		text: clip$1(redacted.text, 160),
 		redacted: redacted.redacted
 	};
 }
@@ -8379,7 +8615,7 @@ function hostIsWin32() {
 * drive (`C:/`) and of the file system (`/`, `//`) keep their slash. Case is kept (02 2.5.4).
 */
 function normalizePath(path) {
-	const slashed = path.split(BACKSLASH$5).join("/");
+	const slashed = path.split(BACKSLASH$6).join("/");
 	let lead = 0;
 	while (lead < slashed.length && slashed[lead] === "/") lead += 1;
 	const prefix = lead === 0 ? "" : lead === 2 ? "//" : "/";
@@ -8415,7 +8651,7 @@ function isAbsolutePath(path, win32) {
 	if (win32) return /^[A-Za-z]:[\\/]/.test(path) || /^[\\/]{2}[^\\/]/.test(path);
 	return path.startsWith("/");
 }
-function stripTrailingSeparators(path) {
+function stripTrailingSeparators$1(path) {
 	let end = path.length;
 	while (end > 1 && (path[end - 1] === "/" || path[end - 1] === "\\")) end -= 1;
 	const stripped = path.slice(0, end);
@@ -8430,19 +8666,19 @@ function stripTrailingSeparators(path) {
 function resolveMcsHome(env, options = {}) {
 	const win32 = options.win32 ?? hostIsWin32();
 	const explicit = env["MCS_HOME"];
-	if (explicit !== void 0 && explicit !== "" && isAbsolutePath(explicit, win32)) return stripTrailingSeparators(explicit);
+	if (explicit !== void 0 && explicit !== "" && isAbsolutePath(explicit, win32)) return stripTrailingSeparators$1(explicit);
 	const home = () => {
 		const found = options.homedir ?? (win32 ? env["USERPROFILE"] ?? env["HOME"] : env["HOME"]);
 		if (found === void 0 || found === "") throw new Error("resolveMcsHome: no home directory (set MCS_HOME)");
-		return stripTrailingSeparators(found);
+		return stripTrailingSeparators$1(found);
 	};
 	if (win32) {
 		const local = env["LOCALAPPDATA"];
-		if (local !== void 0 && local !== "" && isAbsolutePath(local, true)) return stripTrailingSeparators(local) + "/mcs";
+		if (local !== void 0 && local !== "" && isAbsolutePath(local, true)) return stripTrailingSeparators$1(local) + "/mcs";
 		return home() + "/AppData/Local/mcs";
 	}
 	const state = env["XDG_STATE_HOME"];
-	if (state !== void 0 && state !== "" && isAbsolutePath(state, false)) return stripTrailingSeparators(state) + "/mcs";
+	if (state !== void 0 && state !== "" && isAbsolutePath(state, false)) return stripTrailingSeparators$1(state) + "/mcs";
 	return home() + "/.local/state/mcs";
 }
 
@@ -8466,8 +8702,11 @@ const AgentIdSchema = string().regex(AGENT_RE);
 const RunIdSchema = string().regex(RUN_ID_RE);
 /** `toolUseId`: the provider's tool-use id. */
 const ToolUseIdSchema = string().regex(TOOL_ID_RE);
-/** `projectId`: the lowercase sanitized project folder name. */
-const PROJECT_ID_RE = /^[a-z0-9][a-z0-9-]{0,254}$/;
+/**
+* `projectId`: the lowercase sanitized project folder name, also the key of a folder row. Claude's sanitizer writes
+* letters, digits and dashes only, and a POSIX folder name starts with a dash, so the first character is not special.
+*/
+const PROJECT_ID_RE = /^[a-z0-9-]{1,255}$/;
 const ProjectIdSchema = string().regex(PROJECT_ID_RE);
 /** `instanceId`: uuid v4 (the workspace identity of 01). */
 const InstanceIdSchema = string().regex(UUID_V4_RE);
@@ -9416,10 +9655,10 @@ const SOURCE_STATUSES = [
 	"unsupported",
 	"error"
 ];
-const SourceStatusSchema = _enum(SOURCE_STATUSES);
+const SourceStatusSchema$1 = _enum(SOURCE_STATUSES);
 const PanelSourceStateSchema = strictObject({
 	source: PanelSourceSchema,
-	status: SourceStatusSchema,
+	status: SourceStatusSchema$1,
 	/** Time of the value being served; may be older than `generatedAt` (stale-while-revalidate). */
 	sampledAt: NullableIsoTimeSchema,
 	/** English, at most 200 characters, never transcript text, prompts or tokens. */
@@ -9457,10 +9696,10 @@ const MachinePanelSchema = strictObject({
 		"other"
 	]),
 	procsSampledAt: NullableIsoTimeSchema,
-	procsStatus: SourceStatusSchema,
+	procsStatus: SourceStatusSchema$1,
 	dockerEnabled: boolean(),
 	dockerSampledAt: NullableIsoTimeSchema,
-	dockerStatus: SourceStatusSchema
+	dockerStatus: SourceStatusSchema$1
 });
 const GitPanelSchema = strictObject({
 	/** `null` when detached, not a repository, or git is missing. */
@@ -9566,7 +9805,10 @@ const PanelResponseSchema = discriminatedUnion("key", [
 	responseSchema("chainLog", LinesPanelSchema),
 	responseSchema("logs", LogsPanelSchema)
 ]);
-/** The nine kinds of child process of 06 3.6 (ADR 0066 removed `python`); the order is the order of the registry. */
+/**
+* The twelve kinds of child process (06 3.6; ADR 0066 removed `python`); the order is the order of the registry. The last
+* three belong to the user instance: the autostart shortcut, the `claude` command and the folder picker (lif 2.7).
+*/
 const CHILD_KINDS = [
 	"powershell.processes",
 	"powershell.cmdline",
@@ -9576,7 +9818,10 @@ const CHILD_KINDS = [
 	"taskkill",
 	"node",
 	"icacls",
-	"opener"
+	"opener",
+	"powershell.shortcut",
+	"claude",
+	"powershell.picker"
 ];
 const ChildKindSchema = _enum(CHILD_KINDS);
 /** Counters per kind, from `childStats()` (registry C10: this name, never `ChildStat`). */
@@ -9590,7 +9835,7 @@ const PanelSourceStatsSchema = strictObject({
 	refreshes: CountSchema$1,
 	failures: CountSchema$1,
 	lastDurationMs: number$1().min(0).nullable(),
-	lastStatus: SourceStatusSchema.nullable()
+	lastStatus: SourceStatusSchema$1.nullable()
 });
 /** Only the sources that were read at least once; `PanelService.stats()`. */
 const PanelStatsSchema = partialRecord(PanelSourceSchema, PanelSourceStatsSchema);
@@ -9722,6 +9967,22 @@ const InstanceInfoSchema = strictObject({
 	dbSchemaVersion: CountSchema$1,
 	headSeq: CountSchema$1,
 	epoch: EpochSchema,
+	/**
+	* `user` for the user-wide instance (the terminal host), `task` for a task instance. Absent from the reply of a server that
+	* predates the key, which then reads as `task` (06 1.7: an older server is reported outdated, never invalid).
+	*/
+	kind: InstanceKindSchema.default("task"),
+	/**
+	* How the workspace presents itself: `app.name` is the config key `app.name` for the user instance, `null` for a task
+	* instance (and for a server that predates the key).
+	*/
+	app: strictObject({ name: string() }).nullable().default(null),
+	/**
+	* What the instance reads: `repo` is the one repository, `all` every project folder under the Claude home. The effective
+	* value (the config key `projects.scope` may say `auto`, which is resolved by the kind of the instance); absent from an
+	* instance that predates the key.
+	*/
+	scope: _enum(["repo", "all"]).optional(),
 	/** Config `poll.stale_after_ms`. */
 	staleAfterMs: CountSchema$1,
 	heartbeatMs: CountSchema$1,
@@ -9852,12 +10113,12 @@ const PRESETS = [
 	"all"
 ];
 const PresetSchema = _enum(PRESETS);
-const HOUR_MS$9 = 36e5;
+const HOUR_MS$10 = 36e5;
 const DAY_MS$3 = 864e5;
 const PRESET_MS = {
-	"1h": HOUR_MS$9,
-	"6h": 6 * HOUR_MS$9,
-	"24h": 24 * HOUR_MS$9,
+	"1h": HOUR_MS$10,
+	"6h": 6 * HOUR_MS$10,
+	"24h": 24 * HOUR_MS$10,
 	"7d": 7 * DAY_MS$3,
 	"30d": 30 * DAY_MS$3
 };
@@ -9868,7 +10129,7 @@ function csvOf(item, max) {
 /** A flag: the text `1` means true; any other text is refused. */
 const flagParam = literal("1").transform(() => true);
 /** Text trimmed to `min..max` characters. A too-short `q` is reported as `query_too_short` (see `classifyQueryIssues`). */
-function textOf$2(min, max) {
+function textOf$3(min, max) {
 	return string().transform((text) => text.trim()).pipe(string().min(min).max(max));
 }
 const STATE_FILTER_VALUES = [...LIFECYCLE_STATES, "active"];
@@ -9887,7 +10148,7 @@ function expandStateFilter(states) {
 	return out;
 }
 const f = {
-	q: textOf$2(2, 200),
+	q: textOf$3(2, 200),
 	state: csvOf(StateFilterSchema, 10),
 	presence: csvOf(_enum([
 		"open",
@@ -9958,6 +10219,8 @@ const SessionListQuerySchema = strictObject({
 	state: opt(f.state),
 	presence: opt(f.presence),
 	project: opt(f.project),
+	/** Only these sessions (at most 50 ids): the terminal sidebar asks for the sessions of its live terminals. */
+	session: opt(f.session),
 	workItem: opt(f.workItem),
 	model: opt(f.model),
 	hasErrors: opt(f.hasErrors),
@@ -10159,7 +10422,7 @@ const TranscriptSearchQuerySchema = strictObject({
 	session: SessionIdSchema,
 	agent: opt(f.agent),
 	/** 0..200; empty is allowed together with the other filters. */
-	q: opt(textOf$2(0, 200)),
+	q: opt(textOf$3(0, 200)),
 	kinds: opt(EntryKindsParam),
 	tool: opt(ToolNameSchema),
 	errors: opt(flagParam),
@@ -10267,7 +10530,7 @@ function resolveTimeWindow(q, o) {
 	const windowed = () => ({
 		ok: true,
 		window: {
-			fromMs: o.nowMs - o.windowHours * HOUR_MS$9,
+			fromMs: o.nowMs - o.windowHours * HOUR_MS$10,
 			toMs: o.nowMs + 1
 		},
 		source: "window_hours"
@@ -11269,6 +11532,155 @@ const DiagnosticsBundleSchema = strictObject({
 	/** What could not be collected, one short line each (a stopped instance has no health). */
 	notes: array(string())
 });
+/**
+* The answer of `autostart status|enable|disable`. Windows only: elsewhere `supported` is false and every other field is
+* `null` or false. `matchesLauncher` compares the shortcut with the launcher that runs the command.
+*/
+const AutostartStatusSchema = strictObject({
+	supported: boolean(),
+	enabled: boolean(),
+	/** Path of the `.lnk` in the Startup folder. */
+	shortcut: string().nullable(),
+	target: string().nullable(),
+	arguments: string().nullable(),
+	targetExists: boolean().nullable(),
+	matchesLauncher: boolean().nullable(),
+	note: string().nullable()
+});
+
+//#endregion
+//#region packages/shared/src/folders/activity.ts
+/** The marks of a folder row, most recent first. The single definition: the zod enum of the contracts is built from it. */
+const ACTIVITY_MARKS = [
+	"full",
+	"half",
+	"none"
+];
+const TWO_HOURS_MS = 72e5;
+const DA_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/;
+/**
+* Reads a DA memory timestamp (`%Y-%m-%dT%H:%M:%S`, naive local time) to epoch milliseconds, or `null` when the text is
+* not exactly that format or names a time that does not exist (month 13, 30 February, hour 24, a DST gap). The check is
+* strict: a regular expression, then a round trip through `Date` so that nothing is silently rolled over.
+*/
+function parseDaTimestamp(text) {
+	if (typeof text !== "string") return null;
+	const m = DA_TIMESTAMP.exec(text);
+	if (m === null) return null;
+	const year = Number(m[1]);
+	const month = Number(m[2]);
+	const day = Number(m[3]);
+	const hour = Number(m[4]);
+	const minute = Number(m[5]);
+	const second = Number(m[6]);
+	if (year < 1970) return null;
+	const date = /* @__PURE__ */ new Date(0);
+	date.setFullYear(year, month - 1, day);
+	date.setHours(hour, minute, second, 0);
+	return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date.getHours() === hour && date.getMinutes() === minute && date.getSeconds() === second ? date.getTime() : null;
+}
+/** True when both instants fall on the same calendar day of the local time zone. */
+function sameLocalDay(aMs, bMs) {
+	const a = new Date(aMs);
+	const b = new Date(bMs);
+	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+/**
+* MTOP `activity_mark`: `full` up to two hours old (a time in the future counts as just now), `half` when it is still the
+* same local calendar day, otherwise `none`; a missing or non-finite time is `none`.
+*/
+function activityMarkOf(thenMs, nowMs) {
+	if (thenMs === null || !Number.isFinite(thenMs) || !Number.isFinite(nowMs)) return "none";
+	if (nowMs - thenMs <= TWO_HOURS_MS) return "full";
+	return sameLocalDay(thenMs, nowMs) ? "half" : "none";
+}
+
+//#endregion
+//#region packages/shared/src/folders/path.ts
+/** The longest normalized path accepted (UTF-16 code units; the classic Windows limit is 260 with room for a file name). */
+const MAX_FOLDER_PATH_CHARS = 240;
+const DEVICE_PREFIX = /^(?:[\\/]{2}[?.](?:[\\/]|$)|[\\/]\?\?(?:[\\/]|$))/;
+const UNC_PREFIX = /^[\\/]{2}/;
+const WSL_DRIVE_PATH$1 = /^\/mnt\/([a-z])(?:\/(.*))?$/s;
+const DRIVE_PATH = /^([A-Za-z]):[\\/](.*)$/s;
+const SEPARATORS$1 = /[\\/]+/;
+/** Windows device names: they open a device, never a folder, with or without an extension (the superscript digits count too). */
+const RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])$/i;
+const FORMAT_CHAR = /\p{Cf}/u;
+const refused = (issue) => ({
+	path: null,
+	issue
+});
+/** Trims the text and removes the quotes a person pastes around a path (MTOP `strip().strip('"')`). */
+function unquote(raw) {
+	return raw.trim().replace(/^"+|"+$/g, "");
+}
+function segmentsOf(rest) {
+	return rest.split(SEPARATORS$1).filter((segment) => segment !== "");
+}
+/** C0 controls, DEL and C1 controls (a character class literal for them would trip `no-control-regex`). */
+function hasControlChar(text) {
+	for (let i = 0; i < text.length; i += 1) {
+		const code = text.charCodeAt(i);
+		if (code <= 31 || code >= 127 && code <= 159) return true;
+	}
+	return false;
+}
+function isReservedSegment(segment) {
+	const dot = segment.indexOf(".");
+	const base = (dot < 0 ? segment : segment.slice(0, dot)).replace(/ +$/, "");
+	return RESERVED_NAME.test(base);
+}
+function analyze(raw, win32) {
+	const text = unquote(raw);
+	if (DEVICE_PREFIX.test(text)) return refused("device");
+	if (UNC_PREFIX.test(text)) return refused("unc");
+	const wsl = WSL_DRIVE_PATH$1.exec(text);
+	const drive = wsl === null ? DRIVE_PATH.exec(text) : null;
+	let normalized;
+	if (wsl !== null || drive !== null) {
+		const letter = (wsl?.[1] ?? drive?.[1] ?? "").toUpperCase();
+		const segments = segmentsOf(wsl?.[2] ?? drive?.[2] ?? "");
+		if (segments.some((segment) => segment.includes(":"))) return refused("stream");
+		if (segments.some(isReservedSegment)) return refused("reserved_name");
+		normalized = `${letter}:\\${segments.join("\\")}`;
+	} else if (!win32 && text.startsWith("/")) normalized = `/${segmentsOf(text).join("/")}`;
+	else return refused("relative");
+	if (FORMAT_CHAR.test(text)) return refused("format_char");
+	if (hasControlChar(text)) return refused("control");
+	if (normalized.length > 240) return refused("too_long");
+	return {
+		path: normalized,
+		issue: null
+	};
+}
+/**
+* The Windows form of a folder (MTOP `normalize_path`): `D:\a\b\`, `d:/a/b` and `"D:\x y"` become `D:\a\b` and `D:\x y`;
+* the WSL spelling `/mnt/d/a/b` becomes `D:\a\b`. Another absolute POSIX path is kept (without a trailing separator) when
+* `win32` is false and refused on Windows, where it has no drive to live on. `null` for everything `folderPathIssue` names:
+* relative, UNC and device paths, a `:` after the drive, a reserved device name, a Unicode format character (category Cf), a
+* control character and more than 240 characters.
+*/
+function windowsFolderPath(raw, win32 = true) {
+	return analyze(raw, win32).path;
+}
+/** The first reason `windowsFolderPath` refuses the path, or `null` when it accepts it. */
+function folderPathIssue(raw, win32 = true) {
+	return analyze(raw, win32).issue;
+}
+/**
+* MTOP `path_key`: the normalized path without a trailing separator, in lower case, so that every spelling of one folder
+* gives one key. A path that cannot be a folder is folded the same way (separators, trailing separator, case) so that two
+* spellings of it still compare equal; the empty path gives the empty key.
+*/
+function folderPathKey(path) {
+	return (windowsFolderPath(path) ?? unquote(path).replaceAll("/", "\\")).replace(/\\+$/, "").toLowerCase();
+}
+/** The last non-empty segment of a path (`D:` for a drive root), `''` when there is none. */
+function lastSegment(path) {
+	const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
+	return segments[segments.length - 1] ?? "";
+}
 
 //#endregion
 //#region packages/shared/src/api/errors.ts
@@ -11282,6 +11694,9 @@ const ERROR_CODES = [
 	"range_too_large",
 	"filter_requires_scope",
 	"query_too_short",
+	"folder_invalid",
+	"access_required",
+	"access_code_invalid",
 	"host_not_allowed",
 	"origin_not_allowed",
 	"cross_site_request",
@@ -11295,19 +11710,29 @@ const ERROR_CODES = [
 	"panel_disabled",
 	"probe_not_found",
 	"completion_target_not_found",
+	"terminal_not_found",
+	"folder_not_found",
 	"method_not_allowed",
 	"instance_mismatch",
+	"resume_unavailable",
+	"picker_busy",
+	"folder_limit",
 	"transcript_gone",
 	"payload_too_large",
 	"uri_too_long",
 	"unsupported_media_type",
+	"upgrade_required",
 	"search_busy",
 	"export_busy",
+	"access_rate_limited",
+	"terminal_limit",
 	"internal_error",
 	"db_busy",
 	"disk_full",
 	"stream_limit",
-	"shutting_down"
+	"shutting_down",
+	"terminal_unavailable",
+	"claude_not_found"
 ];
 const ErrorCodeSchema = _enum(ERROR_CODES);
 /** The HTTP status of each code; the type makes a missing or extra code a compile error. */
@@ -11320,6 +11745,9 @@ const ERROR_HTTP_STATUS = {
 	range_too_large: 400,
 	filter_requires_scope: 400,
 	query_too_short: 400,
+	folder_invalid: 400,
+	access_required: 401,
+	access_code_invalid: 401,
 	host_not_allowed: 403,
 	origin_not_allowed: 403,
 	cross_site_request: 403,
@@ -11333,20 +11761,44 @@ const ERROR_HTTP_STATUS = {
 	panel_disabled: 404,
 	probe_not_found: 404,
 	completion_target_not_found: 404,
+	terminal_not_found: 404,
+	folder_not_found: 404,
 	method_not_allowed: 405,
 	instance_mismatch: 409,
+	resume_unavailable: 409,
+	picker_busy: 409,
+	folder_limit: 409,
 	transcript_gone: 410,
 	payload_too_large: 413,
 	uri_too_long: 414,
 	unsupported_media_type: 415,
+	upgrade_required: 426,
 	search_busy: 429,
 	export_busy: 429,
+	access_rate_limited: 429,
+	terminal_limit: 429,
 	internal_error: 500,
 	db_busy: 503,
 	disk_full: 503,
 	stream_limit: 503,
-	shutting_down: 503
+	shutting_down: 503,
+	terminal_unavailable: 503,
+	claude_not_found: 503
 };
+/**
+* The vocabulary of the terminal service as the HTTP surface speaks it (02 2.2): the codes a terminal route or the
+* server's mapper of a terminal failure may answer. A subset of `ERROR_CODES`.
+*/
+const TERMINAL_ERROR_CODES = [
+	"terminal_unavailable",
+	"claude_not_found",
+	"folder_invalid",
+	"terminal_limit",
+	"terminal_not_found",
+	"session_not_found",
+	"resume_unavailable",
+	"picker_busy"
+];
 /** `X-Request-Id`: `r-` and twelve base36 characters. */
 const REQUEST_ID_RE = /^r-[0-9a-z]{12}$/;
 /** `details[]`: where (a dotted query path) and the Zod issue code. Never the rejected value (exp X6). */
@@ -11522,6 +11974,188 @@ function filterHash(filter) {
 }
 
 //#endregion
+//#region packages/shared/src/api/folders.ts
+/** `full | half | none`, built from the one definition of the helpers. */
+const ActivityMarkSchema = _enum(ACTIVITY_MARKS);
+/** Where a folder row came from: the DA memory, a folder a person added, the Claude home, or a fallback (a row that has only a session). */
+const FOLDER_ORIGINS = [
+	"da",
+	"user",
+	"claude",
+	"fallback"
+];
+const FolderOriginSchema = _enum(FOLDER_ORIGINS);
+/** How the path of a row was found (`none`: it could not be, and the row cannot start a terminal). */
+const FOLDER_PATH_SOURCES = [
+	"da",
+	"user",
+	"project",
+	"transcript",
+	"reverse",
+	"none"
+];
+const FolderPathSourceSchema = _enum(FOLDER_PATH_SOURCES);
+/** The two blocks of the folder list: the folders the DA memory knows, and the others. */
+const FOLDER_GROUPS = ["outside-da", "da"];
+const FolderGroupSchema = _enum(FOLDER_GROUPS);
+const DA_SUMMARY_MAX_CODE_POINTS = 120;
+/**
+* The DA summary, already redacted and clipped by the reader: at most 120 code points. `max(240)` is the same bound in
+* UTF-16 units (it is what the generated JSON Schema shows); the refinement counts code points.
+*/
+const DaSummarySchema = string().max(240).refine((text) => Array.from(text).length <= DA_SUMMARY_MAX_CODE_POINTS, { error: "At most 120 characters" });
+const DaBlockSchema = strictObject({
+	lastUpdatedAt: NullableIsoTimeSchema,
+	activity: ActivityMarkSchema,
+	summary: DaSummarySchema,
+	brain: CountSchema$1,
+	action: CountSchema$1
+});
+const ClaudeBlockSchema = strictObject({
+	/** The folder name under the Claude projects folder, as written on disk. */
+	dirName: string().min(1).max(255),
+	sessionsInWindow: CountSchema$1,
+	activeSessions: CountSchema$1,
+	totalSessions: CountSchema$1,
+	lastSessionAt: NullableIsoTimeSchema
+});
+/** One row of `GET /folders`. `key` is the project key; `path` is null when it could not be recovered. */
+const FolderSchema = strictObject({
+	key: ProjectIdSchema,
+	name: string().min(1).max(255),
+	path: string().max(1024).nullable(),
+	pathSource: FolderPathSourceSchema,
+	/** Whether the folder is a directory now; `null` when it was not checked or there is no path. */
+	exists: boolean().nullable(),
+	origins: array(FolderOriginSchema).min(1),
+	group: FolderGroupSchema,
+	activity: ActivityMarkSchema,
+	lastActivityAt: NullableIsoTimeSchema,
+	da: DaBlockSchema.nullable(),
+	claude: ClaudeBlockSchema.nullable(),
+	/** The path is known and the folder is not known to be missing. */
+	canStart: boolean(),
+	userAdded: boolean()
+});
+const SourceStatusSchema = _enum([
+	"ok",
+	"absent",
+	"unreadable"
+]);
+/** Body of `GET /folders`: the rows (at most 500), what each source said, and the clock the web feeds to `relativeTimeOf`. */
+const FolderListResponseSchema = strictObject({
+	folders: array(FolderSchema).max(500),
+	sources: strictObject({
+		daMemory: strictObject({
+			status: SourceStatusSchema,
+			folders: CountSchema$1,
+			readAt: NullableIsoTimeSchema
+		}),
+		claudeHome: strictObject({
+			status: SourceStatusSchema,
+			folders: CountSchema$1,
+			scannedAt: NullableIsoTimeSchema,
+			truncated: boolean()
+		}),
+		userFolders: strictObject({
+			status: _enum([
+				"ok",
+				"absent",
+				"corrupt",
+				"newer_version"
+			]),
+			count: CountSchema$1
+		})
+	}),
+	/** The "now" of the server: the page and the server agree on every relative time. */
+	asOf: IsoTimeSchema
+});
+/**
+* Body of `POST /folders`. Only the size is checked here: a relative, UNC or device path, a reserved name and the like are
+* answered by the service as `folder_invalid` with the reason in `details`, not as a generic `validation_failed`.
+*/
+const AddFolderBodySchema = strictObject({ path: string().min(1).max(1024) });
+/** Why a session cannot be resumed in a terminal (design 03 section 6, in the order the checks run). */
+const RESUME_REASONS = [
+	"transcript_gone",
+	"folder_missing",
+	"folder_unknown",
+	"live_in_terminal",
+	"live_elsewhere"
+];
+const ResumeReasonSchema = _enum(RESUME_REASONS);
+/** Body of `GET /sessions/:sessionId/resume`: whether `claude --resume` may run, and whether a copy (`--fork-session`) may. */
+const ResumeEligibilitySchema = strictObject({
+	sessionId: SessionIdSchema,
+	allowed: boolean(),
+	forkAllowed: boolean(),
+	reason: ResumeReasonSchema.nullable(),
+	/** The folder the terminal would start in. */
+	folder: strictObject({
+		key: ProjectIdSchema,
+		path: string().max(1024)
+	}).nullable(),
+	/** A `claude` outside this app (a user's own terminal, an editor) holds the session: only a copy is safe. */
+	liveElsewhere: boolean(),
+	/** The name of the terminal of this app that holds the session. */
+	liveTerminal: string().min(1).max(64).nullable(),
+	/** The session that continued this one, when the monitor knows it: resuming the old id branches off. */
+	redirectTo: SessionIdSchema.nullable()
+});
+const LINK_STATUSES = [
+	"pending",
+	"linked",
+	"ambiguous"
+];
+const LinkStatusSchema = _enum(LINK_STATUSES);
+/** The evidence a link rests on, strongest first (design 03 section 5.2). */
+const LINK_BASES = [
+	"registry-pid",
+	"registry-tree",
+	"registry-cwd",
+	"registry-order",
+	"resume-id",
+	"transcript-time"
+];
+const LinkBasisSchema = _enum(LINK_BASES);
+const LINK_CONFIDENCES = [
+	"high",
+	"medium",
+	"low"
+];
+const LinkConfidenceSchema = _enum(LINK_CONFIDENCES);
+/** Why a terminal is not linked (yet). */
+const LINK_REASONS = [
+	"no_registry",
+	"registry_unreadable",
+	"ambiguous"
+];
+const LinkReasonSchema = _enum(LINK_REASONS);
+/** What the terminal host embeds in its session DTO: which monitored session a terminal's `claude` is, and how sure that is. */
+const TerminalLinkSchema = strictObject({
+	status: LinkStatusSchema,
+	sessionId: SessionIdSchema.nullable(),
+	/** The ids the process had before a `/clear` or `/resume` inside it. */
+	previousSessionIds: array(SessionIdSchema).max(8),
+	basis: LinkBasisSchema.nullable(),
+	confidence: LinkConfidenceSchema.nullable(),
+	since: NullableIsoTimeSchema,
+	claudePid: number$1().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(),
+	/** `tracked` once the monitor has a session row for the transcript. */
+	transcript: _enum(["none", "tracked"]),
+	registryStatus: _enum([
+		"busy",
+		"idle",
+		"waiting"
+	]).nullable(),
+	/** What the process waits for (for example a permission prompt), clipped to 64 characters. */
+	waitingFor: string().max(64).nullable(),
+	reason: LinkReasonSchema.nullable(),
+	/** Another live terminal of this app resolved to the same session id (a resume of a live session). */
+	shared: boolean()
+});
+
+//#endregion
 //#region packages/shared/src/api/legacy-health.ts
 const LegacyHealthSchema = strictObject({
 	ok: literal(true),
@@ -11551,6 +12185,181 @@ const LegacyHealthSchema = strictObject({
 });
 
 //#endregion
+//#region packages/shared/src/api/terminal.ts
+/** The session name of MTOP: it appears in URLs and in the socket path, so no dot, slash, backslash, NUL or space. */
+const TERMINAL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const TerminalNameSchema = string().regex(TERMINAL_NAME_RE);
+/** Path parameters of the routes that name one terminal session. */
+const TerminalNameParamsSchema = strictObject({ name: TerminalNameSchema });
+/** An access code: the alphabet and the length of `ACCESS_CODE_RE` (this area mints 43 characters, 32 random bytes). */
+const AccessCodeSchema = string().regex(ACCESS_CODE_RE);
+const CONTROL_CHARACTER$2 = /\p{Cc}/u;
+/**
+* A folder path as a route takes or sends it: 1 to 1024 characters, no control character (NUL, a line break, DEL, C1) and
+* no UNC or device path (`\\host\share`, `//host`, `\\?\`, `\\.\`, `\??\`): Windows would try to reach another machine and
+* could leak credentials over SMB. The relative, drive and name rules are the engine's (`windowsFolderPath`), which answers
+* `folder_invalid` with a reason; the first two checks here keep the worst inputs out of every layer.
+*/
+const FolderPathSchema = string().min(1).max(1024).refine((path) => !CONTROL_CHARACTER$2.test(path), { error: "A folder path has no control characters" }).refine((path) => {
+	const issue = folderPathIssue(path);
+	return issue !== "unc" && issue !== "device";
+}, { error: "A folder on a network share or a device is not allowed" });
+/** The body of a POST that carries no data: `{}` and nothing else (an extra key is refused). */
+const EmptyBodySchema = strictObject({});
+/** `GET /auth/session`: whether the request carries a valid session cookie. */
+const AuthSessionResponseSchema = strictObject({ authenticated: boolean() });
+/** `POST /auth/exchange`: the one-time access code from the login URL. The cookie travels in `Set-Cookie`, not in the body. */
+const ExchangeBodySchema = strictObject({ code: AccessCodeSchema });
+const ExchangeResponseSchema = strictObject({ authenticated: literal(true) });
+/** `POST /auth/logout`: the session is revoked and the cookie cleared. */
+const LogoutResponseSchema = strictObject({ authenticated: literal(false) });
+/** Why a terminal cannot run on this system (the capabilities say it; the routes answer `terminal_unavailable`). */
+const TERMINAL_UNAVAILABLE_REASONS = [
+	"unsupported_os",
+	"addon_missing",
+	"claude_not_found",
+	"not_configured"
+];
+const TerminalUnavailableReasonSchema = _enum(TERMINAL_UNAVAILABLE_REASONS);
+const TerminalCapabilitiesSchema = strictObject({
+	available: boolean(),
+	reason: TerminalUnavailableReasonSchema.nullable(),
+	folderPicker: boolean(),
+	resume: boolean(),
+	maxSessions: CountSchema$1
+});
+/** The most sessions a list carries (the largest value of `terminal.maxSessions`). */
+const MAX_LISTED_SESSIONS = 64;
+/**
+* One live terminal. `link` says which monitored session the process is (the transcript-derived state and tokens come from
+* the monitor, not from here); `folderKey` is the project key of the working folder (the key of a `listFolders` row),
+* `null` when the host could not derive one. There is no separate monitor session id: it is `link.sessionId`.
+*/
+const TerminalSessionInfoSchema = strictObject({
+	name: TerminalNameSchema,
+	path: FolderPathSchema,
+	createdAt: IsoTimeSchema,
+	cols: CountSchema$1,
+	rows: CountSchema$1,
+	viewers: CountSchema$1,
+	link: TerminalLinkSchema,
+	folderKey: ProjectIdSchema.nullable()
+});
+/** `GET /terminal/state`: what the host can do and the live sessions (the folders are `listFolders`). */
+const TerminalStateSchema = strictObject({
+	capabilities: TerminalCapabilitiesSchema,
+	sessions: array(TerminalSessionInfoSchema).max(MAX_LISTED_SESSIONS),
+	epoch: EpochSchema,
+	generatedAt: IsoTimeSchema
+});
+/** `POST /terminal/sessions`: start `claude` in a folder. Never a command line, arguments or an environment. */
+const CreateSessionBodySchema = strictObject({ path: FolderPathSchema });
+const CreateSessionResponseSchema = strictObject({ session: TerminalSessionInfoSchema });
+/** `POST /terminal/sessions/:name/kill`. */
+const KillSessionResponseSchema = strictObject({ name: TerminalNameSchema });
+/** `POST /terminal/pick-folder`: the folder the person chose in the dialog, or `null` when the dialog was closed. */
+const PickFolderResponseSchema = strictObject({ path: FolderPathSchema.nullable() });
+/**
+* `POST /terminal/resume`: `claude --resume <id>` for a monitored session, with `--fork-session` when `fork` is true. The
+* engine plans the folder and the arguments itself.
+*/
+const ResumeBodySchema = strictObject({
+	sessionId: SessionIdSchema,
+	fork: boolean().optional()
+});
+const ResumeResponseSchema = strictObject({ session: TerminalSessionInfoSchema });
+/** The clamps and the default of a terminal, in character cells (the values of MTOP). */
+const TERMINAL_SIZE_LIMITS = {
+	minCols: 20,
+	maxCols: 500,
+	minRows: 5,
+	maxRows: 200,
+	defaultCols: 120,
+	defaultRows: 30
+};
+function clampCells(value, min, max, fallback) {
+	if (!Number.isFinite(value)) return fallback;
+	return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+/** A size inside `TERMINAL_SIZE_LIMITS`; a value that is not a finite number becomes the default, a fraction is cut. */
+function clampTerminalSize(cols, rows) {
+	const limits = TERMINAL_SIZE_LIMITS;
+	return {
+		cols: clampCells(cols, limits.minCols, limits.maxCols, limits.defaultCols),
+		rows: clampCells(rows, limits.minRows, limits.maxRows, limits.defaultRows)
+	};
+}
+/** The subprotocol of `GET /terminal/sessions/:name/socket`; a handshake that does not offer it is refused. */
+const TERMINAL_SUBPROTOCOL = "caw.terminal.v1";
+/**
+* The most bytes one input message may carry: one limit for the whole path (the gateway payload, the session write and the
+* default and maximum of `terminal.maxInputBytes`). The web client sends a larger paste in chunks.
+*/
+const TERMINAL_INPUT_MAX_BYTES = 262144;
+/**
+* The close codes the socket uses. 1000 to 1013 are the standard ones (`1008 bad_message`, `1013 slow_consumer`: the
+* reason strings are fixed tokens, never request data); 4000 to 4003 are ours. The client tells them apart by number:
+* `exited` and `killed` end the view, `signedOut` shows the locked state, `shuttingDown` and `slowConsumer` reconnect.
+*/
+const TERMINAL_CLOSE_CODES = {
+	normal: 1e3,
+	shuttingDown: 1001,
+	protocolError: 1002,
+	badMessage: 1008,
+	tooBig: 1009,
+	internalError: 1011,
+	slowConsumer: 1013,
+	exited: 4e3,
+	killed: 4001,
+	signedOut: 4003
+};
+/** A dimension on the wire: the client may ask for 1 to 1000 cells and the server clamps it to `TERMINAL_SIZE_LIMITS`. */
+const DimensionSchema = number$1().int().min(1).max(1e3);
+/** The one text frame a client sends: its size, as `{"type":"resize","cols":n,"rows":n}`. Input is binary, never text. */
+const TerminalClientMessageSchema = strictObject({
+	type: literal("resize"),
+	cols: DimensionSchema,
+	rows: DimensionSchema
+});
+/**
+* The text frames the server sends: `ready` before any byte, `live` once the replay is sent, `size` when any viewer
+* resizes, `exit` after the last output. A text frame is never terminal output (that is binary).
+*/
+const TerminalServerMessageSchema = discriminatedUnion("type", [
+	strictObject({
+		type: literal("ready"),
+		v: literal(1),
+		cols: DimensionSchema,
+		rows: DimensionSchema,
+		replayBytes: CountSchema$1,
+		viewers: CountSchema$1
+	}),
+	strictObject({ type: literal("live") }),
+	strictObject({
+		type: literal("size"),
+		cols: DimensionSchema,
+		rows: DimensionSchema
+	}),
+	strictObject({
+		type: literal("exit"),
+		code: number$1().int().nullable(),
+		signal: string().min(1).max(32).nullable()
+	})
+]);
+const TerminalHelloEventSchema = strictObject({
+	instanceId: InstanceIdSchema,
+	epoch: EpochSchema,
+	serverTime: IsoTimeSchema,
+	heartbeatMs: CountSchema$1
+});
+/** The full list of live sessions (latest wins: a client keeps only the newest `version`). */
+const TerminalSessionsEventSchema = strictObject({
+	version: CountSchema$1,
+	sessions: array(TerminalSessionInfoSchema).max(MAX_LISTED_SESSIONS)
+});
+const TerminalHeartbeatEventSchema = strictObject({ serverTime: IsoTimeSchema });
+
+//#endregion
 //#region packages/shared/src/schemas/ingest.ts
 /**
 * Zod schemas of the ingestion boundary (02 4.2): the spool line, the route file, the transcript record shape, the
@@ -11562,7 +12371,7 @@ const UUID_RE$1 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const CONTROL_RE = new RegExp("[" + String.fromCharCode(0) + "-]");
 const uuid = string().regex(UUID_RE$1);
 const timestampMs = number$1().int().nonnegative();
-const count$1 = number$1().int().nonnegative();
+const count$2 = number$1().int().nonnegative();
 const nullableTimestampMs = timestampMs.nullable();
 /** A short enum-like string: at most 64 chars and no control character (02 2.3.2). */
 const nameString = string().max(64).refine((value) => !CONTROL_RE.test(value), { message: "control characters are not allowed" });
@@ -11591,11 +12400,11 @@ const HookEnvelopeV1Schema = strictObject({
 	tool_use_id: string().regex(TOOL_ID_RE).nullable(),
 	permission_mode: nameString.nullable(),
 	claude_pid: number$1().int().nonnegative().max(9999999999).nullable(),
-	payload_bytes: count$1,
+	payload_bytes: count$2,
 	content_hash: string().regex(/^[0-9a-f]{32}$/),
 	handler: strictObject({
 		version: string().min(1).max(64),
-		pid: count$1,
+		pid: count$2,
 		async: boolean()
 	}),
 	flags: array(string().regex(ENVELOPE_FLAG_RE)).max(32),
@@ -11674,19 +12483,19 @@ const IngestHealthSchema = strictObject({
 				ok: boolean().nullable()
 			})),
 			lastEnvelopeAt: nullableTimestampMs,
-			envelopes1h: count$1,
-			duplicates1h: count$1,
-			invalid1h: count$1,
+			envelopes1h: count$2,
+			duplicates1h: count$2,
+			invalid1h: count$2,
 			handlerErrors: array(strictObject({
 				code: string(),
-				count: count$1,
+				count: count$2,
 				lastAt: timestampMs
 			})),
-			transcriptHookFailures: count$1,
+			transcriptHookFailures: count$2,
 			coverage: strictObject({
-				full: count$1,
-				partial: count$1,
-				none: count$1
+				full: count$2,
+				partial: count$2,
+				none: count$2
 			}),
 			status: _enum([
 				"ok",
@@ -11697,26 +12506,26 @@ const IngestHealthSchema = strictObject({
 			])
 		}),
 		spool: strictObject({
-			segments: count$1,
-			bytes: count$1,
-			bytesBehind: count$1,
+			segments: count$2,
+			bytes: count$2,
+			bytesBehind: count$2,
 			oldestPendingReceivedAt: nullableTimestampMs,
 			lastNudgeAt: nullableTimestampMs,
 			lastDrainAt: nullableTimestampMs,
-			foreignFiles: count$1
+			foreignFiles: count$2
 		}),
 		transcripts: strictObject({
 			dir: string().nullable(),
 			dirFound: boolean(),
-			filesTracked: count$1,
-			filesMissing: count$1,
-			filesUnreadable: count$1,
-			bytesBehind: count$1,
+			filesTracked: count$2,
+			filesMissing: count$2,
+			filesUnreadable: count$2,
+			bytesBehind: count$2,
 			maxLagMs: number$1().nonnegative(),
-			backfillRemainingBytes: count$1,
+			backfillRemainingBytes: count$2,
 			lastScanAt: nullableTimestampMs,
 			lastSyncAt: nullableTimestampMs,
-			errors: record$1(string(), count$1),
+			errors: record$1(string(), count$2),
 			status: _enum([
 				"ok",
 				"backfilling",
@@ -11728,10 +12537,10 @@ const IngestHealthSchema = strictObject({
 	}),
 	persisted: strictObject({
 		lastCommitAt: nullableTimestampMs,
-		queueItems: count$1,
-		queueBytes: count$1,
+		queueItems: count$2,
+		queueBytes: count$2,
 		commitP95Ms: number$1().nonnegative(),
-		failures1h: count$1,
+		failures1h: count$2,
 		lastError: strictObject({
 			code: string(),
 			at: timestampMs
@@ -11744,7 +12553,7 @@ const IngestHealthSchema = strictObject({
 		])
 	}),
 	display: strictObject({
-		headSeq: count$1,
+		headSeq: count$2,
 		serverTime: timestampMs
 	}),
 	runtime: strictObject({
@@ -11769,6 +12578,10 @@ const IngestHealthSchema = strictObject({
 
 //#endregion
 //#region packages/shared/src/api/routes.ts
+/** The body limit of a route with a body that names none (02 2.1). */
+const DEFAULT_MAX_BODY_BYTES = 4096;
+/** The one write route that stays `open`: the hook nudge of the spool (03 5.1). */
+const OPEN_WRITE_ROUTE_ID = "ingestNudge";
 /** Declares a route and checks the invariants that a typo would break silently. Throws an `Error` on a broken definition. */
 function defineRoute(spec) {
 	const names = [...spec.path.matchAll(/:(\w+)/g)].map((m) => m[1] ?? "").sort();
@@ -11778,7 +12591,19 @@ function defineRoute(spec) {
 	if (spec.method === "GET" && spec.body !== null) throw new Error(`route ${spec.id}: a GET route has no body`);
 	if (spec.successStatus === 204 && (spec.response !== null || spec.contentType !== null)) throw new Error(`route ${spec.id}: a 204 route has neither a response schema nor a content type`);
 	if (spec.successStatus === 200 && spec.contentType === "application/json" && spec.response === null) throw new Error(`route ${spec.id}: a JSON route needs a response schema`);
-	return spec;
+	const access = spec.access ?? "open";
+	if (spec.contentType === "websocket") {
+		if (spec.method !== "GET" || spec.response !== null || spec.successStatus !== 101) throw new Error(`route ${spec.id}: a websocket route is a GET with no response schema and the status 101`);
+	} else if (spec.successStatus === 101) throw new Error(`route ${spec.id}: the status 101 belongs to a websocket route`);
+	if (access === "ticket" && spec.body === null) throw new Error(`route ${spec.id}: a ticket route needs a body`);
+	if (spec.method !== "GET" && access === "open" && spec.id !== OPEN_WRITE_ROUTE_ID) throw new Error(`route ${spec.id}: a write route must not be open`);
+	if (spec.body === null && spec.maxBodyBytes !== void 0 && spec.maxBodyBytes !== 0) throw new Error(`route ${spec.id}: maxBodyBytes needs a body`);
+	if (spec.body !== null && spec.maxBodyBytes !== void 0 && !(Number.isInteger(spec.maxBodyBytes) && spec.maxBodyBytes > 0)) throw new Error(`route ${spec.id}: maxBodyBytes must be a positive integer`);
+	return {
+		...spec,
+		access,
+		maxBodyBytes: spec.body === null ? 0 : spec.maxBodyBytes ?? 4096
+	};
 }
 const SessionPath = strictObject({ sessionId: SessionIdSchema });
 /** `GET /work-items`: every item (cap 500) and the text that explains how the board is derived (02 7.11). */
@@ -11952,7 +12777,8 @@ const routes = {
 			"query_too_short"
 		],
 		summary: "The activity events of one session (the events route with the session fixed).",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	sessionToolCalls: defineRoute({
 		id: "sessionToolCalls",
@@ -11965,7 +12791,8 @@ const routes = {
 		successStatus: 200,
 		errors: ["session_not_found", "query_too_short"],
 		summary: "The tool calls of one session.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	sessionTransitions: defineRoute({
 		id: "sessionTransitions",
@@ -12008,7 +12835,8 @@ const routes = {
 			"transcript_gone"
 		],
 		summary: "A window of transcript entries read from the transcript file on request.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	transcriptLocate: defineRoute({
 		id: "transcriptLocate",
@@ -12026,7 +12854,8 @@ const routes = {
 			"event_not_found"
 		],
 		summary: "The transcript entry at an index, a time or a byte offset.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	searchTranscript: defineRoute({
 		id: "searchTranscript",
@@ -12043,7 +12872,8 @@ const routes = {
 			"transcript_gone"
 		],
 		summary: "Content search inside one session transcript, with honest coverage.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	searchTranscripts: defineRoute({
 		id: "searchTranscripts",
@@ -12060,7 +12890,8 @@ const routes = {
 			"query_too_short"
 		],
 		summary: "Content search across the transcripts of the instance, with honest coverage.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	listAgents: defineRoute({
 		id: "listAgents",
@@ -12103,7 +12934,8 @@ const routes = {
 		successStatus: 200,
 		errors: ["event_not_found"],
 		summary: "One activity event.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	listToolCalls: defineRoute({
 		id: "listToolCalls",
@@ -12116,7 +12948,8 @@ const routes = {
 		successStatus: 200,
 		errors: ["filter_requires_scope", "query_too_short"],
 		summary: "Tool calls across sessions, filtered, sorted and paged.",
-		contentType: "application/json"
+		contentType: "application/json",
+		access: "reader"
 	}),
 	workItemBoard: defineRoute({
 		id: "workItemBoard",
@@ -12233,7 +13066,8 @@ const routes = {
 		successStatus: 200,
 		errors: ["range_invalid", "export_busy"],
 		summary: "Streams the instance data as JSON lines in the format mcs.export/1.",
-		contentType: "application/x-ndjson"
+		contentType: "application/x-ndjson",
+		access: "reader"
 	}),
 	ingestNudge: defineRoute({
 		id: "ingestNudge",
@@ -12251,7 +13085,8 @@ const routes = {
 			"body_invalid_json"
 		],
 		summary: "Tells the server that the spool has new data; the body carries no event data.",
-		contentType: null
+		contentType: null,
+		maxBodyBytes: 256
 	}),
 	ingestProbe: defineRoute({
 		id: "ingestProbe",
@@ -12278,6 +13113,219 @@ const routes = {
 		errors: ["stream_limit"],
 		summary: "Server-sent events: hello, change, heartbeat and reset frames.",
 		contentType: "text/event-stream"
+	}),
+	listFolders: defineRoute({
+		id: "listFolders",
+		method: "GET",
+		path: "/api/v3/folders",
+		params: null,
+		query: null,
+		body: null,
+		response: FolderListResponseSchema,
+		successStatus: 200,
+		errors: [],
+		summary: "The project folders with their DA memory and Claude home details, and what each source said.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	addFolder: defineRoute({
+		id: "addFolder",
+		method: "POST",
+		path: "/api/v3/folders",
+		params: null,
+		query: null,
+		body: AddFolderBodySchema,
+		response: FolderSchema,
+		successStatus: 200,
+		errors: ["folder_invalid", "folder_limit"],
+		summary: "Adds a folder by hand to the folder list; the answer is its row.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	removeFolder: defineRoute({
+		id: "removeFolder",
+		method: "POST",
+		path: "/api/v3/folders/:key/remove",
+		params: strictObject({ key: ProjectIdSchema }),
+		query: null,
+		body: EmptyBodySchema,
+		response: null,
+		successStatus: 204,
+		errors: ["folder_not_found"],
+		summary: "Removes a folder that was added by hand from the folder list; the folder on disk is not touched.",
+		contentType: null,
+		access: "session"
+	}),
+	sessionResume: defineRoute({
+		id: "sessionResume",
+		method: "GET",
+		path: "/api/v3/sessions/:sessionId/resume",
+		params: SessionPath,
+		query: null,
+		body: null,
+		response: ResumeEligibilitySchema,
+		successStatus: 200,
+		errors: ["session_not_found"],
+		summary: "Whether the session can be resumed in a terminal, whether a copy can, and why not.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	authSession: defineRoute({
+		id: "authSession",
+		method: "GET",
+		path: "/api/v3/auth/session",
+		params: null,
+		query: null,
+		body: null,
+		response: AuthSessionResponseSchema,
+		successStatus: 200,
+		errors: [],
+		summary: "Whether the request carries a valid session cookie; the page asks this before it exchanges an access code.",
+		contentType: "application/json",
+		access: "open"
+	}),
+	authExchange: defineRoute({
+		id: "authExchange",
+		method: "POST",
+		path: "/api/v3/auth/exchange",
+		params: null,
+		query: null,
+		body: ExchangeBodySchema,
+		response: ExchangeResponseSchema,
+		successStatus: 200,
+		errors: ["access_code_invalid", "access_rate_limited"],
+		summary: "Redeems the one-time access code of the login link once and answers with the session cookie in Set-Cookie; the code is single use and short lived.",
+		contentType: "application/json",
+		access: "ticket"
+	}),
+	authLogout: defineRoute({
+		id: "authLogout",
+		method: "POST",
+		path: "/api/v3/auth/logout",
+		params: null,
+		query: null,
+		body: EmptyBodySchema,
+		response: LogoutResponseSchema,
+		successStatus: 200,
+		errors: [],
+		summary: "Ends the session: the credential is revoked, its sockets close and the cookie is cleared.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	terminalState: defineRoute({
+		id: "terminalState",
+		method: "GET",
+		path: "/api/v3/terminal/state",
+		params: null,
+		query: null,
+		body: null,
+		response: TerminalStateSchema,
+		successStatus: 200,
+		errors: [],
+		summary: "What the terminal can do on this system (capabilities, with the reason when it cannot) and the live sessions; the polling fallback of the events feed.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	terminalEvents: defineRoute({
+		id: "terminalEvents",
+		method: "GET",
+		path: "/api/v3/terminal/events",
+		params: null,
+		query: null,
+		body: null,
+		response: null,
+		successStatus: 200,
+		errors: ["stream_limit"],
+		summary: "Server-sent events: hello, the full list of live sessions after every change (latest wins) and heartbeat frames.",
+		contentType: "text/event-stream",
+		access: "session"
+	}),
+	terminalCreateSession: defineRoute({
+		id: "terminalCreateSession",
+		method: "POST",
+		path: "/api/v3/terminal/sessions",
+		params: null,
+		query: null,
+		body: CreateSessionBodySchema,
+		response: CreateSessionResponseSchema,
+		successStatus: 200,
+		errors: [
+			"folder_invalid",
+			"claude_not_found",
+			"terminal_unavailable",
+			"terminal_limit"
+		],
+		summary: "Starts the claude command in a folder as a new terminal session; the body carries the folder only, never a command line, arguments or an environment.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	terminalKillSession: defineRoute({
+		id: "terminalKillSession",
+		method: "POST",
+		path: "/api/v3/terminal/sessions/:name/kill",
+		params: TerminalNameParamsSchema,
+		query: null,
+		body: EmptyBodySchema,
+		response: KillSessionResponseSchema,
+		successStatus: 200,
+		errors: ["terminal_not_found"],
+		summary: "Kills the process of a terminal session; its viewers get the exit frame and the close code killed.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	terminalSocket: defineRoute({
+		id: "terminalSocket",
+		method: "GET",
+		path: "/api/v3/terminal/sessions/:name/socket",
+		params: TerminalNameParamsSchema,
+		query: null,
+		body: null,
+		response: null,
+		successStatus: 101,
+		errors: [
+			"terminal_not_found",
+			"upgrade_required",
+			"stream_limit",
+			"terminal_unavailable"
+		],
+		summary: "WebSocket (subprotocol caw.terminal.v1) to one terminal: binary frames are the raw bytes in both directions, text frames are the protocol messages; a plain GET answers 426.",
+		contentType: "websocket",
+		access: "session"
+	}),
+	terminalPickFolder: defineRoute({
+		id: "terminalPickFolder",
+		method: "POST",
+		path: "/api/v3/terminal/pick-folder",
+		params: null,
+		query: null,
+		body: EmptyBodySchema,
+		response: PickFolderResponseSchema,
+		successStatus: 200,
+		errors: ["picker_busy", "terminal_unavailable"],
+		summary: "Opens the folder dialog of the computer and answers the chosen folder, or null when the dialog was closed.",
+		contentType: "application/json",
+		access: "session"
+	}),
+	terminalResume: defineRoute({
+		id: "terminalResume",
+		method: "POST",
+		path: "/api/v3/terminal/resume",
+		params: null,
+		query: null,
+		body: ResumeBodySchema,
+		response: ResumeResponseSchema,
+		successStatus: 200,
+		errors: [
+			"session_not_found",
+			"resume_unavailable",
+			"folder_invalid",
+			"claude_not_found",
+			"terminal_unavailable",
+			"terminal_limit"
+		],
+		summary: "Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments.",
+		contentType: "application/json",
+		access: "session"
 	}),
 	explainCompletion: defineRoute({
 		id: "explainCompletion",
@@ -12312,21 +13360,21 @@ const WAL_RETRY = Object.freeze({
 //#endregion
 //#region packages/shared/src/control-address.ts
 const NUL = String.fromCharCode(0);
-const BACKSLASH$4 = String.fromCharCode(92);
+const BACKSLASH$5 = String.fromCharCode(92);
 const WINDOWS_PIPE_PREFIX$1 = [
-	BACKSLASH$4,
-	BACKSLASH$4,
+	BACKSLASH$5,
+	BACKSLASH$5,
 	".",
-	BACKSLASH$4,
+	BACKSLASH$5,
 	"pipe",
-	BACKSLASH$4,
+	BACKSLASH$5,
 	"mcs-"
 ].join("");
 /** `<tmpdir><sep>mcs-<uid><sep><id>.sock` with the separator the temp folder itself uses (no `node:path` here). */
 function socketFile(host, instanceId) {
-	const sep = host.tmpdir.includes("/") || !host.tmpdir.includes(BACKSLASH$4) ? "/" : BACKSLASH$4;
+	const sep = host.tmpdir.includes("/") || !host.tmpdir.includes(BACKSLASH$5) ? "/" : BACKSLASH$5;
 	let base = host.tmpdir;
-	while (base.length > 0 && (base.endsWith("/") || base.endsWith(BACKSLASH$4))) base = base.slice(0, -1);
+	while (base.length > 0 && (base.endsWith("/") || base.endsWith(BACKSLASH$5))) base = base.slice(0, -1);
 	return `${base}${sep}mcs-${String(host.uid ?? 0)}${sep}${instanceId}.sock`;
 }
 /**
@@ -12419,7 +13467,7 @@ function spawnErrorCode(code) {
 	if (code === "EACCES" || code === "EPERM") return "EACCES";
 	return "SPAWN_FAILED";
 }
-function errnoCode$3(error) {
+function errnoCode$4(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 function specRefusal(spec) {
@@ -12469,7 +13517,10 @@ function mapKinds(make) {
 		taskkill: make("taskkill"),
 		node: make("node"),
 		icacls: make("icacls"),
-		opener: make("opener")
+		opener: make("opener"),
+		"powershell.shortcut": make("powershell.shortcut"),
+		claude: make("claude"),
+		"powershell.picker": make("powershell.picker")
 	};
 }
 const counters = mapKinds(() => ({
@@ -12562,7 +13613,7 @@ function execFileText(request, signal) {
 			signal?.addEventListener("abort", onAbort, { once: true });
 		});
 	} catch (error) {
-		return Promise.resolve(unattributed("SPAWN_FAILED", errnoCode$3(error) ?? "unexpected failure"));
+		return Promise.resolve(unattributed("SPAWN_FAILED", errnoCode$4(error) ?? "unexpected failure"));
 	}
 }
 /** Runs one child; the slot it occupies is released exactly once, when the result is final. */
@@ -12651,7 +13702,7 @@ function runChild(spec, signal) {
 				...spec.cwd === void 0 ? {} : { cwd: spec.cwd }
 			});
 		} catch (thrown) {
-			error = spawnErrorCode(errnoCode$3(thrown));
+			error = spawnErrorCode(errnoCode$4(thrown));
 			finish(null);
 			return;
 		}
@@ -12659,7 +13710,7 @@ function runChild(spec, signal) {
 			child.stdout?.on("data", collect(stdoutChunks));
 			child.stderr?.on("data", collect(stderrChunks));
 			child.once("error", (failure) => {
-				error ??= spawnErrorCode(errnoCode$3(failure));
+				error ??= spawnErrorCode(errnoCode$4(failure));
 				finish(null);
 			});
 			child.once("close", (code) => {
@@ -13086,6 +14137,42 @@ const KILL_TIMEOUT_MS = 1e4;
 const SMALL_OUTPUT_BYTES = 65536;
 /** `taskkill` exit code for "the process was not found": already gone, which is what the caller wanted. */
 const TASKKILL_NOT_FOUND = 128;
+/** One start-time query asks about at most this many pids (the registry holds at most 64 children). */
+const START_QUERY_MAX_PIDS = 256;
+/** The listing of the process tree is one row per process of the machine: a few KB, capped at 1 MiB. */
+const TREE_OUTPUT_BYTES = 1048576;
+/** Descendants returned at most: a bound against a corrupt listing. */
+const TREE_MAX_DESCENDANTS = 4096;
+/** The last line of a start-time or tree listing. A listing without it did not run to the end. */
+const START_TIMES_END = "MCS-START-END";
+const TREE_END = "MCS-TREE-END";
+/** `<pid><TAB><ISO 8601 UTC with up to seven fraction digits, Z>` (the `o` format of .NET). */
+const START_RECORD_RE = /^([1-9][0-9]{0,9})\t(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?Z$/;
+/** `<pid><TAB><parent pid>`; the parent of the System Idle Process is 0. */
+const TREE_RECORD_RE = /^([1-9][0-9]{0,9})\t([0-9]{1,10})$/;
+/**
+* The start time of the processes `pids` as `<pid><TAB><ISO UTC>` lines, then the end marker. Only validated integers are
+* interpolated. A pid that does not exist is skipped (`SilentlyContinue`), so it has no row.
+*/
+function startTimesScript(pids) {
+	return `\$ErrorActionPreference='SilentlyContinue'; Get-Process -Id ${pids.join(",")} | ForEach-Object { '' + $_.Id + [char]9 + $_.StartTime.ToUniversalTime().ToString('o') }; '${START_TIMES_END}'`;
+}
+/** Every process as `<pid><TAB><parent pid>`, then the end marker; `Stop` makes a failing query a non-zero exit. Constant. */
+const TREE_SCRIPT = `\$ErrorActionPreference='Stop'; Get-CimInstance Win32_Process | ForEach-Object { '' + \$_.ProcessId + [char]9 + \$_.ParentProcessId }; '${TREE_END}'`;
+/** The rows of a listing up to its end marker, or null when the marker never came (a failed query, a cut output). */
+function rowsUntil(result, marker) {
+	if (!result.ok || result.truncated) return null;
+	const rows = [];
+	for (const line of result.stdout.split(/\r?\n/)) {
+		if (line === marker) return rows;
+		rows.push(line);
+	}
+	return null;
+}
+/** Epoch milliseconds of `2026-11-14T10:20:30` plus fraction digits; more than three digits are cut, never rounded. */
+function startTimeMs(seconds, fraction) {
+	return Date.parse(`${seconds}.${(fraction ?? "").padEnd(3, "0").slice(0, 3)}Z`);
+}
 /** A pid is a positive integer of at most ten digits: nothing else is ever passed to an operating system call. */
 function isValidPid(pid) {
 	return Number.isSafeInteger(pid) && PID_RE$1.test(String(pid));
@@ -13168,8 +14255,9 @@ function createProcessHelpers(deps) {
 		remember(pid, line);
 		return line;
 	}
-	async function forceKill(pid) {
-		if (!isValidPid(pid)) throw new RangeError(`forceKill: ${String(pid)} is not a valid pid`);
+	async function terminate(pid, tree) {
+		const name = tree ? "forceKillTree" : "forceKill";
+		if (!isValidPid(pid)) throw new RangeError(`${name}: ${String(pid)} is not a valid pid`);
 		cache.delete(pid);
 		if (deps.platform === "win32") {
 			const file = await deps.resolve("taskkill");
@@ -13177,7 +14265,12 @@ function createProcessHelpers(deps) {
 			const result = await deps.exec({
 				kind: "taskkill",
 				file,
-				args: [
+				args: tree ? [
+					"/PID",
+					String(pid),
+					"/T",
+					"/F"
+				] : [
 					"/PID",
 					String(pid),
 					"/F"
@@ -13198,6 +14291,82 @@ function createProcessHelpers(deps) {
 			throw stopFailed(pid, code ?? "unknown error");
 		}
 	}
+	function forceKill(pid) {
+		return terminate(pid, false);
+	}
+	/** POSIX: SIGKILL of the pid only; a process-group kill belongs with POSIX terminal support (design 01 section 6). */
+	function forceKillTree(pid) {
+		return terminate(pid, true);
+	}
+	async function processStartTimes(pids) {
+		const wanted = [...new Set(pids.filter((pid) => isValidPid(pid)))];
+		if (wanted.length === 0) return /* @__PURE__ */ new Map();
+		if (wanted.length > START_QUERY_MAX_PIDS || deps.platform !== "win32") return null;
+		try {
+			const file = await deps.resolve("powershell");
+			if (file === null) return null;
+			const rows = rowsUntil(await deps.exec({
+				kind: "powershell.processes",
+				file,
+				args: powershellEncodedArgs(startTimesScript(wanted)),
+				timeoutMs: CMDLINE_TIMEOUT_MS,
+				maxOutputBytes: SMALL_OUTPUT_BYTES,
+				encoding: "utf8"
+			}), START_TIMES_END);
+			if (rows === null) return null;
+			const asked = new Set(wanted);
+			const times = /* @__PURE__ */ new Map();
+			for (const row of rows) {
+				const match = START_RECORD_RE.exec(row);
+				const pidText = match?.[1];
+				const seconds = match?.[2];
+				if (pidText === void 0 || seconds === void 0) continue;
+				const pid = Number(pidText);
+				const at = startTimeMs(seconds, match?.[3]);
+				if (asked.has(pid) && Number.isFinite(at)) times.set(pid, at);
+			}
+			return times;
+		} catch {
+			return null;
+		}
+	}
+	async function listDescendantPids(root) {
+		if (!isValidPid(root) || deps.platform !== "win32") return null;
+		try {
+			const file = await deps.resolve("powershell");
+			if (file === null) return null;
+			const rows = rowsUntil(await deps.exec({
+				kind: "powershell.processes",
+				file,
+				args: powershellEncodedArgs(TREE_SCRIPT),
+				timeoutMs: CMDLINE_TIMEOUT_MS,
+				maxOutputBytes: TREE_OUTPUT_BYTES,
+				encoding: "utf8"
+			}), TREE_END);
+			if (rows === null) return null;
+			const childrenOf = /* @__PURE__ */ new Map();
+			for (const row of rows) {
+				const match = TREE_RECORD_RE.exec(row);
+				const pidText = match?.[1];
+				const parentText = match?.[2];
+				if (pidText === void 0 || parentText === void 0) continue;
+				const parent = Number(parentText);
+				const siblings = childrenOf.get(parent);
+				if (siblings === void 0) childrenOf.set(parent, [Number(pidText)]);
+				else siblings.push(Number(pidText));
+			}
+			const seen = /* @__PURE__ */ new Set([root]);
+			const queue = [root];
+			for (let at = 0; at < queue.length && seen.size <= TREE_MAX_DESCENDANTS; at += 1) for (const child of childrenOf.get(queue[at] ?? 0) ?? []) {
+				if (seen.has(child)) continue;
+				seen.add(child);
+				queue.push(child);
+			}
+			return queue.slice(1).sort((a, b) => a - b);
+		} catch {
+			return null;
+		}
+	}
 	async function waitForExit(pid, timeoutMs, pollMs = 100) {
 		const started = deps.now();
 		for (;;) {
@@ -13211,6 +14380,9 @@ function createProcessHelpers(deps) {
 		pidAlive,
 		commandLineOf,
 		forceKill,
+		forceKillTree,
+		processStartTimes,
+		listDescendantPids,
 		waitForExit
 	};
 }
@@ -13234,6 +14406,29 @@ const real = createProcessHelpers({
 /** True when the pid is alive. It never signals a live process (signal 0 is a probe); EPERM counts as alive. */
 function pidAlive(pid) {
 	return real.pidAlive(pid);
+}
+/**
+* `forceKill` for the whole tree: `taskkill.exe /PID <pid> /T /F` through `execFileText` (exit code 128, "not found", counts as
+* success), `SIGKILL` of the pid elsewhere. The one tree kill of the engine: the terminal sessions and the lifecycle
+* operations use it. Errors as `forceKill`; check the identity of the process first when the pid came from a file.
+*/
+function forceKillTree(pid) {
+	return real.forceKillTree(pid);
+}
+/**
+* The start time (epoch ms) of each live pid of `pids`, from one constant PowerShell query that is spawned only when at least
+* one valid pid is asked about. A pid that is gone has no entry. Null: the answer is unknown (not Windows, failed or cut query,
+* more than 256 pids). Never throws. The sweep of orphaned terminal children compares it with the recorded spawn time (pid reuse).
+*/
+function processStartTimes(pids) {
+	return real.processStartTimes(pids);
+}
+/**
+* Every descendant of `root` (not `root`), ascending, computed in Node from one constant CIM listing of the machine; null when
+* the listing failed or the platform is not Windows. Never throws. A parent id reused by the system can add a stray row.
+*/
+function listDescendantPids(root) {
+	return real.listDescendantPids(root);
 }
 
 //#endregion
@@ -13450,7 +14645,7 @@ async function listDir(dir) {
 		return [];
 	}
 }
-async function isFile(candidate) {
+async function isFile$1(candidate) {
 	try {
 		return (await stat(candidate)).isFile();
 	} catch {
@@ -13518,7 +14713,7 @@ async function globFiles(pattern, base, opts = {}) {
 		if (!hasMagic(segment)) {
 			const child = path.join(dir, segment);
 			if (last) {
-				if (await isFile(child)) add(child);
+				if (await isFile$1(child)) add(child);
 			} else if (await isDirectory$1(child)) await walk(child, index + 1, depth);
 			return;
 		}
@@ -13530,7 +14725,7 @@ async function globFiles(pattern, base, opts = {}) {
 			if (!matches(entry.name)) continue;
 			const child = path.join(dir, entry.name);
 			if (last) {
-				if (entry.isFile() || entry.isSymbolicLink() && await isFile(child)) add(child);
+				if (entry.isFile() || entry.isSymbolicLink() && await isFile$1(child)) add(child);
 			} else if (entry.isDirectory() && depth < maxDepth) await walk(child, index + 1, depth + 1);
 		}
 	};
@@ -13848,7 +15043,7 @@ const FLAGS = {
 	session_rule: "sv",
 	attempts: "vy"
 };
-const BACKSLASH$3 = 92;
+const BACKSLASH$4 = 92;
 const OPEN_CLASS = 91;
 const CLOSE_CLASS = 93;
 const OPEN_GROUP = 40;
@@ -13890,13 +15085,13 @@ function flagGroupAt(source, i) {
 	return null;
 }
 /** One pass over the source outside escapes, tracking (nested `v`-mode) classes, for the constructs this module refuses or explains. */
-function scan(source) {
+function scan$1(source) {
 	let python = false;
 	let modifierGroup = false;
 	let classDepth = 0;
 	for (let i = 0; i < source.length; i++) {
 		const code = source.charCodeAt(i);
-		if (code === BACKSLASH$3) {
+		if (code === BACKSLASH$4) {
 			const next = source[i + 1];
 			if (next === "A" || next === "Z") python = true;
 			i += 1;
@@ -13991,7 +15186,7 @@ function makeMatch(groupCount, groupNames, text, m) {
 * and the search continues code point by code point with a sticky copy of the same pattern.
 */
 function compileRegex(source, context) {
-	const found = scan(source);
+	const found = scan$1(source);
 	if (found.modifierGroup) throw new RegexCompileError(MODIFIER_REASON, true);
 	const flags = FLAGS[context];
 	let regex;
@@ -14079,6 +15274,8 @@ const LockFileSchema = object({
 //#region packages/engine/src/platform/layout.ts
 /** The name of the skill folder (and of the skill in its `SKILL.md` frontmatter). */
 const SKILL_FOLDER_NAME = "monitoring-claude-sessions";
+/** The canonical launcher in `<skillDir>/scripts` (CAW-04) and the legacy alias that calls it; both ship in every layout. */
+const LAUNCHER_FILE = "caw.mjs";
 /** The file names of the bundle layout (directly in `<skillDir>/bundle`). */
 const BUNDLE_SERVER_FILE = "mcs-server.mjs";
 const BUNDLE_CLI_FILE = "mcs-cli.mjs";
@@ -14103,7 +15300,7 @@ function bundleLayout(r, runtimeDir) {
 		mode: "bundle",
 		skillDir,
 		runtimeDir,
-		launcherPath: p.join(skillDir, "scripts", "mcs.mjs"),
+		launcherPath: p.join(skillDir, "scripts", LAUNCHER_FILE),
 		serverEntry: p.join(runtimeDir, BUNDLE_SERVER_FILE),
 		hookEntry: p.join(runtimeDir, BUNDLE_HOOK_FILE),
 		webDir: p.join(runtimeDir, "web"),
@@ -14120,7 +15317,7 @@ function sourceLayout(r, runtimeDir) {
 		mode: "source",
 		skillDir,
 		runtimeDir,
-		launcherPath: p.join(skillDir, "scripts", "mcs.mjs"),
+		launcherPath: p.join(skillDir, "scripts", LAUNCHER_FILE),
 		serverEntry: p.join(runtimeDir, "packages", "server", "dist", "main.js"),
 		hookEntry: p.join(runtimeDir, "packages", "cli", "dist", "hook.js"),
 		webDir: p.join(runtimeDir, "packages", "web", "dist"),
@@ -14391,7 +15588,7 @@ function listRuntimeProcesses(runtimeDir) {
 //#endregion
 //#region packages/engine/src/security/paths.ts
 const WIN32 = hostPlatform === "win32";
-function errnoCode$2(error) {
+function errnoCode$3(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 /** The spelling every path takes before it is compared: no extended prefix and an upper-case drive letter on win32. */
@@ -14422,14 +15619,14 @@ function probe(candidate) {
 			path: normalizeReal(realpathSync.native(candidate))
 		};
 	} catch (error) {
-		const code = errnoCode$2(error);
+		const code = errnoCode$3(error);
 		if (code !== "ENOENT" && code !== "ENOTDIR") return { kind: "refused" };
 	}
 	try {
 		lstatSync(candidate);
 		return { kind: "refused" };
 	} catch (error) {
-		const code = errnoCode$2(error);
+		const code = errnoCode$3(error);
 		return code === "ENOENT" || code === "ENOTDIR" ? { kind: "missing" } : { kind: "refused" };
 	}
 }
@@ -14538,7 +15735,7 @@ function safeValue(value) {
 	if (typeof value === "number") return Number.isFinite(value);
 	return typeof value === "boolean";
 }
-function errnoCode$1(error) {
+function errnoCode$2(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 /** Builds a logger over `deps`. `createLogger` is this over the real file system and `process.stderr`. */
@@ -14608,7 +15805,7 @@ function createLoggerWith(o, deps) {
 				sleep: (ms) => deps.sleep(ms)
 			});
 		} catch (error) {
-			if (errnoCode$1(error) !== "ENOENT") throw error;
+			if (errnoCode$2(error) !== "ENOENT") throw error;
 		}
 	}
 	async function rotate(file) {
@@ -15067,7 +16264,7 @@ function defaultMigrationsDir(moduleUrl = import.meta.url, fs) {
 }
 /** U+FEFF: what a UTF-8 byte order mark decodes to. */
 const UTF8_BOM = String.fromCharCode(65279);
-const FILE_NAME_RE = /^(\d{4})_([a-z0-9_]{1,48})\.sql$/;
+const FILE_NAME_RE$1 = /^(\d{4})_([a-z0-9_]{1,48})\.sql$/;
 const HEADER_RE = /^-- mcs:migration version=(\d+) name=([a-z0-9_]{1,48})$/;
 const DIRECTIVE_RE = /^-- mcs:foreign_keys=(\S+)$/;
 /** Created by the runner, never by a migration file (03 4.2). */
@@ -15085,11 +16282,11 @@ function invalidFile(fileName, reason) {
 function normalise(text) {
 	return (text.startsWith(UTF8_BOM) ? text.slice(1) : text).replaceAll("\r\n", "\n");
 }
-function sha256(text) {
+function sha256$1(text) {
 	return createHash("sha256").update(text, "utf8").digest("hex");
 }
 function parseFile(folder, fileName) {
-	const nameMatch = FILE_NAME_RE.exec(fileName);
+	const nameMatch = FILE_NAME_RE$1.exec(fileName);
 	if (nameMatch === null) throw invalidFile(fileName, "the name must match NNNN_snake_name.sql");
 	const sql = normalise(readFileSync(join(folder, fileName), "utf8"));
 	const lines = sql.split("\n");
@@ -15109,7 +16306,7 @@ function parseFile(folder, fileName) {
 	return {
 		version,
 		name: headerMatch[2] ?? "",
-		checksum: sha256(sql),
+		checksum: sha256$1(sql),
 		sql,
 		foreignKeysOff
 	};
@@ -15682,7 +16879,7 @@ function parseObject(file, bytes) {
 	}
 	let doc;
 	try {
-		doc = parseJson$1(text);
+		doc = parseJson$3(text);
 	} catch (error) {
 		throw new McsError("CONFIG_INVALID", `${file} is not valid JSON: ${reasonOf$1(error)}`, { cause: error });
 	}
@@ -16595,7 +17792,7 @@ async function readJsonFile(file) {
 	try {
 		return {
 			text,
-			value: parseJson$1(text)
+			value: parseJson$3(text)
 		};
 	} catch (error) {
 		if (error instanceof JsonSyntaxError) throw new McsError("CONFIG_UNREADABLE", `${file} is not valid JSON: ${error.message}`, { cause: error });
@@ -16913,7 +18110,7 @@ const PatternSourceSchema = looseObject({
 
 //#endregion
 //#region packages/engine/src/ops/probe.ts
-const LF$2 = String.fromCharCode(10);
+const LF$3 = String.fromCharCode(10);
 function currentHost$1() {
 	return {
 		platform: hostPlatform,
@@ -16972,13 +18169,13 @@ function requestControl(address, message, o) {
 		}, o.timeoutMs);
 		socket.once("connect", () => {
 			connected = true;
-			socket.write(`${JSON.stringify(message)}${LF$2}`);
+			socket.write(`${JSON.stringify(message)}${LF$3}`);
 		});
 		socket.on("data", (chunk) => {
 			received.push(chunk);
 			size += chunk.length;
 			const all = text();
-			const end = all.indexOf(LF$2);
+			const end = all.indexOf(LF$3);
 			if (end >= 0) finish(judgeLine(all.slice(0, end)));
 			else if (size > CONTROL_REPLY_MAX_BYTES) finish({
 				kind: "silent",
@@ -16987,7 +18184,7 @@ function requestControl(address, message, o) {
 		});
 		socket.on("error", (error) => {
 			const code = errnoOf(error);
-			if (size > 0) finish(judgeLine(text().split(LF$2)[0] ?? ""));
+			if (size > 0) finish(judgeLine(text().split(LF$3)[0] ?? ""));
 			else if (!connected && (code === "ENOENT" || code === "ECONNREFUSED")) finish({ kind: "absent" });
 			else finish({
 				kind: "silent",
@@ -16998,7 +18195,7 @@ function requestControl(address, message, o) {
 			finish(size === 0 ? {
 				kind: "silent",
 				reason: "closed"
-			} : judgeLine(text().split(LF$2)[0] ?? ""));
+			} : judgeLine(text().split(LF$3)[0] ?? ""));
 		});
 	});
 }
@@ -17012,6 +18209,14 @@ function identifyInstance(address, timeoutMs) {
 const BASE_RE = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})$/;
 const URL_RE = /^(http:\/\/127\.0\.0\.1:[0-9]{1,5})(\/[^\s]*)$/;
 const HTTP_BODY_MAX_BYTES = 4194304;
+/** The control token (`run/control.token`, 256 random bits): 64 lower-case hex digits. The only value sent as a Bearer header. */
+const CONTROL_TOKEN_RE$1 = /^[0-9a-f]{64}$/;
+/** The `Authorization` header for `bearer`, or none; a value that is not a control token is refused without repeating it. */
+function bearerHeaderOf(bearer) {
+	if (bearer === void 0) return {};
+	if (!CONTROL_TOKEN_RE$1.test(bearer)) throw new RangeError("httpGet: the bearer value is not a control token");
+	return { Authorization: `Bearer ${bearer}` };
+}
 /** True for `http://127.0.0.1:<port>` and nothing else: the only address this module ever connects to. */
 function isLoopbackBase(url) {
 	const match = BASE_RE.exec(url);
@@ -17033,7 +18238,10 @@ function httpGet(url, o) {
 		}
 	} : attempt);
 }
-/** `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`). Same limits and the same refusals. */
+/**
+* `httpGet` that also returns the response headers (the readers check `X-MCS-Instance`), and that can send the control token as a
+* Bearer header (`o.bearer`). Same limits and the same refusals.
+*/
 function httpGetWithHeaders(url, o) {
 	return new Promise((resolve, reject) => {
 		const match = URL_RE.exec(url);
@@ -17041,6 +18249,13 @@ function httpGetWithHeaders(url, o) {
 		const pathPart = match?.[2];
 		if (base === void 0 || pathPart === void 0 || !isLoopbackBase(base)) {
 			reject(/* @__PURE__ */ new RangeError("httpGet: only http://127.0.0.1:<port>/... is allowed"));
+			return;
+		}
+		let authorization;
+		try {
+			authorization = bearerHeaderOf(o.bearer);
+		} catch (error) {
+			reject(error instanceof Error ? error : /* @__PURE__ */ new RangeError("httpGet: the bearer value is not a control token"));
 			return;
 		}
 		const port = Number(BASE_RE.exec(base)?.[1] ?? "0");
@@ -17068,7 +18283,8 @@ function httpGetWithHeaders(url, o) {
 			headers: {
 				Host: `127.0.0.1:${String(port)}`,
 				Accept: "application/json",
-				Connection: "close"
+				Connection: "close",
+				...authorization
 			}
 		}, (res) => {
 			const chunks = [];
@@ -17417,7 +18633,7 @@ const FIRST_CWD_LINES = 61;
 const FIRST_CWD_BYTES = 1048576;
 /** Files of a folder whose first lines name a working directory (legacy `[:3]`). */
 const NEWEST_FILES = 3;
-function isPlain$2(value) {
+function isPlain$4(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** The `cwd` of the first record with a truthy one within the first 61 lines of a file ('' when there is none). */
@@ -17432,7 +18648,7 @@ async function firstCwd(fs, file) {
 		} catch {
 			continue;
 		}
-		if (isPlain$2(record)) {
+		if (isPlain$4(record)) {
 			const cwd = record["cwd"];
 			if (typeof cwd === "string" && cwd !== "") return cwd;
 		}
@@ -17515,6 +18731,29 @@ function over(counters) {
 	if (counters.entries < MAX_ENTRIES$1) return false;
 	counters.truncated = true;
 	return true;
+}
+/**
+* `fn` over `items`, at most `limit` calls at a time; the results are in the order of the items. The first failure rejects the
+* call and no further item is started. `limit` must be a whole number of at least 1.
+*/
+async function mapLimit(items, limit, fn) {
+	if (!Number.isInteger(limit) || limit < 1) throw new RangeError(`mapLimit: limit must be a whole number of at least 1, got ${String(limit)}`);
+	const results = new Array(items.length);
+	const queue = items.entries();
+	let failed = false;
+	async function worker() {
+		for (const [index, item] of queue) {
+			if (failed) return;
+			try {
+				results[index] = await fn(item, index);
+			} catch (error) {
+				failed = true;
+				throw error;
+			}
+		}
+	}
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+	return results;
 }
 function fileOf(file, kind, sessionId, ids, stat) {
 	return {
@@ -17626,22 +18865,33 @@ async function scanSessionFolder(fs, tdir, sessionId, counters, out) {
 	}
 	return title;
 }
-/** The main transcript `<tdir>/<sid>.jsonl`: a regular file, never a link. */
-async function mainFile(fs, tdir, sessionId, counters) {
+async function lookupMain(fs, tdir, sessionId) {
 	const full = path.join(tdir, `${sessionId}.jsonl`);
 	const stat = await fs.lstat(full);
-	if (stat === null) return null;
-	if (stat.kind === "link") {
-		counters.symlinksSkipped += 1;
-		return null;
-	}
-	return stat.kind === "file" ? fileOf(full, "session", sessionId, {}, stat) : null;
+	if (stat === null) return {
+		file: null,
+		link: false
+	};
+	if (stat.kind === "link") return {
+		file: null,
+		link: true
+	};
+	return {
+		file: stat.kind === "file" ? fileOf(full, "session", sessionId, {}, stat) : null,
+		link: false
+	};
+}
+/** The main transcript `<tdir>/<sid>.jsonl`: a regular file, never a link (a link is counted). */
+async function mainFile(fs, tdir, sessionId, counters) {
+	const { file, link } = await lookupMain(fs, tdir, sessionId);
+	if (link) counters.symlinksSkipped += 1;
+	return file;
 }
 /**
 * The tracked sessions below `tdir` (02 5.1.2): a session is tracked when its main file was written within the look-back
 * window, or it is pinned, or it has hook events or is already tracked. Subagent and workflow files follow their session.
 */
-async function discoverTranscripts(tdir, policy, fs = nodeDiscoveryFs) {
+async function discoverTranscripts(tdir, policy, fs = nodeDiscoveryFs, options = {}) {
 	const counters = freshCounters$1();
 	let names;
 	try {
@@ -17660,18 +18910,31 @@ async function discoverTranscripts(tdir, policy, fs = nodeDiscoveryFs) {
 		if (SID_RE.test(id)) candidates.add(id);
 	}
 	const sessions = [];
-	for (const sessionId of [...candidates].sort()) {
-		if (over(counters)) break;
-		counters.entries += 1;
-		const main = await mainFile(fs, tdir, sessionId, counters);
-		if (!(main !== null && main.mtimeMs >= policy.nowMs - policy.lookbackMs || policy.pinned.has(sessionId) || policy.isKnown(sessionId))) continue;
-		const files = main === null ? [] : [main];
-		const customTitlePath = await scanSessionFolder(fs, tdir, sessionId, counters, files);
-		if (files.length > 0 || customTitlePath !== null) sessions.push({
-			sessionId,
-			files,
-			customTitlePath
-		});
+	const ids = [...candidates].sort();
+	const batch = options.concurrency ?? 1;
+	for (let start = 0; start < ids.length; start += batch) {
+		const slice = ids.slice(start, start + batch);
+		const mains = await mapLimit(slice, batch, (sessionId) => lookupMain(fs, tdir, sessionId));
+		for (const [at, sessionId] of slice.entries()) {
+			if (over(counters)) return {
+				sessions,
+				counters,
+				missing: false
+			};
+			counters.entries += 1;
+			const looked = mains[at];
+			if (looked === void 0) continue;
+			const { file: main, link } = looked;
+			if (link) counters.symlinksSkipped += 1;
+			if (!(main !== null && main.mtimeMs >= policy.nowMs - policy.lookbackMs || policy.pinned.has(sessionId) || policy.isKnown(sessionId))) continue;
+			const files = main === null ? [] : [main];
+			const customTitlePath = await scanSessionFolder(fs, tdir, sessionId, counters, files);
+			if (files.length > 0 || customTitlePath !== null) sessions.push({
+				sessionId,
+				files,
+				customTitlePath
+			});
+		}
 	}
 	return {
 		sessions,
@@ -17703,7 +18966,7 @@ function text(value, max, redacted) {
 	if (typeof value !== "string" || value === "") return void 0;
 	return clipCodePoints$1(redacted ? redact(value) : value, max);
 }
-function count(value) {
+function count$1(value) {
 	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : void 0;
 }
 async function readObject(fs, file, maxBytes) {
@@ -17711,7 +18974,7 @@ async function readObject(fs, file, maxBytes) {
 	if (body === null) return null;
 	try {
 		const value = JSON.parse(body);
-		return isPlain$2(value) ? value : null;
+		return isPlain$4(value) ? value : null;
 	} catch {
 		return null;
 	}
@@ -17728,7 +18991,7 @@ async function readAgentMeta(transcriptPath, fs = nodeDiscoveryFs) {
 	set("description", text(doc["description"], DESCRIPTION_MAX_CP, true));
 	set("model", text(doc["model"], 128, false));
 	set("requestShape", text(doc["requestShape"], 32, false));
-	set("spawnDepth", count(doc["spawnDepth"]));
+	set("spawnDepth", count$1(doc["spawnDepth"]));
 	const toolUseId = doc["toolUseId"];
 	set("spawnToolUseId", typeof toolUseId === "string" && TOOL_ID_RE.test(toolUseId) ? toolUseId : void 0);
 	set("workflowPhase", text(doc["workflowPhase"], 120, true));
@@ -17749,11 +19012,11 @@ async function readWorkflowStatus(file, fs = nodeDiscoveryFs) {
 	if (state !== void 0) status.status = state;
 	const name = text(doc["workflowName"], 120, true);
 	if (name !== void 0) status.workflowName = name;
-	const agents = count(doc["agentCount"]);
+	const agents = count$1(doc["agentCount"]);
 	if (agents !== void 0) status.agentCount = agents;
-	const duration = count(doc["durationMs"]);
+	const duration = count$1(doc["durationMs"]);
 	if (duration !== void 0) status.durationMs = duration;
-	const started = count(doc["startTime"]);
+	const started = count$1(doc["startTime"]);
 	if (started !== void 0) status.startTime = started;
 	return status;
 }
@@ -17897,7 +19160,7 @@ const DetailSchema$1 = record$1(string(), union([
 	boolean(),
 	_null()
 ]));
-const COLUMNS$5 = `id, rule_id AS ruleId, rule_kind AS ruleKind, scope_kind AS scopeKind, scope_key AS scopeKey,
+const COLUMNS$6 = `id, rule_id AS ruleId, rule_kind AS ruleKind, scope_kind AS scopeKind, scope_key AS scopeKey,
   session_id AS sessionId, severity, status, title, detail, first_fired_at AS firstFiredAt, last_fired_at AS lastFiredAt,
   fire_count AS fireCount, resolved_at AS resolvedAt, resolved_reason AS resolvedReason, updated_seq AS updatedSeq`;
 function toRow$5(row) {
@@ -17919,7 +19182,7 @@ var AlertsRepo = class {
 	/** The one open alert of a rule and scope (`ux_alerts_live`). */
 	openFor(ctx, ruleId, scopeKey) {
 		this.db.assertScope(ctx);
-		const row = this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts WHERE rule_id = :ruleId AND scope_key = :scopeKey AND status = 'open'`).get({
+		const row = this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts WHERE rule_id = :ruleId AND scope_key = :scopeKey AND status = 'open'`).get({
 			ruleId,
 			scopeKey
 		});
@@ -17927,13 +19190,13 @@ var AlertsRepo = class {
 	}
 	byId(ctx, id) {
 		this.db.assertScope(ctx);
-		const row = this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts WHERE id = :id`).get({ id });
+		const row = this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts WHERE id = :id`).get({ id });
 		return row === void 0 ? void 0 : toRow$5(row);
 	}
 	/** Newest firing first. */
 	list(ctx, q) {
 		this.db.assertScope(ctx);
-		return (q.status === void 0 ? this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({ limit: rowLimit(q.limit) }) : this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM alerts WHERE status = :status ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({
+		return (q.status === void 0 ? this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({ limit: rowLimit(q.limit) }) : this.db.driver.prepare(`SELECT ${COLUMNS$6} FROM alerts WHERE status = :status ORDER BY last_fired_at DESC, id DESC LIMIT :limit`).all({
 			status: q.status,
 			limit: rowLimit(q.limit)
 		})).map(toRow$5);
@@ -18172,6 +19435,7 @@ var IngestHealthRepo = class {
 //#region packages/engine/src/db/repos/sessions.ts
 function patchEntries$1(p) {
 	return [
+		["project_id", p.projectId],
 		["transcript_file_id", p.transcriptFileId],
 		["label", p.label],
 		["label_source", p.labelSource],
@@ -18384,6 +19648,25 @@ var SessionsRepo = class {
 		return result;
 	}
 	/**
+	* The sessions without a project that have a main transcript file, by row id after `afterId` (a keyset: a session that
+	* cannot be assigned is passed over, never asked for again in one pass). The path is the one of the file the session names as
+	* its main file, else of the first main file registered for it.
+	*/
+	withoutProject(ctx, afterId, limit) {
+		this.db.assertScope(ctx);
+		return this.db.driver.prepare(`SELECT id, sessionUid, cwd, lastActivityAt, transcriptPath FROM (
+           SELECT s.id AS id, s.session_uid AS sessionUid, s.cwd AS cwd, s.last_activity_at AS lastActivityAt,
+                  coalesce(
+                    (SELECT f.path FROM transcript_files f WHERE f.id = s.transcript_file_id AND f.kind = 'session'),
+                    (SELECT f.path FROM transcript_files f WHERE f.session_uid = s.session_uid AND f.kind = 'session'
+                      ORDER BY f.id LIMIT 1)) AS transcriptPath
+             FROM sessions s WHERE s.project_id IS NULL AND s.id > :afterId)
+         WHERE transcriptPath IS NOT NULL ORDER BY id LIMIT :limit`).all({
+			afterId,
+			limit: rowLimit(limit)
+		});
+	}
+	/**
 	* Sessions that may match an attempt label (06 3.10.6). The one hour of slack only widens the prefilter
 	* (`idx_sessions_activity`); the caller applies the exact window and delta rules. At most 500 labels per statement.
 	*/
@@ -18436,7 +19719,7 @@ const TAB = String.fromCharCode(9);
 const NEWLINE = String.fromCharCode(10);
 const RETURN = String.fromCharCode(13);
 const QUOTE = "\"";
-const BACKSLASH$2 = String.fromCharCode(92);
+const BACKSLASH$3 = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
 /** Characters that a POSIX shell reads as syntax inside a word: quotes, expansion, redirection, lists, globs, braces. */
 const SHELL_SYNTAX = /* @__PURE__ */ new Set([
@@ -18456,14 +19739,14 @@ const SHELL_SYNTAX = /* @__PURE__ */ new Set([
 	"]",
 	"{",
 	"}",
-	BACKSLASH$2,
+	BACKSLASH$3,
 	BACKTICK
 ]);
 /** The characters that keep their meaning inside double quotes and so need a backslash there. */
 const ESCAPED_IN_QUOTES = /* @__PURE__ */ new Set([
 	QUOTE,
 	"$",
-	BACKSLASH$2,
+	BACKSLASH$3,
 	BACKTICK
 ]);
 /** True when the shell would split the value into several words. */
@@ -18484,7 +19767,7 @@ function needsQuotes(value) {
 /** The value as it is written between double quotes. */
 function escapeInQuotes(value) {
 	let escaped = "";
-	for (const c of value) escaped += ESCAPED_IN_QUOTES.has(c) ? BACKSLASH$2 + c : c;
+	for (const c of value) escaped += ESCAPED_IN_QUOTES.has(c) ? BACKSLASH$3 + c : c;
 	return escaped;
 }
 /**
@@ -18502,7 +19785,7 @@ function formatCommand(argv) {
 }
 /** A path as it is shown: forward slashes on Windows, so that Git Bash, PowerShell and cmd all read the same text. */
 function shownPath(p) {
-	return hostPlatform === "win32" ? p.replaceAll(BACKSLASH$2, "/") : p;
+	return hostPlatform === "win32" ? p.replaceAll(BACKSLASH$3, "/") : p;
 }
 /**
 * The six display strings of `InstanceInfo.commands` (01 6.6): `node <launcher> <command> --task <slug>`, the options of
@@ -18513,7 +19796,13 @@ function instanceCommands(i) {
 	const launcher = shownPath(i.launcherPath);
 	const repo = shownPath(i.repoDir);
 	const exportFile = `${shownPath(i.instanceDir)}/logs/export.ndjson`;
-	const build = (command, options = []) => formatCommand([
+	const build = (command, options = []) => i.kind === "user" ? formatCommand([
+		"node",
+		launcher,
+		command,
+		"--user",
+		...options
+	]) : formatCommand([
 		"node",
 		launcher,
 		command,
@@ -18534,10 +19823,68 @@ function instanceCommands(i) {
 }
 
 //#endregion
+//#region packages/engine/src/projects/scope.ts
+/**
+* True when the instance reads the transcripts of every project (`all`): the key says `all`, or it says `auto` and the instance
+* is the user instance. A task instance stays on its repository unless the key forces `all` (tests, odd setups).
+*/
+function isAllScope(scope, kind) {
+	return scope === "all" || scope === "auto" && kind === "user";
+}
+/** `<claude home>/projects`: the folder that holds one folder per project. */
+function projectsRootOf(claudeHome) {
+	return path.join(claudeHome, "projects");
+}
+/**
+* Whether the sessions that no rule matched are part of a list, a tile or an agent count: the monitor setting
+* `include_unmatched`, the request flag, or the scope `all` (most of its projects have no rule, and `matched` stays a badge).
+*/
+function unmatchedVisible(config, kind, query) {
+	return query.includeUnmatched === true || config.monitor.include_unmatched || isAllScope(config.runtime.projects.scope, kind);
+}
+/** The panels that read one repository: the user instance has none, so they stay off whatever `config.json` says. */
+const REPOSITORY_PANELS = [
+	PANEL_CONFIG_KEY.git,
+	PANEL_CONFIG_KEY.attempts,
+	PANEL_CONFIG_KEY.ledger,
+	PANEL_CONFIG_KEY.chainLog
+];
+/** The panels as the instance offers them: those of `config.json`, minus the per-repository ones for the user instance. */
+function effectivePanels(panels, kind) {
+	if (kind !== "user") return panels;
+	const effective = { ...panels };
+	for (const key of REPOSITORY_PANELS) effective[key] = false;
+	return effective;
+}
+const kindsByConfig = /* @__PURE__ */ new WeakMap();
+/**
+* The kind of the instance that a resolved configuration belongs to: the `kind` of the `instance.json` next to `config.json`
+* (`task` when the file or the key is absent or the file is damaged). It is read once per configuration object: the kind of an
+* instance is fixed for the life of the process.
+*/
+function instanceKindOfConfig(config) {
+	const known = kindsByConfig.get(config);
+	if (known !== void 0) return known;
+	const kind = readKind(config);
+	kindsByConfig.set(config, kind);
+	return kind;
+}
+function readKind(config) {
+	const file = config.files.find((entry) => entry.name === "config.json");
+	if (file === void 0) return "task";
+	try {
+		const instance = InstanceFileSchema.safeParse(JSON.parse(readFileSync(path.join(path.dirname(file.path), "instance.json"), "utf8")));
+		return instance.success ? instanceKindOf(instance.data) : "task";
+	} catch {
+		return "task";
+	}
+}
+
+//#endregion
 //#region packages/engine/src/query/health.ts
 /** The code of the one reason of a report that was never evaluated (no `ingest_health` row yet). */
 const INGEST_NOT_EVALUATED = "NOT_EVALUATED";
-const HOUR_MS$8 = 36e5;
+const HOUR_MS$9 = 36e5;
 /** `freeDiskBytes` is read at most this often (03 6.2). */
 const DISK_CACHE_MS = 3e4;
 /** The event loop histogram starts over this often (03 6.2). */
@@ -18644,7 +19991,7 @@ function sum(values) {
 	for (const value of values) total += value;
 	return total;
 }
-function iso$1(ms) {
+function iso$2(ms) {
 	return ms === null ? null : isoMsZ(ms);
 }
 function ingestionStatus(report, o) {
@@ -18658,7 +20005,7 @@ function ingestionStatus(report, o) {
 function lastHandlerError(report, nowMs) {
 	let latest = null;
 	for (const entry of report.receiving.hooks.handlerErrors) {
-		if (nowMs - entry.lastAt > HOUR_MS$8) continue;
+		if (nowMs - entry.lastAt > HOUR_MS$9) continue;
 		if (latest === null || entry.lastAt > latest.lastAt) latest = entry;
 	}
 	if (latest === null) return null;
@@ -18708,15 +20055,15 @@ function notEvaluated(hooksEnabled) {
 function projectIngestion(report, o) {
 	if (report === null) return notEvaluated(o.hooksEnabled);
 	const { hooks, spool, transcripts } = report.receiving;
-	const handlerErrorsLastHour = sum(hooks.handlerErrors.filter((entry) => o.nowMs - entry.lastAt <= HOUR_MS$8).map((entry) => entry.count));
+	const handlerErrorsLastHour = sum(hooks.handlerErrors.filter((entry) => o.nowMs - entry.lastAt <= HOUR_MS$9).map((entry) => entry.count));
 	return {
 		status: ingestionStatus(report, o),
 		reasons: report.reasons.map((reason) => reason.code),
 		hooks: {
 			enabled: o.hooksEnabled,
 			installed: hooks.status !== "not_installed",
-			lastReceivedAt: iso$1(hooks.lastEnvelopeAt),
-			lastEventAt: iso$1(report.persisted.lastCommitAt),
+			lastReceivedAt: iso$2(hooks.lastEnvelopeAt),
+			lastEventAt: iso$2(report.persisted.lastCommitAt),
 			spoolPendingBytes: spool.bytesBehind,
 			spoolLagMs: spool.oldestPendingReceivedAt === null ? null : Math.max(0, o.nowMs - spool.oldestPendingReceivedAt),
 			errorsLastHour: hooks.invalid1h + handlerErrorsLastHour,
@@ -18725,8 +20072,8 @@ function projectIngestion(report, o) {
 		transcripts: {
 			dirFound: transcripts.dirFound,
 			filesTracked: transcripts.filesTracked,
-			lastScanAt: iso$1(transcripts.lastScanAt),
-			lastImportedAt: iso$1(transcripts.lastSyncAt),
+			lastScanAt: iso$2(transcripts.lastScanAt),
+			lastImportedAt: iso$2(transcripts.lastSyncAt),
 			importLagMs: transcripts.maxLagMs,
 			pendingBytes: transcripts.bytesBehind + transcripts.backfillRemainingBytes,
 			invalidLines: sum(INVALID_LINE_CODES.map((code) => transcripts.errors[code] ?? 0)),
@@ -18743,7 +20090,7 @@ const zero$1 = () => ({
 });
 /**
 * Every child kind with zero counters, in the order of `CHILD_KINDS`; fresh objects on every call. The literal lists the
-* nine kinds, so a kind that is added to or removed from the shared list is a compile error here.
+* twelve kinds, so a kind that is added to or removed from the shared list is a compile error here.
 */
 function zeroChildStats() {
 	return {
@@ -18755,7 +20102,10 @@ function zeroChildStats() {
 		taskkill: zero$1(),
 		node: zero$1(),
 		icacls: zero$1(),
-		opener: zero$1()
+		opener: zero$1(),
+		"powershell.shortcut": zero$1(),
+		claude: zero$1(),
+		"powershell.picker": zero$1()
 	};
 }
 /** `db.ok`: the stored report names no failing or erroring write (03 6.2). */
@@ -18844,7 +20194,7 @@ function toAlertItem(row, sessionUid) {
 		since: isoMsZ(row.firstFiredAt),
 		lastFiredAt: isoMsZ(row.lastFiredAt),
 		fireCount: row.fireCount,
-		resolvedAt: iso$1(row.resolvedAt),
+		resolvedAt: iso$2(row.resolvedAt),
 		resolvedReason: row.resolvedReason,
 		detail: { ...row.detail }
 	};
@@ -19348,7 +20698,7 @@ var AttemptsRepo = class {
 //#endregion
 //#region packages/engine/src/db/repos/cost-states.ts
 const ModelUsageSchema = record$1(string(), record$1(string(), number$1()));
-const COLUMNS$4 = `file_id AS fileId, session_id AS sessionId, total_cost_usd AS totalCostUsd,
+const COLUMNS$5 = `file_id AS fileId, session_id AS sessionId, total_cost_usd AS totalCostUsd,
   model_usage_json AS modelUsageJson, byte_offset AS byteOffset, is_trailing AS isTrailing, observed_at AS observedAt`;
 function toRow$4(row) {
 	let modelUsage = {};
@@ -19396,12 +20746,12 @@ var CostStatesRepo = class {
 	}
 	byFile(ctx, fileId) {
 		this.db.assertScope(ctx);
-		const row = this.db.driver.prepare(`SELECT ${COLUMNS$4} FROM cost_states WHERE file_id = :fileId`).get({ fileId });
+		const row = this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM cost_states WHERE file_id = :fileId`).get({ fileId });
 		return row === void 0 ? void 0 : toRow$4(row);
 	}
 	listBySession(ctx, sessionId) {
 		this.db.assertScope(ctx);
-		return this.db.driver.prepare(`SELECT ${COLUMNS$4} FROM cost_states WHERE session_id = :sessionId ORDER BY file_id`).all({ sessionId }).map(toRow$4);
+		return this.db.driver.prepare(`SELECT ${COLUMNS$5} FROM cost_states WHERE session_id = :sessionId ORDER BY file_id`).all({ sessionId }).map(toRow$4);
 	}
 	/**
 	* The latest trailing cost the provider reported for a session (the value `sessions.reported_cost_usd` mirrors):
@@ -22054,14 +23404,21 @@ function createJobsReader(options) {
 
 //#endregion
 //#region packages/engine/src/external/registry.ts
-const REGISTRY_FILE_MAX_BYTES = 65536;
+const REGISTRY_FILE_MAX_BYTES$1 = 65536;
 /** An unchanged observation is announced again after this long. */
 const REGISTRY_REPEAT_MS = 6e4;
 /** `waitingFor` is shown clipped to this many code points. */
 const WAITING_FOR_MAX_CHARS = 64;
+/** A registry `cwd` is clipped to this many code points. */
+const REGISTRY_CWD_MAX_CHARS = 1024;
+/** The hint for one unknown session is given again after this long. */
+const REGISTRY_HINT_REPEAT_MS = 3e4;
+/** One read of the registry folder is shared for this long by `createRegistrySnapshot`. */
+const REGISTRY_SNAPSHOT_MEMO_MS = 1e3;
+const ENTRYPOINT_MAX_CHARS = 64;
 const MAX_ENTRIES = 1e3;
 const REGISTRY_FILE_RE = /^[1-9][0-9]{0,9}\.json$/;
-const RegistryFileSchema = looseObject({
+const RegistryFileSchema$1 = looseObject({
 	pid: number$1().int().positive(),
 	sessionId: string().regex(SID_RE),
 	status: _enum([
@@ -22071,16 +23428,99 @@ const RegistryFileSchema = looseObject({
 	]),
 	waitingFor: string().optional()
 });
-/** One file of the registry as an event, or null when it is not for this instance; `failed` when it cannot be used. */
-function readEntry(bytes, options, now) {
-	let parsed;
+function plain(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function textOf$2(value, max) {
+	return typeof value === "string" && value !== "" ? clipCodePoints$1(value, max) : null;
+}
+function epochMsOf(value) {
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+/**
+* The fields of a registry file that the link needs, or null when it has no usable pid and session id. Nothing else of the file
+* is read: not `name`, not `procStart`.
+*/
+function looseFieldsOf(value) {
+	if (!plain(value)) return null;
+	const { pid, sessionId, status, kind } = value;
+	if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+	if (typeof sessionId !== "string" || !SID_RE.test(sessionId)) return null;
+	return {
+		pid,
+		sessionId,
+		status: status === "busy" || status === "idle" || status === "waiting" ? status : null,
+		waitingFor: textOf$2(value["waitingFor"], 64),
+		cwd: textOf$2(value["cwd"], REGISTRY_CWD_MAX_CHARS),
+		startedAtMs: epochMsOf(value["startedAt"]),
+		updatedAtMs: epochMsOf(value["updatedAt"]),
+		kind: kind === "interactive" || kind === "bg" ? kind : null,
+		entrypoint: textOf$2(value["entrypoint"], ENTRYPOINT_MAX_CHARS)
+	};
+}
+function parseJson$2(bytes) {
 	try {
-		const result = RegistryFileSchema.safeParse(JSON.parse(bytes.toString("utf8")));
-		if (!result.success) return { failed: true };
-		parsed = result.data;
+		return JSON.parse(bytes.toString("utf8"));
 	} catch {
-		return { failed: true };
+		return;
 	}
+}
+/** The names of the registry folder that may be opened, sorted. */
+async function registryNames(dir, fs) {
+	return (await fs.readdir(dir)).filter((name) => REGISTRY_FILE_RE.test(name)).slice(0, MAX_ENTRIES);
+}
+/**
+* Every entry of the registry (CAW design 03 5.4): the loose reading, no filter on the session. A file that cannot be read, is
+* damaged, or lacks a usable pid or session id counts in `readFailures` and is left out. Sorted by pid.
+*/
+async function listRegistryEntries(options) {
+	const fs = options.fs ?? nodeExternalFs;
+	const dir = path.join(options.claudeHome, "sessions");
+	const entries = [];
+	let readFailures = 0;
+	for (const name of await registryNames(dir, fs)) {
+		const bytes = await fs.readSmall(path.join(dir, name), REGISTRY_FILE_MAX_BYTES$1);
+		const fields = bytes === null ? null : looseFieldsOf(parseJson$2(bytes));
+		if (fields === null) {
+			readFailures += 1;
+			continue;
+		}
+		if (!isValidPid(fields.pid)) continue;
+		entries.push({
+			...fields,
+			alive: options.pidAlive(fields.pid)
+		});
+	}
+	entries.sort((a, b) => a.pid - b.pid);
+	return {
+		entries,
+		readFailures
+	};
+}
+/** `listRegistryEntries` memoised: the link, the resume check and the lifecycle poller do not each read the folder. */
+function createRegistrySnapshot(options) {
+	const memoMs = options.memoMs ?? 1e3;
+	let memo = null;
+	return { read() {
+		const at = options.now();
+		if (memo !== null && at - memo.at < memoMs) return memo.listing;
+		const listing = listRegistryEntries(options);
+		const mine = {
+			at,
+			listing
+		};
+		memo = mine;
+		listing.catch(() => {
+			if (memo === mine) memo = null;
+		});
+		return listing;
+	} };
+}
+/** One file of the registry as an event, or null when it is not for this instance; `failed` when it cannot be used. */
+function readEntry(value, options, now) {
+	const result = RegistryFileSchema$1.safeParse(value);
+	if (!result.success) return { failed: true };
+	const parsed = result.data;
 	if (!isValidPid(parsed.pid) || !options.isKnownSession(parsed.sessionId)) return { candidate: null };
 	const alive = options.pidAlive(parsed.pid);
 	const waitingFor = parsed.waitingFor === void 0 || parsed.waitingFor === "" ? void 0 : clipCodePoints$1(parsed.waitingFor, 64);
@@ -22102,18 +23542,36 @@ function createRegistryReader(options) {
 	const repeatMs = options.repeatMs ?? 6e4;
 	const dir = path.join(options.claudeHome, "sessions");
 	const last = /* @__PURE__ */ new Map();
+	/** The sessions that were named to `onUnknownSession`, and when. */
+	const hinted = /* @__PURE__ */ new Map();
+	/** The hint of one file: a live process of a session this instance does not know is named, once per 30 s. */
+	function hintOf(value, now) {
+		const callback = options.onUnknownSession;
+		if (callback === void 0) return;
+		const fields = looseFieldsOf(value);
+		if (fields === null || !isValidPid(fields.pid) || options.isKnownSession(fields.sessionId)) return;
+		const before = hinted.get(fields.sessionId);
+		if (before !== void 0 && now - before < 3e4) return;
+		if (!options.pidAlive(fields.pid)) return;
+		hinted.set(fields.sessionId, now);
+		try {
+			callback(fields.sessionId, fields.cwd);
+		} catch {}
+	}
 	return { async poll() {
 		const now = options.now();
-		const names = (await fs.readdir(dir)).filter((name) => REGISTRY_FILE_RE.test(name)).slice(0, MAX_ENTRIES);
+		const names = await registryNames(dir, fs);
 		const found = /* @__PURE__ */ new Map();
 		let readFailures = 0;
 		for (const name of names.sort()) {
-			const bytes = await fs.readSmall(path.join(dir, name), REGISTRY_FILE_MAX_BYTES);
+			const bytes = await fs.readSmall(path.join(dir, name), REGISTRY_FILE_MAX_BYTES$1);
 			if (bytes === null) {
 				readFailures += 1;
 				continue;
 			}
-			const entry = readEntry(bytes, options, now);
+			const value = parseJson$2(bytes);
+			hintOf(value, now);
+			const entry = readEntry(value, options, now);
 			if ("failed" in entry) {
 				readFailures += 1;
 				continue;
@@ -22123,6 +23581,7 @@ function createRegistryReader(options) {
 			const other = found.get(candidate.event.sessionId);
 			if (!(other !== void 0 && (other.event.pidAlive || !candidate.event.pidAlive))) found.set(candidate.event.sessionId, candidate);
 		}
+		for (const [sessionId, at] of hinted) if (now - at >= 3e4) hinted.delete(sessionId);
 		const events = [];
 		const taken = /* @__PURE__ */ new Map();
 		for (const [sessionId, { event, key }] of found) {
@@ -22149,7 +23608,7 @@ function createRegistryReader(options) {
 
 //#endregion
 //#region packages/engine/src/ingest/spool/segments.ts
-const HOUR_MS$7 = 36e5;
+const HOUR_MS$8 = 36e5;
 /** True for `hooks-<YYYYMMDD>T<HH>Z.ndjson` with a real calendar day and an hour from 00 to 23. */
 function isSegmentName(name) {
 	return startOf(name) !== null;
@@ -22172,7 +23631,7 @@ function startOf(name) {
 function hourEndOf(segment) {
 	const start = startOf(segment);
 	if (start === null) throw new RangeError("not a spool segment name");
-	return start + HOUR_MS$7;
+	return start + HOUR_MS$8;
 }
 /**
 * `seal`: past the hour and the grace, every byte consumed. `seal_torn`: past the grace, but an unterminated tail is left;
@@ -22185,7 +23644,7 @@ function sealDecision(input) {
 }
 /** A sealed segment is deleted once `now` is past its hour plus `retainHours`. */
 function retentionExpired(segment, now, retainHours) {
-	return now > hourEndOf(segment) + retainHours * HOUR_MS$7;
+	return now > hourEndOf(segment) + retainHours * HOUR_MS$8;
 }
 /**
 * The files of the spool folder. A folder that does not exist is an empty listing (no hook has written yet). A directory, a
@@ -22345,7 +23804,7 @@ function emitAlertInputs(target, inputs) {
 
 //#endregion
 //#region packages/engine/src/health/ingest-health.ts
-const HOUR_MS$6 = 36e5;
+const HOUR_MS$7 = 36e5;
 const TEN_MINUTES_MS = 6e5;
 /** The queries that scan an hour of rows are repeated at most this often. */
 const SLOW_QUERY_CACHE_MS = 3e4;
@@ -22576,7 +24035,7 @@ function parseHandlerLog(text, instanceId, now) {
 		if (!parsed.success) continue;
 		const entry = parsed.data;
 		if (entry.instanceId !== null && entry.instanceId !== instanceId) continue;
-		if (now - entry.at > HOUR_MS$6) continue;
+		if (now - entry.at > HOUR_MS$7) continue;
 		const known = byCode.get(entry.code);
 		if (known === void 0) byCode.set(entry.code, {
 			code: entry.code,
@@ -22656,7 +24115,7 @@ var WindowedCounter = class {
 			at: now,
 			value
 		});
-		while (this.samples.length > 1 && (this.samples[1]?.at ?? Number.POSITIVE_INFINITY) <= now - HOUR_MS$6) this.samples.shift();
+		while (this.samples.length > 1 && (this.samples[1]?.at ?? Number.POSITIVE_INFINITY) <= now - HOUR_MS$7) this.samples.shift();
 		const base = this.samples[0]?.value ?? value;
 		return Math.max(0, value - base);
 	}
@@ -22728,7 +24187,7 @@ function createIngestHealthEvaluator(ctx, sources, alertTarget = ctx) {
 	}
 	function hourlyFacts(now) {
 		if (hourly !== null && now >= hourly.at && now - hourly.at < SLOW_QUERY_CACHE_MS) return hourly.value;
-		const since = now - HOUR_MS$6;
+		const since = now - HOUR_MS$7;
 		const failed = { n: 0 };
 		const coverage = {
 			full: 0,
@@ -22896,7 +24355,7 @@ function createIngestHealthEvaluator(ctx, sources, alertTarget = ctx) {
 		}
 	}
 	function alertSnapshot(now, next) {
-		const since = now - HOUR_MS$6;
+		const since = now - HOUR_MS$7;
 		let failedRows = 0;
 		const rows = (sql, params) => {
 			try {
@@ -23131,7 +24590,7 @@ var ChangesRepo = class {
 
 //#endregion
 //#region packages/engine/src/db/repos/ingest-errors.ts
-const COLUMNS$3 = `id, at, source, code, file_id AS fileId, segment, byte_offset AS byteOffset, session_uid AS sessionUid, detail`;
+const COLUMNS$4 = `id, at, source, code, file_id AS fileId, segment, byte_offset AS byteOffset, session_uid AS sessionUid, detail`;
 /** Column caps of 03 3.5, in code points (SQLite `length()` counts characters). */
 const DETAIL_CAP = 200;
 const SEGMENT_CAP = 128;
@@ -23158,7 +24617,7 @@ var IngestErrorsRepo = class {
 	/** Newest first; `beforeId` continues after the last id of the previous page (keyset, `idx_ingest_errors_at`). */
 	recent(ctx, limit, beforeId) {
 		this.db.assertScope(ctx);
-		return this.db.driver.prepare(`SELECT ${COLUMNS$3} FROM ingest_errors
+		return this.db.driver.prepare(`SELECT ${COLUMNS$4} FROM ingest_errors
          WHERE (:beforeId IS NULL OR id < :beforeId) ORDER BY id DESC LIMIT :limit`).all({
 			beforeId,
 			limit: rowLimit(limit)
@@ -23201,7 +24660,7 @@ const DetailSchema = record$1(string(), union([
 	boolean(),
 	_null()
 ]));
-const COLUMNS$2 = "id, session_id AS sessionId, scope_key AS scopeKey, kind, at, detail";
+const COLUMNS$3 = "id, session_id AS sessionId, scope_key AS scopeKey, kind, at, detail";
 function toRow$2(row) {
 	let detail = {};
 	try {
@@ -23280,7 +24739,7 @@ var ReconciliationsRepo = class {
 	/** Newest first (`idx_reconciliations_session`). */
 	listBySession(ctx, sessionId, limit) {
 		this.db.assertScope(ctx);
-		return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM reconciliations WHERE session_id = :sessionId ORDER BY at DESC, id DESC LIMIT :limit`).all({
+		return this.db.driver.prepare(`SELECT ${COLUMNS$3} FROM reconciliations WHERE session_id = :sessionId ORDER BY at DESC, id DESC LIMIT :limit`).all({
 			sessionId,
 			limit: rowLimit(limit)
 		}).map(toRow$2);
@@ -23288,7 +24747,7 @@ var ReconciliationsRepo = class {
 	/** Records of one kind strictly newer than `at`, newest first (`idx_reconciliations_kind_at`). */
 	newerThan(ctx, kind, at, limit) {
 		this.db.assertScope(ctx);
-		return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM reconciliations WHERE kind = :kind AND at > :at ORDER BY at DESC, id DESC LIMIT :limit`).all({
+		return this.db.driver.prepare(`SELECT ${COLUMNS$3} FROM reconciliations WHERE kind = :kind AND at > :at ORDER BY at DESC, id DESC LIMIT :limit`).all({
 			kind,
 			at,
 			limit: rowLimit(limit)
@@ -23789,14 +25248,14 @@ var UsageRepo = class {
 
 //#endregion
 //#region packages/engine/src/maintenance/retention.ts
-const HOUR_MS$5 = 36e5;
-const DAY_MS$2 = 24 * HOUR_MS$5;
+const HOUR_MS$6 = 36e5;
+const DAY_MS$2 = 24 * HOUR_MS$6;
 /** Rows per transaction of the automatic retention and of the timeline step (03 3.8). */
 const BATCH_ROWS = 5e3;
 /** Pages per `incremental_vacuum` step (03 3.8). */
 const VACUUM_PAGES = 2e3;
 /** A hook probe is only needed until its answer is read (03 3.8). */
-const PROBE_MAX_AGE_MS = 24 * HOUR_MS$5;
+const PROBE_MAX_AGE_MS = 24 * HOUR_MS$6;
 /** Lets the ingest writer (and the rest of the event loop) run between two transactions. */
 function yieldToLoop$1() {
 	return new Promise((resolve) => {
@@ -23866,7 +25325,7 @@ async function runBookkeepingRetention(db, ctx, config, now, options = {}) {
 	const alerts = new AlertsRepo(db);
 	const reconciliations = new ReconciliationsRepo(db);
 	const probes = new HookProbesRepo(db);
-	const byAge = await drain(db, ctx, limit, signal, (tx) => changes.deleteOlderThan(ctx, tx, now - config.changesMaxAgeHours * HOUR_MS$5, limit));
+	const byAge = await drain(db, ctx, limit, signal, (tx) => changes.deleteOlderThan(ctx, tx, now - config.changesMaxAgeHours * HOUR_MS$6, limit));
 	const byCount = await drain(db, ctx, limit, signal, (tx) => changes.deleteBeyondMaxRows(ctx, tx, config.changesMaxRows, limit));
 	const ingestErrors = await drain(db, ctx, limit, signal, (tx) => errors.trimToNewest(ctx, tx, config.ingestErrorsMaxRows, limit));
 	const resolvedCutoff = now - config.resolvedAlertsDays * DAY_MS$2;
@@ -24110,6 +25569,145 @@ function createDbScheduler(ctx) {
 }
 
 //#endregion
+//#region packages/engine/src/db/repos/projects.ts
+const COLUMNS$2 = `id, project_key AS projectKey, dir_name AS dirName, root_path AS rootPath, first_seen_at AS firstSeenAt,
+  last_activity_at AS lastActivityAt`;
+var ProjectsRepo = class {
+	db;
+	constructor(db) {
+		this.db = db;
+	}
+	/** Inserts the project or advances it: the first seen time and a known root path stay, the last activity only grows. */
+	ensure(ctx, _tx, p) {
+		this.db.assertScope(ctx);
+		const row = this.db.driver.prepare(`INSERT INTO projects (project_key, dir_name, root_path, first_seen_at, last_activity_at)
+         VALUES (:projectKey, :dirName, :rootPath, :at, :at)
+         ON CONFLICT(project_key) DO UPDATE SET
+           root_path = coalesce(projects.root_path, excluded.root_path),
+           last_activity_at = max(projects.last_activity_at, excluded.last_activity_at)
+         RETURNING id`).get({
+			projectKey: p.projectKey,
+			dirName: p.dirName,
+			rootPath: p.rootPath,
+			at: p.at
+		});
+		if (row === void 0) throw new Error("INSERT ... RETURNING answered no row");
+		return row.id;
+	}
+	byKey(ctx, projectKey) {
+		this.db.assertScope(ctx);
+		return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM projects WHERE project_key = :projectKey`).get({ projectKey });
+	}
+	/** Most recently active first. */
+	list(ctx) {
+		this.db.assertScope(ctx);
+		return this.db.driver.prepare(`SELECT ${COLUMNS$2} FROM projects ORDER BY last_activity_at DESC, id DESC`).all();
+	}
+};
+
+//#endregion
+//#region packages/engine/src/projects/folder-key.ts
+/** The names a project folder may have (`projects.dir_name` holds up to 255 characters); anything else is no project. */
+const PROJECT_DIR_NAME_RE = /^[A-Za-z0-9-]{1,255}$/;
+/** The longest root path the `projects` table stores. */
+const ROOT_PATH_MAX = 1024;
+/** The key of a Claude folder name: lower case, or null when the name cannot be a project folder. */
+function keyOfDirName(dirName) {
+	return PROJECT_DIR_NAME_RE.test(dirName) ? dirName.toLowerCase() : null;
+}
+/** The key of a working directory, built on the one folder-name rule of `discovery.ts`. */
+function folderKeyOfPath(directory) {
+	const { name, truncated } = projectFolderName(directory);
+	return {
+		key: name.toLowerCase(),
+		prefix: truncated
+	};
+}
+/**
+* True when the Claude folder `dirName` is the folder of `folder`: the same lower-cased name, or, for a cut name, a name that
+* starts with the cut key and a dash (the rest is the hash Claude appended).
+*/
+function dirMatchesKey(dirName, folder) {
+	const key = keyOfDirName(dirName);
+	if (key === null) return false;
+	return folder.prefix ? key.startsWith(`${folder.key}-`) : key === folder.key;
+}
+/** The name of the folder that holds a transcript file, whichever separator the path uses (a hook reports the path of its own OS). */
+function dirNameOfTranscript(transcriptPath) {
+	const parts = transcriptPath.split(/[\\/]/);
+	if (parts.length < 2) return null;
+	const name = parts[parts.length - 2];
+	return name === void 0 || name === "" ? null : name;
+}
+/**
+* The project of a session from the path of its main transcript file and the working directory it reported. None when there
+* is no path or the folder name is not a project name. The root is the working directory, clipped to the column.
+*/
+function projectOfSeen(transcriptPath, cwd) {
+	if (transcriptPath === void 0) return null;
+	const dirName = dirNameOfTranscript(transcriptPath);
+	if (dirName === null) return null;
+	const key = keyOfDirName(dirName);
+	if (key === null) return null;
+	return {
+		key,
+		dirName,
+		root: cwd === void 0 || cwd === "" ? null : clipCodePoints$1(cwd, ROOT_PATH_MAX)
+	};
+}
+
+//#endregion
+//#region packages/engine/src/projects/backfill.ts
+/** Sessions per transaction: one short write at a time keeps the writer and the readers of the instance responsive. */
+const BACKFILL_BATCH = 500;
+/**
+* Assigns the projects that are missing. Safe to run at every start: a session that has a project is never looked at, and one
+* that cannot be assigned is passed over without a write. The loop yields to the event loop between transactions.
+*/
+async function backfillProjects(db, scope, options = {}) {
+	const batchSize = options.batchSize ?? 500;
+	if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new RangeError("the backfill batch is a positive whole number of sessions");
+	const sessions = new SessionsRepo(db);
+	const projects = new ProjectsRepo(db);
+	let scanned = 0;
+	let assigned = 0;
+	let afterId = 0;
+	for (;;) {
+		const batch = withWriteTx(db, scope, (tx) => {
+			const candidates = sessions.withoutProject(scope, afterId, batchSize);
+			const sink = createChangeSink(tx);
+			let done = 0;
+			for (const candidate of candidates) {
+				const seen = projectOfSeen(candidate.transcriptPath, candidate.cwd ?? void 0);
+				if (seen === null) continue;
+				const projectId = projects.ensure(scope, tx, {
+					projectKey: seen.key,
+					dirName: seen.dirName,
+					rootPath: seen.root,
+					at: candidate.lastActivityAt
+				});
+				const seq = sink.record("session", `${String(candidate.id)}:${candidate.sessionUid}`, "update");
+				sessions.update(scope, tx, candidate.id, { projectId }, seq);
+				done += 1;
+			}
+			return {
+				size: candidates.length,
+				assigned: done,
+				last: candidates[candidates.length - 1]?.id ?? afterId
+			};
+		});
+		scanned += batch.size;
+		assigned += batch.assigned;
+		afterId = batch.last;
+		if (batch.size < batchSize) return {
+			scanned,
+			assigned
+		};
+		await setImmediate$1();
+	}
+}
+
+//#endregion
 //#region packages/engine/src/ingest/errors.ts
 const INGEST_ERROR_CODES = [
 	"SPOOL_LINE_INVALID_JSON",
@@ -24294,7 +25892,7 @@ var SpoolCursorsRepo = class {
 /** Bytes of the head that identify a file. */
 const IDENTITY_HEAD_BYTES = 256;
 /** Error code of a failed file call, `'UNKNOWN'` when the error carries none. */
-function errorCodeOf$2(error) {
+function errorCodeOf$3(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 	return "UNKNOWN";
 }
@@ -24351,7 +25949,7 @@ async function checkIdentity(path, stored, storedSize, lowestCursor, storedMtime
 	try {
 		st = await stat(path, { bigint: true });
 	} catch (error) {
-		const code = errorCodeOf$2(error);
+		const code = errorCodeOf$3(error);
 		return classifyFsError(code) === "missing" ? { kind: "missing" } : {
 			kind: "unreadable",
 			code
@@ -24383,7 +25981,7 @@ async function checkIdentity(path, stored, storedSize, lowestCursor, storedMtime
 			try {
 				head = await readHead(path, size);
 			} catch (error) {
-				const code = errorCodeOf$2(error);
+				const code = errorCodeOf$3(error);
 				return classifyFsError(code) === "missing" ? { kind: "missing" } : {
 					kind: "unreadable",
 					code
@@ -24404,7 +26002,7 @@ async function checkIdentity(path, stored, storedSize, lowestCursor, storedMtime
 
 //#endregion
 //#region packages/engine/src/ingest/tail/line-splitter.ts
-const LF$1 = 10;
+const LF$2 = 10;
 const CR = 13;
 function emptyCounters() {
 	return {
@@ -24456,7 +26054,7 @@ var LineSplitter = class {
 	push(chunk, chunkStart, stop, out) {
 		let from = 0;
 		for (;;) {
-			const lf = chunk.indexOf(LF$1, from);
+			const lf = chunk.indexOf(LF$2, from);
 			if (lf < 0) {
 				this.#hold(chunk.subarray(from));
 				return false;
@@ -24726,7 +26324,7 @@ var JsonlTailer = class {
 				counters: result.counters
 			};
 		} catch (error) {
-			const code = errorCodeOf$2(error);
+			const code = errorCodeOf$3(error);
 			return classifyFsError(code) === "missing" ? { status: "missing" } : {
 				status: "unreadable",
 				code
@@ -25496,7 +27094,7 @@ function detailOf$1(data) {
 	return Object.keys(detail).length === 0 ? null : detail;
 }
 function preview(text) {
-	return text === void 0 ? null : clip(redact(text), 160);
+	return text === void 0 ? null : clip$1(redact(text), 160);
 }
 function infoOf(sid, stamp, what, detail) {
 	return detail === void 0 ? {
@@ -25991,6 +27589,7 @@ function changedSessionPatch(row, wanted) {
 	if (wanted.agentCount !== void 0 && wanted.agentCount !== row.agentCount) patch.agentCount = wanted.agentCount;
 	if (wanted.cwd !== void 0 && wanted.cwd !== row.cwd) patch.cwd = wanted.cwd;
 	if (wanted.claudePid !== void 0 && wanted.claudePid !== row.claudePid) patch.claudePid = wanted.claudePid;
+	if (wanted.projectId !== void 0 && wanted.projectId !== row.projectId) patch.projectId = wanted.projectId;
 	return patch;
 }
 function createIngestWriter(options) {
@@ -26007,6 +27606,7 @@ function createIngestWriter(options) {
 	let itemsPerTx = Math.min(options.maxItemsPerTx ?? DEFAULT_ITEMS_PER_TX, DEFAULT_ITEMS_PER_TX * 10);
 	const itemsPerTxCap = itemsPerTx;
 	const sessions = new SessionsRepo(db);
+	const projects = new ProjectsRepo(db);
 	const agents = new AgentsRepo(db);
 	const events = new EventsRepo(db);
 	const toolCalls = new ToolCallsRepo(db);
@@ -26194,6 +27794,14 @@ function createIngestWriter(options) {
 		c.working.set(uid, w);
 		return w;
 	}
+	/** The first usable project of the transaction stays; a later event of the same session only supplies a root that was missing. */
+	function rememberProject(w, seen) {
+		if (seen === null) return;
+		w.project = w.project === void 0 ? seen : {
+			...w.project,
+			root: w.project.root ?? seen.root
+		};
+	}
 	function upsertAgent(c, w, a) {
 		const spec = {
 			...a,
@@ -26366,6 +27974,7 @@ function createIngestWriter(options) {
 					if (event.version !== void 0) w.patch.ccVersion = clipCodePoints$1(event.version, 32);
 					if (event.gitBranch !== void 0) w.patch.gitBranch = clipCodePoints$1(event.gitBranch, 255);
 				}
+				rememberProject(w, projectOfSeen(event.transcriptPath, event.cwd));
 				break;
 			case "session.start":
 				if (event.model !== void 0) w.patch.lastModel = clipCodePoints$1(event.model, 128);
@@ -26735,9 +28344,16 @@ function createIngestWriter(options) {
 		if (row !== void 0) {
 			const startedAt = Math.min(row.startedAt, w.startedAt);
 			const pid = facts.claudePid?.value;
+			const lastActivityAt = Math.max(startedAt, maxOf(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt));
+			const projectId = row.projectId === null && w.project !== void 0 ? projects.ensure(scope, c.tx, {
+				projectKey: w.project.key,
+				dirName: w.project.dirName,
+				rootPath: w.project.root,
+				at: lastActivityAt
+			}) : void 0;
 			const patch = changedSessionPatch(row, {
 				startedAt,
-				lastActivityAt: Math.max(startedAt, maxOf(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt)),
+				lastActivityAt,
 				lastHookAt: facts.lastHookAt ?? row.lastHookAt,
 				endedAt: facts.end === null ? row.endedAt : Math.max(startedAt, facts.end.stamp.at),
 				eventCount: row.eventCount + w.eventsInserted,
@@ -26745,7 +28361,8 @@ function createIngestWriter(options) {
 				warningCount: row.warningCount + w.warningEvents,
 				agentCount: agents.countBySession(scope, w.rowId),
 				...w.patch.cwd === void 0 ? {} : { cwd: w.patch.cwd },
-				...pid === void 0 || pid <= 0 ? {} : { claudePid: pid }
+				...pid === void 0 || pid <= 0 ? {} : { claudePid: pid },
+				...projectId === void 0 ? {} : { projectId }
 			});
 			const stored = db.driver.prepare(`SELECT entrypoint, cc_version AS ccVersion, git_branch AS gitBranch, last_model AS lastModel, title_ai AS titleAi,
                   title_custom AS titleCustom, continued_in AS continuedIn, copied_from AS copiedFrom,
@@ -27890,7 +29507,7 @@ const MAIN_KEYS = [
 	"cache_read_input_tokens",
 	"cache_creation_input_tokens"
 ];
-function positive(value) {
+function positive$1(value) {
 	return isValid(value) && value > 0;
 }
 /** `iterations[0]` when it is an object (02 6.2 rule 3), else `undefined`. */
@@ -27916,7 +29533,7 @@ function usageOfRecord(record, site) {
 	const usage = isRec$1(message.usage) ? message.usage : void 0;
 	const top = MAIN_KEYS.map((key) => read(usage, key));
 	const iteration = firstIteration(usage);
-	const useIterations = iteration !== void 0 && top.every((r) => (r.value ?? 0) === 0) && MAIN_KEYS.some((key) => positive(iteration[key]));
+	const useIterations = iteration !== void 0 && top.every((r) => (r.value ?? 0) === 0) && MAIN_KEYS.some((key) => positive$1(iteration[key]));
 	const source = useIterations ? iteration : usage;
 	const main = useIterations ? MAIN_KEYS.map((key) => read(source, key)) : top;
 	const split = child(source, "cache_creation");
@@ -27994,18 +29611,18 @@ function compileSessionRules(rules) {
 		};
 	});
 }
-function isPlain$1(value) {
+function isPlain$3(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** The text blocks of a user record (legacy `_blocks`): the string content, or the `text` of every `type: 'text'` block. */
 function blocksOf$1(record) {
 	const message = record["message"];
-	const content = isPlain$1(message) ? message["content"] : void 0;
+	const content = isPlain$3(message) ? message["content"] : void 0;
 	if (typeof content === "string") return [content];
 	if (!Array.isArray(content)) return [];
 	const blocks = content;
 	const texts = [];
-	for (const block of blocks) if (isPlain$1(block) && block["type"] === "text") texts.push(block["text"] ?? "");
+	for (const block of blocks) if (isPlain$3(block) && block["type"] === "text") texts.push(block["text"] ?? "");
 	return texts;
 }
 function nonEmpty(value) {
@@ -28035,7 +29652,7 @@ function userTexts(head, limit = USER_TEXT_LIMIT) {
 	const out = [];
 	for (const { lineNo, record } of head) {
 		if (lineNo > 401 || out.length >= limit) break;
-		if (!isPlain$1(record) || record["type"] !== "user") continue;
+		if (!isPlain$3(record) || record["type"] !== "user") continue;
 		for (const text of blocksOf$1(record)) if (nonEmpty(text) && !BOILER.test(text)) out.push(text);
 	}
 	return out;
@@ -28044,7 +29661,7 @@ function userTexts(head, limit = USER_TEXT_LIMIT) {
 function firstUserText(head) {
 	for (const { lineNo, record } of head) {
 		if (lineNo > FIRST_TEXT_LINE_LIMIT) break;
-		if (!isPlain$1(record) || record["type"] !== "user") continue;
+		if (!isPlain$3(record) || record["type"] !== "user") continue;
 		for (const text of blocksOf$1(record)) if (nonEmpty(text)) return text;
 	}
 	return "";
@@ -28085,6 +29702,99 @@ function classify(head, rules, options) {
 		ruleIndex: null,
 		labelSource: label === "" ? "none" : "first_prompt",
 		classifiedLines
+	};
+}
+
+//#endregion
+//#region packages/engine/src/ingest/transcripts/discover-projects.ts
+/** The name of a folder below `<claude home>/projects`: what Claude Code makes of a path, which is `[A-Za-z0-9-]` only. */
+const PROJECT_FOLDER_NAME_RE = /^[A-Za-z0-9-]{1,255}$/;
+/** Folders looked at together (the `lstat` of a listing, the main-file probe of a session search). */
+const FOLDER_PARALLEL = 32;
+/**
+* One level of `<home>/projects`: real folders only (a link or junction is counted, never entered), names of the form
+* `PROJECT_FOLDER_NAME_RE`, newest modification time first and ties by name. An odd name (a dot file, a `.key`, a space) is
+* counted as ignored without being looked at.
+*/
+async function listProjectFolders(root, fs = nodeDiscoveryFs) {
+	let names;
+	try {
+		names = await fs.readdir(root);
+	} catch {
+		return {
+			folders: [],
+			missing: true,
+			linksSkipped: 0,
+			ignored: 0
+		};
+	}
+	const candidates = names.filter((name) => PROJECT_FOLDER_NAME_RE.test(name));
+	let ignored = names.length - candidates.length;
+	let linksSkipped = 0;
+	const looked = await mapLimit(candidates, 32, async (name) => ({
+		name,
+		stat: await fs.lstat(path.join(root, name))
+	}));
+	const folders = [];
+	for (const { name, stat } of looked) if (stat?.kind === "link") linksSkipped += 1;
+	else if (stat?.kind === "dir") folders.push({
+		name,
+		dir: path.join(root, name),
+		mtimeMs: stat.mtimeMs
+	});
+	else ignored += 1;
+	folders.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+	return {
+		folders,
+		missing: false,
+		linksSkipped,
+		ignored
+	};
+}
+/**
+* Pure: which folders to look into this tick, in the order of `list` (newest first). `full` when the first sweep or the
+* interval is due: then every folder. Otherwise the folders that are hot, hinted, new, or whose modification time differs from
+* the last look; a quiet tick chooses none.
+*/
+function selectFolders(list, state, nowMs, options) {
+	const full = state.lastFullAt === null || nowMs - state.lastFullAt >= options.fullSweepIntervalMs;
+	if (full) return {
+		chosen: [...list],
+		full
+	};
+	return {
+		chosen: list.filter((folder) => options.hot.has(folder.name) || options.hinted.has(folder.name) || state.mtimes.get(folder.name) !== folder.mtimeMs),
+		full
+	};
+}
+/**
+* The folder that holds a session id which a registry entry or the linker names: `firstFolder` (the folder name derived from
+* the working directory) first, then one `lstat` of `<folder>/<id>.jsonl` in every project folder, newest folder first; then
+* `discoverSession` in the folder that has it, whatever the age policy says. The id is validated before any path is built;
+* `firstFolder` must look like a project folder name or it is not used. Null when no folder has the session.
+*/
+async function discoverSessionAnywhere(root, sessionId, fs = nodeDiscoveryFs, firstFolder) {
+	if (!SID_RE.test(sessionId)) return null;
+	let tried = null;
+	if (firstFolder !== void 0 && PROJECT_FOLDER_NAME_RE.test(firstFolder)) {
+		tried = firstFolder;
+		const dir = path.join(root, firstFolder);
+		const session = await discoverSession(dir, sessionId, fs);
+		if (session !== null) return {
+			dir,
+			session
+		};
+	}
+	const others = (await listProjectFolders(root, fs)).folders.filter((folder) => folder.name !== tried);
+	const hasMain = await mapLimit(others, 32, async (folder) => {
+		return (await fs.lstat(path.join(folder.dir, `${sessionId}.jsonl`)))?.kind === "file";
+	});
+	const hit = others.find((_, at) => hasMain[at] === true);
+	if (hit === void 0) return null;
+	const session = await discoverSession(hit.dir, sessionId, fs);
+	return session === null ? null : {
+		dir: hit.dir,
+		session
 	};
 }
 
@@ -28803,10 +30513,10 @@ function normalizeRecord(rec, file, at, opts = {}) {
 		ignoredAttachment
 	};
 }
-const MAX_NAMES = 64;
+const MAX_NAMES$1 = 64;
 function bump(counts, name) {
 	const key = clipCodePoints$1(name, 64);
-	const slot = counts.has(key) || counts.size < MAX_NAMES ? key : "other";
+	const slot = counts.has(key) || counts.size < MAX_NAMES$1 ? key : "other";
 	counts.set(slot, (counts.get(slot) ?? 0) + 1);
 }
 /** Parses, validates and normalizes lines of ONE file, in order. A bad line is counted, never thrown. */
@@ -28882,7 +30592,7 @@ function normalizeRecords(lines, file, state, opts = {}) {
 //#endregion
 //#region packages/engine/src/ingest/transcripts/importer.ts
 const MIB$2 = 1048576;
-const HOUR_MS$4 = 36e5;
+const HOUR_MS$5 = 36e5;
 const DEFAULT_IMPORT_SETTINGS = {
 	lookbackHours: 8,
 	headMaxBytes: 16 * MIB$2,
@@ -28892,7 +30602,11 @@ const DEFAULT_IMPORT_SETTINGS = {
 	sliceMs: 20
 };
 const DEFAULT_CHUNK_BYTES = 262144;
-const STAT_PARALLEL = 32;
+const STAT_PARALLEL$1 = 32;
+const DEFAULT_FULL_SWEEP_MS = 6e4;
+const DEFAULT_COLD_STAT_MS = 1e4;
+/** A file that has not grown for this long is cold: in scope `all` it is looked at every `coldStatIntervalMs` only. */
+const COLD_AFTER_MS = 3e5;
 const MAX_TRACKED_ROWS = 1e6;
 const TITLE_KIND = "custom";
 function str(value) {
@@ -28940,6 +30654,17 @@ function createTranscriptImporter(options) {
 		sliceFailures: 0
 	};
 	let tdir = options.transcriptsDir ?? null;
+	const allProjects = options.projectScope === "all";
+	let projectsRoot = options.projectsRoot ?? null;
+	const fullSweepIntervalMs = options.fullSweepIntervalMs ?? DEFAULT_FULL_SWEEP_MS;
+	const coldStatIntervalMs = options.coldStatIntervalMs ?? DEFAULT_COLD_STAT_MS;
+	let lastFullAt = null;
+	const folderMtimes = /* @__PURE__ */ new Map();
+	const hintedFolders = /* @__PURE__ */ new Set();
+	let lastColdStatAt = null;
+	let truncationLogged = false;
+	const knownSessions = /* @__PURE__ */ new Map();
+	let hookKnown = /* @__PURE__ */ new Set();
 	let rules = compileSessionRules(options.rules ?? []);
 	let pinned = new Set(options.pinned ?? []);
 	let loaded = false;
@@ -29047,6 +30772,7 @@ function createTranscriptImporter(options) {
 			if (row.kind === "session") state.needsClassify = true;
 			states.set(state.id, state);
 			byKey.set(row.pathKey, state);
+			countKnown(state.sessionUid, state.state, 1);
 		}
 		loaded = true;
 	}
@@ -29068,11 +30794,20 @@ function createTranscriptImporter(options) {
 	function changedSinceCheck(file) {
 		return file.observedSize !== file.checkedSize || file.observedMtimeMs !== file.checkedMtimeMs;
 	}
+	/** A file that is not untracked keeps its session known (`delta` 1), until it is untracked (-1). */
+	function countKnown(sessionUid, state, delta) {
+		if (state === "untracked") return;
+		const next = (knownSessions.get(sessionUid) ?? 0) + delta;
+		if (next > 0) knownSessions.set(sessionUid, next);
+		else knownSessions.delete(sessionUid);
+	}
 	function markState(file, next) {
 		if (file.state === next) return;
 		withWriteTx(db, scope, (tx) => {
 			files.setState(scope, tx, file.id, next);
 		});
+		countKnown(file.sessionUid, file.state, -1);
+		countKnown(file.sessionUid, next, 1);
 		file.state = next;
 	}
 	function workOf(file) {
@@ -29197,6 +30932,7 @@ function createTranscriptImporter(options) {
           WHERE o.file_id = ? GROUP BY s.session_uid ORDER BY s.session_uid`).all([file.id]);
 		const items = [];
 		for (const { source, n } of rows) {
+			if (source === file.sessionUid) continue;
 			if (file.copyReported.get(source) === n) continue;
 			file.copyReported.set(source, n);
 			items.push(eventItem([{
@@ -29800,9 +31536,11 @@ function createTranscriptImporter(options) {
 		}
 	}
 	function isKnown(sessionId) {
-		for (const file of states.values()) if (file.sessionUid === sessionId && file.state !== "untracked") return true;
-		const row = sessions.byUid(scope, sessionId);
-		return row !== void 0 && row.lastHookAt !== null;
+		return knownSessions.has(sessionId) || hookKnown.has(sessionId);
+	}
+	/** The sessions with hook events, read once for one discovery call instead of one row per candidate. */
+	function loadHookKnown() {
+		hookKnown = new Set(db.driver.prepare("SELECT session_uid FROM sessions WHERE last_hook_at IS NOT NULL").all().map((row) => row.session_uid));
 	}
 	function registerFile(d) {
 		const key = routeKey(d.path);
@@ -29833,6 +31571,7 @@ function createTranscriptImporter(options) {
 		state.checkedMtimeMs = state.mtimeSeen;
 		states.set(id, state);
 		byKey.set(key, state);
+		countKnown(state.sessionUid, state.state, 1);
 		return state;
 	}
 	async function refreshSmallFiles(session, found) {
@@ -29915,7 +31654,7 @@ function createTranscriptImporter(options) {
 			if (known.busy) continue;
 			known.observedSize = d.size;
 			known.observedMtimeMs = Math.floor(d.mtimeMs);
-			if (known.state === "untracked" && d.mtimeMs >= clock.now() - settings.lookbackHours * HOUR_MS$4) markState(known, "active");
+			if (known.state === "untracked" && d.mtimeMs >= clock.now() - settings.lookbackHours * HOUR_MS$5) markState(known, "active");
 		}
 		fresh.sort((a, b) => (a.birthMs ?? a.mtimeMs) - (b.birthMs ?? b.mtimeMs) || a.path.localeCompare(b.path));
 		for (const d of fresh) registerFile(d);
@@ -29925,49 +31664,162 @@ function createTranscriptImporter(options) {
 	function untrackIdle(now) {
 		for (const file of states.values()) {
 			if (file.busy || !active(file) || file.kind === "workflow_status") continue;
-			if (now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) <= settings.untrackAfterHours * HOUR_MS$4) continue;
+			if (now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) <= settings.untrackAfterHours * HOUR_MS$5) continue;
 			if (headDone(file) && file.observedSize > file.tailOffset + file.partialBytes) continue;
 			const view = sessions.byUid(scope, file.sessionUid)?.state;
 			if (view === "completed" || view === "failed" || view === "stale") markState(file, "untracked");
 		}
 	}
-	async function discover() {
-		loadKnown();
-		if (tdir === null || closed) return {
+	/** Said once, as a count: a folder had more entries than the budget of one pass (never a path). */
+	function noteTruncated(truncatedFolders) {
+		if (truncatedFolders === 0 || truncationLogged) return;
+		truncationLogged = true;
+		options.logger?.warn("discovery_truncated", { truncatedFolders });
+	}
+	/** What follows every discovery: idle files are untracked and the head records of new sessions are classified. */
+	async function afterDiscovery(now) {
+		untrackIdle(now);
+		for (const file of [...states.values()]) if (file.needsClassify && file.kind === "session" && !file.busy && headDone(file) && active(file)) {
+			file.needsClassify = false;
+			await classifyFile(file);
+		}
+		stats.lastScanAt = clock.now();
+	}
+	/** The folders that hold a tracked file that is still active: their names below the projects folder. */
+	function hotFolders(root) {
+		const hot = /* @__PURE__ */ new Set();
+		for (const file of states.values()) {
+			if (file.state !== "active") continue;
+			const relative = path.relative(root, file.path);
+			if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+			const name = relative.split(path.sep)[0];
+			if (name !== void 0 && name !== "") hot.add(name);
+		}
+		return hot;
+	}
+	/** Scope `all`: the project folders that are hot, changed or hinted, or every folder when the full sweep is due. */
+	async function discoverAll(root) {
+		const now = clock.now();
+		const list = await listProjectFolders(root, fsx);
+		if (list.missing) return {
 			sessions: 0,
 			newFiles: 0,
 			symlinksSkipped: 0,
-			missingDir: tdir === null
+			missingDir: true,
+			folders: 0,
+			truncatedFolders: 0
+		};
+		const hinted = new Set(list.folders.filter((f) => hintedFolders.has(f.name.toLowerCase())).map((f) => f.name));
+		hintedFolders.clear();
+		const { chosen, full } = selectFolders(list.folders, {
+			lastFullAt,
+			mtimes: folderMtimes
+		}, now, {
+			fullSweepIntervalMs,
+			hot: hotFolders(root),
+			hinted
+		});
+		loadHookKnown();
+		const policy = {
+			nowMs: now,
+			lookbackMs: settings.lookbackHours * HOUR_MS$5,
+			pinned,
+			isKnown
+		};
+		let sessionCount = 0;
+		let newFiles = 0;
+		let symlinksSkipped = list.linksSkipped;
+		let folders = 0;
+		let truncatedFolders = 0;
+		let finished = true;
+		for (const folder of chosen) {
+			if (closed) {
+				finished = false;
+				break;
+			}
+			const result = await discoverTranscripts(folder.dir, policy, fsx, { concurrency: 32 });
+			if (!result.missing) {
+				newFiles += await trackSessions(result.sessions);
+				folders += 1;
+				sessionCount += result.sessions.length;
+				symlinksSkipped += result.counters.symlinksSkipped;
+				if (result.counters.truncated) truncatedFolders += 1;
+				folderMtimes.set(folder.name, folder.mtimeMs);
+			}
+			await setImmediate$1();
+		}
+		if (full && finished) lastFullAt = now;
+		const present = new Set(list.folders.map((f) => f.name));
+		for (const name of [...folderMtimes.keys()]) if (!present.has(name)) folderMtimes.delete(name);
+		noteTruncated(truncatedFolders);
+		await afterDiscovery(now);
+		return {
+			sessions: sessionCount,
+			newFiles,
+			symlinksSkipped,
+			missingDir: false,
+			folders,
+			truncatedFolders
+		};
+	}
+	async function discover() {
+		loadKnown();
+		const dir = allProjects ? projectsRoot : tdir;
+		if (dir === null || closed) return {
+			sessions: 0,
+			newFiles: 0,
+			symlinksSkipped: 0,
+			missingDir: dir === null,
+			folders: 0,
+			truncatedFolders: 0
 		};
 		discovering += 1;
 		try {
+			if (allProjects) return await discoverAll(dir);
 			const now = clock.now();
-			const result = await discoverTranscripts(tdir, {
+			loadHookKnown();
+			const result = await discoverTranscripts(dir, {
 				nowMs: now,
-				lookbackMs: settings.lookbackHours * HOUR_MS$4,
+				lookbackMs: settings.lookbackHours * HOUR_MS$5,
 				pinned,
 				isKnown
 			}, fsx);
 			const newFiles = await trackSessions(result.sessions);
-			untrackIdle(now);
-			for (const file of [...states.values()]) if (file.needsClassify && file.kind === "session" && !file.busy && headDone(file) && active(file)) {
-				file.needsClassify = false;
-				await classifyFile(file);
-			}
-			stats.lastScanAt = clock.now();
+			const truncatedFolders = result.counters.truncated ? 1 : 0;
+			noteTruncated(truncatedFolders);
+			await afterDiscovery(now);
 			return {
 				sessions: result.sessions.length,
 				newFiles,
 				symlinksSkipped: result.counters.symlinksSkipped,
-				missingDir: result.missing
+				missingDir: result.missing,
+				folders: result.missing ? 0 : 1,
+				truncatedFolders
 			};
 		} finally {
 			discovering -= 1;
 		}
 	}
-	async function discoverSession$1(sessionId) {
+	async function discoverSession$1(sessionId, cwd) {
 		loadKnown();
-		if (tdir === null || closed) return false;
+		if (closed) return false;
+		if (allProjects) {
+			if (projectsRoot === null) return false;
+			discovering += 1;
+			try {
+				const first = cwd === void 0 || cwd === null || cwd === "" ? void 0 : projectFolderName(cwd).name;
+				const found = await discoverSessionAnywhere(projectsRoot, sessionId, fsx, first);
+				if (found === null) {
+					if (first !== void 0) hintedFolders.add(first.toLowerCase());
+					return false;
+				}
+				await trackSessions([found.session]);
+				return true;
+			} finally {
+				discovering -= 1;
+			}
+		}
+		if (tdir === null) return false;
 		discovering += 1;
 		try {
 			const found = await discoverSession(tdir, sessionId, fsx);
@@ -29989,14 +31841,18 @@ function createTranscriptImporter(options) {
 			}
 		} catch (error) {
 			if (file.busy) return;
-			const code = errorCodeOf$2(error);
+			const code = errorCodeOf$3(error);
 			markState(file, classifyFsError(code) === "missing" ? "missing" : "unreadable");
 		}
 	}
 	async function statTick() {
 		loadKnown();
-		const list = [...states.values()].filter((file) => file.state !== "untracked" && file.state !== "retired" && file.kind !== "workflow_status");
-		for (let i = 0; i < list.length; i += STAT_PARALLEL) await Promise.all(list.slice(i, i + STAT_PARALLEL).map(statOne));
+		const now = clock.now();
+		const coldDue = !allProjects || lastColdStatAt === null || now - lastColdStatAt >= coldStatIntervalMs;
+		if (allProjects && coldDue) lastColdStatAt = now;
+		const cold = (file) => allProjects && now - (file.lastGrowthAt ?? file.mtimeSeen ?? file.discoveredAt) > COLD_AFTER_MS;
+		const list = [...states.values()].filter((file) => file.state !== "untracked" && file.state !== "retired" && file.kind !== "workflow_status" && (coldDue || !cold(file)));
+		for (let i = 0; i < list.length; i += STAT_PARALLEL$1) await Promise.all(list.slice(i, i + STAT_PARALLEL$1).map(statOne));
 		stats.lastScanAt = clock.now();
 		refreshStats();
 		if (stats.bytesBehind === 0 && discovering === 0) stats.lastSyncAt = clock.now();
@@ -30037,6 +31893,9 @@ function createTranscriptImporter(options) {
 	return {
 		setTranscriptsDir(dir) {
 			tdir = dir;
+		},
+		setProjectsRoot(dir) {
+			projectsRoot = dir;
 		},
 		setRules(next, nextPinned) {
 			rules = compileSessionRules(next);
@@ -30118,8 +31977,19 @@ function sessionRulesOf(config) {
 		};
 	});
 }
-/** The folder of the transcripts: the configured one, or (`auto`, the shipped value, and null) the folder of the repository. */
+/**
+* True when the instance reads every project below the Claude home (`projects.scope`, `auto` follows the kind of the instance,
+* CAW design 03 2.1). Such an instance runs without hooks, so it has no route file.
+*/
+function readsAllProjects(ctx) {
+	return isAllScope(ctx.config.runtime.projects.scope, ctx.kind);
+}
+/**
+* The folder of the transcripts: in scope `all` the folder that holds every project (no repository to detect); else the
+* configured one, or (`auto`, the shipped value, and null) the folder of the repository.
+*/
 async function resolveTranscriptsDir(ctx) {
+	if (readsAllProjects(ctx)) return projectsRootOf(ctx.claudeHome);
 	const configured = ctx.config.monitor.transcripts_dir;
 	if (configured !== null && configured !== "" && configured !== "auto") return path.resolve(configured);
 	return detectTranscriptsDir(ctx.config.monitor.repo, path.join(ctx.claudeHome, "projects"));
@@ -30141,11 +32011,12 @@ function routeInstanceOf(ctx, transcriptsDir) {
 * service wrote the same content at its own start; the write is idempotent.
 */
 async function publishRouteFile(ctx) {
+	if (readsAllProjects(ctx)) return;
 	const dir = await resolveTranscriptsDir(ctx);
 	await writeRouteFile(routeInstanceOf(ctx, dir), { stoppedAt: null }, { now: ctx.clock.now() });
 }
 const IDLE_POLL_MS = 50;
-const HOUR_MS$3 = 36e5;
+const HOUR_MS$4 = 36e5;
 const ITEM_BYTES$1 = 200;
 const COMMIT_SAMPLES = 200;
 const MAX_TIMER_MS$2 = 2 ** 31 - 1;
@@ -30171,6 +32042,7 @@ function createIngestService(ctx, options = {}) {
 	const spoolDir = path.join(ctx.instanceDir, "data", "spool");
 	const idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
 	const sessions = new SessionsRepo(db);
+	const allProjects = readsAllProjects(ctx);
 	const commitDurations = [];
 	let txStartedAt = null;
 	const callerBeforeCommit = options.writer?.beforeCommit;
@@ -30224,6 +32096,12 @@ function createIngestService(ctx, options = {}) {
 		writer,
 		clock,
 		transcriptsDir: null,
+		...allProjects ? {
+			projectScope: "all",
+			projectsRoot: projectsRootOf(ctx.claudeHome),
+			fullSweepIntervalMs: ctx.config.runtime.projects.fullSweepIntervalMs,
+			coldStatIntervalMs: ctx.config.runtime.projects.coldStatIntervalMs
+		} : {},
 		settings: importSettingsOf(ctx.config),
 		rules: sessionRulesOf(ctx.config),
 		pinned: ctx.config.monitor.session_ids,
@@ -30231,6 +32109,7 @@ function createIngestService(ctx, options = {}) {
 	});
 	let transcriptsDir = null;
 	async function writeRoute(state) {
+		if (allProjects) return;
 		try {
 			await writeRouteFile(routeInstanceOf(ctx, transcriptsDir), state, { now: clock.now() });
 		} catch (error) {
@@ -30252,11 +32131,18 @@ function createIngestService(ctx, options = {}) {
 		importer.setTranscriptsDir(found);
 		if (accepting) await writeRoute({ stoppedAt: null });
 	}
+	/** The working folder that a hint came with, kept until the scheduler asks the importer for that session (bounded). */
+	const hintedCwds = /* @__PURE__ */ new Map();
+	const HINTED_CWDS_MAX = 1e3;
 	const importerPort = {
 		work: () => importer.work(),
 		runSlice: (work, deadline) => importer.runSlice(work, deadline),
 		statTick: () => importer.statTick(),
-		discoverSession: (sessionId) => importer.discoverSession(sessionId),
+		discoverSession: (sessionId) => {
+			const cwd = hintedCwds.get(sessionId) ?? null;
+			hintedCwds.delete(sessionId);
+			return importer.discoverSession(sessionId, cwd);
+		},
 		isIdle: () => importer.isIdle(),
 		discover: async () => {
 			await ensureTranscriptsDir();
@@ -30271,6 +32157,12 @@ function createIngestService(ctx, options = {}) {
 		backfillShare: ctx.config.runtime.import.backfillShare,
 		logger
 	});
+	/** Looks for the transcript of a session that is known to be live: the scheduler discovers it at once, whatever its age. */
+	function hint(sessionId, cwd) {
+		if (!accepting) return;
+		if (cwd !== null && hintedCwds.size < HINTED_CWDS_MAX) hintedCwds.set(sessionId, cwd);
+		scheduler.hint(sessionId);
+	}
 	const externalFs = options.externalFs ?? nodeExternalFs;
 	const alive = options.pidAlive ?? pidAlive;
 	const isKnownSession = (uid) => sessions.idByUid(scope, uid) !== void 0;
@@ -30279,7 +32171,10 @@ function createIngestService(ctx, options = {}) {
 		now: () => clock.now(),
 		isKnownSession,
 		pidAlive: alive,
-		fs: externalFs
+		fs: externalFs,
+		...allProjects ? { onUnknownSession: (sessionUid, cwd) => {
+			hint(sessionUid, cwd);
+		} } : {}
 	});
 	const jobs = createJobsReader({
 		claudeHome: ctx.claudeHome,
@@ -30391,11 +32286,27 @@ function createIngestService(ctx, options = {}) {
 			filesTracked: t.filesTracked
 		};
 	}
+	/**
+	* Sessions written before the project dimension was filled get their project now, once per start (CAW design 03 2.5). It runs
+	* before the producers start, so it never competes with the writer; a failure is logged as a code and never stops ingestion.
+	*/
+	async function backfillProjectDimension() {
+		try {
+			const result = await (options.backfillProjects ?? backfillProjects)(db, scope);
+			if (result.assigned > 0) logger.info("project_backfill", {
+				scanned: result.scanned,
+				assigned: result.assigned
+			});
+		} catch (error) {
+			logger.warn("project_backfill_failed", { code: failureCode(error) });
+		}
+	}
 	async function doStart() {
 		try {
 			unsubscribeCommits = onCommitted(db, noteCommit);
 			accepting = true;
 			bindActivityFlush(ctx, () => writer.flushActivity());
+			await backfillProjectDimension();
 			transcriptsDir = await resolveTranscriptsDir(ctx);
 			importer.setTranscriptsDir(transcriptsDir);
 			await writeRoute({ stoppedAt: null });
@@ -30445,7 +32356,7 @@ function createIngestService(ctx, options = {}) {
 		const hours = ctx.config.runtime.hooks.spoolWhileStoppedHours;
 		await within(deadlineMs + WRITER_CLOSE_GRACE_MS, writeRoute({
 			stoppedAt: now,
-			spoolUntil: hours > 0 ? now + hours * HOUR_MS$3 : null
+			spoolUntil: hours > 0 ? now + hours * HOUR_MS$4 : null
 		}));
 	}
 	async function doStop(deadlineMs) {
@@ -30492,6 +32403,9 @@ function createIngestService(ctx, options = {}) {
 		replay: (fromSegment) => {
 			if (!accepting) return Promise.reject(new IngestWriterClosedError());
 			return drainer.replay(fromSegment);
+		},
+		hintSession: (sessionId) => {
+			if (SID_RE.test(sessionId)) hint(sessionId, null);
 		},
 		stats
 	};
@@ -30750,7 +32664,7 @@ function agentRowId(db, sessionRowIdValue, agentUid) {
 		uid: agentUid
 	})?.id;
 }
-function iso(ms) {
+function iso$1(ms) {
 	return isoMsZ(ms);
 }
 function isoOrNull(ms) {
@@ -31012,7 +32926,7 @@ function idsParam(ids) {
 function toTransitionItem(row, nowMs) {
 	return {
 		id: row.id,
-		at: iso(row.at),
+		at: iso$1(row.at),
 		agentId: row.agentUid,
 		from: row.fromState,
 		to: row.toState,
@@ -31253,8 +33167,8 @@ function agentNodes(db, deps, rows) {
 			},
 			requestShape: row.requestShape,
 			model: row.model,
-			startedAt: iso(row.startedAt),
-			lastActivityAt: iso(row.lastActivityAt),
+			startedAt: iso$1(row.startedAt),
+			lastActivityAt: iso$1(row.lastActivityAt),
 			endedAt: isoOrNull(row.endedAt),
 			state: assessmentOf(row, nowMs),
 			usage: tokenUsageOf({
@@ -31368,7 +33282,7 @@ function createAgentQueries(db, deps) {
 			if (q.project !== void 0) where.push(`s.project_id IN (SELECT id FROM projects WHERE project_key IN ${bind.list(q.project)})`);
 			if (q.hasErrors === true) where.push("a.error_count > 0");
 			if (q.includeInternal !== true && q.kind?.includes("internal") !== true) where.push("a.kind <> 'internal'");
-			if (q.includeUnmatched !== true && !deps.config.monitor.include_unmatched) where.push("(s.matched = 1 OR s.pinned = 1)");
+			if (!unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q)) where.push("(s.matched = 1 OR s.pinned = 1)");
 			const expression = q.sort === "started" ? "a.started_at" : "a.last_activity_at";
 			if (resume !== null) {
 				const op = dir === "desc" ? "<" : ">";
@@ -31479,9 +33393,9 @@ function eventItems(db, rows) {
 			sessionLabel: row.sessionLabel,
 			agentId: row.agentUid,
 			agentLabel: agentLabelOf(row),
-			at: iso(row.ts),
+			at: iso$1(row.ts),
 			atSource: row.tsSource,
-			receivedAt: iso(row.receivedAt),
+			receivedAt: iso$1(row.receivedAt),
 			sources,
 			source: sources[0] ?? "monitor",
 			type: kind,
@@ -31865,7 +33779,7 @@ function summaryOf$1(row, side, nowMs) {
 	}, files);
 	const reported = row.reportedCostUsd === null || row.reportedCostAt === null ? null : {
 		amountUsd: row.reportedCostUsd,
-		at: iso(row.reportedCostAt),
+		at: iso$1(row.reportedCostAt),
 		trailing: side.trailing.get(row.id) ?? false,
 		label: "Reported by Claude Code (cumulative, not a bill)"
 	};
@@ -31885,8 +33799,8 @@ function summaryOf$1(row, side, nowMs) {
 		ccVersion: row.ccVersion,
 		models: stringList(row.models),
 		lastModel: row.lastModel,
-		startedAt: iso(row.startedAt),
-		lastActivityAt: iso(row.lastActivityAt),
+		startedAt: iso$1(row.startedAt),
+		lastActivityAt: iso$1(row.lastActivityAt),
 		endedAt: isoOrNull(row.endedAt),
 		durationMs: Math.max(0, (row.endedAt ?? row.lastActivityAt) - row.startedAt),
 		state: assessmentOf(row, nowMs),
@@ -31930,6 +33844,7 @@ function filterSql$1(deps, q, window, bind) {
 	}
 	where.push(`s.started_at < ${bind.bind(window.toMs)}`);
 	if (q.q !== void 0) where.push(`instr(s.search_text, ${bind.bind(foldQuery(q.q))}) > 0`);
+	if (q.session !== void 0) where.push(`s.session_uid IN ${bind.list(q.session)}`);
 	if (q.state !== void 0) where.push(`s.state IN ${bind.list(expandStateFilter(q.state))}`);
 	if (q.presence !== void 0) where.push(`s.presence IN ${bind.list(q.presence)}`);
 	if (q.project !== void 0) where.push(`s.project_id IN (SELECT id FROM projects WHERE project_key IN ${bind.list(q.project)})`);
@@ -31939,7 +33854,7 @@ function filterSql$1(deps, q, window, bind) {
 	const tokens = "s.tok_input + s.tok_output + s.tok_cache_read + s.tok_cache_creation";
 	if (q.tokensMin !== void 0) where.push(`(${tokens}) >= ${bind.bind(q.tokensMin)}`);
 	if (q.tokensMax !== void 0) where.push(`(${tokens}) <= ${bind.bind(q.tokensMax)}`);
-	if (q.includeUnmatched !== true && !deps.config.monitor.include_unmatched) where.push("(s.matched = 1 OR s.pinned = 1)");
+	if (!unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q)) where.push("(s.matched = 1 OR s.pinned = 1)");
 	return where;
 }
 const MAX_FILES = 500;
@@ -31951,7 +33866,7 @@ function detailOf(db, deps, row) {
 	const external = driver.prepare(`SELECT source, observed_at AS observedAt, value_json AS value FROM external_observations
         WHERE session_id = :sid ORDER BY source`).all({ sid: row.id }).map((item) => ({
 		source: item.source,
-		observedAt: iso(item.observedAt),
+		observedAt: iso$1(item.observedAt),
 		value: flatRecord(item.value)
 	}));
 	const workItems = driver.prepare(`SELECT w.id AS id, w.title AS title, w.state AS state FROM work_item_sessions ws
@@ -31970,7 +33885,7 @@ function detailOf(db, deps, row) {
 		limit: MAX_RECONCILIATIONS
 	}).map((item) => ({
 		kind: item.kind,
-		at: iso(item.at),
+		at: iso$1(item.at),
 		detail: flatRecord(item.detail)
 	}));
 	return {
@@ -32299,7 +34214,7 @@ function createAlertQueries(db, deps) {
 /** A stored row as the API item: the detail is the message (the code when there is none), the segment is the place. */
 function itemOf(row) {
 	return {
-		at: iso(row.at),
+		at: iso$1(row.at),
 		source: row.source,
 		code: row.code,
 		where: row.segment,
@@ -32962,7 +34877,7 @@ function mergedDrafts(env, by) {
 		cost: cost === null ? null : entry.ids.flatMap((id) => ownedBy(cost, id) ?? [])
 	}));
 }
-function rowOf$1(entries, currency, draft) {
+function rowOf$2(entries, currency, draft) {
 	return {
 		key: draft.key,
 		label: draft.label,
@@ -33016,7 +34931,7 @@ function buildUsageReport(db, ctx, deps, asOfSeq, req) {
 		case "project":
 		case "workItem": drafts = mergedDrafts(env, req.groupBy);
 	}
-	const rows = drafts.map((draft) => rowOf$1(entries, currency, draft)).sort(byUsage);
+	const rows = drafts.map((draft) => rowOf$2(entries, currency, draft)).sort(byUsage);
 	const nowMs = deps.now();
 	return {
 		asOfSeq,
@@ -33329,7 +35244,7 @@ function createOverviewQueries(db, deps) {
 		const nowMs = deps.now();
 		const asOf = isoMsZ(nowMs);
 		const window = resolveWindow(deps, q, "window", null);
-		const includeUnmatched = q.includeUnmatched === true || deps.config.monitor.include_unmatched;
+		const includeUnmatched = unmatchedVisible(deps.config, instanceKindOfConfig(deps.config), q);
 		const states = /* @__PURE__ */ new Map();
 		const sessionBind = new Binder();
 		for (const row of db.driver.prepare(`SELECT s.state AS state, count(*) AS n FROM sessions s
@@ -33503,7 +35418,7 @@ function itemsOf(db, rows) {
 			state: row.state,
 			boardReason: row.boardReason,
 			evidence: lines,
-			since: iso(row.stateSince),
+			since: iso$1(row.stateSince),
 			sessionIds: sessionIds.get(row.id) ?? [],
 			sessionCount: row.sessionCount,
 			lastActivityAt: isoOrNull(row.lastActivityAt),
@@ -33652,7 +35567,7 @@ var CheckpointsRepo = class {
 const TOOL_INPUT_CHARS = 4e3;
 const THINK_CHARS = 1500;
 const SUMMARY_CHARS = 160;
-const LF = String.fromCharCode(10);
+const LF$1 = String.fromCharCode(10);
 const SUMMARY_KEYS = [
 	"command",
 	"file_path",
@@ -33661,7 +35576,7 @@ const SUMMARY_KEYS = [
 	"prompt",
 	"script"
 ];
-function isPlain(value) {
+function isPlain$2(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function listOf(value) {
@@ -33712,7 +35627,7 @@ function toJsonDoc(value, depth) {
 		k: "arr",
 		v: items.map((item) => toJsonDoc(item, depth + 1))
 	};
-	if (isPlain(value)) {
+	if (isPlain$2(value)) {
 		const fields = [];
 		for (const [key, item] of Object.entries(value)) if (item !== void 0) fields.push([key, toJsonDoc(item, depth + 1)]);
 		return {
@@ -33738,7 +35653,7 @@ function reprOf(value) {
 	if (typeof value === "number") return Number.isInteger(value) ? String(value) : formatFloat(value);
 	const items = listOf(value);
 	if (items !== void 0) return `[${items.map(reprOf).join(", ")}]`;
-	if (isPlain(value)) return `{${Object.entries(value).map(([key, item]) => `${quoteText(key)}: ${reprOf(item)}`).join(", ")}}`;
+	if (isPlain$2(value)) return `{${Object.entries(value).map(([key, item]) => `${quoteText(key)}: ${reprOf(item)}`).join(", ")}}`;
 	return "";
 }
 /** Python `str()` of a JSON value, for the summary key of a tool input. */
@@ -33785,20 +35700,20 @@ function hasContent(text) {
 }
 /** The record time as the legacy code reads it: `timestamp` when it is a text, else the empty text. */
 function recordTimestamp(record) {
-	if (!isPlain(record)) return "";
+	if (!isPlain$2(record)) return "";
 	const stamp = record["timestamp"];
 	return typeof stamp === "string" ? stamp : "";
 }
 /** The `message.content` of a record: undefined unless `message` is an object. */
 function contentOf(record) {
 	const message = record["message"];
-	return isPlain(message) ? message["content"] : void 0;
+	return isPlain$2(message) ? message["content"] : void 0;
 }
 /** The text of a `tool_result` block: a list of text parts is joined with LF (legacy), a falsy value is the empty text. */
 function resultText(content) {
 	let value = content;
 	const parts = listOf(value);
-	if (parts !== void 0) value = parts.filter(isPlain).map((part) => typeof part["text"] === "string" ? part["text"] : "").join(LF);
+	if (parts !== void 0) value = parts.filter(isPlain$2).map((part) => typeof part["text"] === "string" ? part["text"] : "").join(LF$1);
 	return truthy(value) ? value : "";
 }
 /** The first line of the first truthy of `command`, `file_path`, `pattern`, `description`, `prompt`, `script` (legacy `key`). */
@@ -33807,7 +35722,7 @@ function summaryOf(input) {
 		const value = input[key];
 		if (truthy(value)) {
 			const text = pyStr(value);
-			const line = text.indexOf(LF);
+			const line = text.indexOf(LF$1);
 			return clipText(line < 0 ? text : text.slice(0, line), 160);
 		}
 	}
@@ -33818,7 +35733,7 @@ function summaryOf(input) {
 * `assistant` records produce entries; anything else, and any block of an unexpected shape, produces none.
 */
 function displayEntries(record, opts) {
-	if (!isPlain(record)) return [];
+	if (!isPlain$2(record)) return [];
 	const type = record["type"];
 	const content = contentOf(record);
 	const blocks = listOf(content);
@@ -33831,7 +35746,7 @@ function displayEntries(record, opts) {
 			text: clipText(content, opts.textChars)
 		});
 		else if (blocks !== void 0) for (const block of blocks) {
-			if (!isPlain(block)) continue;
+			if (!isPlain$2(block)) continue;
 			if (block["type"] === "text") out.push({
 				t,
 				k: "prompt",
@@ -33849,7 +35764,7 @@ function displayEntries(record, opts) {
 			}
 		}
 	} else if (type === "assistant" && blocks !== void 0) for (const block of blocks) {
-		if (!isPlain(block)) continue;
+		if (!isPlain$2(block)) continue;
 		const blockType = block["type"];
 		if (blockType === "text") {
 			const text = block["text"];
@@ -33860,7 +35775,7 @@ function displayEntries(record, opts) {
 			});
 		} else if (blockType === "tool_use") {
 			const rawInput = block["input"];
-			const input = isPlain(rawInput) ? rawInput : {};
+			const input = isPlain$2(rawInput) ? rawInput : {};
 			const id = block["id"];
 			const name = block["name"];
 			out.push({
@@ -33881,16 +35796,16 @@ function displayEntries(record, opts) {
 }
 /** `displayEntries(record, ...).length` without building any text (the entry index counts with this, 7.2). */
 function countEntries(record) {
-	if (!isPlain(record)) return 0;
+	if (!isPlain$2(record)) return 0;
 	const type = record["type"];
 	const content = contentOf(record);
 	const blocks = listOf(content);
 	let count = 0;
 	if (type === "user") {
 		if (typeof content === "string") return 1;
-		for (const block of blocks ?? []) if (isPlain(block) && (block["type"] === "text" || block["type"] === "tool_result")) count += 1;
+		for (const block of blocks ?? []) if (isPlain$2(block) && (block["type"] === "text" || block["type"] === "tool_result")) count += 1;
 	} else if (type === "assistant") for (const block of blocks ?? []) {
-		if (!isPlain(block)) continue;
+		if (!isPlain$2(block)) continue;
 		const blockType = block["type"];
 		if (blockType === "text") {
 			const text = block["text"];
@@ -33942,7 +35857,7 @@ async function orGone(call) {
 	try {
 		return await call();
 	} catch (error) {
-		if (classifyFsError(errorCodeOf$2(error)) === "missing") throw new TranscriptError("transcript_gone");
+		if (classifyFsError(errorCodeOf$3(error)) === "missing") throw new TranscriptError("transcript_gone");
 		throw error;
 	}
 }
@@ -34143,14 +36058,19 @@ function createTranscriptRootResolver(options) {
 	}
 	return async (file, siblings) => configuredRoot ?? await discoveredRoot() ?? derivedRoot(file, siblings);
 }
-/** The root options of the instance: the configured folder, and with `auto` the discovery of the repository's project folder. */
-function transcriptRootOptionsOf(deps) {
+/**
+* The root options of the instance: in scope `all` the projects folder of the Claude home; else the configured folder, and
+* with `auto` the discovery of the repository's project folder. `env` names the Claude home (the server's own environment, as
+* `buildInstanceContext` does).
+*/
+function transcriptRootOptionsOf(deps, env = process.env) {
+	if (isAllScope(deps.config.runtime.projects.scope, instanceKindOfConfig(deps.config))) return { transcriptsDir: projectsRootOf(claudeHomeOf(env)) };
 	const monitor = deps.config.monitor;
 	const auto = monitor.transcripts_dir === null || monitor.transcripts_dir === "" || monitor.transcripts_dir === "auto";
 	return {
 		transcriptsDir: monitor.transcripts_dir,
 		...auto ? {
-			discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(process.env), "projects")),
+			discoverRoot: () => detectTranscriptsDir(monitor.repo, path.join(claudeHomeOf(env), "projects")),
 			now: deps.now
 		} : {}
 	};
@@ -34371,19 +36291,19 @@ function createTranscriptQueryPart(db, deps) {
 
 //#endregion
 //#region packages/engine/src/search/scan.ts
-const BACKSLASH$1 = String.fromCharCode(92);
-const WHITESPACE_RUN = `${BACKSLASH$1}s*`;
-const REGEX_SPECIALS = /* @__PURE__ */ new Set(`.*+?^\${}()|[]-/${BACKSLASH$1}`);
+const BACKSLASH$2 = String.fromCharCode(92);
+const WHITESPACE_RUN = `${BACKSLASH$2}s*`;
+const REGEX_SPECIALS = /* @__PURE__ */ new Set(`.*+?^\${}()|[]-/${BACKSLASH$2}`);
 /** `text` as the source of a regular expression that matches it literally. */
 function escapeRegExp(text) {
 	let out = "";
-	for (const char of text) out += REGEX_SPECIALS.has(char) ? `${BACKSLASH$1}${char}` : char;
+	for (const char of text) out += REGEX_SPECIALS.has(char) ? `${BACKSLASH$2}${char}` : char;
 	return out;
 }
 /** Characters whose raw form in the file is not the form the display projection shows (see the header). */
 const UNSAFE_CHARS = /* @__PURE__ */ new Set([
 	"\"",
-	BACKSLASH$1,
+	BACKSLASH$2,
 	"{",
 	"}",
 	"[",
@@ -34424,7 +36344,7 @@ function hex4(unit) {
 /** `\uXXXX` for every UTF-16 unit of `char`, as the source of a literal match. */
 function escapedUnits(char) {
 	let out = "";
-	for (let i = 0; i < char.length; i += 1) out += `${BACKSLASH$1}${BACKSLASH$1}u${hex4(char.charCodeAt(i))}`;
+	for (let i = 0; i < char.length; i += 1) out += `${BACKSLASH$2}${BACKSLASH$2}u${hex4(char.charCodeAt(i))}`;
 	return out;
 }
 /** One character of the needle: ASCII as it is, any other as itself or as the `\uXXXX` of it, of its lower and of its upper case. */
@@ -34733,7 +36653,7 @@ function isResume(position) {
 }
 /** An error of the file system (the code is an errno name), as against a database error or a bug. */
 function isFsError(error) {
-	return error instanceof Error && /^E[A-Z0-9]+$/.test(errorCodeOf$2(error));
+	return error instanceof Error && /^E[A-Z0-9]+$/.test(errorCodeOf$3(error));
 }
 function mb(bytes) {
 	return `${(bytes / MIB$1).toFixed(1)} MB`;
@@ -34871,7 +36791,7 @@ function createSearchService(db, options) {
 				if (error.code === "aborted") return { kind: "cancelled" };
 				return { kind: error.code === "transcript_gone" ? "missing" : "unreadable" };
 			}
-			if (isFsError(error)) return { kind: classifyFsError(errorCodeOf$2(error)) };
+			if (isFsError(error)) return { kind: classifyFsError(errorCodeOf$3(error)) };
 			throw error;
 		}
 	}
@@ -35019,7 +36939,7 @@ function createSearchService(db, options) {
 				}
 			} catch (error) {
 				if (!isFsError(error)) throw error;
-				failure = classifyFsError(errorCodeOf$2(error));
+				failure = classifyFsError(errorCodeOf$3(error));
 			}
 			if (failure !== null) {
 				noteProblem(tally, target, failure);
@@ -35269,7 +37189,7 @@ function createSearchQueryPart(db, deps) {
 
 //#endregion
 //#region packages/engine/src/analytics/series.ts
-const HOUR_MS$2 = 36e5;
+const HOUR_MS$3 = 36e5;
 const DAY_MS$1 = 864e5;
 const MINUTE_MS$2 = 6e4;
 /** The most buckets one request may span (03 8.2). */
@@ -35300,7 +37220,7 @@ function pointOf(group) {
 function createSeriesQueries(db, deps) {
 	return { series: (ctx, q) => snapshot(db, ctx, (asOfSeq) => {
 		const window = resolveWindow(deps, q, DEFAULT_RANGE$1, null);
-		const sizeMs = q.bucket === "hour" ? HOUR_MS$2 : DAY_MS$1;
+		const sizeMs = q.bucket === "hour" ? HOUR_MS$3 : DAY_MS$1;
 		const offsetMs = q.tzOffsetMinutes * MINUTE_MS$2;
 		const scope = resolveUsageScope(db, q);
 		const filter = usageFilterOf(window, scope);
@@ -35455,6 +37375,44 @@ function createToolFrequencyQueries(db, deps) {
 }
 
 //#endregion
+//#region packages/engine/src/query/projects.ts
+function createProjectQueries(db) {
+	return {
+		projectStats: (ctx, o) => snapshot(db, ctx, () => {
+			const bind = new Binder();
+			const from = bind.bind(o.windowFromMs ?? Number.MIN_SAFE_INTEGER);
+			return db.driver.prepare(`SELECT p.project_key AS key, p.dir_name AS dirName, p.root_path AS rootPath,
+                    coalesce(sum(s.last_activity_at >= ${from}), 0) AS sessionsInWindow,
+                    coalesce(sum(s.state IN ${bind.list(ACTIVE_STATES)}), 0) AS activeSessions,
+                    max(p.last_activity_at, coalesce(max(s.last_activity_at), 0)) AS lastActivityAt,
+                    count(s.id) AS totalSessions
+               FROM projects p LEFT JOIN sessions s ON s.project_id = p.id
+              GROUP BY p.id ORDER BY lastActivityAt DESC, p.project_key`).all(bind.params);
+		}),
+		resumeFacts: (ctx, sessionId) => snapshot(db, ctx, () => {
+			const row = db.driver.prepare(`SELECT s.session_uid AS sessionId, p.project_key AS projectKey, p.dir_name AS dirName, p.root_path AS rootPath,
+                    s.cwd AS sessionCwd, s.entrypoint AS entrypoint, s.continued_in AS continuedIn,
+                    f.path AS filePath, f.state AS fileState
+               FROM sessions s
+               LEFT JOIN projects p ON p.id = s.project_id
+               LEFT JOIN transcript_files f ON f.id = coalesce(
+                      (SELECT x.id FROM transcript_files x WHERE x.id = s.transcript_file_id AND x.kind = 'session'),
+                      (SELECT min(x.id) FROM transcript_files x WHERE x.session_uid = s.session_uid AND x.kind = 'session'))
+              WHERE s.session_uid = :uid`).get({ uid: sessionId });
+			if (row === void 0) return null;
+			const { filePath, fileState, ...facts } = row;
+			return {
+				...facts,
+				mainFile: filePath === null || fileState === null ? null : {
+					path: filePath,
+					state: fileState
+				}
+			};
+		})
+	};
+}
+
+//#endregion
 //#region packages/engine/src/query/index.ts
 const registrations = [];
 /**
@@ -35493,9 +37451,10 @@ function readIdentity$1(config) {
 	const defaultsFile = config.files.find((file) => file.name === "defaults.json");
 	const workspaceDir = configFile === void 0 ? null : path.dirname(configFile.path);
 	const skillDir = defaultsFile === void 0 ? null : path.dirname(path.dirname(defaultsFile.path));
-	const launcherPath = path.join(skillDir ?? ".", "scripts", "mcs.mjs");
+	const launcherPath = path.join(skillDir ?? ".", "scripts", LAUNCHER_FILE);
 	if (workspaceDir === null) return {
 		slug: "",
+		kind: "task",
 		description: null,
 		hooksEnabled: false,
 		workspaceDir,
@@ -35504,6 +37463,7 @@ function readIdentity$1(config) {
 	const instance = InstanceFileSchema.safeParse(readJson(path.join(workspaceDir, "instance.json")));
 	return {
 		slug: instance.success ? instance.data.slug : path.basename(workspaceDir),
+		kind: instance.success ? instanceKindOf(instance.data) : "task",
 		description: descriptionOf(readJson(path.join(workspaceDir, "task.json"))),
 		hooksEnabled: instance.success && instance.data.hooks.enabled,
 		workspaceDir,
@@ -35524,7 +37484,8 @@ function retentionSummary(config) {
 const HEALTH_POLL_MS = 5e3;
 function instanceInfoOf(db, deps, identity, runtime) {
 	const { monitor, runtime: config } = deps.config;
-	const { ui, poll, panels, limits } = monitor;
+	const { ui, poll, limits } = monitor;
+	const panels = effectivePanels(monitor.panels, identity.kind);
 	return {
 		instanceId: db.instanceId,
 		slug: identity.slug,
@@ -35535,6 +37496,9 @@ function instanceInfoOf(db, deps, identity, runtime) {
 		dbSchemaVersion: pragmaNumber(db.driver, "user_version"),
 		headSeq: db.headSeq(),
 		epoch: db.epoch,
+		kind: identity.kind,
+		app: identity.kind === "user" ? { name: config.app.name } : null,
+		scope: isAllScope(config.projects.scope, identity.kind) ? "all" : "repo",
 		staleAfterMs: num(poll, "stale_after_ms", 15e3),
 		heartbeatMs: STREAM_HEARTBEAT_MS,
 		windowHours: monitor.window_hours,
@@ -35574,7 +37538,8 @@ function instanceInfoOf(db, deps, identity, runtime) {
 			launcherPath: identity.launcherPath,
 			slug: identity.slug,
 			repoDir: monitor.repo,
-			instanceDir: identity.workspaceDir ?? ""
+			instanceDir: identity.workspaceDir ?? "",
+			kind: identity.kind
 		}),
 		limits: {
 			pageMax: 200,
@@ -35765,6 +37730,7 @@ registerQueryPart(createSearchQueryPart, [
 registerQueryPart(createUsageQueries, ["usage", "sessionUsage"]);
 registerQueryPart(createSeriesQueries, ["series"]);
 registerQueryPart(createToolFrequencyQueries, ["tools"]);
+registerQueryPart(createProjectQueries, ["projectStats", "resumeFacts"]);
 
 //#endregion
 //#region packages/engine/src/runtime/context.ts
@@ -36028,6 +37994,7 @@ async function buildInstanceContextWith(i, deps) {
 			runtimeDir: i.runtimeDir,
 			config,
 			instance,
+			kind: instanceKindOf(instance),
 			hooksEnabled: instance.hooks.enabled,
 			clock,
 			db,
@@ -36056,7 +38023,7 @@ contextFactories.createQueries = createQueries;
 //#region packages/engine/src/runtime/state-watchdog.ts
 /** A state file larger than this is not a state file (the real one is under 1 KiB). */
 const STATE_FILE_MAX_BYTES$1 = 65536;
-function parseState$1(bytes) {
+function parseState$2(bytes) {
 	try {
 		const parsed = StateFileSchema.safeParse(JSON.parse(Buffer.from(bytes).toString("utf8")));
 		return parsed.success ? parsed.data : null;
@@ -36064,7 +38031,7 @@ function parseState$1(bytes) {
 		return null;
 	}
 }
-function codeOf$5(error) {
+function codeOf$6(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 	return "INTERNAL";
 }
@@ -36095,14 +38062,14 @@ function createStateWatchdog(ctx, deps) {
 				await restore(ours, "unparsable");
 				return;
 			}
-			ctx.logger.warn("state_file_unreadable", { code: codeOf$5(error) });
+			ctx.logger.warn("state_file_unreadable", { code: codeOf$6(error) });
 			return;
 		}
 		if (Buffer.compare(current, ours) === 0) {
 			conflict = false;
 			return;
 		}
-		const state = parseState$1(current);
+		const state = parseState$2(current);
 		if (state === null) {
 			await restore(ours, "unparsable");
 			return;
@@ -36124,7 +38091,7 @@ function createStateWatchdog(ctx, deps) {
 			try {
 				await inspect();
 			} catch (error) {
-				ctx.logger.warn("state_watchdog_failed", { code: codeOf$5(error) });
+				ctx.logger.warn("state_watchdog_failed", { code: codeOf$6(error) });
 				ctx.errors.push({
 					source: "runtime",
 					code: "STATE_WATCHDOG_FAILED",
@@ -36171,6 +38138,57 @@ function createStateWatchdog(ctx, deps) {
 }
 
 //#endregion
+//#region packages/engine/src/runtime/user-services.ts
+/** No terminal can exist: nothing to protect, nothing to drain. */
+const EMPTY_CENSUS = Object.freeze({
+	count: () => 0,
+	sessions: () => [],
+	beginDrain: () => void 0
+});
+/** What a runtime uses until the real services are registered: no sessions, no minter, no components. */
+const EMPTY_USER_SERVICES = Object.freeze({
+	census: EMPTY_CENSUS,
+	access: null,
+	accessService: null,
+	terminal: null,
+	folders: null,
+	components: Object.freeze([])
+});
+/**
+* The server's decision on a `shutdown` request, and the one place that starts the drain. A shutdown of a user instance is
+* refused while the census counts a session, unless the request forces it. Never guarded: a task instance (no terminal), the
+* reason `signal` (logoff, Ctrl+C and SIGTERM end the process anyway, and refusing them would hang a logoff) and a request that
+* arrives while the instance is already stopping. The count is read once; `beginDrain()` runs in this same call on every allow
+* decision (so that no session can start between the count and the stop) and never on a refusal. Only exactly zero means "no
+* terminals": a count that is not a number refuses.
+*/
+function decideShutdown(i) {
+	if (i.stopping) return {
+		allow: true,
+		drained: true
+	};
+	if (i.kind === "user" && i.reason !== "signal" && !i.force) {
+		const live = i.census.count();
+		if (live !== 0) return {
+			allow: false,
+			live
+		};
+	}
+	try {
+		i.census.beginDrain();
+	} catch {
+		return {
+			allow: true,
+			drained: false
+		};
+	}
+	return {
+		allow: true,
+		drained: true
+	};
+}
+
+//#endregion
 //#region packages/engine/src/external/pid.ts
 /**
 * One `external.pid` event per target whose pid is a valid process id. A target with an invalid pid is skipped: nothing is
@@ -36198,7 +38216,7 @@ const MAX_TIMER_MS$1 = 2 ** 31 - 1;
 /** A rough size of one item in the writer queue (the queue bound counts bytes). */
 const ITEM_BYTES = 200;
 /** What a log line or the error ring may say about a failure: its code or its name, never its message (a path may be in it). */
-function errorCodeOf$1(error) {
+function errorCodeOf$2(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 	return error instanceof Error ? error.name : "unknown";
 }
@@ -36326,12 +38344,12 @@ function createLifecycleSweeper(ctx, deps, options = {}) {
 			try {
 				await tick();
 			} catch (error) {
-				ctx.logger.warn("sweeper_tick_failed", { code: errorCodeOf$1(error) });
+				ctx.logger.warn("sweeper_tick_failed", { code: errorCodeOf$2(error) });
 				ctx.errors.push({
 					source: "lifecycle",
 					code: "SWEEPER_TICK_FAILED",
 					where: "lifecycle.sweeper",
-					message: `the sweeper tick failed (${errorCodeOf$1(error)})`
+					message: `the sweeper tick failed (${errorCodeOf$2(error)})`
 				});
 			} finally {
 				running = null;
@@ -36687,11 +38705,11 @@ const realFilesIo = {
 function resolveConfigured(repoDir, configured) {
 	return path.isAbsolute(configured) ? configured : path.resolve(repoDir, configured);
 }
-function errnoCode(error) {
+function errnoCode$1(error) {
 	return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : void 0;
 }
 function readableMessage(error, what) {
-	const code = errnoCode(error);
+	const code = errnoCode$1(error);
 	if (code !== void 0) return `the ${what} could not be read (${code})`;
 	const line = error instanceof Error ? firstLine$1(error.message, 200) : "";
 	return line === "" ? `the ${what} could not be read` : line;
@@ -36730,7 +38748,7 @@ function linesCache(deps, io, source, configured) {
 		try {
 			info = await io.stat(file);
 		} catch (error) {
-			const code = errnoCode(error);
+			const code = errnoCode$1(error);
 			if (code === "ENOENT" || code === "ENOTDIR") return {
 				status: "unavailable",
 				message: `the ${what} file was not found`
@@ -37382,7 +39400,7 @@ async function readLinuxProcesses(fs, signal) {
 	}
 	return entries;
 }
-function codeOf$4(error) {
+function codeOf$5(error) {
 	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
 }
 /** The loader of the process list on Linux. A missing or unreadable `/proc` is an unavailable source, not an error. */
@@ -37399,7 +39417,7 @@ function createLinuxLister(deps = {}) {
 				value: entries
 			};
 		} catch (error) {
-			const code = codeOf$4(error);
+			const code = codeOf$5(error);
 			if (code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM") return {
 				status: "unavailable",
 				message: "/proc is not available; per-process memory is disabled"
@@ -38221,7 +40239,7 @@ function wholeNumber(text, pattern) {
 	const value = Number(text);
 	return Number.isSafeInteger(value) ? value : null;
 }
-function rowOf(run, sessionId, usage) {
+function rowOf$1(run, sessionId, usage) {
 	return {
 		part: run.part,
 		n: wholeNumber(run.nRaw, DIGITS_RE),
@@ -38260,7 +40278,7 @@ function readAttemptsPanel(ctx, limit, sourceState) {
 	return {
 		rows: runs.map((run) => {
 			const sessionId = run.sessionRowId === null ? null : uids.get(run.sessionRowId) ?? null;
-			return rowOf(run, sessionId, sessionId === null ? null : usageByUid.get(sessionId) ?? null);
+			return rowOf$1(run, sessionId, sessionId === null ? null : usageByUid.get(sessionId) ?? null);
 		}),
 		sourceState: state
 	};
@@ -38276,13 +40294,13 @@ function supersededEvidence(part) {
 }
 const PASS_RE = /^\s*(?:PASS|DONE|OK|COMPLETE[D]?|SUCCESS)/i;
 const FAIL_RE = /FAIL|BLOCK|ERROR|ABORT/i;
-const BACKSLASH = String.fromCharCode(92);
+const BACKSLASH$1 = String.fromCharCode(92);
 /** Code points that are not printable in the text form of a quoted string: controls, formats, separators, private use. */
 const NOT_PRINTABLE = /^[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]$/u;
 const SHORT_ESCAPES = /* @__PURE__ */ new Map([
-	[9, `${BACKSLASH}t`],
-	[10, `${BACKSLASH}n`],
-	[13, `${BACKSLASH}r`]
+	[9, `${BACKSLASH$1}t`],
+	[10, `${BACKSLASH$1}n`],
+	[13, `${BACKSLASH$1}r`]
 ]);
 function hex(code, width) {
 	return code.toString(16).padStart(width, "0");
@@ -38298,13 +40316,13 @@ function quoted(text) {
 	for (const ch of text) {
 		const code = ch.codePointAt(0) ?? 0;
 		const short = SHORT_ESCAPES.get(code);
-		if (ch === quote || ch === BACKSLASH) out += BACKSLASH + ch;
+		if (ch === quote || ch === BACKSLASH$1) out += BACKSLASH$1 + ch;
 		else if (short !== void 0) out += short;
 		else if (code >= 32 && code < 127) out += ch;
 		else if (code < 128 || NOT_PRINTABLE.test(ch)) {
-			if (code <= 255) out += `${BACKSLASH}x${hex(code, 2)}`;
-			else if (code <= 65535) out += `${BACKSLASH}u${hex(code, 4)}`;
-			else out += `${BACKSLASH}U${hex(code, 8)}`;
+			if (code <= 255) out += `${BACKSLASH$1}x${hex(code, 2)}`;
+			else if (code <= 65535) out += `${BACKSLASH$1}u${hex(code, 4)}`;
+			else out += `${BACKSLASH$1}U${hex(code, 8)}`;
 		} else out += ch;
 	}
 	return `${quote}${out}${quote}`;
@@ -38348,7 +40366,7 @@ const CHUNK_BYTES$1 = MIB;
 const MAX_RUNS_TO_MATCH = 500;
 /** One line of the file is cut into at most this many pieces at Python-style line breaks. */
 const MAX_PIECES_PER_LINE = 1e4;
-const HOUR_MS$1 = 36e5;
+const HOUR_MS$2 = 36e5;
 /** `null` unless `chain_log` and `attempts` are both set (an empty `chain_log` counts as not set, like the legacy `not cfg.get`). */
 function attemptsSettings(config) {
 	const { chain_log: chainLog, attempts, include_unmatched: includeUnmatched } = config.monitor;
@@ -38367,7 +40385,7 @@ function attemptsSettings(config) {
 			timeFormat
 		},
 		includeUnmatched,
-		windowMs: config.runtime.panelOptions.attemptsWindowHours * HOUR_MS$1
+		windowMs: config.runtime.panelOptions.attemptsWindowHours * HOUR_MS$2
 	};
 }
 /** The hash that tells a changed configuration from an unchanged one (06 3.10.3 step 2). */
@@ -38477,7 +40495,7 @@ function outcome(state, over = {}) {
 }
 /** Why a file read failed: ENOENT and ENOTDIR are `missing` (the rows are kept), anything else is `error`. */
 function readFailure(ctx, state, error) {
-	const code = errorCodeOf$2(error);
+	const code = errorCodeOf$3(error);
 	if (classifyFsError(code) === "missing") return "missing";
 	if (state.lastReadError !== code) ctx.logger.warn("attempts_read_failed", { code });
 	state.lastReadError = code;
@@ -38974,7 +40992,7 @@ function cooldownMs(rule) {
 //#endregion
 //#region packages/engine/src/alerts/evaluator.ts
 const MINUTE_MS$1 = 6e4;
-const HOUR_MS = 36e5;
+const HOUR_MS$1 = 36e5;
 const SECOND_MS = 1e3;
 const TITLE_MAX = 200;
 /** Codes of a failed write that mean the disk is full (the alert inputs of 02 8.3 use the same list). */
@@ -39063,7 +41081,7 @@ function ingestErrors(rule, facts) {
 function runtimeUnavailable(rule, facts) {
 	const { downtime } = facts;
 	if (downtime === null) return [];
-	if (facts.now - downtime.at >= rule.expireHours * HOUR_MS) return [];
+	if (facts.now - downtime.at >= rule.expireHours * HOUR_MS$1) return [];
 	if (downtime.source === "handler") return [held(INSTANCE_SCOPE_KEY, "warning", downtime.count, `Hook handler could not reach the monitor ${String(downtime.count)} ${plural(downtime.count, "time", "times")}`, {
 		source: "handler",
 		count: downtime.count
@@ -39570,6 +41588,4721 @@ function createAlertComponents(ctx) {
 }
 
 //#endregion
+//#region packages/engine/src/folders/project-root.ts
+/** Main transcripts whose first lines are looked at. */
+const NEWEST_MAIN_FILES = 3;
+/** Names of one folder that are looked at (a project folder holds a file per session). */
+const MAX_NAMES = 5e3;
+const STAT_PARALLEL = 16;
+/** `readdir` calls of one decode. */
+const REVERSE_MAX_READDIRS = 64;
+/** Entries of one directory that a decode considers. */
+const REVERSE_MAX_ENTRIES = 5e3;
+const MAIN_SUFFIX = ".jsonl";
+/**
+* The working directory of a project folder from its newest transcripts. One `readdir` and a batched `lstat` find the three
+* newest main files (`<session id>.jsonl`; agent files, folders and every other name are left alone); the first of them that
+* names a `cwd` which is a usable folder on this host wins. Null when no file does.
+*/
+async function readProjectRoot(fs, dir, options) {
+	let names;
+	try {
+		names = await fs.readdir(dir);
+	} catch {
+		return null;
+	}
+	const mains = names.filter((name) => name.endsWith(MAIN_SUFFIX) && SID_RE.test(name.slice(0, -6))).slice(0, MAX_NAMES);
+	const newest = (await mapLimit(mains, STAT_PARALLEL, async (name) => ({
+		name,
+		stat: await fs.lstat(path.join(dir, name))
+	}))).filter((entry) => entry.stat?.kind === "file").sort((a, b) => (b.stat?.mtimeMs ?? 0) - (a.stat?.mtimeMs ?? 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).slice(0, NEWEST_MAIN_FILES);
+	for (const { name } of newest) {
+		const cwd = await firstCwd(fs, path.join(dir, name));
+		if (cwd === "") continue;
+		const root = windowsFolderPath(cwd, options.win32);
+		if (root !== null) return {
+			root,
+			source: "transcript"
+		};
+	}
+	return null;
+}
+/**
+* The folder that `dirName` was made from, found by walking the file system. The name `D--work-app` starts at `D:\` (a name that
+* starts with a dash starts at `/`); in each directory the entries are tried by the length of their sanitized name, longest
+* first, and an entry is entered when the rest of the name equals it (the answer: it must be a real folder) or starts with it and
+* a dash (the dash is the separator). A dot folder sanitizes to `-name`, which is the `--` in `D--work--claude`. Case is ignored
+* on Windows, not elsewhere. At most `maxReaddirs` calls (64) and 5,000 entries of a directory; links are never entered.
+*/
+async function reverseProjectName(dirName, fs, options) {
+	if (!PROJECT_FOLDER_NAME_RE.test(dirName)) return null;
+	const { win32 } = options;
+	const sep = win32 ? String.fromCharCode(92) : "/";
+	let start;
+	let rest;
+	const drive = /^([A-Za-z])--(.+)$/.exec(dirName);
+	if (win32 && drive !== null) {
+		start = `${(drive[1] ?? "").toUpperCase()}:${sep}`;
+		rest = drive[2] ?? "";
+	} else if (!win32 && dirName.startsWith("-") && dirName.length > 1) {
+		start = "/";
+		rest = dirName.slice(1);
+	} else return null;
+	let readdirs = 0;
+	const budget = options.maxReaddirs ?? 64;
+	const fold = (text) => win32 ? text.toLowerCase() : text;
+	async function walk(dir, remaining) {
+		if (readdirs >= budget) return null;
+		readdirs += 1;
+		let names;
+		try {
+			names = await fs.readdir(dir);
+		} catch {
+			return null;
+		}
+		const candidates = names.filter((name) => name !== "" && name !== "." && name !== "..").slice(0, REVERSE_MAX_ENTRIES).map((name) => ({
+			name,
+			text: fold(sanitizeProjectName(name))
+		})).sort((a, b) => b.text.length - a.text.length || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+		const wanted = fold(remaining);
+		for (const { name, text } of candidates) {
+			const child = dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
+			if (text === wanted) {
+				if ((await fs.lstat(child))?.kind === "dir") return child;
+			} else if (wanted.length > text.length + 1 && wanted.startsWith(`${text}-`)) {
+				if ((await fs.lstat(child))?.kind !== "dir") continue;
+				const found = await walk(child, remaining.slice(text.length + 1));
+				if (found !== null) return found;
+				if (readdirs >= budget) return null;
+			}
+		}
+		return null;
+	}
+	return walk(start, rest);
+}
+
+//#endregion
+//#region packages/engine/src/folders/catalog.ts
+/** Folders listed at most (the merge caps the final list on its own). */
+const CATALOG_MAX_FOLDERS = 2e3;
+/** How long a known `exists` is trusted for a folder that did not change. */
+const CATALOG_EXISTS_RECHECK_MS = 12e4;
+/** Folders whose root is resolved together. */
+const RESOLVE_PARALLEL = 8;
+function createProjectCatalog(options) {
+	const fs = options.fs ?? nodeDiscoveryFs;
+	const win32 = options.win32 ?? hostPlatform === "win32";
+	const maxFolders = options.maxFolders ?? 2e3;
+	const recheckMs = options.existsRecheckMs ?? 12e4;
+	let cache = /* @__PURE__ */ new Map();
+	let list = [];
+	let state = {
+		state: "ok",
+		scannedAt: null,
+		truncated: false
+	};
+	let inFlight = null;
+	let timer = null;
+	async function present(target) {
+		try {
+			return await fs.lstat(target) !== null;
+		} catch {
+			return false;
+		}
+	}
+	async function rootExists(root) {
+		try {
+			return (await fs.lstat(root))?.kind === "dir";
+		} catch {
+			return false;
+		}
+	}
+	async function rootOf(folder) {
+		try {
+			const sniffed = await readProjectRoot(fs, folder.dir, { win32 });
+			if (sniffed !== null) return {
+				root: sniffed.root,
+				rootSource: sniffed.source
+			};
+			const decoded = await reverseProjectName(folder.name, fs, { win32 });
+			return decoded === null ? {
+				root: null,
+				rootSource: null
+			} : {
+				root: decoded,
+				rootSource: "reverse"
+			};
+		} catch {
+			return {
+				root: null,
+				rootSource: null
+			};
+		}
+	}
+	async function resolve(folder, nowMs) {
+		const { root, rootSource } = await rootOf(folder);
+		const exists = root === null ? null : await rootExists(root);
+		return {
+			entry: {
+				dirName: folder.name,
+				key: folder.name.toLowerCase(),
+				dirMtimeMs: folder.mtimeMs,
+				root,
+				rootSource,
+				exists
+			},
+			existsAt: nowMs
+		};
+	}
+	async function refreshExists(cached, nowMs) {
+		const { root } = cached.entry;
+		if (root === null || nowMs - cached.existsAt < recheckMs) return cached;
+		return {
+			entry: {
+				...cached.entry,
+				exists: await rootExists(root)
+			},
+			existsAt: nowMs
+		};
+	}
+	async function scan() {
+		const nowMs = options.now();
+		let folders;
+		let missing;
+		try {
+			const found = await listProjectFolders(options.projectsRoot, fs);
+			folders = found.folders;
+			missing = found.missing;
+		} catch {
+			cache = /* @__PURE__ */ new Map();
+			list = [];
+			state = {
+				state: "unreadable",
+				scannedAt: nowMs,
+				truncated: false
+			};
+			return;
+		}
+		if (missing) {
+			const exists = await present(options.projectsRoot);
+			cache = /* @__PURE__ */ new Map();
+			list = [];
+			state = {
+				state: exists ? "unreadable" : "absent",
+				scannedAt: nowMs,
+				truncated: false
+			};
+			return;
+		}
+		const truncated = folders.length > maxFolders;
+		const kept = truncated ? folders.slice(0, maxFolders) : folders;
+		const next = /* @__PURE__ */ new Map();
+		const resolved = await mapLimit(kept, RESOLVE_PARALLEL, async (folder) => {
+			const known = cache.get(folder.name);
+			if (known?.entry.dirMtimeMs === folder.mtimeMs) return refreshExists(known, nowMs);
+			return resolve(folder, nowMs);
+		});
+		resolved.forEach((cached) => next.set(cached.entry.dirName, cached));
+		cache = next;
+		list = resolved.map((cached) => cached.entry);
+		state = {
+			state: "ok",
+			scannedAt: nowMs,
+			truncated
+		};
+	}
+	function refresh() {
+		if (inFlight !== null) return inFlight;
+		const run = scan().catch(() => {
+			cache = /* @__PURE__ */ new Map();
+			list = [];
+			state = {
+				state: "unreadable",
+				scannedAt: options.now(),
+				truncated: false
+			};
+		}).finally(() => {
+			inFlight = null;
+		});
+		inFlight = run;
+		return run;
+	}
+	return {
+		start() {
+			if (timer !== null) return;
+			refresh();
+			timer = setInterval(() => {
+				refresh();
+			}, options.intervalMs);
+			timer.unref();
+		},
+		async stop() {
+			if (timer !== null) {
+				clearInterval(timer);
+				timer = null;
+			}
+			if (inFlight !== null) await inFlight;
+		},
+		refresh,
+		entries: () => list,
+		status: () => state
+	};
+}
+
+//#endregion
+//#region packages/engine/src/folders/da-memory.ts
+/** The reader opens no `meta.json` larger than this: `sessions` grows without bound. */
+const DA_META_MAX_BYTES = 524288;
+/** The reader opens no `index.json` larger than this. */
+const DA_INDEX_MAX_BYTES = 1048576;
+/** Folders returned at most. */
+const DA_MAX_FOLDERS = 500;
+/** Names looked at in one scan; a memory folder with more entries than this is not a memory folder anybody keeps by hand. */
+const MAX_CANDIDATES = 5e3;
+/** Index entries looked at. */
+const MAX_INDEX_ENTRIES = 5e3;
+const SUMMARY_MAX_CODE_POINTS = 120;
+const READ_PARALLEL = 16;
+const DEFAULT_CACHE_MS = 3e3;
+/** A name that can be a folder of the memory (the slug rule of the hook is `[A-Za-z0-9-]`; a dot is tolerated). */
+const CANDIDATE_RE = /^[A-Za-z0-9._-]{1,255}$/;
+/** Entries of the memory folder that are known not to be folders: never a candidate, never counted. */
+const NOT_A_FOLDER = (name) => name === "." || name === ".." || name === "index.json" || name.endsWith(".key") || name.endsWith(".py");
+const nodeDaFs = {
+	async readdir(dir) {
+		try {
+			return await readdir(dir);
+		} catch (error) {
+			return { code: errorCodeOf$3(error) };
+		}
+	},
+	readText: (file, maxBytes) => nodeDiscoveryFs.readText(file, maxBytes)
+};
+/** `<home>/.claude/memory`: where the hook writes, even when `CLAUDE_CONFIG_DIR` points elsewhere. */
+function defaultDaMemoryDir() {
+	return path.join(os.homedir(), ".claude", "memory");
+}
+function isPlain$1(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseJson$1(text) {
+	try {
+		return JSON.parse(text.charCodeAt(0) === 65279 ? text.slice(1) : text);
+	} catch {
+		return;
+	}
+}
+function count(value) {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+/** Control characters, format characters (the right-to-left override among them) and line separators become nothing or one space. */
+function cleanSummary(value) {
+	if (typeof value !== "string") return "";
+	let text = "";
+	for (const char of value) {
+		const code = char.codePointAt(0) ?? 0;
+		if (code === 9 || code === 10 || code === 13 || code === 8232 || code === 8233) text += " ";
+		else if (code <= 31 || code >= 127 && code <= 159 || /\p{Cf}/u.test(char)) continue;
+		else text += char;
+	}
+	const collapsed = text.replace(/\s+/gu, " ").trim();
+	return clipCodePoints$1(redact(collapsed), SUMMARY_MAX_CODE_POINTS).trim();
+}
+/** The fields of one folder from a `meta.json` object or an `index.json` entry; null without a non-empty string `path`. */
+function rawFolderOf(slug, value) {
+	if (!isPlain$1(value)) return null;
+	const rawPath = value["path"];
+	if (typeof rawPath !== "string" || rawPath.trim() === "") return null;
+	const counts = isPlain$1(value["counts"]) ? value["counts"] : {};
+	return {
+		slug,
+		rawPath,
+		lastUpdatedMs: parseDaTimestamp(value["last_updated"]),
+		summary: cleanSummary(value["summary"]),
+		brain: count(counts["brain"]),
+		action: count(counts["action"])
+	};
+}
+function compareSlug(a, b) {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+/** Newest first, a missing time last, then the smaller slug. */
+function newerFirst(a, b) {
+	if (a.lastUpdatedMs !== b.lastUpdatedMs) {
+		if (a.lastUpdatedMs === null) return 1;
+		if (b.lastUpdatedMs === null) return -1;
+		return b.lastUpdatedMs - a.lastUpdatedMs;
+	}
+	return compareSlug(a.slug, b.slug);
+}
+function addCounts(a, b) {
+	return Math.min(Number.MAX_SAFE_INTEGER, a + b);
+}
+/** Folds the entries that name one folder (`folderPathKey`) into the newest of them. */
+function dedupe(raw, win32) {
+	const groups = /* @__PURE__ */ new Map();
+	for (const entry of raw) {
+		const usable = windowsFolderPath(entry.rawPath, win32);
+		const key = usable === null ? `raw:${entry.slug}` : folderPathKey(usable);
+		const group = groups.get(key);
+		if (group === void 0) groups.set(key, [entry]);
+		else group.push(entry);
+	}
+	const out = [];
+	for (const group of groups.values()) {
+		const winner = [...group].sort(newerFirst)[0];
+		if (winner === void 0) continue;
+		out.push({
+			slug: winner.slug,
+			rawPath: winner.rawPath,
+			path: windowsFolderPath(winner.rawPath, win32),
+			lastUpdatedMs: winner.lastUpdatedMs,
+			summary: winner.summary,
+			brain: group.reduce((sum, entry) => addCounts(sum, entry.brain), 0),
+			action: group.reduce((sum, entry) => addCounts(sum, entry.action), 0),
+			merged: group.length - 1
+		});
+	}
+	return out.sort(newerFirst);
+}
+async function scan(dir, fs, maxFolders, win32, nowMs) {
+	const names = await fs.readdir(dir);
+	if ("code" in names) return {
+		status: classifyFsError(names.code) === "missing" ? "absent" : "unreadable",
+		folders: [],
+		skipped: 0,
+		readAtMs: nowMs
+	};
+	const candidates = names.filter((name) => CANDIDATE_RE.test(name) && !NOT_A_FOLDER(name)).sort(compareSlug).slice(0, MAX_CANDIDATES);
+	const parsed = await mapLimit(candidates, READ_PARALLEL, async (slug) => {
+		const text = await fs.readText(path.join(dir, slug, "meta.json"), DA_META_MAX_BYTES);
+		return text === null ? null : rawFolderOf(slug, parseJson$1(text));
+	});
+	const raw = parsed.filter((entry) => entry !== null);
+	const skipped = parsed.length - raw.length;
+	if (raw.length === 0) return {
+		status: "ok",
+		folders: dedupe(await readIndex(dir, fs), win32).slice(0, maxFolders),
+		skipped,
+		readAtMs: nowMs
+	};
+	return {
+		status: "ok",
+		folders: dedupe(raw, win32).slice(0, maxFolders),
+		skipped,
+		readAtMs: nowMs
+	};
+}
+async function readIndex(dir, fs) {
+	const text = await fs.readText(path.join(dir, "index.json"), DA_INDEX_MAX_BYTES);
+	if (text === null) return [];
+	const parsed = parseJson$1(text);
+	const folders = isPlain$1(parsed) ? parsed["folders"] : void 0;
+	if (!Array.isArray(folders)) return [];
+	const out = [];
+	const entries = folders.slice(0, MAX_INDEX_ENTRIES);
+	for (const entry of entries) {
+		const folder = rawFolderOf(isPlain$1(entry) && typeof entry["slug"] === "string" ? entry["slug"] : "", entry);
+		if (folder !== null) out.push(folder);
+	}
+	return out;
+}
+function createDaMemoryReader(options) {
+	const fs = options.fs ?? nodeDaFs;
+	const cacheMs = options.cacheMs ?? DEFAULT_CACHE_MS;
+	const maxFolders = options.maxFolders ?? 500;
+	const win32 = options.win32 ?? hostPlatform === "win32";
+	let cached = null;
+	let inFlight = null;
+	async function run(nowMs) {
+		try {
+			return await scan(options.dir, fs, maxFolders, win32, nowMs);
+		} catch {
+			return {
+				status: "unreadable",
+				folders: [],
+				skipped: 0,
+				readAtMs: nowMs
+			};
+		}
+	}
+	return { read(nowMs) {
+		if (cached !== null) {
+			const age = nowMs - cached.readAtMs;
+			if (age >= 0 && age < cacheMs) return Promise.resolve(cached);
+		}
+		if (inFlight !== null) return inFlight;
+		const flight = run(nowMs).then((result) => {
+			cached = result;
+			inFlight = null;
+			return result;
+		});
+		inFlight = flight;
+		return flight;
+	} };
+}
+
+//#endregion
+//#region packages/engine/src/folders/merge.ts
+/** Rows of a list at most (the wire schema says the same). */
+const FOLDER_LIST_MAX = 500;
+/** The widest path and name the wire row holds. */
+const PATH_MAX = 1024;
+const NAME_MAX = 255;
+const iso = (ms) => new Date(ms).toISOString();
+function clip(text, max) {
+	return text.length <= max ? text : Array.from(text).slice(0, max).join("").slice(0, max);
+}
+/** The project key a path joins: exact, or the unique Claude key that starts with a cut key. */
+function joinKey(path, claudeKeys) {
+	const folder = folderKeyOfPath(path);
+	if (!folder.prefix) return folder.key;
+	const matches = claudeKeys.filter((key) => key.startsWith(`${folder.key}-`));
+	return matches.length === 1 && matches[0] !== void 0 ? matches[0] : folder.key;
+}
+function newestMs(values) {
+	let best = null;
+	for (const value of values) {
+		if (value === null || value === void 0 || !Number.isFinite(value) || value <= 0) continue;
+		if (best === null || value > best) best = value;
+	}
+	return best;
+}
+function compareText(a, b) {
+	const x = a.toLowerCase();
+	const y = b.toLowerCase();
+	if (x < y) return -1;
+	return x > y ? 1 : 0;
+}
+/** A path as a row shows it: normalized for this host, within the column, or null. */
+function shown$1(raw, win32) {
+	if (raw === null || raw === void 0 || raw === "") return null;
+	const normalized = windowsFolderPath(raw, win32);
+	return normalized === null || normalized.length > PATH_MAX ? null : normalized;
+}
+function mergeFolders(input) {
+	const win32 = input.win32 ?? hostPlatform === "win32";
+	const maxRows = input.maxRows ?? 500;
+	const buckets = /* @__PURE__ */ new Map();
+	const bucketOf = (key) => {
+		let bucket = buckets.get(key);
+		if (bucket === void 0) {
+			bucket = {
+				key,
+				catalog: void 0,
+				stat: void 0,
+				da: void 0,
+				user: void 0,
+				addedAtMs: 0
+			};
+			buckets.set(key, bucket);
+		}
+		return bucket;
+	};
+	for (const entry of input.catalog) bucketOf(entry.key).catalog = entry;
+	for (const stat of input.stats) bucketOf(stat.key).stat = stat;
+	const claudeKeys = [...buckets.keys()];
+	input.da.forEach((folder, order) => {
+		if (folder.path === null) return;
+		const bucket = bucketOf(joinKey(folder.path, claudeKeys));
+		if (bucket.da === void 0) bucket.da = {
+			folder,
+			order,
+			brain: folder.brain,
+			action: folder.action
+		};
+		else bucket.da = {
+			...bucket.da,
+			brain: bucket.da.brain + folder.brain,
+			action: bucket.da.action + folder.action
+		};
+	});
+	for (const folder of input.user) {
+		const bucket = bucketOf(joinKey(folder.path, claudeKeys));
+		bucket.user ??= folder;
+		bucket.addedAtMs = Math.max(bucket.addedAtMs, folder.addedAtMs);
+	}
+	const ranked = [];
+	for (const bucket of buckets.values()) ranked.push(rowOf(bucket, input.nowMs, win32, input.exists));
+	const outside = ranked.filter((entry) => entry.row.group === "outside-da").sort((a, b) => b.sortMs - a.sortMs || compareText(a.row.name, b.row.name) || compareText(a.row.key, b.row.key));
+	const inDa = ranked.filter((entry) => entry.row.group === "da").sort((a, b) => a.order - b.order);
+	let rows = [...outside, ...inDa].map((entry) => entry.row);
+	if (rows.length > maxRows) {
+		const drop = rows.length - maxRows;
+		rows = drop <= outside.length ? [...outside.slice(0, outside.length - drop), ...inDa].map((e) => e.row) : rows.slice(0, maxRows);
+	}
+	if (rows.length === 0) {
+		const home = homeRow(input.homeDir, win32, input.exists);
+		if (home !== null) rows = [home];
+	}
+	return rows;
+}
+function rowOf(bucket, nowMs, win32, existence) {
+	const { catalog, stat, da, user } = bucket;
+	const winner = [
+		{
+			path: shown$1(da?.folder.path, win32),
+			source: "da"
+		},
+		{
+			path: shown$1(user?.path, win32),
+			source: "user"
+		},
+		{
+			path: shown$1(stat?.rootPath, win32),
+			source: "project"
+		},
+		{
+			path: shown$1(catalog?.root, win32),
+			source: catalog?.rootSource ?? "none"
+		}
+	].find((candidate) => candidate.path !== null);
+	const path = winner?.path ?? null;
+	const pathSource = winner === void 0 ? "none" : winner.source;
+	let exists = null;
+	if (path !== null) {
+		const pathKey = folderPathKey(path);
+		const checked = existence?.get(pathKey);
+		if (checked !== void 0) exists = checked;
+		else if (catalog?.root !== null && catalog?.root !== void 0 && folderPathKey(catalog.root) === pathKey) exists = catalog.exists;
+	}
+	const dirName = catalog?.dirName ?? stat?.dirName ?? null;
+	const name = clip(path === null ? dirName ?? bucket.key : lastSegment(path) || (dirName ?? bucket.key), NAME_MAX);
+	const lastActivityMs = newestMs([
+		da?.folder.lastUpdatedMs,
+		stat?.lastActivityAt,
+		catalog?.dirMtimeMs
+	]);
+	const origins = [];
+	if (da !== void 0) origins.push("da");
+	if (user !== void 0) origins.push("user");
+	if (catalog !== void 0 || stat !== void 0) origins.push("claude");
+	return {
+		row: {
+			key: bucket.key,
+			name,
+			path,
+			pathSource,
+			exists,
+			origins,
+			group: da === void 0 ? "outside-da" : "da",
+			activity: activityMarkOf(lastActivityMs, nowMs),
+			lastActivityAt: lastActivityMs === null ? null : iso(lastActivityMs),
+			da: da === void 0 ? null : {
+				lastUpdatedAt: da.folder.lastUpdatedMs === null ? null : iso(da.folder.lastUpdatedMs),
+				activity: activityMarkOf(da.folder.lastUpdatedMs, nowMs),
+				summary: da.folder.summary,
+				brain: da.brain,
+				action: da.action
+			},
+			claude: dirName === null ? null : {
+				dirName,
+				sessionsInWindow: stat?.sessionsInWindow ?? 0,
+				activeSessions: stat?.activeSessions ?? 0,
+				totalSessions: stat?.totalSessions ?? 0,
+				lastSessionAt: stat === void 0 || stat.totalSessions === 0 || stat.lastActivityAt <= 0 ? null : iso(stat.lastActivityAt)
+			},
+			canStart: path !== null && exists !== false,
+			userAdded: user !== void 0
+		},
+		sortMs: Math.max(lastActivityMs ?? Number.MIN_SAFE_INTEGER, bucket.addedAtMs > 0 ? bucket.addedAtMs : Number.MIN_SAFE_INTEGER),
+		order: da?.order ?? 0
+	};
+}
+/** The one row of an empty list: where a terminal can always start. */
+function homeRow(homeDir, win32, existence) {
+	const path = shown$1(homeDir, win32);
+	if (path === null) return null;
+	const exists = existence?.get(folderPathKey(path)) ?? null;
+	const key = folderKeyOfPath(path).key;
+	return {
+		key: key === "" ? "home" : key,
+		name: clip(lastSegment(path) || "home", NAME_MAX),
+		path,
+		pathSource: "none",
+		exists,
+		origins: ["fallback"],
+		group: "outside-da",
+		activity: "none",
+		lastActivityAt: null,
+		da: null,
+		claude: null,
+		canStart: exists !== false,
+		userAdded: false
+	};
+}
+
+//#endregion
+//#region packages/engine/src/folders/resume.ts
+/** A resume or a copy that may not run. `code` is the first check that failed; the message says only that. */
+var ResumeRefusal = class extends Error {
+	code;
+	/** For `live_in_terminal`: the terminal that holds the session. */
+	liveTerminal;
+	constructor(code, liveTerminal = null) {
+		super(`resume refused: ${code}`);
+		this.name = "ResumeRefusal";
+		this.code = code;
+		this.liveTerminal = liveTerminal;
+	}
+};
+/**
+* The folder to resume in: the first directory among the root the project reported, the working directory the session reported and
+* the root of the catalog, whose key is the key of the project. That is the launch folder, not a later `cd`: a folder with another
+* key is never a candidate. Two spellings of one path are asked about once.
+*/
+async function launchFolderOf(facts, env) {
+	const key = facts.projectKey;
+	if (key === null) return { absent: "folder_unknown" };
+	const candidates = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const raw of [
+		facts.rootPath,
+		facts.sessionCwd,
+		env.catalogRoot
+	]) {
+		if (raw === null) continue;
+		const path = windowsFolderPath(raw, env.win32);
+		if (path === null || !dirMatchesKey(key, folderKeyOfPath(path))) continue;
+		const identity = env.win32 ? path.toLowerCase() : path;
+		if (seen.has(identity)) continue;
+		seen.add(identity);
+		candidates.push(path);
+	}
+	if (candidates.length === 0) return { absent: "folder_unknown" };
+	for (const path of candidates) if (await env.isDirectory(path) === true) return {
+		key,
+		path
+	};
+	return { absent: "folder_missing" };
+}
+/** The decision for one session. Throws `ResumeRefusal('session_not_found')` for a session the database does not know. */
+async function decideResume(sessionId, env) {
+	const { facts } = env;
+	if (facts === null) throw new ResumeRefusal("session_not_found");
+	const redirectTo = facts.continuedIn !== null && facts.continuedIn !== sessionId && env.knowsSession(facts.continuedIn) ? facts.continuedIn : null;
+	const refused = (reason, rest = {}) => ({
+		sessionId,
+		allowed: false,
+		forkAllowed: false,
+		reason,
+		folder: null,
+		liveElsewhere: false,
+		liveTerminal: null,
+		redirectTo,
+		...rest
+	});
+	const file = facts.mainFile;
+	if (file === null || file.state === "missing" || file.state === "retired") return refused("transcript_gone");
+	if (env.transcriptExists !== null && !await env.transcriptExists(file.path)) return refused("transcript_gone");
+	const launch = await launchFolderOf(facts, env);
+	if ("absent" in launch) return refused(launch.absent);
+	const folder = {
+		key: launch.key,
+		path: launch.path
+	};
+	const owner = env.sessionOwner(sessionId);
+	if (owner !== null) return refused("live_in_terminal", {
+		folder,
+		liveTerminal: owner
+	});
+	if (env.registry.some((entry) => entry.sessionId === sessionId && entry.alive && !env.ownedPids.has(entry.pid))) return refused("live_elsewhere", {
+		forkAllowed: true,
+		folder,
+		liveElsewhere: true
+	});
+	return {
+		sessionId,
+		allowed: true,
+		forkAllowed: true,
+		reason: null,
+		folder,
+		liveElsewhere: false,
+		liveTerminal: null,
+		redirectTo
+	};
+}
+/**
+* The plan of a resume (`fork` false: it needs `allowed`) or of a copy (`fork` true: it needs `forkAllowed`). Throws
+* `ResumeRefusal` with the reason of the decision when it does not.
+*/
+function resumePlanOf(decision, fork) {
+	if (!(fork ? decision.forkAllowed : decision.allowed) || decision.folder === null) throw new ResumeRefusal(decision.reason ?? "folder_unknown", decision.liveTerminal);
+	return {
+		sessionId: decision.sessionId,
+		folderPath: decision.folder.path,
+		folderKey: decision.folder.key,
+		args: fork ? [
+			"--resume",
+			decision.sessionId,
+			"--fork-session"
+		] : ["--resume", decision.sessionId],
+		mode: fork ? "fork" : "resume",
+		expectsSameId: !fork,
+		redirectTo: decision.redirectTo
+	};
+}
+
+//#endregion
+//#region packages/engine/src/folders/user-folders.ts
+/** The file of the user folders. */
+const USER_FOLDERS_SCHEMA_VERSION = 1;
+/** Folders kept at most (`userFoldersMax` of the runtime configuration). */
+const USER_FOLDERS_MAX = 200;
+/** The state file is read up to this size; a larger file is corrupt. */
+const USER_FOLDERS_READ_MAX_BYTES = 262144;
+/** A stored path has at most this many characters. */
+const USER_FOLDER_PATH_MAX = 1024;
+/** What the folder service answers with. The message names the code only: a path never enters an error message. */
+var FolderError = class extends Error {
+	code;
+	/** For `folder_invalid`: the first reason the path was refused. */
+	issue;
+	constructor(code, issue = null, cause) {
+		super(`folder error: ${code}`, cause === void 0 ? void 0 : { cause });
+		this.name = "FolderError";
+		this.code = code;
+		this.issue = issue;
+	}
+};
+const nodeUserFoldersFs = {
+	async readText(file, maxBytes) {
+		try {
+			const info = await stat(file);
+			if (!info.isFile()) return { kind: "unreadable" };
+			if (info.size > maxBytes) return { kind: "too_large" };
+			const bytes = await readFile(file);
+			return bytes.length > maxBytes ? { kind: "too_large" } : {
+				kind: "text",
+				text: bytes.toString("utf8")
+			};
+		} catch (error) {
+			return classifyFsError(errorCodeOf$3(error)) === "missing" ? { kind: "absent" } : { kind: "unreadable" };
+		}
+	},
+	async isDirectory(target) {
+		try {
+			return (await stat(target)).isDirectory();
+		} catch {
+			return false;
+		}
+	},
+	async writeAtomic(file, data) {
+		await mkdir(path.dirname(file), { recursive: true });
+		await atomicWriteFile(file, data, { mode: 384 });
+	},
+	async keepCopy(file, copy) {
+		try {
+			await copyFile(file, copy, constants.COPYFILE_EXCL);
+		} catch (error) {
+			if (errorCodeOf$3(error) !== "EEXIST") throw error;
+		}
+	}
+};
+function isPlain(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+/** The identity of a stored folder: its key, and the whole path too when the key is only the cut prefix of a long name. */
+function identityOf(path_, key) {
+	return key.prefix ? `${key.key}|${path_.toLowerCase()}` : key.key;
+}
+function sameKey(entryPath, key) {
+	const entryKey = folderKeyOfPath(entryPath);
+	return entryKey.key === key || entryKey.prefix && dirMatchesKey(key, entryKey);
+}
+function toFolder(rawPath, addedAt, win32) {
+	if (rawPath.length > 1024) return null;
+	const normalized = windowsFolderPath(rawPath, win32);
+	if (normalized === null) return null;
+	const parsed = typeof addedAt === "string" ? Date.parse(addedAt) : NaN;
+	const addedAtMs = Number.isFinite(parsed) ? parsed : 0;
+	return {
+		path: normalized,
+		key: folderKeyOfPath(normalized).key,
+		addedAt: new Date(addedAtMs).toISOString(),
+		addedAtMs
+	};
+}
+function parseState$1(text, max, win32) {
+	let parsed;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return {
+			state: "corrupt",
+			folders: [],
+			keepBad: true,
+			unreadable: false
+		};
+	}
+	if (!isPlain(parsed)) return {
+		state: "corrupt",
+		folders: [],
+		keepBad: true,
+		unreadable: false
+	};
+	const version = parsed["schema_version"];
+	if (typeof version === "number" && Number.isInteger(version) && version > 1) return {
+		state: "newer_version",
+		folders: [],
+		keepBad: false,
+		unreadable: false
+	};
+	const entries = parsed["folders"];
+	if (version !== 1 || !Array.isArray(entries)) return {
+		state: "corrupt",
+		folders: [],
+		keepBad: true,
+		unreadable: false
+	};
+	const folders = [];
+	const seen = /* @__PURE__ */ new Set();
+	const candidates = entries;
+	for (const entry of candidates) {
+		if (folders.length >= max) break;
+		if (!isPlain(entry) || typeof entry["path"] !== "string") continue;
+		const folder = toFolder(entry["path"], entry["addedAt"], win32);
+		if (folder === null) continue;
+		const id = identityOf(folder.path, folderKeyOfPath(folder.path));
+		if (seen.has(id)) continue;
+		seen.add(id);
+		folders.push(folder);
+	}
+	return {
+		state: "ok",
+		folders,
+		keepBad: false,
+		unreadable: false
+	};
+}
+function createUserFolders(options) {
+	const fs = options.fs ?? nodeUserFoldersFs;
+	const max = options.max ?? 200;
+	const win32 = options.win32 ?? hostPlatform === "win32";
+	const badFile = `${options.file}.bad`;
+	let current = {
+		state: "absent",
+		folders: [],
+		keepBad: false,
+		unreadable: false
+	};
+	let chain = Promise.resolve();
+	async function readFileState() {
+		const read = await fs.readText(options.file, USER_FOLDERS_READ_MAX_BYTES);
+		switch (read.kind) {
+			case "absent": return {
+				state: "absent",
+				folders: [],
+				keepBad: false,
+				unreadable: false
+			};
+			case "too_large": return {
+				state: "corrupt",
+				folders: [],
+				keepBad: true,
+				unreadable: false
+			};
+			case "unreadable": return {
+				state: "corrupt",
+				folders: [],
+				keepBad: false,
+				unreadable: true
+			};
+			case "text": return parseState$1(read.text, max, win32);
+		}
+	}
+	async function reload() {
+		current = await readFileState();
+	}
+	/** One change at a time, in call order; a failed change does not stop the next one. */
+	function serialized(job) {
+		const run = chain.then(job, job);
+		chain = run.catch(() => void 0);
+		return run;
+	}
+	async function persist(folders) {
+		if (current.state === "newer_version" || current.unreadable) throw new FolderError("state_unwritable");
+		try {
+			if (current.keepBad) await fs.keepCopy(options.file, badFile);
+			const at = new Date(options.now()).toISOString();
+			const body = {
+				schema_version: 1,
+				updatedAt: at,
+				folders: folders.map((folder) => ({
+					path: folder.path,
+					addedAt: folder.addedAt
+				}))
+			};
+			await fs.writeAtomic(options.file, `${JSON.stringify(body, null, 2)}\n`);
+		} catch (error) {
+			throw new FolderError("state_unwritable", null, error);
+		}
+		current = {
+			state: "ok",
+			folders,
+			keepBad: false,
+			unreadable: false
+		};
+	}
+	return {
+		async load() {
+			await serialized(async () => {
+				try {
+					await reload();
+				} catch {
+					current = {
+						state: "corrupt",
+						folders: [],
+						keepBad: false,
+						unreadable: true
+					};
+				}
+			});
+		},
+		list: () => current.folders,
+		status: () => ({
+			state: current.state,
+			count: current.folders.length
+		}),
+		async add(rawPath) {
+			const issue = rawPath.length > 1024 ? "too_long" : folderPathIssue(rawPath, win32);
+			const normalized = issue === null ? windowsFolderPath(rawPath, win32) : null;
+			if (issue !== null || normalized === null) throw new FolderError("folder_invalid", issue ?? "relative");
+			return serialized(async () => {
+				await reload();
+				const key = folderKeyOfPath(normalized);
+				const id = identityOf(normalized, key);
+				const existing = current.folders.find((folder) => identityOf(folder.path, folderKeyOfPath(folder.path)) === id);
+				if (existing !== void 0) return existing;
+				if (current.state === "newer_version" || current.unreadable) throw new FolderError("state_unwritable");
+				if (!await fs.isDirectory(normalized)) throw new FolderError("folder_invalid", "not_directory");
+				if (current.folders.length >= max) throw new FolderError("folder_limit");
+				const addedAtMs = options.now();
+				const added = {
+					path: normalized,
+					key: key.key,
+					addedAt: new Date(addedAtMs).toISOString(),
+					addedAtMs
+				};
+				await persist([...current.folders, added]);
+				return added;
+			});
+		},
+		async remove(key) {
+			await serialized(async () => {
+				await reload();
+				if (current.state === "newer_version" || current.unreadable) throw new FolderError("state_unwritable");
+				const kept = current.folders.filter((folder) => !sameKey(folder.path, key));
+				if (kept.length === current.folders.length) throw new FolderError("folder_not_found");
+				await persist(kept);
+			});
+		}
+	};
+}
+
+//#endregion
+//#region packages/engine/src/folders/service.ts
+/** How long "this path is a folder" is trusted. */
+const FOLDER_EXISTS_RECHECK_MS = 12e4;
+/** Paths checked together. */
+const CHECK_PARALLEL = 8;
+const HOUR_MS = 36e5;
+/** The default check: a directory, links followed; only "gone" counts as false, any other failure is "not known". */
+async function nodeIsDirectory(target) {
+	try {
+		return (await stat(target)).isDirectory();
+	} catch (error) {
+		const code = errorCodeOf$3(error);
+		return code === "ENOENT" || code === "ENOTDIR" ? false : null;
+	}
+}
+/** The default check for a transcript file: a file, links followed. */
+async function nodeFileExists(file) {
+	try {
+		return (await stat(file)).isFile();
+	} catch {
+		return false;
+	}
+}
+/** Without a terminal host nothing is owned by a terminal. */
+const NO_TERMINALS$1 = {
+	sessionOwner: () => null,
+	ownedPids: () => /* @__PURE__ */ new Set()
+};
+function createFolderService(ctx, deps = {}) {
+	const projects = ctx.config.runtime.projects;
+	const win32 = deps.win32 ?? hostPlatform === "win32";
+	const recheckMs = deps.existsRecheckMs ?? 12e4;
+	const isDirectory = deps.isDirectory ?? nodeIsDirectory;
+	const daMemory = deps.daMemory ?? createDaMemoryReader({
+		dir: projects.daMemoryDir ?? defaultDaMemoryDir(),
+		cacheMs: projects.daCacheMs,
+		win32,
+		...deps.daFs === void 0 ? {} : { fs: deps.daFs }
+	});
+	const catalog = deps.catalog ?? createProjectCatalog({
+		projectsRoot: projectsRootOf(ctx.claudeHome),
+		intervalMs: projects.catalogIntervalMs,
+		now: () => ctx.clock.now(),
+		win32,
+		fs: deps.fs ?? nodeDiscoveryFs
+	});
+	const userFolders = deps.userFolders ?? createUserFolders({
+		file: path.join(ctx.instanceDir, "data", "folders.json"),
+		max: projects.userFoldersMax,
+		now: () => ctx.clock.now(),
+		win32
+	});
+	const homeDir = deps.homeDir === void 0 ? os.homedir() : deps.homeDir;
+	const linker = deps.linker ?? NO_TERMINALS$1;
+	const registry = deps.registry ?? createRegistrySnapshot({
+		claudeHome: ctx.claudeHome,
+		pidAlive,
+		now: () => ctx.clock.now()
+	});
+	const fileExists = deps.fileExists ?? nodeFileExists;
+	const known = /* @__PURE__ */ new Map();
+	let loading = null;
+	let renewing = false;
+	let started = false;
+	/** The state file is read once, before the first list, add or remove. */
+	function loaded() {
+		loading ??= userFolders.load();
+		return loading;
+	}
+	async function check(target) {
+		try {
+			return await isDirectory(target);
+		} catch {
+			return null;
+		}
+	}
+	/** The paths whose existence the list shows: those of the DA memory and of the added folders. */
+	function pathsOf(da) {
+		const paths = /* @__PURE__ */ new Map();
+		for (const entry of [...da.map((folder) => folder.path), ...userFolders.list().map((folder) => folder.path)]) {
+			if (entry === null) continue;
+			const normalized = windowsFolderPath(entry, win32);
+			if (normalized !== null) paths.set(folderPathKey(normalized), normalized);
+		}
+		return paths;
+	}
+	async function measure(entries, nowMs) {
+		await mapLimit(entries, CHECK_PARALLEL, async ([key, target]) => {
+			const value = await check(target);
+			if (value === null) return;
+			known.set(key, {
+				value,
+				at: nowMs
+			});
+		});
+	}
+	/** Waits for the paths never checked; renews the stale ones behind the answer. */
+	async function existence(paths, nowMs) {
+		for (const key of known.keys()) if (!paths.has(key)) known.delete(key);
+		const fresh = [];
+		const stale = [];
+		for (const [key, target] of paths) {
+			const entry = known.get(key);
+			if (entry === void 0) fresh.push([key, target]);
+			else if (nowMs - entry.at >= recheckMs) stale.push([key, target]);
+		}
+		await measure(fresh, nowMs);
+		if (stale.length > 0 && !renewing) {
+			renewing = true;
+			measure(stale, nowMs).finally(() => {
+				renewing = false;
+			});
+		}
+		const result = /* @__PURE__ */ new Map();
+		for (const key of paths.keys()) {
+			const entry = known.get(key);
+			if (entry !== void 0) result.set(key, entry.value);
+		}
+		return result;
+	}
+	/** The merged rows and the sources they come from. */
+	async function snapshot() {
+		await loaded();
+		const status0 = catalog.status();
+		if (status0.scannedAt === null) await catalog.refresh();
+		else if (ctx.clock.now() - status0.scannedAt >= 2 * projects.catalogIntervalMs) catalog.refresh();
+		const nowMs = ctx.clock.now();
+		const daResult = await daMemory.read(nowMs);
+		const stats = ctx.queries.projectStats(ctx.scope, { windowFromMs: nowMs - ctx.config.monitor.window_hours * HOUR_MS });
+		const exists = await existence(pathsOf(daResult.folders), nowMs);
+		const folders = mergeFolders({
+			da: daResult.folders,
+			catalog: catalog.entries(),
+			user: userFolders.list(),
+			stats,
+			nowMs,
+			exists,
+			homeDir,
+			win32
+		});
+		const claude = catalog.status();
+		const added = userFolders.status();
+		return {
+			nowMs,
+			list: {
+				folders,
+				sources: {
+					daMemory: {
+						status: daResult.status,
+						folders: daResult.folders.length,
+						readAt: isoMsZ(daResult.readAtMs)
+					},
+					claudeHome: {
+						status: claude.state,
+						folders: catalog.entries().length,
+						scannedAt: claude.scannedAt === null ? null : isoMsZ(claude.scannedAt),
+						truncated: claude.truncated
+					},
+					userFolders: {
+						status: added.state,
+						count: added.count
+					}
+				},
+				asOf: isoMsZ(nowMs)
+			}
+		};
+	}
+	/**
+	* What the resume decision reads, gathered now: the facts of the session, the root of its project in the catalog (scanned first
+	* when nobody did), the registry (an unreadable one is an empty list: nothing is shown live that cannot be proved) and the linker.
+	*/
+	async function resumeEnvironment(sessionId, withTranscript) {
+		const facts = ctx.queries.resumeFacts(ctx.scope, sessionId);
+		let catalogRoot = null;
+		let entries = [];
+		if (facts !== null) {
+			if (facts.projectKey !== null) {
+				if (catalog.status().scannedAt === null) await catalog.refresh();
+				catalogRoot = catalog.entries().find((entry) => entry.key === facts.projectKey)?.root ?? null;
+			}
+			try {
+				entries = (await registry.read()).entries;
+			} catch {
+				entries = [];
+			}
+		}
+		return {
+			facts,
+			catalogRoot,
+			registry: entries,
+			sessionOwner: (id) => linker.sessionOwner(id),
+			ownedPids: linker.ownedPids(),
+			isDirectory: check,
+			transcriptExists: withTranscript ? fileExists : null,
+			knowsSession: (id) => ctx.queries.resumeFacts(ctx.scope, id) !== null,
+			win32
+		};
+	}
+	return {
+		async start() {
+			if (started) return;
+			started = true;
+			await loaded();
+			catalog.start();
+			await Promise.all([catalog.refresh(), daMemory.read(ctx.clock.now())]);
+		},
+		async stop() {
+			if (!started) return;
+			started = false;
+			await catalog.stop();
+		},
+		async list() {
+			return (await snapshot()).list;
+		},
+		async add(rawPath) {
+			await loaded();
+			const added = await userFolders.add(rawPath);
+			const { list } = await snapshot();
+			const cut = folderKeyOfPath(added.path).prefix;
+			const row = list.folders.find((candidate) => candidate.userAdded && (candidate.key === added.key || cut && candidate.key.startsWith(`${added.key}-`)));
+			if (row !== void 0) return row;
+			const [alone] = mergeFolders({
+				da: [],
+				catalog: [],
+				user: [added],
+				stats: [],
+				nowMs: ctx.clock.now(),
+				homeDir: null,
+				win32
+			});
+			if (alone === void 0) throw new Error("the folder that was just added has no row");
+			return alone;
+		},
+		async remove(key) {
+			await loaded();
+			await userFolders.remove(key);
+		},
+		async refresh() {
+			known.clear();
+			await userFolders.load();
+			await catalog.refresh();
+		},
+		async resumeEligibility(sessionId) {
+			return decideResume(sessionId, await resumeEnvironment(sessionId, false));
+		},
+		async planResume(sessionId, options) {
+			const decision = await decideResume(sessionId, await resumeEnvironment(sessionId, true));
+			return resumePlanOf(decision, options?.fork === true);
+		}
+	};
+}
+
+//#endregion
+//#region packages/engine/src/link/rules.ts
+/**
+* Whether a registry `cwd` is the folder of a terminal: the same key of the folder helpers (separators, case, a trailing separator,
+* the `/mnt/d` form) or, when the keys differ, the same real path. The real paths come from the caller (a junction or a short name
+* is only known after a file system call); an unknown real path never matches.
+*/
+function cwdMatches(entryCwd, terminalCwd, realpathOf) {
+	if (entryCwd === null) return false;
+	if (folderPathKey(entryCwd) === folderPathKey(terminalCwd)) return true;
+	const entryReal = realpathOf(entryCwd);
+	const terminalReal = realpathOf(terminalCwd);
+	return entryReal !== null && terminalReal !== null && folderPathKey(entryReal) === folderPathKey(terminalReal);
+}
+/**
+* Whether an entry started after the terminal was spawned (less the tolerance of the clocks). An entry with no start time is not
+* proved old. The resume id exception: a terminal that resumes a session without a fork accepts the entry of that session whatever
+* its start time says, because the registry may carry the start of the original session.
+*/
+function isNewSince(entry, terminal, toleranceMs) {
+	if (terminal.resumeSessionId !== null && !terminal.fork && entry.sessionId === terminal.resumeSessionId) return true;
+	return entry.startedAtMs === null || entry.startedAtMs >= terminal.spawnedAtMs - toleranceMs;
+}
+/**
+* Whether an entry is worth testing for a terminal: its process lives and is not a background session, its id is a session id, no
+* linked terminal holds its pid, it is new, and it names the folder of the terminal (a terminal that says `ignoreCwd` skips that
+* last test, and only that one).
+*/
+function preFilter(entry, terminal, options) {
+	return entry.alive && entry.kind !== "bg" && SID_RE.test(entry.sessionId) && !options.claimedPids.has(entry.pid) && isNewSince(entry, terminal, options.startToleranceMs) && (terminal.ignoreCwd || cwdMatches(entry.cwd, terminal.cwd, options.realpathOf));
+}
+/** Oldest start first; an entry with no start time last; then the lowest pid. */
+function byAge(a, b) {
+	const left = a.startedAtMs ?? Number.POSITIVE_INFINITY;
+	const right = b.startedAtMs ?? Number.POSITIVE_INFINITY;
+	if (left !== right) return left < right ? -1 : 1;
+	return a.pid - b.pid;
+}
+/** Oldest spawn first, then the name. */
+function bySpawn(a, b) {
+	if (a.spawnedAtMs !== b.spawnedAtMs) return a.spawnedAtMs - b.spawnedAtMs;
+	return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
+/**
+* The ladder over every pending terminal and every entry of the registry. Terminals are compared one folder at a time (the folder
+* key of their `cwd`); an entry given to one terminal is not given to another. The answer holds only the terminals that were linked
+* or found ambiguous: one that is missing stays as it was. The same facts give the same answer in whatever order they come.
+*/
+async function decideLinks(terminals, entries, options, tree) {
+	const verdicts = /* @__PURE__ */ new Map();
+	const foreign = /* @__PURE__ */ new Set();
+	const taken = /* @__PURE__ */ new Set();
+	const ordered = [...terminals].sort(bySpawn);
+	const sorted = [...entries].sort((a, b) => a.pid - b.pid);
+	function give(terminal, entry, basis) {
+		const confidence = basis === "registry-pid" || basis === "registry-tree" ? "high" : basis === "registry-order" ? "low" : "medium";
+		verdicts.set(terminal.name, {
+			kind: "linked",
+			entry,
+			basis,
+			confidence
+		});
+		taken.add(entry.pid);
+	}
+	const free = (entry) => !taken.has(entry.pid);
+	for (const terminal of ordered) {
+		const entry = sorted.find((candidate) => candidate.pid === terminal.pid);
+		if (entry !== void 0 && free(entry) && preFilter(entry, {
+			...terminal,
+			ignoreCwd: true
+		}, options)) give(terminal, entry, "registry-pid");
+	}
+	const groups = /* @__PURE__ */ new Map();
+	for (const terminal of ordered) {
+		if (verdicts.has(terminal.name)) continue;
+		const key = folderPathKey(terminal.cwd);
+		const group = groups.get(key);
+		if (group === void 0) groups.set(key, [terminal]);
+		else group.push(terminal);
+	}
+	for (const group of groups.values()) {
+		const candidates = new Map(group.map((terminal) => [terminal.name, sorted.filter((entry) => free(entry) && preFilter(entry, terminal, options))]));
+		if (![...candidates.values()].some((list) => list.length > 0)) continue;
+		const answers = await Promise.all(group.map((terminal) => tree(terminal.pid)));
+		const trees = [];
+		for (const answer of answers) if (answer !== null) trees.push(answer);
+		if (trees.length === group.length) {
+			const reachable = /* @__PURE__ */ new Set();
+			for (const reach of trees) for (const pid of reach) reachable.add(pid);
+			group.forEach((terminal, at) => {
+				const reach = trees[at];
+				const first = (candidates.get(terminal.name) ?? []).filter((entry) => free(entry) && reach?.has(entry.pid) === true).sort(byAge)[0];
+				if (first !== void 0) give(terminal, first, "registry-tree");
+			});
+			for (const list of candidates.values()) for (const entry of list) if (!reachable.has(entry.pid)) foreign.add(entry.pid);
+			continue;
+		}
+		const pool = /* @__PURE__ */ new Map();
+		for (const terminal of group) for (const entry of sorted) if (free(entry) && preFilter(entry, {
+			...terminal,
+			ignoreCwd: false
+		}, options)) pool.set(entry.pid, entry);
+		const found = [...pool.values()].sort(byAge);
+		const [only] = group;
+		const [one] = found;
+		if (found.length === 0) continue;
+		if (only !== void 0 && one !== void 0 && group.length === 1 && found.length === 1) give(only, one, only.resumeSessionId !== null && !only.fork && one.sessionId === only.resumeSessionId ? "resume-id" : "registry-cwd");
+		else if (found.length === group.length) group.forEach((terminal, at) => {
+			const entry = found[at];
+			if (entry !== void 0) give(terminal, entry, "registry-order");
+		});
+		else for (const terminal of group) verdicts.set(terminal.name, { kind: "ambiguous" });
+	}
+	return {
+		verdicts,
+		foreign
+	};
+}
+
+//#endregion
+//#region packages/engine/src/link/linker.ts
+/** An answer of the process table is reused for this long. */
+const PROCESS_TREE_MEMO_MS = 1500;
+/** A failure of the process table is remembered for this long: a machine that cannot list processes is not asked every second. */
+const PROCESS_TREE_FAILURE_MEMO_MS = 5e3;
+/** A real path is reused for this long. */
+const REALPATH_MEMO_MS = 6e4;
+const REALPATH_MEMO_MAX = 256;
+async function nodeRealpath(path) {
+	try {
+		return await realpath(path);
+	} catch {
+		return null;
+	}
+}
+function toLink(t) {
+	return {
+		status: t.status,
+		sessionId: t.sessionId,
+		previousSessionIds: [...t.previous],
+		basis: t.basis,
+		confidence: t.confidence,
+		since: t.sinceMs === null ? null : isoMsZ(t.sinceMs),
+		claudePid: t.claudePid,
+		transcript: t.transcript,
+		registryStatus: t.registryStatus,
+		waitingFor: t.waitingFor,
+		reason: t.reason,
+		shared: t.shared
+	};
+}
+/** Whether the ladder may still change the link of this terminal: not linked, or linked only by a guess that has no process. */
+const unresolved = (t) => t.status !== "linked" || t.claudePid === null;
+function createTerminalLinker(deps) {
+	const { config, clock, logger } = deps;
+	const terminals = /* @__PURE__ */ new Map();
+	const listeners = /* @__PURE__ */ new Set();
+	const treeMemo = /* @__PURE__ */ new Map();
+	const realMemo = /* @__PURE__ */ new Map();
+	const realpathOf = deps.realpath ?? nodeRealpath;
+	const win32 = deps.win32 ?? hostPlatform === "win32";
+	let running = null;
+	let started = false;
+	let timer = null;
+	/** A logger that never throws into the pass: the line is optional, the link is not. */
+	function note(level, event, fields) {
+		try {
+			logger[level](event, fields);
+		} catch {}
+	}
+	function known(sessionId) {
+		try {
+			return deps.sessionKnown(sessionId);
+		} catch {
+			return false;
+		}
+	}
+	function alive(entry) {
+		return entry.alive && (deps.pidAlive === void 0 || deps.pidAlive(entry.pid));
+	}
+	const lookupTree = (root) => {
+		const now = clock.now();
+		const memo = treeMemo.get(root);
+		if (memo !== void 0 && (!memo.settled || now - memo.at < memo.ttl)) return memo.promise;
+		const record = {
+			at: now,
+			ttl: PROCESS_TREE_MEMO_MS,
+			settled: false,
+			promise: Promise.resolve(null)
+		};
+		record.promise = Promise.resolve().then(() => deps.tree.descendants(root)).catch(() => null).then((answer) => {
+			record.settled = true;
+			if (answer === null) record.ttl = PROCESS_TREE_FAILURE_MEMO_MS;
+			return answer;
+		});
+		treeMemo.set(root, record);
+		return record.promise;
+	};
+	async function resolveReal(path, now) {
+		const local = windowsFolderPath(path, win32);
+		if (local === null) return;
+		const memo = realMemo.get(path);
+		if (memo !== void 0 && now - memo.at < 6e4) return;
+		let value;
+		try {
+			value = await realpathOf(local);
+		} catch {
+			value = null;
+		}
+		if (realMemo.size >= REALPATH_MEMO_MAX) realMemo.clear();
+		realMemo.set(path, {
+			at: now,
+			value
+		});
+	}
+	/** The real paths a pass needs: the folders of the terminals, and the folder of every entry no terminal names by key. */
+	async function primeRealPaths(pending, entries, now) {
+		const keys = new Set(pending.map((t) => folderPathKey(t.probe.cwd)));
+		const wanted = new Set(pending.map((t) => t.probe.cwd));
+		const claimed = ownedPids();
+		for (const entry of entries) {
+			if (entry.cwd === null || !alive(entry) || entry.kind === "bg" || claimed.has(entry.pid)) continue;
+			if (!keys.has(folderPathKey(entry.cwd))) wanted.add(entry.cwd);
+		}
+		for (const path of wanted) await resolveReal(path, now);
+	}
+	/** Gives the terminal a session id; an id it had is remembered (at most eight, the oldest dropped) and one it returns to is current again. */
+	function setSession(t, sessionId) {
+		const old = t.sessionId;
+		const kept = t.previous.filter((id) => id !== sessionId && id !== old);
+		if (old !== null && old !== sessionId) kept.push(old);
+		t.previous = kept.slice(-8);
+		t.sessionId = sessionId;
+		t.lastHintAt = null;
+		t.transcript = known(sessionId) ? "tracked" : "none";
+	}
+	function applyLink(t, entry, basis, confidence, now) {
+		setSession(t, entry.sessionId);
+		t.status = "linked";
+		t.basis = basis;
+		t.confidence = confidence;
+		t.sinceMs = now;
+		t.claudePid = entry.pid;
+		t.registryStatus = entry.status;
+		t.waitingFor = entry.waitingFor;
+		t.reason = null;
+		note("debug", "link.linked", {
+			pid: entry.pid,
+			code: basis,
+			status: confidence
+		});
+	}
+	function applyGuess(t, sessionId, now) {
+		setSession(t, sessionId);
+		t.status = "linked";
+		t.basis = "transcript-time";
+		t.confidence = "low";
+		t.sinceMs = now;
+		t.claudePid = null;
+		t.registryStatus = null;
+		t.waitingFor = null;
+		t.reason = null;
+		note("debug", "link.linked", {
+			code: "transcript-time",
+			status: "low"
+		});
+	}
+	function applyAmbiguous(t) {
+		t.status = "ambiguous";
+		t.reason = "ambiguous";
+	}
+	function reasonOf(t, now, unreadable) {
+		if (unreadable) return "registry_unreadable";
+		return now - t.trackedAt >= config.linkFastWindowMs ? "no_registry" : null;
+	}
+	/** A terminal that is linked to a process follows the entry of that pid: its status, and a new session id after `/clear`. */
+	function follow(entries, now) {
+		const byPid = new Map(entries.map((entry) => [entry.pid, entry]));
+		for (const t of terminals.values()) {
+			if (t.status !== "linked" || t.claudePid === null) continue;
+			const entry = byPid.get(t.claudePid);
+			if (entry === void 0 || !alive(entry)) {
+				t.registryStatus = null;
+				t.waitingFor = null;
+				continue;
+			}
+			if (entry.sessionId !== t.sessionId) {
+				setSession(t, entry.sessionId);
+				t.sinceMs = now;
+				note("debug", "link.session_changed", { pid: entry.pid });
+			}
+			t.registryStatus = entry.status;
+			t.waitingFor = entry.waitingFor;
+		}
+	}
+	async function climb(entries, now, unreadable) {
+		const asked = /* @__PURE__ */ new Map();
+		for (const t of terminals.values()) if (unresolved(t)) asked.set(t.probe.name, t);
+		if (asked.size === 0) return;
+		const pending = [...asked.values()];
+		/** The terminals this pass found ambiguous. */
+		const decided = /* @__PURE__ */ new Set();
+		const ruleTerminals = pending.map((t) => {
+			const relaxed = now - t.trackedAt >= config.linkFastWindowMs && (t.lastRelaxedAt === null || now - t.lastRelaxedAt >= config.linkSlowPollMs);
+			if (relaxed) t.lastRelaxedAt = now;
+			return {
+				name: t.probe.name,
+				pid: t.probe.pid,
+				cwd: t.probe.cwd,
+				spawnedAtMs: t.probe.spawnedAtMs,
+				resumeSessionId: t.probe.resumeSessionId,
+				fork: t.probe.fork,
+				ignoreCwd: relaxed
+			};
+		});
+		if (!unreadable && entries.length > 0) {
+			await primeRealPaths(pending, entries, now);
+			const result = await decideLinks(ruleTerminals, entries.filter(alive), {
+				startToleranceMs: config.linkStartToleranceMs,
+				claimedPids: ownedPids(),
+				realpathOf: (path) => realMemo.get(path)?.value ?? null
+			}, lookupTree);
+			for (const [name, verdict] of result.verdicts) {
+				const t = terminals.get(name);
+				if (t === void 0 || t !== asked.get(name)) continue;
+				if (verdict.kind === "linked") applyLink(t, verdict.entry, verdict.basis, verdict.confidence, now);
+				else {
+					applyAmbiguous(t);
+					decided.add(name);
+				}
+			}
+		}
+		for (const [name, t] of asked) {
+			if (terminals.get(name) !== t || t.status === "linked" || decided.has(name)) continue;
+			t.status = "pending";
+			t.reason = reasonOf(t, now, unreadable);
+		}
+	}
+	function fallback(entries, now) {
+		const live = new Set(entries.filter(alive).map((entry) => entry.sessionId));
+		for (const t of terminals.values()) {
+			if (t.status !== "pending" || now - t.trackedAt < config.linkFastWindowMs || t.folder.prefix) continue;
+			if ([...terminals.values()].some((other) => other !== t && other.folder.key === t.folder.key && unresolved(other))) continue;
+			let ids;
+			try {
+				ids = deps.sessionsSince(t.folder.key, t.probe.spawnedAtMs - config.linkStartToleranceMs);
+			} catch {
+				continue;
+			}
+			const candidates = ids.filter((id) => sessionOwner(id) === null && !live.has(id));
+			const [only] = candidates;
+			if (candidates.length === 1 && only !== void 0) applyGuess(t, only, now);
+		}
+	}
+	function settleShared() {
+		const counts = /* @__PURE__ */ new Map();
+		for (const t of terminals.values()) if (t.status === "linked" && t.sessionId !== null) counts.set(t.sessionId, (counts.get(t.sessionId) ?? 0) + 1);
+		for (const t of terminals.values()) t.shared = t.status === "linked" && t.sessionId !== null && (counts.get(t.sessionId) ?? 0) > 1;
+	}
+	function askForTranscripts(now) {
+		const slow = config.linkSlowPollMs;
+		for (const t of terminals.values()) {
+			if (t.status !== "linked" || t.sessionId === null) continue;
+			t.transcript = known(t.sessionId) ? "tracked" : "none";
+			if (t.transcript === "tracked") continue;
+			if (t.lastHintAt !== null && now - t.lastHintAt < slow) continue;
+			t.lastHintAt = now;
+			try {
+				deps.hintSession(t.sessionId);
+			} catch {}
+		}
+	}
+	/** Tells the listeners about every link that is not what they last saw. */
+	function publish() {
+		const changed = [];
+		for (const [name, t] of terminals) {
+			const link = toLink(t);
+			const text = JSON.stringify(link);
+			if (text === t.published) continue;
+			t.published = text;
+			changed.push([name, link]);
+		}
+		for (const [name, link] of changed) for (const listener of listeners) try {
+			listener(name, link);
+		} catch {}
+	}
+	function forgetOldMemos(now) {
+		for (const [pid, memo] of treeMemo) if (memo.settled && now - memo.at >= memo.ttl) treeMemo.delete(pid);
+	}
+	async function pass() {
+		if (terminals.size === 0) return;
+		let entries = [];
+		let unreadable = false;
+		try {
+			entries = (await deps.registry.read()).entries;
+		} catch {
+			unreadable = true;
+			note("warn", "link.registry_unreadable", { code: "registry_unreadable" });
+		}
+		const now = clock.now();
+		if (!unreadable) follow(entries, now);
+		await climb(entries, now, unreadable);
+		fallback(entries, now);
+		askForTranscripts(now);
+		settleShared();
+		forgetOldMemos(now);
+		publish();
+	}
+	function tick() {
+		if (running !== null) return running;
+		const mine = pass().catch(() => {
+			note("warn", "link.pass_failed", { code: "pass_failed" });
+		}).finally(() => {
+			if (running === mine) running = null;
+		});
+		running = mine;
+		return mine;
+	}
+	function nextDelay() {
+		const now = clock.now();
+		for (const t of terminals.values()) if (unresolved(t) && now - t.trackedAt < config.linkFastWindowMs) return config.linkPollMs;
+		return config.linkSlowPollMs;
+	}
+	function schedule() {
+		if (timer !== null) {
+			clearTimeout(timer);
+			timer = null;
+		}
+		if (!started || terminals.size === 0) return;
+		timer = setTimeout(() => {
+			timer = null;
+			tick().then(schedule);
+		}, nextDelay());
+		timer.unref();
+	}
+	function ownedPids() {
+		const pids = /* @__PURE__ */ new Set();
+		for (const t of terminals.values()) if (t.status === "linked" && t.claudePid !== null) pids.add(t.claudePid);
+		return pids;
+	}
+	function sessionOwner(sessionId) {
+		let best = null;
+		for (const t of terminals.values()) {
+			if (t.status !== "linked" || t.sessionId !== sessionId) continue;
+			if (best === null || (t.sinceMs ?? 0) < (best.sinceMs ?? 0) || (t.sinceMs ?? 0) === (best.sinceMs ?? 0) && t.probe.name < best.probe.name) best = t;
+		}
+		if (best !== null) return best.probe.name;
+		for (const t of terminals.values()) if (t.status !== "linked" && t.probe.resumeSessionId === sessionId && !t.probe.fork) return t.probe.name;
+		return null;
+	}
+	return {
+		track(probe) {
+			const fresh = {
+				probe,
+				trackedAt: clock.now(),
+				folder: folderKeyOfPath(probe.cwd),
+				lastRelaxedAt: null,
+				lastHintAt: null,
+				status: "pending",
+				sessionId: null,
+				previous: [],
+				basis: null,
+				confidence: null,
+				sinceMs: null,
+				claudePid: null,
+				transcript: "none",
+				registryStatus: null,
+				waitingFor: null,
+				reason: null,
+				shared: false,
+				published: ""
+			};
+			fresh.published = JSON.stringify(toLink(fresh));
+			const old = terminals.get(probe.name);
+			if (old !== void 0) treeMemo.delete(old.probe.pid);
+			terminals.set(probe.name, fresh);
+			settleShared();
+			publish();
+			schedule();
+		},
+		forget(name) {
+			const old = terminals.get(name);
+			if (old === void 0) return;
+			terminals.delete(name);
+			treeMemo.delete(old.probe.pid);
+			settleShared();
+			publish();
+			schedule();
+		},
+		link(name) {
+			const t = terminals.get(name);
+			return t === void 0 ? null : toLink(t);
+		},
+		links() {
+			return new Map([...terminals].map(([name, t]) => [name, toLink(t)]));
+		},
+		sessionOwner,
+		ownedPids,
+		onChange(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		tick,
+		start() {
+			if (started) return;
+			started = true;
+			schedule();
+		},
+		async stop() {
+			started = false;
+			if (timer !== null) {
+				clearTimeout(timer);
+				timer = null;
+			}
+			if (running !== null) await running;
+		}
+	};
+}
+
+//#endregion
+//#region packages/engine/src/terminal/limits.ts
+/** Largest frame of a replay; also the cap of `replayFrames`. */
+const REPLAY_FRAME_BYTES = 65536;
+/** Bytes a viewer may have queued before the session evicts it as too slow. */
+const VIEWER_BACKLOG_LIMIT_BYTES = 4194304;
+/** Period of the liveness watchdog that covers a missed exit event. */
+const LIVENESS_PROBE_MS = 5e3;
+/** A Claude session id as `claude --resume` takes it: a UUID, or any id of the same alphabet. */
+const RESUME_ID_RE = /^[0-9A-Za-z][0-9A-Za-z-]{7,63}$/;
+/** Longest working folder on a POSIX host (PATH_MAX). */
+const FOLDER_MAX_CHARS_POSIX = 4096;
+/** Input longer than this is refused before any work is done on it (the longest accepted folder fits twice). */
+const FOLDER_INPUT_MAX_CHARS = 8192;
+
+//#endregion
+//#region packages/engine/src/terminal/env.ts
+/** Windows compares environment variable names without regard to case; every other host compares them exactly. */
+const foldsCase = (platform) => platform === "win32";
+const STRIPPED_PREFIX = "CLAUDE_CODE_";
+/** Names removed whole (exact, or upper-cased on win32). The prefix rule above covers the `CLAUDE_CODE_*` family. */
+const STRIPPED_NAMES = /* @__PURE__ */ new Set([
+	"CLAUDECODE",
+	"CLAUDE_SESSION_ID",
+	"NO_COLOR",
+	"FORCE_COLOR",
+	"MCS_HOOK_DISABLE"
+]);
+/** Set last, replacing a value of the same name (any case on win32). */
+const FIXED = [
+	["TERM", "xterm-256color"],
+	["COLORTERM", "truecolor"],
+	["TERM_PROGRAM", "CAW"],
+	["NoDefaultCurrentDirectoryInExePath", "1"]
+];
+/** The value of `name` in `env`: on win32 under any case of the key (the exact spelling first), elsewhere exact. */
+function envValue(env, name, platform) {
+	const exact = env[name];
+	if (exact !== void 0 || !foldsCase(platform)) return exact;
+	const wanted = name.toUpperCase();
+	for (const key of Object.keys(env)) if (key.toUpperCase() === wanted) return env[key];
+}
+/**
+* The environment for a new `claude` session. Removed, unless named in `keep`: `CLAUDE_CODE_*`, `CLAUDECODE`,
+* `CLAUDE_SESSION_ID`, `NO_COLOR`, `FORCE_COLOR` and `MCS_HOOK_DISABLE` (case-insensitive on win32, exact elsewhere). Dropped
+* because no child can receive them: an undefined value, a NUL, a name that is empty or holds `=`. On win32 the first spelling
+* of two keys that differ only in case wins, because node-pty builds the environment block from the keys and would pass both.
+* Everything else passes through. The input is not changed.
+*/
+function buildTerminalEnv(source, o) {
+	const fold = foldsCase(o.platform) ? (name) => name.toUpperCase() : (name) => name;
+	const keep = new Set(o.keep.map(fold));
+	const fixed = new Set(FIXED.map(([name]) => fold(name)));
+	const seen = /* @__PURE__ */ new Set();
+	const entries = /* @__PURE__ */ new Map();
+	for (const name of Object.keys(source)) {
+		const value = source[name];
+		if (value === void 0) continue;
+		if (name === "" || name.includes("=") || name.includes("\0") || value.includes("\0")) continue;
+		const key = fold(name);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		if ((key.startsWith(STRIPPED_PREFIX) || STRIPPED_NAMES.has(key)) && !keep.has(key)) continue;
+		if (fixed.has(key)) continue;
+		entries.set(name, value);
+	}
+	for (const [name, value] of FIXED) entries.set(name, value);
+	return Object.fromEntries(entries);
+}
+
+//#endregion
+//#region packages/engine/src/terminal/errors.ts
+const MESSAGES = {
+	UNSUPPORTED_OS: "The terminal is not supported on this operating system.",
+	NATIVE_MISSING: "The terminal component is missing from this installation.",
+	NATIVE_LOAD_FAILED: "The terminal component could not be loaded.",
+	CLAUDE_NOT_FOUND: "The claude command was not found on the search path.",
+	COMMAND_UNSUPPORTED: "The claude command is of a kind the terminal cannot start.",
+	ARGS_UNSAFE: "An argument cannot be passed safely to the claude command.",
+	FOLDER_INVALID: "The folder is not a valid working folder.",
+	FOLDER_NOT_FOUND: "The folder does not exist.",
+	SESSION_LIMIT: "The limit of terminal sessions is reached.",
+	SPAWN_FAILED: "The terminal process could not be started.",
+	START_TIMEOUT: "The terminal process did not start in time.",
+	SESSION_NOT_FOUND: "There is no terminal session with this name.",
+	SESSION_ENDED: "The terminal session has ended.",
+	NAME_INVALID: "The session name is not valid.",
+	MESSAGE_TOO_LARGE: "The input is too large.",
+	SHUTTING_DOWN: "The terminal service is shutting down."
+};
+var TerminalError = class extends Error {
+	code;
+	constructor(code, options) {
+		super(MESSAGES[code], options);
+		this.name = "TerminalError";
+		this.code = code;
+	}
+};
+
+//#endregion
+//#region packages/engine/src/terminal/command.ts
+const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+/** One PATHEXT entry: a dot and a plain extension. Anything else (a path, a quote, a space) would build a strange candidate. */
+const PATHEXT_ENTRY = /^\.[^\\/:*?"<>|\s\p{Cc}]+$/u;
+/** A drive-absolute path or a UNC path. A rooted path without a drive and `D:x` are relative to something and are refused. */
+const FULLY_QUALIFIED = /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/u;
+/** A command that names a place (a separator or a drive) is a path; any other is looked up on PATH. */
+const PATH_FORM = /[\\/]|^[A-Za-z]:/u;
+const NOT_A_COMMAND = /["<>|?*\p{Cc}]/u;
+const CONTROL_CHARACTER$1 = /\p{Cc}/u;
+/** A shim path that cmd.exe would expand (`%VAR%` works even inside quotes) or misread. */
+const UNSAFE_SHIM_PATH = /["%\p{Cc}]/u;
+const DOUBLE_QUOTE$1 = 34;
+/** Arguments that may travel through cmd.exe: letters, digits and a short list of punctuation. See `isCmdSafeArg`. */
+const CMD_SAFE_ARG = /^[\p{L}\p{N} _.,:=@+/\\-]*$/u;
+function stripSurroundingQuotes$1(text) {
+	let start = 0;
+	let end = text.length;
+	while (start < end && text.charCodeAt(start) === DOUBLE_QUOTE$1) start += 1;
+	while (end > start && text.charCodeAt(end - 1) === DOUBLE_QUOTE$1) end -= 1;
+	return text.slice(start, end);
+}
+function windowsExtensions(env) {
+	const own = (envValue(env, "PATHEXT", "win32") ?? "").split(";").filter((entry) => PATHEXT_ENTRY.test(entry));
+	return own.length > 0 ? own : DEFAULT_PATHEXT.split(";");
+}
+function resolveOnWindows(o) {
+	const { command } = o;
+	if (command.trim() === "" || NOT_A_COMMAND.test(command)) return null;
+	if ((/^[A-Za-z]:/u.test(command) ? command.slice(2) : command).includes(":")) return null;
+	const extensions = windowsExtensions(o.env);
+	const lower = command.toLowerCase();
+	const names = extensions.some((ext) => lower.endsWith(ext.toLowerCase())) ? [command, ...extensions.map((ext) => command + ext)] : extensions.map((ext) => command + ext);
+	const found = (candidate) => o.fs.isFile(candidate) ? {
+		path: candidate,
+		ext: path.win32.extname(candidate).toLowerCase()
+	} : null;
+	if (PATH_FORM.test(command)) {
+		if (!FULLY_QUALIFIED.test(command)) return null;
+		for (const name of names) {
+			const hit = found(path.win32.normalize(name));
+			if (hit !== null) return hit;
+		}
+		return null;
+	}
+	const searchPath = envValue(o.env, "PATH", "win32");
+	if (searchPath === void 0) return null;
+	for (const entry of searchPath.split(";")) {
+		const dir = stripSurroundingQuotes$1(entry.trim()).trim();
+		if (dir === "" || !FULLY_QUALIFIED.test(dir)) continue;
+		for (const name of names) {
+			const hit = found(path.win32.join(dir, name));
+			if (hit !== null) return hit;
+		}
+	}
+	return null;
+}
+function resolveOnPosix(o) {
+	const { command } = o;
+	if (command === "" || command.includes("\0")) return null;
+	const usable = (candidate) => o.fs.isExecutable?.(candidate) ?? o.fs.isFile(candidate);
+	if (command.includes("/")) return path.posix.isAbsolute(command) && usable(command) ? {
+		path: command,
+		ext: ""
+	} : null;
+	const searchPath = envValue(o.env, "PATH", o.platform);
+	if (searchPath === void 0) return null;
+	for (const entry of searchPath.split(":")) {
+		if (!entry.startsWith("/")) continue;
+		const candidate = path.posix.join(entry, command);
+		if (usable(candidate)) return {
+			path: candidate,
+			ext: ""
+		};
+	}
+	return null;
+}
+/**
+* Finds `claude` the way Python `shutil.which` does (what MTOP used). Windows: the PATH of the server (`Path` or `PATH`, any
+* case), PATHEXT in order (default `.COM;.EXE;.BAT;.CMD`), the first existing file wins; relative PATH entries and a relative
+* command path are ignored. A POSIX host: the first executable file on PATH, or the absolute path itself. `null` when there is
+* no such file (the service reports CLAUDE_NOT_FOUND).
+*/
+function resolveClaudeCommand(o) {
+	return o.platform === "win32" ? resolveOnWindows(o) : resolveOnPosix(o);
+}
+/**
+* The argument rules of CommandLineToArgvW (and of the MSVC runtime, which `claude.exe` and node use): quote when the text is
+* empty or holds a space, a tab, a line break or a quote; inside the quotes a quote becomes `\"`, and the backslashes that
+* precede a quote, or the closing quote, are doubled.
+*/
+function quoteWindowsArg(arg) {
+	if (arg !== "" && !/[ \t\n\v"]/u.test(arg)) return arg;
+	let out = "\"";
+	let backslashes = 0;
+	for (const ch of arg) if (ch === "\\") backslashes += 1;
+	else if (ch === "\"") {
+		out += `${"\\".repeat(backslashes * 2 + 1)}"`;
+		backslashes = 0;
+	} else {
+		out += "\\".repeat(backslashes) + ch;
+		backslashes = 0;
+	}
+	return `${out}${"\\".repeat(backslashes * 2)}"`;
+}
+/**
+* True when cmd.exe cannot read anything into the text. cmd expands `%VAR%` and `!VAR!` even inside quotes and gives `^ & | < > ( )`
+* a meaning outside them, so the shim route allows letters and digits of any script, a space and `_ . , : = @ + / \ -` only.
+*/
+function isCmdSafeArg(arg) {
+	return CMD_SAFE_ARG.test(arg);
+}
+function cmdExeOf(env, fs) {
+	const root = [envValue(env, "SystemRoot", "win32"), envValue(env, "windir", "win32")].find((value) => value !== void 0 && value !== "");
+	if (root === void 0 || !FULLY_QUALIFIED.test(root)) throw new TerminalError("COMMAND_UNSUPPORTED");
+	const cmd = path.win32.join(root, "System32", "cmd.exe");
+	if (!fs.isFile(cmd)) throw new TerminalError("COMMAND_UNSUPPORTED");
+	return cmd;
+}
+/**
+* How to start the resolved program. `args` are the configured arguments; `resume` is a Claude session id that becomes
+* `--resume <id>` after them. Windows: `.exe` and `.com` run directly with an argv array. `.cmd` and `.bat` run as the string
+* `cmd.exe /d /s /c ""<shim>" <quoted args>"` (the array form fails: node-pty wraps the first element in escaped quotes and
+* cmd answers "not recognized"; `/s` strips only the outer pair). The kind is read from the path itself, never from `ext`.
+* Refused with COMMAND_UNSUPPORTED: any other extension, a shim path with `%`, a quote or a control character, no cmd.exe.
+* Refused with ARGS_UNSAFE: an argument with a control character, on the shim route one outside `isCmdSafeArg`, a resume id
+* that does not match RESUME_ID_RE. No error message names a path or an argument. `display` is the program as resolved.
+*/
+function buildLaunch(resolved, args, o) {
+	const all = [...args];
+	if (o.resume !== void 0) {
+		if (!RESUME_ID_RE.test(o.resume)) throw new TerminalError("ARGS_UNSAFE");
+		all.push("--resume", o.resume);
+		if (o.fork === true) all.push("--fork-session");
+	} else if (o.fork === true) throw new TerminalError("ARGS_UNSAFE");
+	if (all.some((arg) => CONTROL_CHARACTER$1.test(arg))) throw new TerminalError("ARGS_UNSAFE");
+	const direct = () => ({
+		kind: "exe",
+		file: resolved.path,
+		args: all,
+		display: resolved.path
+	});
+	if (o.platform !== "win32") return direct();
+	const ext = path.win32.extname(resolved.path).toLowerCase();
+	if (ext === ".exe" || ext === ".com") return direct();
+	if (ext !== ".cmd" && ext !== ".bat") throw new TerminalError("COMMAND_UNSUPPORTED");
+	if (UNSAFE_SHIM_PATH.test(resolved.path)) throw new TerminalError("COMMAND_UNSUPPORTED");
+	const file = cmdExeOf(o.env, o.fs);
+	if (!all.every(isCmdSafeArg)) throw new TerminalError("ARGS_UNSAFE");
+	const tail = all.map((arg) => ` ${quoteWindowsArg(arg)}`).join("");
+	return {
+		kind: "shim",
+		file,
+		args: `/d /s /c ""${resolved.path}"${tail}"`,
+		display: resolved.path
+	};
+}
+
+//#endregion
+//#region packages/engine/src/terminal/folder.ts
+const CONTROL_CHARACTER = /\p{Cc}/u;
+const FORMAT_CHARACTER = /\p{Cf}/u;
+/** `/mnt/<letter>` and what follows, the spelling of a Windows drive in WSL. */
+const WSL_DRIVE_PATH = /^\/mnt\/([A-Za-z])(?:\/(.*))?$/u;
+const DRIVE_PREFIX = /^[A-Za-z]:(?:\\|$)/u;
+/** CON, PRN, AUX, NUL, COM1-9 and LPT1-9 (also with the superscript digits), CONIN$ and CONOUT$: names Windows reserves. */
+const RESERVED_DEVICE_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3]|CONIN\$|CONOUT\$)$/iu;
+const DOUBLE_QUOTE = 34;
+/** Removes every double quote at both ends (Python `strip('"')`), without a regular expression over the text. */
+function stripSurroundingQuotes(text) {
+	let start = 0;
+	let end = text.length;
+	while (start < end && text.charCodeAt(start) === DOUBLE_QUOTE) start += 1;
+	while (end > start && text.charCodeAt(end - 1) === DOUBLE_QUOTE) end -= 1;
+	return text.slice(start, end);
+}
+/** Windows reserves a device name with or without an extension, and ignores trailing spaces: `NUL.txt`, `CON `. */
+function isReservedDeviceName(segment) {
+	const dot = segment.indexOf(".");
+	const base = (dot === -1 ? segment : segment.slice(0, dot)).trimEnd();
+	return RESERVED_DEVICE_NAME.test(base);
+}
+function normalizeWindows(text) {
+	if (FORMAT_CHARACTER.test(text)) return null;
+	let spelled = text;
+	const wsl = WSL_DRIVE_PATH.exec(spelled);
+	if (wsl !== null) spelled = `${(wsl[1] ?? "").toUpperCase()}:\\${wsl[2] ?? ""}`;
+	spelled = stripExtendedPrefix(spelled.replaceAll("/", "\\"));
+	if (!DRIVE_PREFIX.test(spelled)) return null;
+	const drive = spelled.charAt(0).toUpperCase();
+	const rest = spelled.slice(2);
+	if (rest.includes(":")) return null;
+	if (rest.split("\\").some(isReservedDeviceName)) return null;
+	const normalized = path.win32.normalize(`${drive}:${rest === "" ? "\\" : rest}`);
+	const folder = normalized.length > 3 ? normalized.replace(/\\+$/u, "") : normalized;
+	return folder.length > 240 ? null : folder;
+}
+function normalizePosix(text) {
+	if (!text.startsWith("/")) return null;
+	const normalized = path.posix.normalize(text);
+	const folder = normalized.length > 1 ? normalized.replace(/\/+$/u, "") : normalized;
+	return folder.length > 4096 ? null : folder;
+}
+/**
+* The spelling of a working folder that the service uses (`D:\x`), or `null` when it cannot be one (the service maps that to
+* FOLDER_INVALID). On Windows: surrounding quotes and spaces are removed, `/mnt/d/x` and `D:/x` become `D:\x`, the drive letter
+* is upper case, no trailing separator except the root, `..` and `.` are collapsed. Refused: empty, a control character, a
+* relative path (MTOP used the server folder; never here), UNC and device paths, a ":" after the drive, a reserved device
+* name, a Unicode format character (bidi marks, zero width), more than 240 characters. A POSIX host takes absolute paths only.
+* The path is not resolved through links: the UI groups by the spelling, and `folderKey` only compares.
+*/
+function normalizeFolder(raw, platform) {
+	if (raw.length > 8192) return null;
+	const text = stripSurroundingQuotes(raw.trim()).trim();
+	if (text === "" || CONTROL_CHARACTER.test(text)) return null;
+	return platform === "win32" ? normalizeWindows(text) : normalizePosix(text);
+}
+
+//#endregion
+//#region packages/engine/src/terminal/names.ts
+const NAME_BASE_RE = new RegExp(`^[A-Za-z0-9_-]{1,${String(60)}}$`);
+const OUTSIDE_NAME_CHARS = /[^A-Za-z0-9_-]/gu;
+/**
+* The folder name in the alphabet of a session name (MTOP `session_base`): the last path segment, every code point outside
+* `[A-Za-z0-9_-]` replaced by `_`, at most 60 characters, `session` when nothing is left.
+*/
+function sessionBase(folder) {
+	const segments = folder.split(/[\\/]+/u).filter((segment) => segment !== "");
+	const base = (segments[segments.length - 1] ?? "").replace(OUTSIDE_NAME_CHARS, "_").slice(0, 60);
+	return base === "" ? "session" : base;
+}
+/**
+* Hands out `<base>-<n>`. The number counts up per base for the life of the allocator and a name is never issued twice (MTOP
+* reused the lowest free number): a stale browser tab that holds `proj-1` can never reach a different `proj-1`.
+*/
+var NameAllocator = class {
+	#counters = /* @__PURE__ */ new Map();
+	#issued = /* @__PURE__ */ new Set();
+	/** Throws NAME_INVALID when `base` is not 1 to 60 characters of `[A-Za-z0-9_-]` (use `sessionBase` to make one). */
+	next(base) {
+		if (!NAME_BASE_RE.test(base)) throw new TerminalError("NAME_INVALID");
+		let n = this.#counters.get(base) ?? 0;
+		for (;;) {
+			n += 1;
+			const suffix = `-${String(n)}`;
+			const name = base.slice(0, 64 - suffix.length) + suffix;
+			if (!this.#issued.has(name)) {
+				this.#issued.add(name);
+				this.#counters.set(base, n);
+				return name;
+			}
+		}
+	}
+};
+
+//#endregion
+//#region packages/engine/src/terminal/replay.ts
+const ESC = 27;
+const BEL = 7;
+const LF = 10;
+const LEFT_BRACKET = 91;
+const RIGHT_BRACKET = 93;
+const BACKSLASH = 92;
+const UPPER_P = 80;
+/** A UTF-8 character has at most three continuation bytes after its start byte. */
+const MAX_CONTINUATION_BYTES = 3;
+/** `prepareReplay` looks for the first line feed only in this many bytes. */
+const LINE_SEARCH_BYTES = 4096;
+/** ESC [ 0 m: a colour run that the trim cut in half must not leak into the replay. */
+const SGR_RESET = Buffer.from([
+	ESC,
+	LEFT_BRACKET,
+	48,
+	109
+]);
+function isContinuationByte(byte) {
+	return byte !== void 0 && (byte & 192) === 128;
+}
+/**
+* The last output of a session, newest bytes kept. Chunk-granular: while the size is over the capacity the oldest whole
+* chunks go, so the size stays between the capacity minus one chunk (node-pty chunks are at most 8.3 KB) and the capacity.
+* After a trim the first byte is a UTF-8 start byte, so no character is cut.
+*/
+var ReplayBuffer = class {
+	#capacity;
+	#chunks = [];
+	#size = 0;
+	#trimmed = false;
+	constructor(capacityBytes) {
+		if (!Number.isInteger(capacityBytes) || capacityBytes < 1) throw new RangeError("The capacity of a replay buffer is a positive integer.");
+		this.#capacity = capacityBytes;
+	}
+	/** Bytes held now. */
+	get size() {
+		return this.#size;
+	}
+	/** True once output was dropped: the snapshot no longer starts at the beginning of the session. */
+	get trimmed() {
+		return this.#trimmed;
+	}
+	/** Keeps a copy of the chunk. A chunk larger than the capacity keeps only its tail, cut at a UTF-8 start byte. */
+	append(chunk) {
+		if (chunk.length === 0) return;
+		if (chunk.length > this.#capacity) {
+			this.#chunks = [Buffer.from(chunk.subarray(chunk.length - this.#capacity))];
+			this.#size = this.#capacity;
+			this.#trimmed = true;
+			this.#alignHead();
+			return;
+		}
+		this.#chunks.push(Buffer.from(chunk));
+		this.#size += chunk.length;
+		if (this.#size <= this.#capacity) return;
+		let drop = 0;
+		while (this.#size > this.#capacity && drop < this.#chunks.length) {
+			this.#size -= this.#chunks[drop]?.length ?? 0;
+			drop += 1;
+		}
+		this.#chunks = this.#chunks.slice(drop);
+		this.#trimmed = true;
+		this.#alignHead();
+	}
+	/** A copy of the bytes held. */
+	snapshot() {
+		return Buffer.concat(this.#chunks, this.#size);
+	}
+	/** Releases the memory, as a session does when it ends. */
+	clear() {
+		this.#chunks = [];
+		this.#size = 0;
+		this.#trimmed = false;
+	}
+	/** Skips the stray continuation bytes of a character whose start byte was dropped (at most three, as in valid UTF-8). */
+	#alignHead() {
+		let skipped = 0;
+		while (skipped < MAX_CONTINUATION_BYTES) {
+			const head = this.#chunks[0];
+			if (head === void 0) return;
+			if (!isContinuationByte(head[0])) return;
+			if (head.length === 1) this.#chunks.shift();
+			else this.#chunks[0] = head.subarray(1);
+			this.#size -= 1;
+			skipped += 1;
+		}
+	}
+};
+/**
+* The bytes a viewer receives when it attaches. When the buffer was trimmed, the replay restarts just after the first line
+* feed within the first 4 KiB (when there is none, the snapshot stays as it is) and starts with `ESC [ 0 m`. Then the terminal
+* queries are removed, see `stripTerminalQueries`. The snapshot is not changed.
+*/
+function prepareReplay(snapshot, trimmed) {
+	let bytes = snapshot;
+	if (trimmed) {
+		const lineFeed = bytes.subarray(0, LINE_SEARCH_BYTES).indexOf(LF);
+		if (lineFeed !== -1) bytes = bytes.subarray(lineFeed + 1);
+		bytes = Buffer.concat([SGR_RESET, stripTerminalQueries(bytes)]);
+		return bytes;
+	}
+	return stripTerminalQueries(bytes);
+}
+const MARKER_MIN = 60;
+const MARKER_MAX = 63;
+const QUESTION = 63;
+const GREATER = 62;
+const EQUALS = 61;
+const DOLLAR = 36;
+const LOWER_Q = 113;
+const DIGIT_ZERO = 48;
+const DIGIT_NINE = 57;
+const SEMICOLON = 59;
+const COLON = 58;
+/** First parameters of `CSI Ps t` that ask the terminal to report something (xterm window operations 11 to 21). */
+const WINDOW_REPORTS = /* @__PURE__ */ new Set([
+	11,
+	13,
+	14,
+	15,
+	16,
+	18,
+	19,
+	20,
+	21
+]);
+/** `OSC Ps ; ... ; ? ST`: colour queries (4, 5, 10 to 19) and the clipboard query (52). */
+const OSC_QUERY_NUMBERS = /* @__PURE__ */ new Set([
+	4,
+	5,
+	10,
+	11,
+	12,
+	13,
+	14,
+	15,
+	16,
+	17,
+	18,
+	19,
+	52
+]);
+/** The number a run of decimal digits spells, or -1 for an empty run or a byte that is not a digit. */
+function decimalValue(bytes, start, end) {
+	if (start >= end || end - start > 6) return -1;
+	let value = 0;
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i] ?? 0;
+		if (byte < DIGIT_ZERO || byte > DIGIT_NINE) return -1;
+		value = value * 10 + (byte - DIGIT_ZERO);
+	}
+	return value;
+}
+/** True when every byte of the range is a digit, `;` or `:` (the parameter alphabet of CSI). */
+function onlyParameterBytes(bytes, start, end) {
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i] ?? 0;
+		if ((byte < DIGIT_ZERO || byte > DIGIT_NINE) && byte !== SEMICOLON && byte !== COLON) return false;
+	}
+	return true;
+}
+/** Index of the first `;` or `:` in the range, or the end of it. */
+function firstSeparator(bytes, start, end) {
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i];
+		if (byte === SEMICOLON || byte === COLON) return i;
+	}
+	return end;
+}
+/** Classifies a complete CSI: parameter bytes in [pStart, pEnd), intermediate bytes in [iStart, iEnd), then the final byte. */
+function isCsiQuery(bytes, pStart, pEnd, iEnd, final) {
+	const first = bytes[pStart] ?? 0;
+	const hasMarker = pStart < pEnd && first >= MARKER_MIN && first <= MARKER_MAX;
+	const marker = hasMarker ? first : 0;
+	const paramsStart = hasMarker ? pStart + 1 : pStart;
+	if (!onlyParameterBytes(bytes, paramsStart, pEnd)) return false;
+	const intermediates = iEnd - pEnd;
+	switch (final) {
+		case 99: return intermediates === 0 && (marker === 0 || marker === GREATER || marker === EQUALS);
+		case 110: {
+			if (intermediates !== 0) return false;
+			if (marker === QUESTION) return true;
+			if (marker !== 0) return false;
+			const ps = decimalValue(bytes, paramsStart, pEnd);
+			return ps === 5 || ps === 6;
+		}
+		case 112: return intermediates === 1 && bytes[pEnd] === DOLLAR && (marker === 0 || marker === QUESTION);
+		case 117: return intermediates === 0 && marker === QUESTION && paramsStart === pEnd;
+		case LOWER_Q: return intermediates === 0 && marker === GREATER;
+		case 116: {
+			if (intermediates !== 0 || marker !== 0) return false;
+			const ps = decimalValue(bytes, paramsStart, firstSeparator(bytes, paramsStart, pEnd));
+			return WINDOW_REPORTS.has(ps);
+		}
+		default: return false;
+	}
+}
+/** `ESC [` at `esc`. A byte that cannot belong to a CSI ends the scan there, unconsumed: it may start the next sequence. */
+function scanCsi(bytes, esc, out) {
+	const n = bytes.length;
+	const pStart = esc + 2;
+	let p = pStart;
+	while (p < n && (bytes[p] ?? 0) >= 48 && (bytes[p] ?? 0) <= 63) p += 1;
+	const pEnd = p;
+	while (p < n && (bytes[p] ?? 0) >= 32 && (bytes[p] ?? 0) <= 47) p += 1;
+	out.query = false;
+	if (p >= n) {
+		out.end = n;
+		return;
+	}
+	const final = bytes[p] ?? 0;
+	if (final < 64 || final > 126) {
+		out.end = p;
+		return;
+	}
+	out.end = p + 1;
+	out.query = isCsiQuery(bytes, pStart, pEnd, p, final);
+}
+/** True when an OSC payload is a query: a known number and a field that is exactly `?`. */
+function isOscQuery(bytes, start, end) {
+	let semicolon = start;
+	while (semicolon < end && bytes[semicolon] !== SEMICOLON) semicolon += 1;
+	if (semicolon >= end || !OSC_QUERY_NUMBERS.has(decimalValue(bytes, start, semicolon))) return false;
+	let field = semicolon + 1;
+	for (let i = semicolon + 1; i <= end; i += 1) if (i === end || bytes[i] === SEMICOLON) {
+		if (i - field === 1 && bytes[field] === QUESTION) return true;
+		field = i + 1;
+	}
+	return false;
+}
+/** `ESC ]` at `esc`: ends at BEL or ST. A new ESC that is no ST ends the scan there, unconsumed (the terminal aborts the string). */
+function scanOsc(bytes, esc, out) {
+	const n = bytes.length;
+	const start = esc + 2;
+	out.query = false;
+	for (let p = start; p < n; p += 1) {
+		const byte = bytes[p];
+		if (byte === BEL) {
+			out.end = p + 1;
+			out.query = isOscQuery(bytes, start, p);
+			return;
+		}
+		if (byte === ESC) {
+			if (p + 1 >= n) out.end = n;
+			else if (bytes[p + 1] === BACKSLASH) {
+				out.end = p + 2;
+				out.query = isOscQuery(bytes, start, p);
+			} else out.end = p;
+			return;
+		}
+	}
+	out.end = n;
+}
+/** `ESC P` at `esc`: only DECRQSS (`DCS $ q Pt ST`) is a query. Any other DCS is kept; its body is plain bytes to this scan. */
+function scanDcs(bytes, esc, out) {
+	const n = bytes.length;
+	const start = esc + 2;
+	out.query = false;
+	const next = bytes.indexOf(ESC, start);
+	if (next === -1 || next + 1 >= n) out.end = n;
+	else if (bytes[next + 1] === BACKSLASH) {
+		out.end = next + 2;
+		out.query = next - start >= 2 && bytes[start] === DOLLAR && bytes[start + 1] === LOWER_Q;
+	} else out.end = next;
+}
+/**
+* Removes the sequences that make a terminal answer: DA1, DA2 and DA3 (`CSI c`, `CSI > c`, `CSI = c`), DSR (`CSI 5 n`,
+* `CSI 6 n`, `CSI ? Ps n`), DECRQM (`CSI ? Ps $ p`, `CSI Ps $ p`), the kitty keyboard query (`CSI ? u`), XTVERSION
+* (`CSI > q`), the window reports (`CSI 11 t` to `CSI 21 t`), OSC colour and clipboard queries (`OSC Ps ; ? BEL|ST`) and
+* DECRQSS (`DCS $ q ... ST`). Every sequence that sets state or draws is kept, and so is a sequence that is cut off or broken
+* (a terminal would not answer it either). Only the 7-bit forms (ESC and a letter) are read.
+*
+* One pass over the bytes, never a regular expression over the buffer: this runs over up to 1 MiB at every attach in the process
+* that hosts all sessions, and an adversarial snapshot (`ESC [` a million times, an OSC that never ends) must cost time linear
+* in its size. A scan that fails resumes at the byte that stopped it, so no byte is scanned twice. The input is not changed;
+* when there is nothing to remove, the same Buffer comes back.
+*/
+function stripTerminalQueries(bytes) {
+	const parts = [];
+	const scan = {
+		end: 0,
+		query: false
+	};
+	let copyFrom = 0;
+	let i = bytes.indexOf(ESC);
+	while (i !== -1 && i + 1 < bytes.length) {
+		const introducer = bytes[i + 1];
+		if (introducer === LEFT_BRACKET) scanCsi(bytes, i, scan);
+		else if (introducer === RIGHT_BRACKET) scanOsc(bytes, i, scan);
+		else if (introducer === UPPER_P) scanDcs(bytes, i, scan);
+		else {
+			i = bytes.indexOf(ESC, i + 1);
+			continue;
+		}
+		if (scan.query) {
+			if (i > copyFrom) parts.push(bytes.subarray(copyFrom, i));
+			copyFrom = scan.end;
+		}
+		i = bytes.indexOf(ESC, scan.end);
+	}
+	if (parts.length === 0 && copyFrom === 0) return bytes;
+	parts.push(bytes.subarray(copyFrom));
+	return Buffer.concat(parts);
+}
+/**
+* The replay in frames of at most `maxFrame` bytes (default and cap: 65,536). A frame is a view into `bytes`. Frames may split
+* a character or an escape sequence: xterm.js keeps the unfinished part of its input between writes.
+*/
+function* replayFrames(bytes, maxFrame = REPLAY_FRAME_BYTES) {
+	if (!Number.isInteger(maxFrame) || maxFrame < 1) throw new RangeError("A replay frame holds at least one byte.");
+	const size = Math.min(maxFrame, REPLAY_FRAME_BYTES);
+	for (let offset = 0; offset < bytes.length; offset += size) yield bytes.subarray(offset, offset + size);
+}
+
+//#endregion
+//#region packages/engine/src/terminal/session.ts
+/** After the tree kill the session waits this long for the exit event before it is declared `lost`. */
+const KILL_TREE_WAIT_MS = 2e3;
+function clamp(value, min, max) {
+	return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+/** A terminal size within 20..500 columns and 5..200 rows, fractions cut; null when a value is not a finite number. */
+function clampSessionSize(cols, rows) {
+	if (!Number.isFinite(cols) || !Number.isFinite(rows)) return null;
+	return {
+		cols: clamp(cols, 20, 500),
+		rows: clamp(rows, 5, 200)
+	};
+}
+function viewerReason(reason) {
+	return reason === "lost" ? "exited" : reason;
+}
+var Session = class {
+	#name;
+	#cwd;
+	#pty;
+	#startedAt;
+	#maxInputBytes;
+	#killTimeoutMs;
+	#clock;
+	#killTree;
+	#onUpdated;
+	#onEnded;
+	#logger;
+	/** In attach order (a Map iterates in insertion order). */
+	#viewers = /* @__PURE__ */ new Map();
+	#unsubscribe = [];
+	#ended;
+	#resolveEnded = () => void 0;
+	/** Null once the session is over: the replay is released, nothing can attach any more. */
+	#replay;
+	#size;
+	#pendingSize = null;
+	#resizeTimer = null;
+	#killTimer = null;
+	#killReason = null;
+	#exit = null;
+	constructor(options) {
+		this.#name = options.name;
+		this.#cwd = options.cwd;
+		this.#pty = options.pty;
+		this.#startedAt = options.startedAt;
+		this.#maxInputBytes = options.maxInputBytes;
+		this.#killTimeoutMs = options.killTimeoutMs;
+		this.#clock = options.clock;
+		this.#killTree = options.killTree;
+		this.#onUpdated = options.onUpdated;
+		this.#onEnded = options.onEnded;
+		this.#logger = options.logger;
+		this.#replay = new ReplayBuffer(options.replayBytes);
+		this.#size = clampSessionSize(options.cols, options.rows) ?? {
+			cols: 20,
+			rows: 5
+		};
+		this.#ended = new Promise((resolve) => {
+			this.#resolveEnded = resolve;
+		});
+		this.#unsubscribe.push(this.#pty.onData((chunk) => {
+			this.#pump(chunk);
+		}), this.#pty.onExit((exit) => {
+			this.#onPtyExit(exit);
+		}));
+	}
+	info() {
+		return {
+			name: this.#name,
+			cwd: this.#cwd,
+			pid: this.#pty.pid,
+			startedAt: this.#startedAt,
+			cols: this.#size.cols,
+			rows: this.#size.rows,
+			viewers: this.#viewers.size
+		};
+	}
+	attach(viewer, opts) {
+		if (this.#exit !== null || this.#replay === null) throw new TerminalError("SESSION_ENDED");
+		if (this.#viewers.has(viewer)) return {
+			replayedBytes: 0,
+			cols: this.#size.cols,
+			rows: this.#size.rows
+		};
+		let replayedBytes = 0;
+		if (opts?.replay !== false) {
+			const bytes = prepareReplay(this.#replay.snapshot(), this.#replay.trimmed);
+			try {
+				for (const frame of replayFrames(bytes)) {
+					viewer.send(frame);
+					replayedBytes += frame.length;
+				}
+			} catch {
+				this.#end(viewer, { reason: "error" });
+				this.#logger?.warn("terminal.viewer_evicted", { code: "error" });
+				return {
+					replayedBytes,
+					cols: this.#size.cols,
+					rows: this.#size.rows
+				};
+			}
+		}
+		this.#viewers.set(viewer, true);
+		this.#updated();
+		return {
+			replayedBytes,
+			cols: this.#size.cols,
+			rows: this.#size.rows
+		};
+	}
+	detach(viewer) {
+		if (this.#viewers.delete(viewer)) this.#updated();
+	}
+	write(data) {
+		if (this.#exit !== null) return;
+		const size = typeof data === "string" ? Buffer.byteLength(data, "utf8") : data.length;
+		if (size > this.#maxInputBytes) throw new TerminalError("MESSAGE_TOO_LARGE");
+		if (size === 0) return;
+		try {
+			this.#pty.write(data);
+		} catch {}
+	}
+	resize(cols, rows) {
+		if (this.#exit !== null) return;
+		const wanted = clampSessionSize(cols, rows);
+		if (wanted === null) return;
+		const pending = this.#pendingSize;
+		if (pending !== null && pending.cols === wanted.cols && pending.rows === wanted.rows) return;
+		if (wanted.cols === this.#size.cols && wanted.rows === this.#size.rows) {
+			this.#pendingSize = null;
+			this.#clearResizeTimer();
+			return;
+		}
+		this.#pendingSize = wanted;
+		this.#clearResizeTimer();
+		this.#resizeTimer = setTimeout(() => {
+			this.#applyResize();
+		}, 60);
+		this.#resizeTimer.unref();
+	}
+	/**
+	* Ends the process. Idempotent: every call returns the same promise, and the first `reason` wins (`shutdown` is the service
+	* going down, `killed` everything else). Steps: `pty.kill()`, wait `killTimeoutMs` for the exit, then the injected tree kill,
+	* wait {@link KILL_TREE_WAIT_MS}, then give up and finalise as `lost`.
+	*/
+	kill(reason = "killed") {
+		if (this.#exit === null && this.#killReason === null) {
+			this.#killReason = reason;
+			this.#logger?.info("terminal.kill", {
+				pid: this.#pty.pid,
+				phase: "request"
+			});
+			this.#killTimer = setTimeout(() => {
+				this.#escalate();
+			}, this.#killTimeoutMs);
+			try {
+				this.#pty.kill();
+			} catch {}
+		}
+		return this.#ended;
+	}
+	#pump(chunk) {
+		if (this.#exit !== null || this.#replay === null) return;
+		this.#replay.append(chunk);
+		const evicted = [];
+		for (const viewer of [...this.#viewers.keys()]) {
+			if (!this.#viewers.has(viewer)) continue;
+			try {
+				viewer.send(chunk);
+				if ((viewer.pendingBytes?.() ?? 0) > 4194304) evicted.push({
+					viewer,
+					reason: "slow"
+				});
+			} catch {
+				evicted.push({
+					viewer,
+					reason: "error"
+				});
+			}
+		}
+		for (const { viewer, reason } of evicted) {
+			if (!this.#viewers.delete(viewer)) continue;
+			this.#end(viewer, { reason });
+			this.#logger?.warn("terminal.viewer_evicted", { code: reason });
+		}
+		if (evicted.length > 0) this.#updated();
+	}
+	#end(viewer, reason) {
+		try {
+			viewer.end(reason);
+		} catch {}
+	}
+	#updated() {
+		try {
+			this.#onUpdated();
+		} catch {}
+	}
+	#clearResizeTimer() {
+		if (this.#resizeTimer === null) return;
+		clearTimeout(this.#resizeTimer);
+		this.#resizeTimer = null;
+	}
+	#applyResize() {
+		this.#resizeTimer = null;
+		const wanted = this.#pendingSize;
+		this.#pendingSize = null;
+		if (this.#exit !== null || wanted === null) return;
+		try {
+			this.#pty.resize(wanted.cols, wanted.rows);
+		} catch {}
+		this.#size = wanted;
+		this.#updated();
+	}
+	#escalate() {
+		this.#killTimer = null;
+		if (this.#exit !== null) return;
+		const pid = this.#pty.pid;
+		this.#logger?.warn("terminal.kill", {
+			pid,
+			phase: "escalate"
+		});
+		if (pid > 0) try {
+			this.#killTree(pid).catch(() => void 0);
+		} catch {}
+		this.#killTimer = setTimeout(() => {
+			this.#lose();
+		}, KILL_TREE_WAIT_MS);
+	}
+	#lose() {
+		this.#killTimer = null;
+		if (this.#exit !== null) return;
+		this.#logger?.error("terminal.kill", {
+			pid: this.#pty.pid,
+			phase: "lost"
+		});
+		this.#finalise({
+			code: null,
+			reason: "lost"
+		});
+	}
+	#onPtyExit(exit) {
+		this.#finalise({
+			code: exit.code,
+			reason: this.#killReason ?? "exited"
+		});
+	}
+	#finalise(exit) {
+		if (this.#exit !== null) return;
+		this.#exit = exit;
+		this.#clearResizeTimer();
+		this.#pendingSize = null;
+		if (this.#killTimer !== null) {
+			clearTimeout(this.#killTimer);
+			this.#killTimer = null;
+		}
+		for (const stop of this.#unsubscribe) stop();
+		this.#unsubscribe.length = 0;
+		this.#replay = null;
+		const viewers = [...this.#viewers.keys()];
+		this.#viewers.clear();
+		const reason = {
+			reason: viewerReason(exit.reason),
+			exit
+		};
+		for (const viewer of viewers) this.#end(viewer, reason);
+		this.#logger?.info("terminal.exited", {
+			pid: this.#pty.pid,
+			...exit.code === null ? {} : { code: exit.code },
+			durationMs: Math.max(0, this.#clock.now() - this.#startedAt)
+		});
+		try {
+			this.#onEnded(exit);
+		} catch {}
+		this.#resolveEnded(exit);
+	}
+};
+
+//#endregion
+//#region packages/engine/src/terminal/manager.ts
+/** How long the descendants of a session root are reused (`claudePids`): the lookup is a process listing of the machine. */
+const CLAUDE_PIDS_TTL_MS = 5e3;
+/** Consecutive probes that find the root pid gone, without an exit event, before the session is ended as lost. */
+const WATCHDOG_MISSES = 2;
+/** `shutdown()` waits at most `terminal.killTimeoutMs` plus this long for the sessions to end (the session's own tree-kill wait fits). */
+const SHUTDOWN_GRACE_MS = 3e3;
+function stripTrailingSeparators(text) {
+	let end = text.length;
+	while (end > 0 && (text.charAt(end - 1) === "\\" || text.charAt(end - 1) === "/")) end -= 1;
+	return text.slice(0, end);
+}
+/**
+* `text` with the home folder written as `~` when it starts with it (at a folder boundary; the case is ignored where the file
+* system ignores it). An empty home or the root of a drive leaves the text alone.
+*/
+function shortenHome(text, home, platform) {
+	const base = stripTrailingSeparators(home);
+	if (base === "" || base.endsWith(":") || text.length < base.length) return text;
+	const fold = isCaseInsensitive(platform) ? (value) => value.toLowerCase() : (value) => value;
+	if (fold(text.slice(0, base.length)) !== fold(base)) return text;
+	const rest = text.slice(base.length);
+	if (rest === "") return "~";
+	const next = rest.charAt(0);
+	return next === "\\" || next === "/" ? `~${rest}` : text;
+}
+function launchKindOf(program, platform) {
+	if (platform !== "win32") return "exe";
+	const ext = path.win32.extname(program).toLowerCase();
+	if (ext === ".exe" || ext === ".com") return "exe";
+	if (ext === ".cmd" || ext === ".bat") return "shim";
+	return null;
+}
+/**
+* What the terminal knows about the program it would start, without starting anything (`status()` and `diagnoseTerminal`):
+* whether it is found, how it would be launched (`exe`, `shim`, or null for a kind that cannot be started) and its path with the
+* home folder shortened. Spawns nothing; about 40 `stat` calls.
+*/
+function claudeFacts(o) {
+	const resolved = resolveClaudeCommand({
+		command: o.command,
+		env: o.env,
+		platform: o.platform,
+		fs: o.fs
+	});
+	if (resolved === null) return {
+		found: false,
+		kind: null,
+		display: null
+	};
+	return {
+		found: true,
+		kind: launchKindOf(resolved.path, o.platform),
+		display: shortenHome(resolved.path, o.home, o.platform)
+	};
+}
+const CODE_OF_REASON$1 = {
+	"unsupported-os": "UNSUPPORTED_OS",
+	"os-too-old": "UNSUPPORTED_OS",
+	"native-missing": "NATIVE_MISSING",
+	"native-load-failed": "NATIVE_LOAD_FAILED"
+};
+/**
+* What a failed spawn or start becomes. A TerminalError keeps its code (and nothing else of it is used); any other value is a
+* native or script error whose message may hold a file path, so it is dropped and the error is a plain SPAWN_FAILED.
+*/
+function startFailure(error) {
+	return error instanceof TerminalError ? error : new TerminalError("SPAWN_FAILED");
+}
+const NO_SWEEP = {
+	files: 0,
+	killed: 0,
+	skipped: 0
+};
+function compareSessions(a, b) {
+	if (a.startedAt !== b.startedAt) return a.startedAt - b.startedAt;
+	if (a.name === b.name) return 0;
+	return a.name < b.name ? -1 : 1;
+}
+/** Resolves when `work` settles or after `ms`, whichever comes first; the timer never outlives the call. */
+function settleWithin(work, ms) {
+	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, ms);
+		const done = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		work.then(done, done);
+	});
+}
+function killQuietly(pty) {
+	try {
+		pty.kill();
+	} catch {}
+}
+function createTerminalService(deps) {
+	const { config, logger, clock, platform } = deps;
+	const names = new NameAllocator();
+	const live = /* @__PURE__ */ new Map();
+	const starting = /* @__PURE__ */ new Map();
+	/** Sessions that ended as `lost` while their process was still alive: they stay counted until it is gone. */
+	const lost = /* @__PURE__ */ new Map();
+	/** Consecutive failed probes per live session. */
+	const misses = /* @__PURE__ */ new Map();
+	/** Sessions the watchdog found dead: their pid may be reused, so no tree kill is sent to it. */
+	const deadByWatchdog = /* @__PURE__ */ new Set();
+	const pidsCache = /* @__PURE__ */ new Map();
+	const listeners = /* @__PURE__ */ new Set();
+	const inflight = /* @__PURE__ */ new Set();
+	let draining = false;
+	/** A read that the compiler does not narrow: `draining` changes from other calls while a create awaits its child. */
+	const isDraining = () => draining;
+	let version = 0;
+	let watchdog = null;
+	let shutdownPromise = null;
+	function emit(change) {
+		for (const listener of [...listeners]) try {
+			listener(change);
+		} catch {
+			try {
+				logger.warn("terminal.listener_failed", { code: "listener_threw" });
+			} catch {}
+		}
+	}
+	function emitSession(type, session) {
+		version += 1;
+		emit({
+			type,
+			session,
+			version
+		});
+	}
+	function emitEnded(session, exit) {
+		version += 1;
+		emit({
+			type: "ended",
+			session,
+			exit,
+			version
+		});
+	}
+	function pruneLost() {
+		for (const [name, pid] of [...lost]) {
+			if (deps.pidAlive(pid)) continue;
+			lost.delete(name);
+			deps.registry?.remove(pid);
+		}
+	}
+	function stopWatchdog() {
+		if (watchdog === null) return;
+		clearInterval(watchdog);
+		watchdog = null;
+	}
+	function stopWatchdogWhenIdle() {
+		if (live.size === 0 && lost.size === 0) stopWatchdog();
+	}
+	function probe() {
+		for (const [name, session] of [...live]) {
+			if (deps.pidAlive(session.info().pid)) {
+				misses.delete(name);
+				continue;
+			}
+			const count = (misses.get(name) ?? 0) + 1;
+			misses.set(name, count);
+			if (count >= 2 && !deadByWatchdog.has(name)) {
+				deadByWatchdog.add(name);
+				session.kill("killed");
+			}
+		}
+		pruneLost();
+		stopWatchdogWhenIdle();
+	}
+	function ensureWatchdog() {
+		if (watchdog !== null) return;
+		watchdog = setInterval(probe, LIVENESS_PROBE_MS);
+		watchdog.unref();
+	}
+	function onSessionEnded(name, session, exit) {
+		if (live.get(name) !== session) return;
+		live.delete(name);
+		misses.delete(name);
+		const foundDead = deadByWatchdog.delete(name);
+		pidsCache.delete(name);
+		const info = session.info();
+		if (exit.reason === "lost" && !foundDead && deps.pidAlive(info.pid)) lost.set(name, info.pid);
+		else deps.registry?.remove(info.pid);
+		emitEnded(info, exit);
+		stopWatchdogWhenIdle();
+	}
+	function register(name, cwd, pty, size) {
+		const startedAt = clock.now();
+		const session = new Session({
+			name,
+			cwd,
+			pty,
+			startedAt,
+			cols: size.cols,
+			rows: size.rows,
+			replayBytes: config.replayBytes,
+			maxInputBytes: config.maxInputBytes,
+			killTimeoutMs: config.killTimeoutMs,
+			clock,
+			killTree: (pid) => deadByWatchdog.has(name) ? Promise.resolve() : deps.killTree(pid),
+			onUpdated: () => {
+				emitSession("updated", session.info());
+			},
+			onEnded: (exit) => {
+				onSessionEnded(name, session, exit);
+			},
+			logger
+		});
+		live.set(name, session);
+		starting.delete(name);
+		deps.registry?.add(pty.pid, startedAt);
+		ensureWatchdog();
+		const info = session.info();
+		emitSession("created", info);
+		logger.info("terminal.started", {
+			pid: pty.pid,
+			count: live.size
+		});
+		return info;
+	}
+	/** Waits for the first output of the child, the start timeout and a cancellation by `shutdown`, whichever comes first. */
+	async function awaitStart(entry, pty) {
+		let timer;
+		try {
+			await new Promise((resolve, reject) => {
+				entry.abort = () => {
+					reject(new TerminalError("SHUTTING_DOWN"));
+				};
+				timer = setTimeout(() => {
+					reject(new TerminalError("START_TIMEOUT"));
+				}, config.startTimeoutMs);
+				pty.started.then(() => {
+					resolve();
+				}, (error) => {
+					reject(startFailure(error));
+				});
+			});
+		} finally {
+			clearTimeout(timer);
+			entry.abort = null;
+		}
+	}
+	function logSpawnFailure(error) {
+		if (error.code !== "SHUTTING_DOWN") logger.warn("terminal.spawn_failed", { code: error.code });
+	}
+	async function start(req) {
+		if (draining) throw new TerminalError("SHUTTING_DOWN");
+		const { support } = deps.backend;
+		if (!support.supported) throw new TerminalError(CODE_OF_REASON$1[support.reason]);
+		if (starting.size + live.size >= config.maxSessions) throw new TerminalError("SESSION_LIMIT");
+		const folder = normalizeFolder(req.folder, platform);
+		if (folder === null) throw new TerminalError("FOLDER_INVALID");
+		if (!deps.fs.isDirectory(folder)) throw new TerminalError("FOLDER_NOT_FOUND");
+		const env = deps.env();
+		const resolved = resolveClaudeCommand({
+			command: config.command,
+			env,
+			platform,
+			fs: deps.fs
+		});
+		if (resolved === null) throw new TerminalError("CLAUDE_NOT_FOUND");
+		const launch = buildLaunch(resolved, config.args, {
+			env,
+			platform,
+			fs: deps.fs,
+			...req.resume === void 0 ? {} : { resume: req.resume },
+			...req.fork === void 0 ? {} : { fork: req.fork }
+		});
+		const childEnv = buildTerminalEnv(env, {
+			keep: config.envKeep,
+			platform
+		});
+		const size = clampSessionSize(req.cols !== void 0 && Number.isFinite(req.cols) ? req.cols : 120, req.rows !== void 0 && Number.isFinite(req.rows) ? req.rows : 30) ?? {
+			cols: 120,
+			rows: 30
+		};
+		const name = names.next(sessionBase(folder));
+		const entry = {
+			pty: null,
+			abort: null
+		};
+		starting.set(name, entry);
+		let pty;
+		try {
+			pty = deps.backend.spawn(launch.file, launch.args, folder, size.cols, size.rows, childEnv);
+		} catch (error) {
+			starting.delete(name);
+			const failure = startFailure(error);
+			logSpawnFailure(failure);
+			throw failure;
+		}
+		entry.pty = pty;
+		try {
+			await awaitStart(entry, pty);
+			if (isDraining()) throw new TerminalError("SHUTTING_DOWN");
+		} catch (error) {
+			killQuietly(pty);
+			starting.delete(name);
+			const failure = startFailure(error);
+			logSpawnFailure(failure);
+			throw failure;
+		}
+		return register(name, folder, pty, size);
+	}
+	function create(req) {
+		const attempt = start(req);
+		inflight.add(attempt);
+		const settled = () => {
+			inflight.delete(attempt);
+		};
+		attempt.then(settled, settled);
+		return attempt;
+	}
+	function status() {
+		const { support } = deps.backend;
+		return {
+			supported: support.supported,
+			reason: support.supported ? null : support.reason,
+			backend: deps.backend.name,
+			claude: claudeFacts({
+				command: config.command,
+				env: deps.env(),
+				platform,
+				fs: deps.fs,
+				home: deps.home
+			}),
+			sessions: starting.size + live.size,
+			maxSessions: config.maxSessions,
+			conptyDll: config.conptyDll
+		};
+	}
+	function list() {
+		return [...live.values()].map((session) => session.info()).sort(compareSessions);
+	}
+	function liveCount() {
+		pruneLost();
+		stopWatchdogWhenIdle();
+		return starting.size + live.size + lost.size;
+	}
+	async function lookupPids(root) {
+		let found;
+		try {
+			found = await deps.descendants(root);
+		} catch {
+			found = null;
+		}
+		const all = /* @__PURE__ */ new Set([root]);
+		for (const pid of found ?? []) if (Number.isInteger(pid) && pid > 0) all.add(pid);
+		return [...all].sort((a, b) => a - b);
+	}
+	function claudePids(name) {
+		const session = live.get(name);
+		if (session === void 0 || deadByWatchdog.has(name)) return Promise.resolve([]);
+		const now = clock.now();
+		const cached = pidsCache.get(name);
+		if (cached !== void 0 && now - cached.at < 5e3) return cached.pids;
+		const pids = lookupPids(session.info().pid);
+		pidsCache.set(name, {
+			at: now,
+			pids
+		});
+		return pids;
+	}
+	async function kill(name) {
+		const session = live.get(name);
+		if (session === void 0) return false;
+		await session.kill("killed");
+		return true;
+	}
+	async function killEverything(reason) {
+		await Promise.all([...live.values()].map((session) => session.kill(reason).catch(() => void 0)));
+	}
+	function beginDrain() {
+		draining = true;
+	}
+	async function sweepOrphans() {
+		const { registry } = deps;
+		if (registry === null) return NO_SWEEP;
+		let result;
+		try {
+			result = await registry.sweep();
+		} catch {
+			return NO_SWEEP;
+		}
+		if (result.files > 0) {
+			logger.info("terminal.sweep", {
+				phase: "files",
+				count: result.files
+			});
+			logger.info("terminal.sweep", {
+				phase: "killed",
+				count: result.killed
+			});
+			logger.info("terminal.sweep", {
+				phase: "skipped",
+				count: result.skipped
+			});
+		}
+		return result;
+	}
+	async function doShutdown() {
+		stopWatchdog();
+		for (const entry of starting.values()) entry.abort?.();
+		await settleWithin(Promise.allSettled([...inflight]), config.startTimeoutMs);
+		await settleWithin(killEverything("shutdown"), config.killTimeoutMs + SHUTDOWN_GRACE_MS);
+		try {
+			await deps.registry?.close();
+		} catch {}
+	}
+	function shutdown() {
+		draining = true;
+		shutdownPromise ??= doShutdown();
+		return shutdownPromise;
+	}
+	function emergencyKillSync() {
+		draining = true;
+		const roots = [];
+		for (const [name, session] of live) if (!deadByWatchdog.has(name)) roots.push(session.info().pid);
+		for (const pid of lost.values()) if (deps.pidAlive(pid)) roots.push(pid);
+		for (const entry of starting.values()) if (entry.pty !== null) roots.push(entry.pty.pid);
+		for (const pid of roots) {
+			if (pid <= 0) continue;
+			try {
+				deps.killSync(pid);
+			} catch {}
+		}
+	}
+	return {
+		status,
+		create,
+		list,
+		get: (name) => live.get(name),
+		kill,
+		killAll: () => killEverything("killed"),
+		liveCount,
+		beginDrain,
+		onChange: (listener) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		claudePids,
+		sweepOrphans,
+		shutdown,
+		emergencyKillSync
+	};
+}
+
+//#endregion
+//#region packages/engine/src/terminal/native-targets.ts
+/**
+* The one native dependency of the terminal (ADR 0080). Only `node-pty-loader.ts` loads it. A change of package (the documented
+* fallback is the Microsoft `node-pty` of the same version) changes this name and the staging source of `native-pins.json`.
+*/
+const NODE_PTY_PACKAGE = "@lydell/node-pty";
+/** The `<platform>-<arch>` folders of `bundle/native` and the prebuilds of `scripts/native-pins.json`: Windows only (spec Q1). */
+const SHIPPED_TARGETS = ["win32-x64", "win32-arm64"];
+/** ConPTY needs Windows 10 version 1809, build 17763. */
+const MIN_WINDOWS_BUILD = 17763;
+/** The shipped target of a host, or null when no addon ships for it (the terminal then says it is not supported). */
+function targetOf$1(platform, arch) {
+	const key = `${platform}-${arch}`;
+	return SHIPPED_TARGETS.find((target) => target === key) ?? null;
+}
+/** The path module of a target: its files live on the host that the target names, whatever runs this code. */
+function pathOf(target) {
+	return target.startsWith("win32-") ? path.win32 : path.posix;
+}
+/** `<runtimeDir>/native/<target>`: the platform package of a bundle, minus its `.pdb` files. */
+function nativeDirOf(layout, target) {
+	return pathOf(target).join(layout.runtimeDir, "native", target);
+}
+/** `<runtimeDir>/native/<target>/lib/index.js`: the file the loader requires by path. */
+function nativeEntryOf(layout, target) {
+	return pathOf(target).join(nativeDirOf(layout, target), "lib", "index.js");
+}
+const RELEASE_RE = /^(\d{1,6})\.(\d{1,6})\.(\d{1,9})(?!\d)/;
+/**
+* Whether a Windows release supports ConPTY. `release` is `os.release()`: `<major>.<minor>.<build>`, for example `10.0.26200`.
+* Anything that does not start that way is refused, so a host that cannot be told is treated as too old.
+*/
+function windowsBuildOk(release) {
+	const match = RELEASE_RE.exec(release);
+	if (match === null) return false;
+	const major = Number(match[1]);
+	const build = Number(match[3]);
+	if (major > 10) return true;
+	return major === 10 && build >= 17763;
+}
+
+//#endregion
+//#region packages/engine/src/terminal/node-pty-loader.ts
+/** The loader seams of this process: the host, this module, the real file system and a `require` based at this module. */
+function realLoaderDeps() {
+	const moduleUrl = import.meta.url;
+	const nodeRequire = createRequire(moduleUrl);
+	return {
+		moduleUrl,
+		platform: hostPlatform,
+		arch: process.arch,
+		layoutOf: (url) => layoutOfModule(url),
+		exists: (file) => existsSync(file),
+		require: (id) => nodeRequire(id)
+	};
+}
+/** What an error code may look like to be kept: a plain token (`ERR_DLOPEN_FAILED`, `MODULE_NOT_FOUND`, `EPERM`). */
+const SAFE_CODE_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+function codeOf$4(value) {
+	if (typeof value !== "object" || value === null || !("code" in value)) return null;
+	const { code } = value;
+	return typeof code === "string" && SAFE_CODE_RE.test(code) ? code : null;
+}
+/**
+* The `code` of a thrown value, or of its `cause` when it has none of its own (the package wrapper of node-pty rethrows the
+* `MODULE_NOT_FOUND` of a missing platform package as a plain Error). A value that is not a plain token gives null.
+*/
+function errorCodeOf$1(error) {
+	const own = codeOf$4(error);
+	if (own !== null) return own;
+	return typeof error === "object" && error !== null && "cause" in error ? codeOf$4(error.cause) : null;
+}
+/** The only thing of a native error that may travel in a TerminalError: its code. */
+function safeCause(error) {
+	return { code: errorCodeOf$1(error) };
+}
+function isNodePtyModule(value) {
+	return (typeof value === "object" || typeof value === "function") && value !== null && "spawn" in value && typeof value.spawn === "function";
+}
+function checked(value) {
+	if (!isNodePtyModule(value)) throw new TerminalError("NATIVE_LOAD_FAILED", { cause: { code: null } });
+	return value;
+}
+function fromBundle(deps, layout) {
+	const target = targetOf$1(deps.platform, deps.arch);
+	if (target === null) throw new TerminalError("UNSUPPORTED_OS");
+	const entry = nativeEntryOf(layout, target);
+	if (!deps.exists(entry)) throw new TerminalError("NATIVE_MISSING");
+	return {
+		module: checked(deps.require(entry)),
+		via: "bundle",
+		dir: nativeDirOf(layout, target)
+	};
+}
+function fromNodeModules(deps) {
+	return {
+		module: checked(deps.require(NODE_PTY_PACKAGE)),
+		via: "node_modules",
+		dir: null
+	};
+}
+/**
+* Loads the addon. Throws a TerminalError and nothing else: UNSUPPORTED_OS (a bundle with no folder for this host),
+* NATIVE_MISSING (no folder, no package, a file that `require` cannot find) or NATIVE_LOAD_FAILED (anything else).
+*/
+function loadNodePty(deps) {
+	try {
+		const layout = deps.layoutOf(deps.moduleUrl);
+		return layout.mode === "bundle" ? fromBundle(deps, layout) : fromNodeModules(deps);
+	} catch (error) {
+		if (error instanceof TerminalError) throw error;
+		const cause = safeCause(error);
+		throw new TerminalError(cause.code === "MODULE_NOT_FOUND" ? "NATIVE_MISSING" : "NATIVE_LOAD_FAILED", { cause });
+	}
+}
+
+//#endregion
+//#region packages/engine/src/terminal/unsupported-backend.ts
+/** The error code of a refused spawn, per reason. A build of Windows that is too old is an unsupported operating system. */
+const CODE_OF_REASON = {
+	"unsupported-os": "UNSUPPORTED_OS",
+	"os-too-old": "UNSUPPORTED_OS",
+	"native-missing": "NATIVE_MISSING",
+	"native-load-failed": "NATIVE_LOAD_FAILED"
+};
+/** The reason that a backend error code stands for, or null for a code that is not about the backend. */
+function unsupportedReasonOf(code) {
+	if (code === "UNSUPPORTED_OS") return "unsupported-os";
+	if (code === "NATIVE_MISSING") return "native-missing";
+	if (code === "NATIVE_LOAD_FAILED") return "native-load-failed";
+	return null;
+}
+var UnsupportedBackend = class {
+	name = "unsupported";
+	support;
+	reason;
+	constructor(reason) {
+		this.reason = reason;
+		this.support = {
+			supported: false,
+			reason
+		};
+	}
+	/** Always throws: there is nothing to start a process with. */
+	spawn = () => {
+		throw new TerminalError(CODE_OF_REASON[this.reason]);
+	};
+};
+
+//#endregion
+//#region packages/engine/src/terminal/node-pty-backend.ts
+/** The terminal type the child sees (`TERM`). */
+const PTY_TERM_NAME = "xterm-256color";
+/** How long `started` waits for the first output; the default of `terminal.startTimeoutMs`. */
+const DEFAULT_START_TIMEOUT_MS = 1e4;
+/** Output that arrives before the first listener is held up to this many bytes (the first banner of a session is small). */
+const HELD_OUTPUT_MAX_BYTES = 1048576;
+function isolated(listener, value) {
+	try {
+		listener(value);
+	} catch {}
+}
+/** Output as bytes. node-pty gives a string on Windows and a Buffer where `encoding` is null; anything else is dropped. */
+function toBuffer(data) {
+	if (typeof data === "string") return Buffer.from(data, "utf8");
+	if (data instanceof Uint8Array) return Buffer.from(data);
+	return null;
+}
+/** One started node-pty terminal as a `Pty`. */
+var NodePtyProcess = class {
+	started;
+	#term;
+	#dataListeners = /* @__PURE__ */ new Set();
+	#exitListeners = /* @__PURE__ */ new Set();
+	#subscriptions = [];
+	#held = [];
+	#heldBytes = 0;
+	#state = "pending";
+	#pid = 0;
+	#exit = null;
+	#timer = null;
+	#resolveStarted = () => void 0;
+	#rejectStarted = () => void 0;
+	constructor(term, startTimeoutMs) {
+		this.#term = term;
+		this.started = new Promise((resolve, reject) => {
+			this.#resolveStarted = resolve;
+			this.#rejectStarted = reject;
+		});
+		this.started.catch(() => void 0);
+		this.#subscriptions.push(term.onData((data) => {
+			this.#onNativeData(data);
+		}));
+		this.#subscriptions.push(term.onExit((event) => {
+			this.#onNativeExit(event.exitCode);
+		}));
+		this.#timer = setTimeout(() => {
+			this.#onStartTimeout();
+		}, startTimeoutMs);
+		this.#timer.unref();
+	}
+	/** 0 until `started` resolved. */
+	get pid() {
+		return this.#pid;
+	}
+	onData(listener) {
+		this.#dataListeners.add(listener);
+		if (this.#held.length > 0) {
+			const held = this.#held;
+			this.#held = [];
+			this.#heldBytes = 0;
+			for (const chunk of held) isolated(listener, chunk);
+		}
+		return () => {
+			this.#dataListeners.delete(listener);
+		};
+	}
+	onExit(listener) {
+		const exit = this.#exit;
+		if (exit !== null) {
+			let active = true;
+			queueMicrotask(() => {
+				if (active) isolated(listener, exit);
+			});
+			return () => {
+				active = false;
+			};
+		}
+		this.#exitListeners.add(listener);
+		return () => {
+			this.#exitListeners.delete(listener);
+		};
+	}
+	write(data) {
+		if (this.#exit !== null) return;
+		try {
+			this.#term.write(typeof data === "string" ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength));
+		} catch {}
+	}
+	resize(cols, rows) {
+		if (this.#exit !== null) return;
+		try {
+			this.#term.resize(cols, rows);
+		} catch {}
+	}
+	kill() {
+		if (this.#exit !== null) return;
+		try {
+			this.#term.kill();
+		} catch {}
+	}
+	#clearTimer() {
+		if (this.#timer === null) return;
+		clearTimeout(this.#timer);
+		this.#timer = null;
+	}
+	#onNativeData(data) {
+		if (this.#exit !== null || this.#state === "failed") return;
+		const chunk = toBuffer(data);
+		if (chunk === null || chunk.length === 0) return;
+		if (this.#state === "pending") {
+			this.#state = "started";
+			this.#pid = this.#term.pid;
+			this.#clearTimer();
+			this.#resolveStarted({ pid: this.#pid });
+		}
+		if (this.#dataListeners.size === 0) {
+			if (this.#heldBytes + chunk.length <= 1048576) {
+				this.#held.push(chunk);
+				this.#heldBytes += chunk.length;
+			}
+			return;
+		}
+		for (const listener of [...this.#dataListeners]) isolated(listener, chunk);
+	}
+	#onNativeExit(exitCode) {
+		if (this.#exit !== null) return;
+		const exit = { code: Number.isInteger(exitCode) ? exitCode : null };
+		this.#exit = exit;
+		this.#clearTimer();
+		for (const subscription of this.#subscriptions) try {
+			subscription.dispose();
+		} catch {}
+		if (this.#state === "pending") {
+			this.#state = "failed";
+			this.#rejectStarted(new TerminalError("SPAWN_FAILED", { cause: { exitCode: exit.code } }));
+		}
+		for (const listener of [...this.#exitListeners]) isolated(listener, exit);
+	}
+	#onStartTimeout() {
+		this.#timer = null;
+		if (this.#state !== "pending") return;
+		this.#state = "failed";
+		this.kill();
+		this.#rejectStarted(new TerminalError("START_TIMEOUT"));
+	}
+};
+var NodePtyBackend = class {
+	name = "node-pty";
+	support = { supported: true };
+	/** Where the addon came from (`check` shows it). */
+	via;
+	dir;
+	#module;
+	#windows;
+	#useConptyDll;
+	#startTimeoutMs;
+	constructor(loaded, options) {
+		this.#module = loaded.module;
+		this.via = loaded.via;
+		this.dir = loaded.dir;
+		this.#windows = options.platform === "win32";
+		this.#useConptyDll = options.useConptyDll ?? false;
+		const wait = options.startTimeoutMs;
+		this.#startTimeoutMs = wait !== void 0 && Number.isFinite(wait) && wait > 0 ? wait : DEFAULT_START_TIMEOUT_MS;
+	}
+	spawn(cmd, args, cwd, cols, rows, env) {
+		const base = {
+			name: PTY_TERM_NAME,
+			cols,
+			rows,
+			cwd,
+			env: { ...env }
+		};
+		const options = this.#windows ? {
+			...base,
+			useConptyDll: this.#useConptyDll
+		} : {
+			...base,
+			encoding: null
+		};
+		let term;
+		try {
+			term = this.#module.spawn(cmd, typeof args === "string" ? args : [...args], options);
+		} catch (error) {
+			throw new TerminalError("SPAWN_FAILED", { cause: safeCause(error) });
+		}
+		try {
+			return new NodePtyProcess(term, this.#startTimeoutMs);
+		} catch (error) {
+			try {
+				term.kill();
+			} catch {}
+			throw new TerminalError("SPAWN_FAILED", { cause: safeCause(error) });
+		}
+	}
+};
+function logNative(logger, level, fields) {
+	if (logger === void 0) return;
+	try {
+		logger[level]("terminal.native", fields);
+	} catch {}
+}
+/**
+* The backend of this host. In order: no shipped target (`unsupported-os`), a Windows build below 17763 (`os-too-old`), then the
+* addon is loaded: `native-missing` or `native-load-failed` when it cannot be, else the real backend. It never throws.
+*/
+function createNodePtyBackend(options) {
+	if (targetOf$1(options.platform, options.arch) === null) return new UnsupportedBackend("unsupported-os");
+	if (options.platform === "win32" && !windowsBuildOk(options.release)) return new UnsupportedBackend("os-too-old");
+	const load = options.load ?? (() => loadNodePty({
+		...realLoaderDeps(),
+		platform: options.platform,
+		arch: options.arch
+	}));
+	let loaded;
+	try {
+		loaded = load();
+	} catch (error) {
+		const reason = (error instanceof TerminalError ? unsupportedReasonOf(error.code) : null) ?? "native-load-failed";
+		const code = errorCodeOf$1(error instanceof TerminalError ? error.cause : error);
+		logNative(options.logger, "warn", {
+			phase: reason === "native-missing" ? "missing" : "failed",
+			...code === null ? {} : { code }
+		});
+		return new UnsupportedBackend(reason);
+	}
+	logNative(options.logger, "info", { phase: "loaded" });
+	return new NodePtyBackend(loaded, {
+		platform: options.platform,
+		...options.useConptyDll === void 0 ? {} : { useConptyDll: options.useConptyDll },
+		...options.startTimeoutMs === void 0 ? {} : { startTimeoutMs: options.startTimeoutMs }
+	});
+}
+
+//#endregion
+//#region packages/engine/src/terminal/registry.ts
+/** The folder below the instance home that holds the files. */
+const REGISTRY_DIR = "terminals";
+/** A file larger than this is damaged or foreign: it is deleted unread. */
+const REGISTRY_FILE_MAX_BYTES = 65536;
+/** Children one owner may list; the service allows at most 64 sessions. */
+const REGISTRY_MAX_CHILDREN = 64;
+/** A child is the recorded one when its creation time is in [spawned - 10 s, spawned + 2 s]: it is created before `started`. */
+const SPAWN_WINDOW_BEFORE_MS = 1e4;
+const SPAWN_WINDOW_AFTER_MS = 2e3;
+/** An owner is the recorded one when its creation time is within 5 s of the recorded start. */
+const OWNER_START_TOLERANCE_MS = 5e3;
+const PidSchema = number$1().int().refine(isValidPid);
+const TimeSchema = number$1().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** The content of a registry file. Strict: a key that is not listed makes the whole file invalid. */
+const RegistryFileSchema = strictObject({
+	schemaVersion: literal(1),
+	owner: strictObject({
+		pid: PidSchema,
+		startedAtMs: TimeSchema
+	}),
+	children: array(strictObject({
+		pid: PidSchema,
+		spawnedAtMs: TimeSchema
+	})).max(64)
+});
+/** `<ownerPid>-<ownerStartedAtMs>.json`. */
+const FILE_NAME_RE = /^([1-9][0-9]{0,9})-([0-9]{1,16})\.json$/;
+function registryFileName(owner) {
+	return `${String(owner.pid)}-${String(owner.startedAtMs)}.json`;
+}
+function errnoCode(error) {
+	if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
+}
+/** The record of a file whose name and content agree, or null. */
+function parseRecord(bytes, match) {
+	let json;
+	try {
+		json = JSON.parse(bytes.toString("utf8"));
+	} catch {
+		return null;
+	}
+	const parsed = RegistryFileSchema.safeParse(json);
+	if (!parsed.success) return null;
+	const { owner } = parsed.data;
+	if (String(owner.pid) !== match[1] || String(owner.startedAtMs) !== match[2]) return null;
+	return parsed.data;
+}
+/**
+* Builds the registry of one owner process. `add` and `remove` are synchronous and cheap: the file is rewritten by one writer
+* at a time, changes made meanwhile are coalesced, and a failed write is logged by its code and retried at the next change.
+* The file exists only while there is a child. `sweep()` never throws.
+*/
+function createChildRegistry(options) {
+	const deps = {
+		pidAlive,
+		processStartTimes,
+		killTree: forceKillTree,
+		writeFile: (file, text) => atomicWriteFile(file, text, { mode: 384 }),
+		...options.deps
+	};
+	const dir = path.join(options.mcsHome, REGISTRY_DIR);
+	const ownName = registryFileName(options.owner);
+	const ownFile = path.join(dir, ownName);
+	const children = /* @__PURE__ */ new Map();
+	let closed = false;
+	let dirty = false;
+	let running = null;
+	function warn(error) {
+		try {
+			const code = errnoCode(error);
+			options.logger?.warn("terminal.registry", {
+				phase: "write_failed",
+				...code === void 0 ? {} : { code }
+			});
+		} catch {}
+	}
+	async function persist() {
+		if (children.size === 0) {
+			await unlinkWithRetry(ownFile);
+			return;
+		}
+		const file = {
+			schemaVersion: 1,
+			owner: {
+				pid: options.owner.pid,
+				startedAtMs: options.owner.startedAtMs
+			},
+			children: [...children].map(([pid, spawnedAtMs]) => ({
+				pid,
+				spawnedAtMs
+			}))
+		};
+		await mkdir(dir, { recursive: true });
+		await deps.writeFile(ownFile, `${JSON.stringify(file, null, 2)}\n`);
+	}
+	async function drain() {
+		try {
+			while (dirty) {
+				dirty = false;
+				try {
+					await persist();
+				} catch (error) {
+					warn(error);
+				}
+			}
+		} finally {
+			running = null;
+		}
+	}
+	function schedule() {
+		if (closed) return;
+		dirty = true;
+		running ??= drain();
+	}
+	async function flush() {
+		while (running !== null) await running;
+	}
+	function add(pid, spawnedAtMs) {
+		if (closed || !isValidPid(pid) || !Number.isSafeInteger(spawnedAtMs) || spawnedAtMs < 0) return;
+		if (!children.has(pid) && children.size >= 64) return;
+		children.set(pid, spawnedAtMs);
+		schedule();
+	}
+	function remove(pid) {
+		if (closed || !children.delete(pid)) return;
+		schedule();
+	}
+	async function close() {
+		closed = true;
+		dirty = false;
+		await flush();
+		try {
+			await unlinkWithRetry(ownFile);
+		} catch (error) {
+			warn(error);
+		}
+	}
+	async function removeFile(file, killed) {
+		try {
+			await unlinkWithRetry(file);
+			return {
+				kind: "removed",
+				killed
+			};
+		} catch {
+			return {
+				kind: "kept",
+				killed
+			};
+		}
+	}
+	async function startTimesOf(pids) {
+		try {
+			return await deps.processStartTimes(pids);
+		} catch {
+			return null;
+		}
+	}
+	async function sweepFile(file, match) {
+		let bytes;
+		try {
+			bytes = await readSmallFile(file, REGISTRY_FILE_MAX_BYTES);
+		} catch (error) {
+			if (errnoCode(error) === "ENOENT") return {
+				kind: "vanished",
+				killed: 0
+			};
+			if (error instanceof SmallFileError && error.code === "E_FILE_TOO_LARGE") return removeFile(file, 0);
+			return {
+				kind: "kept",
+				killed: 0
+			};
+		}
+		const record = parseRecord(bytes, match);
+		if (record === null) return removeFile(file, 0);
+		if (deps.pidAlive(record.owner.pid)) {
+			const times = await startTimesOf([record.owner.pid]);
+			if (times === null) return {
+				kind: "kept",
+				killed: 0
+			};
+			const start = times.get(record.owner.pid);
+			if (start !== void 0 && Math.abs(start - record.owner.startedAtMs) <= 5e3) return {
+				kind: "kept",
+				killed: 0
+			};
+		}
+		const living = record.children.filter((child) => deps.pidAlive(child.pid));
+		if (living.length === 0) return removeFile(file, 0);
+		const times = await startTimesOf(living.map((child) => child.pid));
+		if (times === null) return {
+			kind: "kept",
+			killed: 0
+		};
+		let killed = 0;
+		let failed = false;
+		for (const child of living) {
+			const created = times.get(child.pid);
+			if (created === void 0) continue;
+			if (created < child.spawnedAtMs - 1e4 || created > child.spawnedAtMs + 2e3) continue;
+			try {
+				await deps.killTree(child.pid);
+				killed += 1;
+			} catch {
+				failed = true;
+			}
+		}
+		return failed ? {
+			kind: "kept",
+			killed
+		} : removeFile(file, killed);
+	}
+	async function sweep() {
+		let files = 0;
+		let killed = 0;
+		let skipped = 0;
+		try {
+			let names;
+			try {
+				names = await readdir(dir);
+			} catch {
+				return {
+					files,
+					killed,
+					skipped
+				};
+			}
+			for (const name of names.sort()) {
+				const match = FILE_NAME_RE.exec(name);
+				if (match === null || name === ownName) continue;
+				let outcome;
+				try {
+					outcome = await sweepFile(path.join(dir, name), match);
+				} catch {
+					outcome = {
+						kind: "kept",
+						killed: 0
+					};
+				}
+				if (outcome.kind === "vanished") continue;
+				files += 1;
+				killed += outcome.killed;
+				if (outcome.kind === "kept") skipped += 1;
+			}
+		} catch {}
+		return {
+			files,
+			killed,
+			skipped
+		};
+	}
+	return {
+		add,
+		remove,
+		close,
+		sweep,
+		flush
+	};
+}
+
+//#endregion
+//#region packages/engine/src/terminal/default.ts
+function statOf(target) {
+	try {
+		return statSync(target, { throwIfNoEntry: false });
+	} catch {
+		return;
+	}
+}
+function isFile(target) {
+	return statOf(target)?.isFile() === true;
+}
+/** The questions the service asks the file system, answered by the real one. Synchronous: about 40 `stat` calls per create. */
+const realTerminalFs = {
+	isDirectory: (target) => statOf(target)?.isDirectory() === true,
+	isFile,
+	isExecutable: (target) => {
+		if (!isFile(target)) return false;
+		try {
+			accessSync(target, constants.X_OK);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+};
+/**
+* The backend of a host: the addon backend where one ships and loads, else an UnsupportedBackend that says why (`unsupported-os`,
+* `os-too-old`, `native-missing`, `native-load-failed`). Never throws; a host that cannot run the terminal never loads the addon.
+*/
+function selectTerminalBackend(o) {
+	return createNodePtyBackend({
+		platform: o.platform,
+		arch: o.arch,
+		release: o.release,
+		useConptyDll: o.config.conptyDll,
+		startTimeoutMs: o.config.startTimeoutMs,
+		logger: o.logger,
+		...o.load === void 0 ? {} : { load: o.load }
+	});
+}
+function createDefaultTerminalService(options) {
+	const platform = options.platform ?? hostPlatform;
+	const clock = options.clock ?? systemClock;
+	const env = options.env ?? (() => process.env);
+	const backend = options.backend ?? selectTerminalBackend({
+		config: options.config,
+		logger: options.logger,
+		platform,
+		arch: options.arch ?? process.arch,
+		release: options.release ?? os.release(),
+		...options.load === void 0 ? {} : { load: options.load }
+	});
+	const registry = backend.support.supported ? createChildRegistry({
+		mcsHome: options.mcsHome ?? resolveMcsHome(env()),
+		owner: {
+			pid: process.pid,
+			startedAtMs: Math.max(0, Math.round(clock.now() - process.uptime() * 1e3))
+		},
+		logger: options.logger
+	}) : null;
+	return createTerminalService({
+		backend,
+		config: options.config,
+		logger: options.logger,
+		clock,
+		platform,
+		env,
+		fs: realTerminalFs,
+		killTree: forceKillTree,
+		killSync: (pid) => {
+			process.kill(pid, "SIGKILL");
+		},
+		pidAlive,
+		descendants: listDescendantPids,
+		registry,
+		home: options.home ?? os.homedir()
+	});
+}
+
+//#endregion
+//#region packages/engine/src/runtime/test-hooks.ts
+/**
+* The documented hooks by their short name: T-LC-06 (control ignored), T-LC-08 (boot hangs), T-LC-10 (init crash) and
+* `OPEN_FILE` (the login URL is appended to that file instead of being opened, 06 2.5) and `FAKE_TERMINALS` (the census of a
+* user instance reports that many extra sessions, 06 1.7) and `FOLDER_PICKER` (the script of the fake folder picker that runs
+* instead of the Windows dialog).
+*/
+const TEST_HOOK_NAMES = [
+	"IGNORE_CONTROL",
+	"BOOT_HANG",
+	"INIT_CRASH",
+	"OPEN_FILE",
+	"FAKE_TERMINALS",
+	"FOLDER_PICKER"
+];
+/** The environment variable behind each hook. */
+const TEST_HOOK_VARIABLES = {
+	IGNORE_CONTROL: "MCS_TEST_IGNORE_CONTROL",
+	BOOT_HANG: "MCS_TEST_BOOT_HANG",
+	INIT_CRASH: "MCS_TEST_INIT_CRASH",
+	OPEN_FILE: "MCS_TEST_OPEN_FILE",
+	FAKE_TERMINALS: "MCS_TEST_FAKE_TERMINALS",
+	FOLDER_PICKER: "MCS_TEST_FOLDER_PICKER"
+};
+function variableOf(name) {
+	for (const hook of TEST_HOOK_NAMES) {
+		const variable = TEST_HOOK_VARIABLES[hook];
+		if (name === hook || name === variable) return variable;
+	}
+}
+/**
+* The value of the hook `name` (the short name such as `'BOOT_HANG'`, or the full variable name), or `undefined` when test
+* mode is off, the hook is not a documented one, or the variable is unset or empty. `env` defaults to the
+* process environment.
+*/
+function testHook(name, env = process.env) {
+	if (env["MCS_TEST"] !== "1") return void 0;
+	const variable = variableOf(name);
+	if (variable === void 0) return void 0;
+	const value = env[variable];
+	return value === void 0 || value === "" ? void 0 : value;
+}
+/** The most fake sessions the hook makes: a larger value is read as this one. */
+const FAKE_TERMINALS_MAX = 64;
+/** When the fake sessions "started": long before any real session, so the list stays oldest first. */
+const FAKE_STARTED_AT = "2026-01-01T00:00:00.000Z";
+/**
+* How many fake sessions the hook asks for: the value of `MCS_TEST_FAKE_TERMINALS` when it is a positive whole number (at most
+* `FAKE_TERMINALS_MAX`), else 0 (the hook is off, test mode is off, or the value is not a count).
+*/
+function fakeTerminalCount(env = process.env) {
+	const value = testHook("FAKE_TERMINALS", env);
+	if (value === void 0 || !/^[1-9][0-9]*$/.test(value)) return 0;
+	return Math.min(Number(value), 64);
+}
+/**
+* The census with the scripted sessions of the hook added: the count grows by n and the list gets `fake-1`..`fake-n` in front
+* (they are the oldest), so the stop guard of the lifecycle tests can be proven on real processes without a pseudo console.
+* Nothing is ever started or ended: the drain goes to the wrapped census. While the hook is off the census is returned as it is.
+*/
+function withFakeTerminals(census, env = process.env) {
+	const n = fakeTerminalCount(env);
+	if (n === 0) return census;
+	const fakes = Array.from({ length: n }, (_, index) => ({
+		name: `fake-${String(index + 1)}`,
+		startedAt: FAKE_STARTED_AT
+	}));
+	return {
+		count: () => census.count() + n,
+		sessions: (limit) => [...fakes, ...census.sessions(limit)].slice(0, Math.max(0, limit)),
+		beginDrain: () => {
+			census.beginDrain();
+		}
+	};
+}
+/**
+* The hook of the folder picker: while test mode is on and `MCS_TEST_FOLDER_PICKER` names a script, the folder picker runs that
+* script with Node instead of showing the Windows dialog, and gives it `FAKE_PICKER_RESULT` of the environment (a path, nothing for
+* a cancel, or one of the failure words of the fake). `undefined` while the hook is off, so the real dialog is used.
+*/
+function folderPickerHook(env = process.env) {
+	const script = testHook("FOLDER_PICKER", env);
+	if (script === void 0) return void 0;
+	const answer = env["FAKE_PICKER_RESULT"];
+	return {
+		script,
+		env: answer === void 0 ? {} : { FAKE_PICKER_RESULT: answer }
+	};
+}
+
+//#endregion
+//#region packages/engine/src/terminal/host.ts
+const API_MESSAGES = {
+	terminal_unavailable: "The terminal is not available.",
+	claude_not_found: "The claude command was not found on the search path.",
+	folder_invalid: "The folder is not a valid working folder.",
+	terminal_limit: "The limit of terminal sessions is reached.",
+	terminal_not_found: "There is no terminal session with this name.",
+	session_not_found: "There is no monitored session with this id.",
+	resume_unavailable: "This session cannot be resumed in a terminal.",
+	picker_busy: "A folder dialog is already open."
+};
+/**
+* A failure of the terminal in the vocabulary of the HTTP catalogue (lower case code). It is named `TerminalError` like the engine's
+* own class, which is how the server's error mapper recognises both (a source and a build copy of a class map alike); a code of
+* the catalogue passes through unchanged and `details` becomes the `details` of the envelope. The message is a fixed sentence of the
+* code: it never holds a path, a name, an id or the text of another error.
+*/
+var TerminalApiError = class extends Error {
+	code;
+	details;
+	constructor(code, details, options) {
+		super(API_MESSAGES[code], options);
+		this.name = "TerminalError";
+		this.code = code;
+		this.details = details;
+	}
+};
+const UNAVAILABLE_REASON = {
+	"unsupported-os": "unsupported_os",
+	"os-too-old": "unsupported_os",
+	"native-missing": "addon_missing",
+	"native-load-failed": "addon_missing"
+};
+/**
+* The capabilities of a host for the shared reasons: a host that cannot run the terminal says why (`unsupported_os` for an operating
+* system that ships no addon or is too old, `addon_missing` for an addon that is missing or does not load); a host that can, but
+* finds no `claude`, says `claude_not_found`. An unavailable host offers nothing else (no picker, no resume, no sessions).
+*/
+function capabilitiesOf(facts, o) {
+	const unavailable = (reason) => ({
+		available: false,
+		reason,
+		folderPicker: false,
+		resume: false,
+		maxSessions: 0
+	});
+	if (!facts.supported) return unavailable(facts.reason === null ? "addon_missing" : UNAVAILABLE_REASON[facts.reason]);
+	if (!facts.claude.found) return unavailable("claude_not_found");
+	return {
+		available: true,
+		reason: null,
+		folderPicker: o.folderPicker,
+		resume: true,
+		maxSessions: o.maxSessions
+	};
+}
+/** The link of a terminal that the linker does not know (yet): the state `track` starts in. */
+function pendingLink() {
+	return {
+		status: "pending",
+		sessionId: null,
+		previousSessionIds: [],
+		basis: null,
+		confidence: null,
+		since: null,
+		claudePid: null,
+		transcript: "none",
+		registryStatus: null,
+		waitingFor: null,
+		reason: null,
+		shared: false
+	};
+}
+/** The engine's reason for ending a view, as a viewer is told. `slow` and `error` end the view, not the process: no code, the reason as the signal. */
+function exitOf(end) {
+	const evicted = end.reason === "slow" || end.reason === "error";
+	return {
+		code: end.exit?.code ?? null,
+		signal: evicted ? end.reason : null,
+		killed: end.reason === "killed"
+	};
+}
+function isoOf(ms) {
+	return isoMsZ(ms);
+}
+function createTerminalHost(deps) {
+	const { service, linker, picker, clock } = deps;
+	/** The viewers of each live session, for the size changes. */
+	const attached = /* @__PURE__ */ new Map();
+	const listeners = /* @__PURE__ */ new Set();
+	let closed = false;
+	function notify() {
+		for (const listener of [...listeners]) try {
+			listener();
+		} catch {}
+	}
+	function rowOf(info) {
+		const key = folderKeyOfPath(info.cwd);
+		return {
+			name: info.name,
+			path: info.cwd,
+			createdAt: isoOf(info.startedAt),
+			cols: info.cols,
+			rows: info.rows,
+			viewers: info.viewers,
+			link: linker.link(info.name) ?? pendingLink(),
+			folderKey: key.prefix || key.key === "" ? null : key.key
+		};
+	}
+	const stopService = service.onChange((change) => {
+		if (change.type === "ended") {
+			linker.forget(change.session.name);
+			attached.delete(change.session.name);
+		} else if (change.type === "updated") {
+			const viewers = attached.get(change.session.name);
+			if (viewers !== void 0) for (const entry of [...viewers]) {
+				if (entry.cols === change.session.cols && entry.rows === change.session.rows) continue;
+				entry.cols = change.session.cols;
+				entry.rows = change.session.rows;
+				entry.viewer.onSize(entry.cols, entry.rows);
+			}
+		}
+		notify();
+	});
+	const stopLinker = linker.onChange(() => {
+		notify();
+	});
+	async function createTracked(request) {
+		const spawnedAtMs = clock.now();
+		let info;
+		try {
+			info = await service.create(request);
+		} catch (error) {
+			if (error instanceof TerminalError && error.code === "SESSION_LIMIT") throw new TerminalApiError("terminal_limit", void 0, { cause: error });
+			throw error;
+		}
+		linker.track({
+			name: info.name,
+			pid: info.pid,
+			cwd: info.cwd,
+			spawnedAtMs,
+			resumeSessionId: request.resume ?? null,
+			fork: request.fork === true,
+			nameToken: null
+		});
+		return rowOf(info);
+	}
+	function portOf(name, session) {
+		return {
+			name,
+			attach(viewer) {
+				const frames = [];
+				let collecting = true;
+				const state = { detached: false };
+				const entry = {
+					viewer,
+					cols: 0,
+					rows: 0
+				};
+				const engineViewer = {
+					send(chunk) {
+						if (collecting) frames.push(chunk);
+						else viewer.onData(chunk);
+					},
+					end(reason) {
+						attached.get(name)?.delete(entry);
+						state.detached = true;
+						viewer.onExit(exitOf(reason));
+					}
+				};
+				const applied = session.attach(engineViewer, { replay: true });
+				collecting = false;
+				entry.cols = applied.cols;
+				entry.rows = applied.rows;
+				if (!state.detached) {
+					const set = attached.get(name) ?? /* @__PURE__ */ new Set();
+					set.add(entry);
+					attached.set(name, set);
+				}
+				return {
+					replay: Buffer.concat(frames),
+					cols: applied.cols,
+					rows: applied.rows,
+					detach() {
+						if (state.detached) return;
+						state.detached = true;
+						attached.get(name)?.delete(entry);
+						session.detach(engineViewer);
+					}
+				};
+			},
+			write: (data) => {
+				session.write(data);
+			},
+			resize: (cols, rows) => {
+				session.resize(cols, rows);
+			}
+		};
+	}
+	const sessions = {
+		list: () => service.list().map(rowOf),
+		get: (name) => {
+			const session = service.get(name);
+			return session === void 0 ? null : portOf(name, session);
+		},
+		create: (input) => createTracked({ folder: input.path }),
+		kill: (name) => service.kill(name),
+		subscribe: (listener) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		}
+	};
+	async function planOf(sessionId, fork) {
+		try {
+			return await deps.folders.planResume(sessionId, { fork });
+		} catch (error) {
+			if (!(error instanceof ResumeRefusal)) throw error;
+			if (error.code === "session_not_found") throw new TerminalApiError("session_not_found", void 0, { cause: error });
+			throw new TerminalApiError("resume_unavailable", [{
+				path: "sessionId",
+				issue: error.code
+			}], { cause: error });
+		}
+	}
+	return {
+		capabilities: () => {
+			const status = service.status();
+			return capabilitiesOf(status, {
+				folderPicker: picker !== null,
+				maxSessions: status.maxSessions
+			});
+		},
+		sessions,
+		picker,
+		resume: async ({ sessionId, fork }) => {
+			const plan = await planOf(sessionId, fork);
+			return createTracked({
+				folder: plan.folderPath,
+				resume: plan.sessionId,
+				...fork ? { fork: true } : {}
+			});
+		},
+		census: {
+			count: () => service.liveCount(),
+			sessions: (limit) => service.list().slice(0, Math.max(0, limit)).map((info) => ({
+				name: info.name,
+				startedAt: isoOf(info.startedAt)
+			})),
+			beginDrain: () => {
+				service.beginDrain();
+			}
+		},
+		close: () => {
+			if (closed) return;
+			closed = true;
+			stopService();
+			stopLinker();
+			listeners.clear();
+			attached.clear();
+		}
+	};
+}
+
+//#endregion
+//#region packages/engine/src/terminal/folder-picker.ts
+/** How long a dialog may stay open: a person chooses a folder in seconds, a dialog that stays for ten minutes is left over. */
+const PICKER_TIMEOUT_MS = 6e5;
+/** The answer is one path (at most 240 characters): anything near this is not an answer. */
+const PICKER_OUTPUT_MAX_BYTES = 4096;
+/**
+* The one script of the dialog. It loads the WinForms assembly (an existing one: nothing is compiled), opens the dialog in front of
+* the other windows and writes the chosen folder as UTF-8, with no byte order mark, on one line; a closed dialog writes nothing.
+* It is a constant: `pick` passes no value into it.
+*/
+const PICKER_SCRIPT = [
+	"$ErrorActionPreference = 'Stop'",
+	"Add-Type -AssemblyName System.Windows.Forms",
+	"[System.Windows.Forms.Application]::EnableVisualStyles()",
+	"$owner = New-Object System.Windows.Forms.Form",
+	"$owner.TopMost = $true",
+	"$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+	"$dialog.ShowNewFolderButton = $true",
+	"if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {",
+	"  $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($dialog.SelectedPath + \"`n\")",
+	"  $stdout = [Console]::OpenStandardOutput()",
+	"  $stdout.Write($bytes, 0, $bytes.Length)",
+	"  $stdout.Flush()",
+	"}",
+	"$owner.Dispose()"
+].join("\n");
+const BYTE_ORDER_MARK = "﻿";
+/** Reads what the dialog printed: a normalised drive path, a cancel, or why the text is refused. Pure. */
+function parsePickedFolder(stdout) {
+	const lines = (stdout.startsWith(BYTE_ORDER_MARK) ? stdout.slice(1) : stdout).split(/\r\n|\n|\r/).filter((line) => line.trim() !== "");
+	const [line] = lines;
+	if (line === void 0) return { kind: "cancelled" };
+	if (lines.length > 1) return {
+		kind: "invalid",
+		issue: "not_one_line"
+	};
+	const path = windowsFolderPath(line, true);
+	if (path === null) return {
+		kind: "invalid",
+		issue: folderPathIssue(line, true) ?? "relative"
+	};
+	return {
+		kind: "path",
+		path
+	};
+}
+/**
+* The folder picker of this host, or `null` where there is no dialog: Windows has one; elsewhere only the test hook gives one (the
+* fake picker of the testkit). A picker that cannot start its program is still a picker: `pick` then says `terminal_unavailable`.
+*/
+function createFolderPicker(deps = {}) {
+	const platform = deps.platform ?? hostPlatform;
+	const env = deps.env ?? process.env;
+	const exec = deps.exec ?? execFileText;
+	const resolvePowershell = deps.resolvePowershell ?? (() => resolveExecutable("powershell"));
+	const hook = folderPickerHook(env);
+	if (hook === void 0 && platform !== "win32") return null;
+	let open = false;
+	async function launchOf() {
+		if (hook !== void 0) return {
+			file: process.execPath,
+			args: [hook.script],
+			extraEnv: hook.env
+		};
+		const powershell = await resolvePowershell();
+		return powershell === null ? null : {
+			file: powershell,
+			args: ["-STA", ...powershellEncodedArgs(PICKER_SCRIPT)]
+		};
+	}
+	async function run(signal) {
+		const launch = await launchOf();
+		if (launch === null) throw new TerminalApiError("terminal_unavailable");
+		const result = await exec({
+			kind: "powershell.picker",
+			file: launch.file,
+			args: launch.args,
+			timeoutMs: PICKER_TIMEOUT_MS,
+			maxOutputBytes: PICKER_OUTPUT_MAX_BYTES,
+			encoding: "utf8",
+			...launch.extraEnv === void 0 || Object.keys(launch.extraEnv).length === 0 ? {} : { extraEnv: launch.extraEnv }
+		}, signal);
+		if (result.error === "ABORTED") return null;
+		if (result.error === "OUTPUT_LIMIT") throw new TerminalApiError("folder_invalid", [{
+			path: "path",
+			issue: "too_long"
+		}]);
+		if (!result.ok) throw new TerminalApiError("terminal_unavailable");
+		const picked = parsePickedFolder(result.stdout);
+		if (picked.kind === "invalid") throw new TerminalApiError("folder_invalid", [{
+			path: "path",
+			issue: picked.issue
+		}]);
+		return picked.kind === "path" ? picked.path : null;
+	}
+	return { async pick(signal) {
+		if (open) throw new TerminalApiError("picker_busy");
+		if (signal.aborted) return null;
+		open = true;
+		try {
+			return await run(signal);
+		} finally {
+			open = false;
+		}
+	} };
+}
+
+//#endregion
+//#region packages/engine/src/runtime/access-service.ts
+const ACCESS_LIMITS = {
+	ticketTtlMs: 12e4,
+	maxTickets: 4,
+	maxCredentials: 16,
+	credentialIdleMs: 432e5,
+	credentialMaxAgeMs: 864e5,
+	failureWindowMs: 6e4,
+	maxFailures: 8,
+	touchIntervalMs: 6e4
+};
+const SECRET_BYTES = 32;
+const ID_BYTES = 9;
+/** The shape of a credential (a cookie value): 32 random bytes in base64url. A code is not a credential, and the reverse. */
+const CREDENTIAL_RE$1 = /^[A-Za-z0-9_-]{43}$/;
+/** `Authorization: Bearer <token68>`: one space, no list, no parameters. */
+const BEARER_RE = /^bearer ([A-Za-z0-9._~+/-]+=*)$/i;
+/** A header longer than this is not a Bearer value of ours (the control token is 64 characters). */
+const BEARER_MAX_CHARS = 512;
+function sha256(text) {
+	return createHash("sha256").update(text, "utf8").digest();
+}
+function positiveInteger(name, value) {
+	if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`createAccessService: ${name} must be a positive integer, got ${String(value)}`);
+	return value;
+}
+function resolveLimits(given) {
+	const merged = {
+		...ACCESS_LIMITS,
+		...given
+	};
+	positiveInteger("ticketTtlMs", merged.ticketTtlMs);
+	positiveInteger("maxTickets", merged.maxTickets);
+	positiveInteger("maxCredentials", merged.maxCredentials);
+	positiveInteger("credentialIdleMs", merged.credentialIdleMs);
+	positiveInteger("credentialMaxAgeMs", merged.credentialMaxAgeMs);
+	positiveInteger("failureWindowMs", merged.failureWindowMs);
+	positiveInteger("maxFailures", merged.maxFailures);
+	positiveInteger("touchIntervalMs", merged.touchIntervalMs);
+	return merged;
+}
+function createAccessService(options) {
+	const { clock } = options;
+	const limits = resolveLimits(options.limits);
+	const random = options.random ?? randomBytes;
+	const controlToken = options.controlToken ?? null;
+	/** Oldest first. */
+	let tickets = [];
+	/** By the hex of the hash; insertion order is sign-in order, so the first entry is the oldest. */
+	const credentials = /* @__PURE__ */ new Map();
+	/** Times of the wrong codes inside the window, oldest first. */
+	const failures = [];
+	const listeners = /* @__PURE__ */ new Set();
+	function sweepTickets(now) {
+		tickets = tickets.filter((ticket) => now < ticket.expiresAtMs);
+	}
+	function expiryOf(credential) {
+		return Math.min(credential.createdAtMs + limits.credentialMaxAgeMs, credential.touchedAtMs + limits.credentialIdleMs);
+	}
+	/** Removes a credential and tells the listeners. A listener that throws must not keep the others from hearing it. */
+	function drop(key, credential) {
+		if (!credentials.delete(key)) return;
+		for (const listener of [...listeners]) try {
+			listener(credential.id);
+		} catch {}
+	}
+	function sweepCredentials(now) {
+		for (const [key, credential] of [...credentials]) if (now >= expiryOf(credential)) drop(key, credential);
+	}
+	function mint() {
+		const now = clock.now();
+		sweepTickets(now);
+		while (tickets.length >= limits.maxTickets) tickets.shift();
+		const code = random(SECRET_BYTES).toString("base64url");
+		const expiresAtMs = now + limits.ticketTtlMs;
+		tickets.push({
+			hash: sha256(code),
+			expiresAtMs
+		});
+		return {
+			code,
+			expiresAtMs,
+			ttlSeconds: Math.round(limits.ticketTtlMs / 1e3)
+		};
+	}
+	/** Compares the hash of `code` with every outstanding ticket, with no early exit; the index of the match or -1. */
+	function matchTicket(code) {
+		if (typeof code !== "string" || !ACCESS_CODE_RE.test(code)) return -1;
+		const candidate = sha256(code);
+		let found = -1;
+		tickets.forEach((ticket, index) => {
+			if (timingSafeEqual(candidate, ticket.hash)) found = index;
+		});
+		return found;
+	}
+	function exchange(code) {
+		const now = clock.now();
+		sweepTickets(now);
+		sweepCredentials(now);
+		const index = matchTicket(code);
+		if (index >= 0) {
+			tickets.splice(index, 1);
+			const credential = random(SECRET_BYTES).toString("base64url");
+			const id = random(ID_BYTES).toString("base64url");
+			while (credentials.size >= limits.maxCredentials) {
+				const oldest = credentials.entries().next();
+				if (oldest.done === true) break;
+				drop(oldest.value[0], oldest.value[1]);
+			}
+			const hash = sha256(credential);
+			credentials.set(hash.toString("hex"), {
+				id,
+				hash,
+				createdAtMs: now,
+				touchedAtMs: now
+			});
+			return {
+				ok: true,
+				credential,
+				credentialId: id,
+				expiresAtMs: now + limits.credentialMaxAgeMs
+			};
+		}
+		while (failures.length > 0 && (failures[0] ?? now) + limits.failureWindowMs <= now) failures.shift();
+		if (failures.length >= limits.maxFailures) {
+			const oldest = failures[0] ?? now;
+			return {
+				ok: false,
+				reason: "rate_limited",
+				retryAfterMs: Math.max(1, oldest + limits.failureWindowMs - now)
+			};
+		}
+		failures.push(now);
+		return {
+			ok: false,
+			reason: "invalid"
+		};
+	}
+	function verify(value) {
+		const now = clock.now();
+		sweepCredentials(now);
+		if (typeof value !== "string" || !CREDENTIAL_RE$1.test(value)) return null;
+		const candidate = sha256(value);
+		const credential = credentials.get(candidate.toString("hex"));
+		if (credential === void 0 || !timingSafeEqual(candidate, credential.hash)) return null;
+		if (now - credential.touchedAtMs >= limits.touchIntervalMs) credential.touchedAtMs = now;
+		return {
+			credentialId: credential.id,
+			expiresAtMs: expiryOf(credential)
+		};
+	}
+	function verifyBearer(header) {
+		if (typeof header !== "string" || header.length > BEARER_MAX_CHARS) return false;
+		const token = typeof controlToken === "function" ? controlToken() : controlToken;
+		if (token === null || token === "") return false;
+		const given = BEARER_RE.exec(header)?.[1];
+		if (given === void 0) return false;
+		return timingSafeEqual(sha256(given), sha256(token));
+	}
+	function revoke(credentialId) {
+		for (const [key, credential] of credentials) if (credential.id === credentialId) {
+			drop(key, credential);
+			return;
+		}
+	}
+	function onRevoked(listener) {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	}
+	return {
+		mint,
+		exchange,
+		verify,
+		verifyBearer,
+		revoke,
+		onRevoked
+	};
+}
+
+//#endregion
+//#region packages/engine/src/runtime/create-user-services.ts
+/** How long the start waits for the sweep of the registry of a dead run (design 01 section 5). */
+const SWEEP_BUDGET_MS = 1e4;
+/** A control token file is 64 hex digits and a line feed; a larger file is not one. */
+const TOKEN_FILE_MAX_BYTES = 4096;
+const CONTROL_TOKEN_RE = /^[0-9a-f]{64}$/;
+/**
+* The control token of the instance as a function that reads it at each call: boot writes `run/control.token` after the runtime
+* (and so this factory) was created, and a new boot replaces it. A link, a missing, unreadable or oversized file and any content
+* that is not 64 lower-case hex digits are `null`. Synchronous (the access service asks it synchronously) and cheap: one small file.
+*/
+function controlTokenOf(file) {
+	return () => {
+		try {
+			assertNotLink(file);
+			if (statSync(file).size > TOKEN_FILE_MAX_BYTES) return null;
+			const text = readFileSync(file, "utf8").trim();
+			return CONTROL_TOKEN_RE.test(text) ? text : null;
+		} catch {
+			return null;
+		}
+	};
+}
+/** The importer hint and the database fallback of the linker, over the query layer of the context. */
+function sessionQueries(ctx) {
+	let since = null;
+	return {
+		sessionKnown: (sessionUid) => ctx.queries.resumeFacts(ctx.scope, sessionUid) !== null,
+		sessionsSince: (projectKey, sinceMs) => {
+			since ??= ctx.db.driver.prepare(`SELECT s.session_uid AS uid FROM sessions s JOIN projects p ON p.id = s.project_id
+          WHERE p.project_key = :key AND s.first_seen_at >= :since
+          ORDER BY s.first_seen_at, s.session_uid LIMIT 50`);
+			return since.all({
+				key: projectKey,
+				since: sinceMs
+			}).map((row) => row.uid);
+		}
+	};
+}
+function createUserServices(ctx, services, options = {}) {
+	const alive = options.pidAlive ?? pidAlive;
+	const exitHook = options.exitHook ?? process;
+	const sweepBudgetMs = options.sweepBudgetMs ?? 1e4;
+	const terminal = options.terminalService ?? createDefaultTerminalService({
+		config: ctx.config.runtime.terminal,
+		logger: ctx.logger,
+		clock: ctx.clock,
+		mcsHome: ctx.mcsHome,
+		...options.terminal
+	});
+	const registry = options.registry ?? createRegistrySnapshot({
+		claudeHome: ctx.claudeHome,
+		pidAlive: alive,
+		now: () => ctx.clock.now()
+	});
+	const tree = options.tree ?? { descendants: async (rootPid) => {
+		const found = await listDescendantPids(rootPid);
+		return found === null ? null : new Set(found);
+	} };
+	const linker = createTerminalLinker({
+		registry,
+		tree,
+		clock: ctx.clock,
+		config: ctx.config.runtime.projects,
+		...sessionQueries(ctx),
+		hintSession: (sessionUid) => {
+			services.ingest.hintSession(sessionUid);
+		},
+		pidAlive: alive,
+		logger: ctx.logger
+	});
+	const folders = createFolderService(ctx, {
+		linker,
+		registry,
+		...options.folders
+	});
+	const picker = options.picker !== void 0 ? options.picker : createFolderPicker(options.env === void 0 ? {} : { env: options.env });
+	const host = createTerminalHost({
+		service: terminal,
+		folders,
+		linker,
+		picker,
+		clock: ctx.clock
+	});
+	const access = createAccessService({
+		clock: ctx.clock,
+		controlToken: options.controlToken ?? controlTokenOf(path.join(ctx.instanceDir, "run", "control.token"))
+	});
+	/** `process.on('exit')`: no await and no spawn is possible there, only a synchronous kill of every process that may still run. */
+	const onExit = () => {
+		terminal.emergencyKillSync();
+	};
+	/** Waits for the sweep at most the budget. A slow or failing sweep is a warning (a code word, never the text of an error). */
+	async function sweepWithinBudget() {
+		let timer;
+		const budget = new Promise((resolve) => {
+			timer = setTimeout(() => {
+				resolve("late");
+			}, sweepBudgetMs);
+		});
+		try {
+			const swept = Promise.resolve().then(() => terminal.sweepOrphans()).then(() => "done", () => "failed");
+			const outcome = await Promise.race([swept, budget]);
+			if (outcome === "late") ctx.logger.warn("terminal_sweep_budget", { durationMs: sweepBudgetMs });
+			else if (outcome === "failed") ctx.logger.warn("terminal_sweep_failed", { code: "sweep_failed" });
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+	return {
+		census: host.census,
+		access,
+		accessService: access,
+		terminal: host,
+		folders,
+		components: [
+			{
+				name: "folders",
+				start: () => folders.start(),
+				stop: () => folders.stop()
+			},
+			{
+				name: "terminal-link",
+				start: () => {
+					linker.start();
+				},
+				stop: () => linker.stop()
+			},
+			{
+				name: "terminal",
+				start: async () => {
+					exitHook.on("exit", onExit);
+					await sweepWithinBudget();
+				},
+				stop: async () => {
+					exitHook.off("exit", onExit);
+					try {
+						await terminal.shutdown();
+					} finally {
+						host.close();
+					}
+				}
+			}
+		]
+	};
+}
+
+//#endregion
 //#region packages/engine/src/runtime/instance-runtime.ts
 const NO_STATS = {
 	queued: 0,
@@ -39601,6 +46334,7 @@ const STUB_FACTORIES = {
 		untilIdle: () => Promise.resolve(),
 		nudge: () => void 0,
 		replay: () => Promise.resolve({ segmentsReset: 0 }),
+		hintSession: () => void 0,
 		stats: () => NO_STATS
 	}),
 	createLifecycleSweeper: () => ({
@@ -39624,7 +46358,8 @@ const STUB_FACTORIES = {
 		close: () => void 0
 	}),
 	publishRouteFile: () => Promise.resolve(),
-	createAlertComponents: () => []
+	createAlertComponents: () => [],
+	createUserServices: () => EMPTY_USER_SERVICES
 };
 /** Where the work packages of the other owners register their real factories (the blocks at the end of this file). */
 const registeredFactories = {};
@@ -39636,6 +46371,8 @@ const STUB_SERVICES = [
 	["panels", "createPanelService"],
 	["route-file", "publishRouteFile"]
 ];
+/** Worth a warning on a user instance only: a task instance never calls the factory. */
+const USER_STUB_SERVICE = ["user-services", "createUserServices"];
 /** The attempts tick of 06 3.10 runs this long after the previous one finished (01 4.4a component 4). */
 const ATTEMPTS_TICK_MS = 2e3;
 /** The deadline of the components that already started when a start fails (01 4.4a `start()`). */
@@ -39657,6 +46394,8 @@ function createInstanceRuntime(ctx, options = {}) {
 		...options.factories
 	};
 	for (const [name, factory] of STUB_SERVICES) if (factories[factory] === STUB_FACTORIES[factory]) ctx.logger.warn("runtime_stub_service", { phase: name });
+	const [userName, userFactory] = USER_STUB_SERVICE;
+	if (ctx.kind === "user" && factories[userFactory] === STUB_FACTORIES[userFactory]) ctx.logger.warn("runtime_stub_service", { phase: userName });
 	const ingest = factories.createIngestService(ctx);
 	const sweeper = factories.createLifecycleSweeper(ctx, { writer: ingest.writer });
 	const scheduler = factories.createDbScheduler(ctx);
@@ -39670,6 +46409,7 @@ function createInstanceRuntime(ctx, options = {}) {
 		scheduler,
 		panels
 	};
+	const user = ctx.kind === "user" ? factories.createUserServices(ctx, services) : null;
 	let tickInFlight = null;
 	let attemptsArmed = false;
 	let attemptsTimer = null;
@@ -39749,6 +46489,7 @@ function createInstanceRuntime(ctx, options = {}) {
 			}
 		},
 		...factories.createAlertComponents(ctx, services),
+		...user?.components ?? [],
 		watchdog
 	];
 	/**
@@ -39885,7 +46626,8 @@ function createInstanceRuntime(ctx, options = {}) {
 		},
 		ingestReplay: async (fromSegment) => ({ segments: (await ingest.replay(fromSegment)).segmentsReset }),
 		health: () => ctx.queries.health(ctx.scope),
-		panels
+		panels,
+		user
 	};
 }
 registeredFactories.createIngestService = createIngestService;
@@ -39894,39 +46636,7 @@ registeredFactories.createDbScheduler = createDbScheduler;
 registeredFactories.publishRouteFile = publishRouteFile;
 registeredFactories.createPanelService = createPanelService;
 registeredFactories.createAlertComponents = createAlertComponents;
-
-//#endregion
-//#region packages/engine/src/runtime/test-hooks.ts
-/** The documented hooks by their short name: T-LC-06 (control ignored), T-LC-08 (boot hangs), T-LC-10 (init crash). */
-const TEST_HOOK_NAMES = [
-	"IGNORE_CONTROL",
-	"BOOT_HANG",
-	"INIT_CRASH"
-];
-/** The environment variable behind each hook. */
-const TEST_HOOK_VARIABLES = {
-	IGNORE_CONTROL: "MCS_TEST_IGNORE_CONTROL",
-	BOOT_HANG: "MCS_TEST_BOOT_HANG",
-	INIT_CRASH: "MCS_TEST_INIT_CRASH"
-};
-function variableOf(name) {
-	for (const hook of TEST_HOOK_NAMES) {
-		const variable = TEST_HOOK_VARIABLES[hook];
-		if (name === hook || name === variable) return variable;
-	}
-}
-/**
-* The value of the hook `name` (the short name such as `'BOOT_HANG'`, or the full variable name), or `undefined` when test
-* mode is off, the hook is not one of the documented three, or the variable is unset or empty. `env` defaults to the
-* process environment.
-*/
-function testHook(name, env = process.env) {
-	if (env["MCS_TEST"] !== "1") return void 0;
-	const variable = variableOf(name);
-	if (variable === void 0) return void 0;
-	const value = env[variable];
-	return value === void 0 || value === "" ? void 0 : value;
-}
+registeredFactories.createUserServices = createUserServices;
 
 //#endregion
 //#region packages/engine/src/ops/lifecycle.ts
@@ -40869,7 +47579,7 @@ const CONFIG_KEY_SUPPORT = {
 	window_hours: supported("How far back sessions and events are shown.", QUERY, "engine/src/query/sessions.ts"),
 	active_seconds: supported("How recent an event must be for a session to count as active.", "engine/src/lifecycle/facts.ts"),
 	pending_tool_grace_seconds: supported("How long a tool call may stay open before the session is called stuck.", "engine/src/lifecycle/facts.ts"),
-	include_unmatched: supported("Keeps sessions that no rule matched visible instead of hiding them.", "engine/src/query/sessions.ts"),
+	include_unmatched: supported("Keeps sessions that no rule matched visible instead of hiding them.", "engine/src/projects/scope.ts"),
 	session_rules: supported("Pattern rules that choose and label the sessions of this task.", "engine/src/ingest/transcripts/classify.ts"),
 	session_ids: supported("Session ids that are always part of this task.", "engine/src/ingest/transcripts/classify.ts"),
 	panels: supported("Switches the optional panels on and off.", PANEL_ROUTE, PANEL_MAP),
@@ -40938,6 +47648,58 @@ const NODE_SEAMS = {
 	homeDirs: [],
 	tailLines
 };
+
+//#endregion
+//#region packages/engine/src/platform/browser.ts
+const APP_BROWSERS = [{
+	kind: "edge",
+	relative: path.win32.join("Microsoft", "Edge", "Application", "msedge.exe"),
+	onPath: "msedge.exe"
+}, {
+	kind: "chrome",
+	relative: path.win32.join("Google", "Chrome", "Application", "chrome.exe"),
+	onPath: "chrome.exe"
+}];
+
+//#endregion
+//#region packages/engine/src/user-instance/paths.ts
+/** The reserved tasks root below the per-user folder; it never lists a task of a repository. */
+const USER_ROOT_DIRNAME = "instances";
+/** The title of the user instance. */
+const USER_INSTANCE_NAME = "Claude Agent Workspace";
+/**
+* `resolveMcsHome` returns a string with mixed separators on Windows (a backslash path that ends in a forward slash and
+* `mcs`), so it is always run through `path.resolve`. It throws without a home: that is `CONFIG_INVALID`, as `mcsHomeOf`
+* of the instance context says.
+*/
+function homeOf(env) {
+	try {
+		return path.resolve(resolveMcsHome(env));
+	} catch (error) {
+		throw new McsError("CONFIG_INVALID", error instanceof Error ? error.message : "no MCS home folder", { cause: error });
+	}
+}
+/** `<MCS_HOME>/instances`: the tasks root of the user instance, absolute. */
+function userRootOf(env) {
+	return path.join(homeOf(env), USER_ROOT_DIRNAME);
+}
+/**
+* True when `root` is the user root: canonical equality, with the case rule of the host (links and junctions are
+* followed). Boot refuses a `kind: "user"` workspace anywhere else, so a hand-edited task cannot become a terminal host.
+*/
+function isUserRoot(root, env) {
+	return samePath(root, userRootOf(env));
+}
+
+//#endregion
+//#region packages/engine/src/user-instance/ensure.ts
+/** What `init` writes into `README.md` talks about a monitoring task, which this is not. */
+const README_TEXT = `# ${USER_INSTANCE_NAME}\n\nThis folder is the user-wide instance of the Claude Agent Workspace: one per Windows user, created by \`caw\` the first time it is needed. It holds the database of session metadata, the audit trail, the logs and the run files of that one instance. Do not rename or move it.
+
+- \`task.json\` identity, \`config.json\` overrides of the shared defaults (the port), \`runtime.json\` Node runtime overrides, \`instance.json\` runtime identity (\`kind\` is \`user\`), \`audit/\` change and decision log, \`data/\` database, \`logs/\` runtime logs, \`run/\` control token and browser profile.
+- Inspect: \`caw status\`, \`caw config get\`, \`caw check\`.
+- Never copy transcripts here; they are read in place.
+`;
 
 //#endregion
 //#region npm/ms/index.js
@@ -60025,7 +66787,7 @@ var require_read = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	const getBody = require_raw_body();
 	const iconv = require_lib$1();
 	const onFinished = require_on_finished();
-	const zlib = __require("node:zlib");
+	const zlib$1 = __require("node:zlib");
 	const hasBody = require_type_is().hasBody;
 	const { getCharset } = require_utils$2();
 	/**
@@ -60169,13 +66931,13 @@ var require_read = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		switch (encoding) {
 			case "deflate":
 				debug("inflate body");
-				return zlib.createInflate();
+				return zlib$1.createInflate();
 			case "gzip":
 				debug("gunzip body");
-				return zlib.createGunzip();
+				return zlib$1.createGunzip();
 			case "br":
 				debug("brotli decompress body");
-				return zlib.createBrotliDecompress();
+				return zlib$1.createBrotliDecompress();
 			default: throw createError(415, "unsupported content encoding \"" + encoding + "\"", {
 				encoding,
 				type: "encoding.unsupported"
@@ -65548,7 +72310,7 @@ var require_application = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var finalhandler = require_finalhandler();
 	var debug = require_src()("express:application");
 	var View = require_view();
-	var http$2 = __require("node:http");
+	var http$4 = __require("node:http");
 	var methods = require_utils().methods;
 	var compileETag = require_utils().compileETag;
 	var compileQueryParser = require_utils().compileQueryParser;
@@ -65964,7 +72726,7 @@ var require_application = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	* @public
 	*/
 	app.listen = function listen() {
-		var server = http$2.createServer(this);
+		var server = http$4.createServer(this);
 		var args = slice.call(arguments);
 		if (typeof args[args.length - 1] === "function") {
 			var done = args[args.length - 1] = once(args[args.length - 1]);
@@ -66944,7 +73706,7 @@ var require_request = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var accepts = require_accepts();
 	var isIP = __require("node:net").isIP;
 	var typeis = require_type_is();
-	var http$1 = __require("node:http");
+	var http$3 = __require("node:http");
 	var fresh = require_fresh();
 	var parseRange = require_range_parser();
 	var parse = require_parseurl();
@@ -66953,7 +73715,7 @@ var require_request = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	* Request prototype.
 	* @public
 	*/
-	var req = Object.create(http$1.IncomingMessage.prototype);
+	var req = Object.create(http$3.IncomingMessage.prototype);
 	/**
 	* Module exports.
 	* @public
@@ -68722,7 +75484,7 @@ var require_response = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var deprecate = require_depd()("express");
 	var encodeUrl = require_encodeurl();
 	var escapeHtml = require_escape_html();
-	var http = __require("node:http");
+	var http$2 = __require("node:http");
 	var onFinished = require_on_finished();
 	var mime = require_mime_types();
 	var path$1 = __require("node:path");
@@ -68743,7 +75505,7 @@ var require_response = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	* Response prototype.
 	* @public
 	*/
-	var res = Object.create(http.ServerResponse.prototype);
+	var res = Object.create(http$2.ServerResponse.prototype);
 	/**
 	* Module exports.
 	* @public
@@ -69575,7 +76337,7 @@ var require_express$1 = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	* Module dependencies.
 	*/
 	var bodyParser = require_body_parser();
-	var EventEmitter = __require("node:events").EventEmitter;
+	var EventEmitter$2 = __require("node:events").EventEmitter;
 	var mixin = require_merge_descriptors();
 	var proto = require_application();
 	var Router = require_router();
@@ -69595,7 +76357,7 @@ var require_express$1 = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		var app = function(req, res, next) {
 			app.handle(req, res, next);
 		};
-		mixin(app, EventEmitter.prototype, false);
+		mixin(app, EventEmitter$2.prototype, false);
 		mixin(app, proto, false);
 		app.request = Object.create(req, { app: {
 			configurable: true,
@@ -69647,6 +76409,7 @@ const MAX_URL_LENGTH = 8192;
 /** Largest body of the hook nudge, in bytes. */
 const NUDGE_MAX_BODY_BYTES = 256;
 const REQUEST_ID_HEADER = "X-Request-Id";
+const MUTATION_HEADER = "x-mcs-request";
 /** One fixed English sentence per code (03 5.2: numbers allowed, never request values). */
 const GUARD_ERROR_MESSAGES = {
 	host_not_allowed: "The Host header is not allowed.",
@@ -69717,6 +76480,7 @@ function requestContext(opts) {
 		next();
 	};
 }
+/** The port a `PortSource` names right now. */
 function portOf(source) {
 	return typeof source === "function" ? source() : source;
 }
@@ -69834,7 +76598,31 @@ function isJsonContentType(value) {
 	if (value === void 0) return false;
 	return asciiLower(value.split(";", 1)[0] ?? "").trim() === "application/json";
 }
-/** Reads at most `maxBytes` of the request body, deciding from `Content-Length` first and from the bytes after. */
+const SAFE_METHODS$1 = /* @__PURE__ */ new Set(["GET", "HEAD"]);
+/**
+* S-NET-5: a request from the UI that changes anything needs `Content-Type: application/json` and `X-MCS-Request: 1`;
+* a plain HTML form or a simple cross-origin request can send neither. `registerRoute` mounts it on every POST route except
+* the hook nudge (which has its own guard). A refusal closes the connection: the body of a refused write is never read.
+*/
+function csrfGuard() {
+	return (req, res, next) => {
+		if (SAFE_METHODS$1.has(req.method)) {
+			next();
+			return;
+		}
+		const marker = headerText$1(req.headers[MUTATION_HEADER]);
+		if (!isJsonContentType(req.headers["content-type"]) || marker !== "1") {
+			sendGuardError(res, "csrf_rejected", { closeConnection: true });
+			return;
+		}
+		next();
+	};
+}
+/**
+* Reads at most `maxBytes` of the request body, deciding from `Content-Length` first and from the bytes after. A body that
+* is too large or a connection that ends first stops the reading at once: nothing past the limit is buffered. The caller
+* answers `too_large` with the connection closed and says nothing for `aborted` (nobody is listening).
+*/
 function readCapped(req, maxBytes) {
 	const declared = req.headers["content-length"];
 	if (declared !== void 0 && Number(declared) > maxBytes) return Promise.resolve({ kind: "too_large" });
@@ -69877,6 +76665,7 @@ const UTF8 = new TextDecoder("utf-8", {
 	fatal: true,
 	ignoreBOM: true
 });
+/** Strict UTF-8 JSON: invalid bytes, a byte order mark, an empty body and trailing text are all "not JSON". */
 function parseJson(bytes) {
 	try {
 		return {
@@ -69919,6 +76708,7 @@ async function checkNudge(req, res, instanceId, next) {
 		sendGuardError(res, "instance_mismatch");
 		return;
 	}
+	res.locals["body"] = shape.data;
 	next();
 }
 /**
@@ -69973,13 +76763,36 @@ const ERROR_MESSAGES = {
 	db_busy: "The database is busy; try again shortly.",
 	disk_full: "The disk of the monitor is full.",
 	stream_limit: "Too many live streams are open.",
-	shutting_down: "The monitor is shutting down."
+	shutting_down: "The monitor is shutting down.",
+	access_required: "An access link is required: open the app with the link printed by the command line tool.",
+	access_code_invalid: "The access code is not valid, has expired or was already used.",
+	access_rate_limited: "Too many wrong access codes; wait and try again.",
+	upgrade_required: "This path needs a WebSocket upgrade.",
+	terminal_unavailable: "Terminals are not available on this system.",
+	claude_not_found: "The claude command could not be found.",
+	folder_invalid: "The folder does not exist or is not allowed.",
+	folder_not_found: "There is no such folder in the list.",
+	folder_limit: "The list already holds the most folders a person may add.",
+	terminal_not_found: "There is no such terminal session.",
+	terminal_limit: "Too many terminal sessions are running.",
+	resume_unavailable: "This session cannot be resumed in a terminal.",
+	picker_busy: "A folder dialog is already open."
 };
 /** `Retry-After` in seconds (03 5.2 and 6.4). */
 const RETRY_AFTER_SECONDS = {
 	db_busy: "1",
 	search_busy: "2",
-	export_busy: "2"
+	export_busy: "2",
+	access_rate_limited: "60"
+};
+/** The headers a code always carries (02 2.2): the challenge of the access code and the upgrade a socket path asks for. */
+const CODE_HEADERS = {
+	access_required: { "WWW-Authenticate": "CAW-Access" },
+	access_code_invalid: { "WWW-Authenticate": "CAW-Access" },
+	upgrade_required: {
+		Upgrade: "websocket",
+		Connection: "Upgrade"
+	}
 };
 function newRequestId() {
 	let id = "r-";
@@ -70009,14 +76822,16 @@ function sendError(res, code, opts = {}) {
 		...error,
 		details: [...opts.details]
 	} };
-	const retryAfter = RETRY_AFTER_SECONDS[code];
+	for (const [name, value] of Object.entries(CODE_HEADERS[code] ?? {})) res.setHeader(name, value);
+	const retryAfter = opts.retryAfterSeconds === void 0 || !Number.isFinite(opts.retryAfterSeconds) ? RETRY_AFTER_SECONDS[code] : String(Math.max(1, Math.ceil(opts.retryAfterSeconds)));
 	if (retryAfter !== void 0) res.setHeader("Retry-After", retryAfter);
 	if (opts.allow !== void 0) res.setHeader("Allow", opts.allow.join(", "));
+	if (opts.closeConnection === true) res.setHeader("Connection", "close");
 	res.setHeader("Cache-Control", "no-store");
 	res.status(ERROR_HTTP_STATUS[code]).json(envelope);
 }
 const ERROR_CODE_SET = new Set(ERROR_CODES);
-function stringProperty(value, name) {
+function stringProperty$1(value, name) {
 	const property = Reflect.get(value, name);
 	return typeof property === "string" ? property : void 0;
 }
@@ -70024,10 +76839,83 @@ function stringProperty(value, name) {
 function notFoundCodeOf(error) {
 	if (!(error instanceof Error)) return void 0;
 	if (error.name !== "NotFoundError" && error.constructor.name !== "NotFoundError") return void 0;
-	const code = stringProperty(error, "code");
+	const code = stringProperty$1(error, "code");
 	if (code === void 0 || !ERROR_CODE_SET.has(code)) return void 0;
 	const known = ERROR_CODES.find((candidate) => candidate === code);
 	return known !== void 0 && ERROR_HTTP_STATUS[known] === 404 ? known : void 0;
+}
+/** What the terminal service of the engine throws (design 01 3.2): its own vocabulary, mapped here to the catalogue. */
+const TERMINAL_CODE_MAP = {
+	UNSUPPORTED_OS: { code: "terminal_unavailable" },
+	NATIVE_MISSING: { code: "terminal_unavailable" },
+	NATIVE_LOAD_FAILED: { code: "terminal_unavailable" },
+	COMMAND_UNSUPPORTED: { code: "terminal_unavailable" },
+	ARGS_UNSAFE: { code: "terminal_unavailable" },
+	SPAWN_FAILED: {
+		code: "terminal_unavailable",
+		internal: true
+	},
+	START_TIMEOUT: {
+		code: "terminal_unavailable",
+		internal: true
+	},
+	CLAUDE_NOT_FOUND: { code: "claude_not_found" },
+	FOLDER_INVALID: { code: "folder_invalid" },
+	FOLDER_NOT_FOUND: { code: "folder_invalid" },
+	SESSION_LIMIT: { code: "terminal_limit" },
+	SESSION_NOT_FOUND: { code: "terminal_not_found" },
+	SESSION_ENDED: { code: "terminal_not_found" },
+	NAME_INVALID: { code: "terminal_not_found" },
+	MESSAGE_TOO_LARGE: { code: "payload_too_large" },
+	SHUTTING_DOWN: { code: "shutting_down" }
+};
+const TERMINAL_API_CODE_SET = new Set(TERMINAL_ERROR_CODES);
+/** The `{ path, issue }` list a terminal error may carry; anything of another shape is ignored (never a message or a value). */
+function detailsOf$1(error) {
+	const value = Reflect.get(error, "details");
+	if (!Array.isArray(value) || value.length === 0) return void 0;
+	const entries = value;
+	const details = [];
+	for (const entry of entries) {
+		if (typeof entry !== "object" || entry === null) return void 0;
+		const path = stringProperty$1(entry, "path");
+		const issue = stringProperty$1(entry, "issue");
+		if (path === void 0 || issue === void 0) return void 0;
+		details.push({
+			path,
+			issue
+		});
+	}
+	return details;
+}
+/**
+* The engine's `TerminalError(code)`: recognised by its name like `NotFoundError`, so that source and build copies both map. The
+* engine codes are upper case ("SESSION_LIMIT"); a lower case code of `TERMINAL_ERROR_CODES` passes through. The message is
+* never read: the envelope carries the fixed sentence of the code. An unknown code is an internal failure.
+*/
+function terminalErrorOf(error) {
+	if (!(error instanceof Error)) return void 0;
+	if (error.name !== "TerminalError" && error.constructor.name !== "TerminalError") return void 0;
+	const raw = stringProperty$1(error, "code");
+	const details = detailsOf$1(error);
+	const withDetails = (code, internal) => details === void 0 ? {
+		code,
+		internal
+	} : {
+		code,
+		details,
+		internal
+	};
+	if (raw !== void 0 && TERMINAL_API_CODE_SET.has(raw)) {
+		const known = TERMINAL_ERROR_CODES.find((candidate) => candidate === raw);
+		if (known !== void 0) return withDetails(known, false);
+	}
+	const mapped = raw !== void 0 && Object.hasOwn(TERMINAL_CODE_MAP, raw) ? TERMINAL_CODE_MAP[raw] : void 0;
+	if (mapped === void 0) return {
+		code: "internal_error",
+		internal: true
+	};
+	return withDetails(mapped.code, mapped.internal === true);
 }
 /**
 * 03 5.2 step 9: `DbError` `db_busy` is 503 `db_busy`, `db_full` is 503 `disk_full`, any other `DbError` is 500
@@ -70061,6 +76949,8 @@ function mapError(error) {
 		code: notFound,
 		internal: false
 	};
+	const terminal = terminalErrorOf(error);
+	if (terminal !== void 0) return terminal;
 	if (error instanceof URIError) return {
 		code: "validation_failed",
 		details: [{
@@ -70072,6 +76962,111 @@ function mapError(error) {
 	return {
 		code: "internal_error",
 		internal: true
+	};
+}
+
+//#endregion
+//#region packages/server/src/http/cookie.ts
+/** The cookie lives as long as the credential does: 24 hours (A2). */
+const COOKIE_MAX_AGE_SECONDS = 86400;
+/** A `Cookie` header longer than this is treated as absent (Node's own limit for all headers is 16 KiB). */
+const COOKIE_HEADER_MAX_CHARS = 4096;
+/** The shape of a credential: 32 random bytes in base64url. An access code (32 to 128 characters) is not one. */
+const CREDENTIAL_RE = /^[A-Za-z0-9_-]{43}$/;
+const ATTRIBUTES = "Path=/; HttpOnly; SameSite=Strict";
+/** `caw_<first 8 hex characters of the instance id>`; a value that is not a lowercase uuid v4 is a programming error. */
+function cookieName(instanceId) {
+	if (!UUID_V4_RE.test(instanceId)) throw new RangeError("cookieName: the instance id is not a lowercase uuid v4");
+	return `caw_${instanceId.slice(0, 8)}`;
+}
+/** The `Set-Cookie` value that signs a browser in: `<name>=<credential>; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`. */
+function setCookieHeader(credential, instanceId) {
+	if (!CREDENTIAL_RE.test(credential)) throw new RangeError("setCookieHeader: the value is not a credential");
+	return `${cookieName(instanceId)}=${credential}; ${ATTRIBUTES}; Max-Age=${String(COOKIE_MAX_AGE_SECONDS)}`;
+}
+/** The `Set-Cookie` value that signs a browser out: the same name, path and flags, an empty value and `Max-Age=0`. */
+function clearCookieHeader(instanceId) {
+	return `${cookieName(instanceId)}=; ${ATTRIBUTES}; Max-Age=0`;
+}
+/**
+* The credential in the `Cookie` header under exactly `name`, or `null`. The first cookie of that name decides: when its value is
+* not a credential the answer is `null` and later cookies of the same name are not tried. A header over 4 KiB, a missing
+* header and a header that is not a string are absent.
+*/
+function cookieValue(header, name) {
+	if (typeof header !== "string" || header.length > 4096) return null;
+	for (const pair of header.split(";")) {
+		const entry = pair.trim();
+		const equals = entry.indexOf("=");
+		if (equals < 0 || entry.slice(0, equals) !== name) continue;
+		const value = entry.slice(equals + 1);
+		return CREDENTIAL_RE.test(value) ? value : null;
+	}
+	return null;
+}
+
+//#endregion
+//#region packages/server/src/http/access-guard.ts
+/** The verifier of one instance over the access service. A cookie of another name is never read and never reaches the service. */
+function createAccessVerifier(service, instanceId) {
+	const name = cookieName(instanceId);
+	return {
+		verify: (req) => {
+			const credential = cookieValue(headerText$1(req.headers.cookie), name);
+			return credential === null ? null : service.verify(credential);
+		},
+		verifyBearer: (req) => service.verifyBearer(headerText$1(req.headers.authorization))
+	};
+}
+/** What the guard recorded for this response, or `undefined` when no access guard admitted the request. */
+function accessOf(res) {
+	const value = res.locals["access"];
+	if (typeof value !== "object" || value === null) return void 0;
+	const via = Reflect.get(value, "via");
+	if (via === "bearer" || via === "ticket") return { via };
+	const session = Reflect.get(value, "session");
+	if (via === "cookie" && typeof session === "object" && session !== null) {
+		const credentialId = Reflect.get(session, "credentialId");
+		const expiresAtMs = Reflect.get(session, "expiresAtMs");
+		if (typeof credentialId === "string" && typeof expiresAtMs === "number") return {
+			via: "cookie",
+			session: {
+				credentialId,
+				expiresAtMs
+			}
+		};
+	}
+}
+const SAFE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD"]);
+/** The guard of one route; see the top of this file for the rules and the order of the checks. */
+function accessGuard(verifier, options) {
+	return (req, res, next) => {
+		const safe = SAFE_METHODS.has(req.method);
+		const refusal = safe ? {} : { closeConnection: true };
+		if (options.requireOrigin && !isAllowedOrigin(headerText$1(req.headers.origin), portOf(options.port))) {
+			sendError(res, "origin_not_allowed", refusal);
+			return;
+		}
+		if (options.access === "ticket") {
+			res.locals["access"] = { via: "ticket" };
+			next();
+			return;
+		}
+		const session = verifier.verify(req);
+		if (session !== null) {
+			res.locals["access"] = {
+				via: "cookie",
+				session
+			};
+			next();
+			return;
+		}
+		if (options.access === "reader" && safe && verifier.verifyBearer(req)) {
+			res.locals["access"] = { via: "bearer" };
+			next();
+			return;
+		}
+		sendError(res, "access_required", refusal);
 	};
 }
 
@@ -70090,7 +77085,8 @@ const FALLBACK_SERVICES = {
 		warn: silent,
 		error: silent
 	},
-	validateResponses: true
+	validateResponses: true,
+	access: null
 };
 const tables = /* @__PURE__ */ new WeakMap();
 function tableOf(app) {
@@ -70178,11 +77174,55 @@ function fail(services, route, message) {
 		code: "INTERNAL"
 	});
 }
-async function handle(route, handler, services, req, res) {
+/**
+* The body of a POST route (design 02 3 step 5): read up to `route.maxBodyBytes` (the declared length first, then the streamed
+* byte count), strict UTF-8 JSON, then the strict schema of the route. Every refusal is answered here, with the connection closed
+* when the rest of the body is unread. A client that disappears first gets no answer.
+*/
+async function bodyOf(route, schema, services, req, res, consumed) {
+	let value;
+	if (consumed) {
+		value = res.locals["body"];
+		if (value === void 0) {
+			fail(services, route, "a guard consumed the body and did not publish it");
+			sendError(res, "internal_error");
+			return { ok: false };
+		}
+	} else {
+		const read = await readCapped(req, route.maxBodyBytes);
+		if (read.kind === "aborted") return { ok: false };
+		if (read.kind === "too_large") {
+			sendError(res, "payload_too_large", { closeConnection: true });
+			return { ok: false };
+		}
+		const json = parseJson(read.bytes);
+		if (!json.ok) {
+			sendError(res, "body_invalid_json");
+			return { ok: false };
+		}
+		value = json.value;
+	}
+	const checked = schema.safeParse(value);
+	if (!checked.success) {
+		sendError(res, "validation_failed", { details: detailsOf(checked.error.issues) });
+		return { ok: false };
+	}
+	return {
+		ok: true,
+		value: checked.data
+	};
+}
+async function handle(route, handler, services, options, req, res) {
 	const parsed = parseRequest(route, req);
 	if (!parsed.ok) {
 		sendError(res, parsed.code, parsed.details === void 0 ? {} : { details: parsed.details });
 		return;
+	}
+	let body;
+	if (route.method === "POST" && route.body !== null) {
+		const outcome = await bodyOf(route, route.body, services, req, res, options.bodyConsumed === true);
+		if (!outcome.ok) return;
+		body = outcome.value;
 	}
 	const controller = new AbortController();
 	res.once("close", () => {
@@ -70193,12 +77233,13 @@ async function handle(route, handler, services, req, res) {
 		const result = await handler({
 			params: parsed.params,
 			query: parsed.query,
+			body,
 			req,
 			res,
 			signal: controller.signal,
 			requestId
 		});
-		if (res.headersSent) return;
+		if (res.headersSent || res.locals["handled"] === true) return;
 		if (route.response === null) {
 			if (route.successStatus === 204) {
 				res.status(204).end();
@@ -70227,25 +77268,55 @@ async function handle(route, handler, services, req, res) {
 		sendError(res, mapped.code, mapped.details === void 0 ? {} : { details: mapped.details });
 	}
 }
+/**
+* The access guard of one route, resolved on every request from the services bound to the app: a `reader` route is open while no
+* access service is bound (a task instance); a `session` or `ticket` route then refuses everything (it cannot be mounted without
+* one, so this covers an app whose access service was taken away afterwards). `requireOrigin` holds for every write and for the
+* socket route.
+*/
+function accessChain(table, route, access) {
+	const requireOrigin = route.method !== "GET" || route.contentType === "websocket";
+	let built;
+	return (req, res, next) => {
+		const binding = table.services.access;
+		if (binding === null || binding === void 0) {
+			if (access === "reader") {
+				next();
+				return;
+			}
+			sendError(res, "access_required", route.method === "GET" ? {} : { closeConnection: true });
+			return;
+		}
+		if (built?.binding !== binding) built = {
+			binding,
+			guard: accessGuard(binding.verifier, {
+				access,
+				requireOrigin,
+				port: binding.port
+			})
+		};
+		built.guard(req, res, next);
+	};
+}
 function registerRoute(app, route, handler, options = {}) {
 	const table = tableOf(app);
 	for (const known of table.routes) {
 		if (known.id === route.id) throw new Error(`route ${route.id} is already registered`);
 		if (known.method === route.method && known.path === route.path) throw new Error(`${route.method} ${route.path} is already registered as route ${known.id}`);
 	}
+	if ((route.access === "session" || route.access === "ticket") && (table.services.access === null || table.services.access === void 0)) throw new Error(`route ${route.id} has access '${route.access}' and this app has no access service bound`);
 	table.routes.push(route);
 	const routeId = (_req, res, next) => {
 		res.locals["routeId"] = route.id;
 		next();
 	};
 	const run = async (req, res) => {
-		await handle(route, handler, table.services, req, res);
+		await handle(route, handler, table.services, options, req, res);
 	};
-	const chain = [
-		routeId,
-		...options.before ?? [],
-		run
-	];
+	const chain = [routeId];
+	if (route.method === "POST" && options.csrf !== false) chain.push(csrfGuard());
+	if (route.access !== "open") chain.push(accessChain(table, route, route.access));
+	chain.push(...options.before ?? [], run);
 	if (route.method === "GET") app.get(route.path, ...chain);
 	else app.post(route.path, ...chain);
 }
@@ -70268,7 +77339,11 @@ const ingestRoutes = (app, { ctx, nudge }) => {
 				code: "INTERNAL"
 			});
 		}
-	}, { before: [nudgeGuard({ instanceId: ctx.instanceId })] });
+	}, {
+		before: [nudgeGuard({ instanceId: ctx.instanceId })],
+		csrf: false,
+		bodyConsumed: true
+	});
 	registerRoute(app, routes.ingestProbe, ({ params }) => {
 		const probe = ctx.queries.hookProbe(ctx.scope, params.probeSessionId);
 		if (probe === null) throw new ApiError("probe_not_found");
@@ -70391,7 +77466,7 @@ function refusalCodeOf$1(error) {
 * Runs a query function and turns a refusal of the engine (`cursor_invalid`, `range_invalid`, ...) into the `ApiError`
 * of the same code. A `NotFoundError` passes through: the error mapper knows it. The other route modules import this.
 */
-function answering$1(run) {
+function answering$2(run) {
 	try {
 		return run();
 	} catch (error) {
@@ -70401,61 +77476,61 @@ function answering$1(run) {
 	}
 }
 const sessionRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.listSessions, ({ query }) => answering$1(() => ctx.queries.listSessions(ctx.scope, query)));
+	registerRoute(app, routes.listSessions, ({ query }) => answering$2(() => ctx.queries.listSessions(ctx.scope, query)));
 	registerRoute(app, routes.getSession, async ({ params }) => {
-		const detail = answering$1(() => ctx.queries.getSession(ctx.scope, params.sessionId));
+		const detail = answering$2(() => ctx.queries.getSession(ctx.scope, params.sessionId));
 		const auditRefs = await ctx.queries.sessionAuditRefs(detail);
 		return {
 			...detail,
 			auditRefs
 		};
 	});
-	registerRoute(app, routes.sessionAgents, ({ params, query }) => answering$1(() => ctx.queries.sessionAgents(ctx.scope, params.sessionId, query)));
-	registerRoute(app, routes.sessionTimeline, ({ params, query }) => answering$1(() => ctx.queries.listEvents(ctx.scope, {
+	registerRoute(app, routes.sessionAgents, ({ params, query }) => answering$2(() => ctx.queries.sessionAgents(ctx.scope, params.sessionId, query)));
+	registerRoute(app, routes.sessionTimeline, ({ params, query }) => answering$2(() => ctx.queries.listEvents(ctx.scope, {
 		...query,
 		session: [params.sessionId]
 	}, { pathSession: true })));
-	registerRoute(app, routes.sessionToolCalls, ({ params, query }) => answering$1(() => ctx.queries.listToolCalls(ctx.scope, {
+	registerRoute(app, routes.sessionToolCalls, ({ params, query }) => answering$2(() => ctx.queries.listToolCalls(ctx.scope, {
 		...query,
 		session: [params.sessionId]
 	}, { pathSession: true })));
-	registerRoute(app, routes.sessionTransitions, ({ params, query }) => answering$1(() => ctx.queries.sessionTransitions(ctx.scope, params.sessionId, query)));
+	registerRoute(app, routes.sessionTransitions, ({ params, query }) => answering$2(() => ctx.queries.sessionTransitions(ctx.scope, params.sessionId, query)));
 };
 /** `sessionUsage` (03 6.1): the token usage of one session by agent or model; an unknown session is `session_not_found`. */
 const sessionUsageRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.sessionUsage, ({ params, query }) => answering$1(() => ctx.queries.sessionUsage(ctx.scope, params.sessionId, query)));
+	registerRoute(app, routes.sessionUsage, ({ params, query }) => answering$2(() => ctx.queries.sessionUsage(ctx.scope, params.sessionId, query)));
 };
 
 //#endregion
 //#region packages/server/src/routes/agents.ts
 const agentRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.listAgents, ({ query }) => answering$1(() => ctx.queries.listAgents(ctx.scope, query)));
+	registerRoute(app, routes.listAgents, ({ query }) => answering$2(() => ctx.queries.listAgents(ctx.scope, query)));
 };
 
 //#endregion
 //#region packages/server/src/routes/events.ts
 const eventRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.listEvents, ({ query }) => answering$1(() => ctx.queries.listEvents(ctx.scope, query)));
-	registerRoute(app, routes.getEvent, ({ params }) => answering$1(() => ctx.queries.getEvent(ctx.scope, params.eventId)));
+	registerRoute(app, routes.listEvents, ({ query }) => answering$2(() => ctx.queries.listEvents(ctx.scope, query)));
+	registerRoute(app, routes.getEvent, ({ params }) => answering$2(() => ctx.queries.getEvent(ctx.scope, params.eventId)));
 };
 
 //#endregion
 //#region packages/server/src/routes/tool-calls.ts
 const toolCallRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.listToolCalls, ({ query }) => answering$1(() => ctx.queries.listToolCalls(ctx.scope, query)));
+	registerRoute(app, routes.listToolCalls, ({ query }) => answering$2(() => ctx.queries.listToolCalls(ctx.scope, query)));
 };
 
 //#endregion
 //#region packages/server/src/routes/alerts.ts
 const alertRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.listAlerts, ({ query }) => answering$1(() => ctx.queries.listAlerts(ctx.scope, query)));
+	registerRoute(app, routes.listAlerts, ({ query }) => answering$2(() => ctx.queries.listAlerts(ctx.scope, query)));
 	registerRoute(app, routes.alertRules, () => ctx.queries.alertRules(ctx.scope));
 };
 
 //#endregion
 //#region packages/server/src/routes/errors.ts
 const errorRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.errors, ({ query }) => answering$1(() => {
+	registerRoute(app, routes.errors, ({ query }) => answering$2(() => {
 		const stored = ctx.queries.errors(ctx.scope, query);
 		return {
 			asOfSeq: stored.asOfSeq,
@@ -70467,14 +77542,14 @@ const errorRoutes = (app, { ctx }) => {
 //#endregion
 //#region packages/server/src/routes/overview.ts
 const overviewRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.overview, ({ query }) => answering$1(() => ctx.queries.overview(ctx.scope, query)));
+	registerRoute(app, routes.overview, ({ query }) => answering$2(() => ctx.queries.overview(ctx.scope, query)));
 };
 
 //#endregion
 //#region packages/server/src/routes/work-items.ts
 const workItemRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.workItemBoard, ({ query }) => answering$1(() => ctx.queries.workItemBoard(ctx.scope, query)));
-	registerRoute(app, routes.getWorkItem, ({ params }) => answering$1(() => ctx.queries.getWorkItem(ctx.scope, params.workItemId)));
+	registerRoute(app, routes.workItemBoard, ({ query }) => answering$2(() => ctx.queries.workItemBoard(ctx.scope, query)));
+	registerRoute(app, routes.getWorkItem, ({ params }) => answering$2(() => ctx.queries.getWorkItem(ctx.scope, params.workItemId)));
 };
 
 //#endregion
@@ -70808,12 +77883,12 @@ const STREAM_LIMITS = {
 	maxReplay: 2e3,
 	heartbeatMs: STREAM_HEARTBEAT_MS
 };
-function field(name, value) {
+function field$1(name, value) {
 	return `${name}: ${value}\n`;
 }
 /** One SSE frame: its fields, then the blank line. `data` is JSON, so it never contains a raw newline. */
-function frameText(event, data, id) {
-	return `${id === void 0 ? "" : field("id", String(id))}${field("event", event)}${field("data", JSON.stringify(data))}\n`;
+function frameText$1(event, data, id) {
+	return `${id === void 0 ? "" : field$1("id", String(id))}${field$1("event", event)}${field$1("data", JSON.stringify(data))}\n`;
 }
 function createStreamHub(options) {
 	const { log, logger, info } = options;
@@ -70832,7 +77907,7 @@ function createStreamHub(options) {
 			frames.set(row.seq, known);
 			return known;
 		}
-		const text = frameText("change", options.hydrate(row), row.seq);
+		const text = frameText$1("change", options.hydrate(row), row.seq);
 		frames.set(row.seq, text);
 		if (frames.size > limits.frameCacheSize) {
 			const oldest = frames.keys().next();
@@ -70841,7 +77916,7 @@ function createStreamHub(options) {
 		return text;
 	}
 	function helloFrame() {
-		return frameText("hello", {
+		return frameText$1("hello", {
 			instanceId: info.instanceId,
 			epoch: info.epoch,
 			headSeq: log.head(),
@@ -70903,7 +77978,7 @@ function createStreamHub(options) {
 	}
 	function resetFrame(client, reason) {
 		const headSeq = log.head();
-		send(client, frameText("reset", {
+		send(client, frameText$1("reset", {
 			headSeq,
 			reason
 		}, headSeq));
@@ -70939,7 +78014,7 @@ function createStreamHub(options) {
 	}
 	function heartbeat(client) {
 		if (blocked(client)) return;
-		send(client, frameText("heartbeat", {
+		send(client, frameText$1("heartbeat", {
 			headSeq: log.head(),
 			epoch: info.epoch,
 			serverTime: isoMsZ(options.now())
@@ -71045,7 +78120,7 @@ function cursorOf(lastEventId, since) {
 function headerText(value) {
 	return typeof value === "string" || value === void 0 ? value : value.join(", ");
 }
-function sinkOf(res) {
+function sinkOf$1(res) {
 	return {
 		write: (chunk) => res.write(chunk),
 		onceDrain: (callback) => {
@@ -71101,7 +78176,7 @@ function createStreamRoutes(options = {}) {
 			res.flushHeaders();
 			req.socket.setNoDelay(true);
 			req.socket.setTimeout(0);
-			const handle = streams.accept(sinkOf(res), {
+			const handle = streams.accept(sinkOf$1(res), {
 				cursor: cursorOf(headerText(req.headers["last-event-id"]), query.since),
 				epoch: query.epoch
 			});
@@ -71137,7 +78212,7 @@ const panelRoutes = (app, { ctx, runtime }) => {
 			path: "limit",
 			issue: "unrecognized_keys"
 		}] });
-		if (ctx.config.monitor.panels[PANEL_CONFIG_KEY[key]] !== true) throw new ApiError("panel_disabled");
+		if (effectivePanels(ctx.config.monitor.panels, instanceKindOf(ctx.instance))[PANEL_CONFIG_KEY[key]] !== true) throw new ApiError("panel_disabled");
 		try {
 			return await runtime.panels.get(key, key === "attempts" ? { limit: query.limit ?? ATTEMPTS_DEFAULT_LIMIT } : {});
 		} catch (error) {
@@ -71180,7 +78255,7 @@ function codeOf$1(error) {
 	if (error.name === "QueryRefusal") return REFUSAL_CODES.find((candidate) => candidate === code);
 }
 /** Runs a search and maps its refusals; an unexpected failure passes on to the error mapper. */
-async function answering(search) {
+async function answering$1(search) {
 	try {
 		return await search;
 	} catch (error) {
@@ -71196,16 +78271,16 @@ const searchRoutes = (app, { ctx }) => {
 		bound.add(ctx);
 		bindHealthGauges(ctx, { search: () => ctx.queries.searchStats() });
 	}
-	registerRoute(app, routes.searchTranscript, ({ query, signal }) => answering(ctx.queries.searchSession(ctx.scope, query, signal)));
-	registerRoute(app, routes.searchTranscripts, ({ query, signal }) => answering(ctx.queries.searchInstance(ctx.scope, query, signal)));
+	registerRoute(app, routes.searchTranscript, ({ query, signal }) => answering$1(ctx.queries.searchSession(ctx.scope, query, signal)));
+	registerRoute(app, routes.searchTranscripts, ({ query, signal }) => answering$1(ctx.queries.searchInstance(ctx.scope, query, signal)));
 };
 
 //#endregion
 //#region packages/server/src/routes/analytics.ts
 const analyticsRoutes = (app, { ctx }) => {
-	registerRoute(app, routes.analyticsUsage, ({ query }) => answering$1(() => ctx.queries.usage(ctx.scope, query)));
-	registerRoute(app, routes.analyticsSeries, ({ query }) => answering$1(() => ctx.queries.series(ctx.scope, query)));
-	registerRoute(app, routes.analyticsTools, ({ query }) => answering$1(() => ctx.queries.tools(ctx.scope, query)));
+	registerRoute(app, routes.analyticsUsage, ({ query }) => answering$2(() => ctx.queries.usage(ctx.scope, query)));
+	registerRoute(app, routes.analyticsSeries, ({ query }) => answering$2(() => ctx.queries.series(ctx.scope, query)));
+	registerRoute(app, routes.analyticsTools, ({ query }) => answering$2(() => ctx.queries.tools(ctx.scope, query)));
 };
 
 //#endregion
@@ -71321,8 +78396,26 @@ const exportRoutes = createExportRoutes();
 
 //#endregion
 //#region packages/server/src/app.ts
-/** The content security policy of every HTML response (04 12.2, ADR 0039): same-origin only, no inline script. */
-const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+/** The text of the web build's HTML that `sendStatic` replaces with a fresh nonce on every response (design 02 7, ADR 0086). */
+const CSP_NONCE_PLACEHOLDER = "__CSP_NONCE__";
+/** The one host form the policy is built for: `Host` after `hostGuard`, always a loopback name and a port. */
+const CSP_HOST_RE = /^(127[.]0[.]0[.]1|localhost):[0-9]{1,5}$/;
+/** What a nonce may look like: base64 (a quote, a space or a semicolon would add a source or a directive). */
+const CSP_NONCE_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+/**
+* The content security policy of an HTML response (design 02 7, ADR 0086, amends 0039): same-origin only, no inline script, no
+* eval; `style-src-elem` carries the nonce of this response because xterm.js creates `<style>` elements; `connect-src` names the
+* host of the request for the terminal socket (`ws://`, never `wss:`; `'self'` covers it in current browsers, the explicit source
+* keeps older ones working). `host` and `nonce` are checked again here, so no header text is ever interpolated: a value that does
+* not match throws a `RangeError` (which the error mapper answers as a 500, never with the value).
+*/
+function htmlCsp(host, nonce) {
+	if (!CSP_HOST_RE.test(host)) throw new RangeError("htmlCsp: the host is not a loopback name with a port");
+	if (!CSP_NONCE_RE.test(nonce)) throw new RangeError("htmlCsp: the nonce is not base64");
+	return `default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'nonce-${nonce}'; img-src 'self' data:; connect-src 'self' ws://${host}; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`;
+}
+/** Added to every HTML response (design 02 7): no camera, microphone, location or clipboard read; clipboard write for the page only. */
+const PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=(self)";
 /** Limits and timeouts of the HTTP server (05 5.3 S-NET-6, ADR 0045). */
 const SERVER_LIMITS = {
 	headersTimeoutMs: 1e4,
@@ -71418,12 +78511,24 @@ const NO_STORE = "no-store";
 function isHtml(file) {
 	return file.type.startsWith("text/html");
 }
-function sendStatic(res, file, cache) {
+const PLACEHOLDER_BYTES = Buffer.from(CSP_NONCE_PLACEHOLDER, "utf8");
+/**
+* Answers with a file of the build. An HTML file gets a fresh 16-byte nonce on every response: it replaces the placeholder in the
+* body and goes into the policy of the header, next to the Permissions-Policy. Any other file is sent as it is, with no policy.
+*/
+function sendStatic(req, res, file, cache) {
 	res.locals["routeId"] = "static";
 	res.setHeader("Content-Type", file.type);
 	res.setHeader("Cache-Control", cache);
-	if (isHtml(file)) res.setHeader("Content-Security-Policy", HTML_CSP);
-	res.status(200).send(file.body);
+	if (!isHtml(file)) {
+		res.status(200).send(file.body);
+		return;
+	}
+	const nonce = randomBytes(16).toString("base64");
+	res.setHeader("Content-Security-Policy", htmlCsp((req.headers.host ?? "").toLowerCase(), nonce));
+	res.setHeader("Permissions-Policy", PERMISSIONS_POLICY);
+	const body = file.body.includes(PLACEHOLDER_BYTES) ? Buffer.from(file.body.toString("utf8").replaceAll(CSP_NONCE_PLACEHOLDER, nonce), "utf8") : file.body;
+	res.status(200).send(body);
 }
 /** `null` for a path that cannot be a key of the site: bad escapes, NUL, backslash, an empty, `.` or `..` segment. */
 function staticKeyOf(rawPath) {
@@ -71462,14 +78567,14 @@ function staticMiddleware(site) {
 			return;
 		}
 		if (file !== void 0) {
-			sendStatic(res, file, isAsset ? ASSET_CACHE : NO_STORE);
+			sendStatic(req, res, file, isAsset ? ASSET_CACHE : NO_STORE);
 			return;
 		}
 		if (isAsset) {
 			next();
 			return;
 		}
-		if ((req.headers.accept ?? "").toLowerCase().includes("text/html")) sendStatic(res, index, NO_STORE);
+		if ((req.headers.accept ?? "").toLowerCase().includes("text/html")) sendStatic(req, res, index, NO_STORE);
 		else next();
 	};
 }
@@ -71556,7 +78661,11 @@ function createApp(deps) {
 	bindRouteServices(app, {
 		errors: ctx.errors,
 		logger: ctx.logger,
-		validateResponses: deps.validateResponses ?? defaultValidateResponses()
+		validateResponses: deps.validateResponses ?? defaultValidateResponses(),
+		access: deps.access === void 0 || deps.access === null ? null : {
+			verifier: deps.access,
+			port: deps.port
+		}
 	});
 	app.use(securityHeaders);
 	app.use(accessLog(ctx.logger, () => ctx.clock.now()));
@@ -71721,6 +78830,11 @@ const BAD_REQUEST = {
 	ok: false,
 	error: "BAD_REQUEST"
 };
+const NO_TERMINALS = {
+	live: 0,
+	max: 0,
+	sessions: []
+};
 const refusal = (error) => ({
 	v: 1,
 	ok: false,
@@ -71879,7 +78993,8 @@ var ChannelServer = class {
 		if (request.instanceId !== o.instanceId) return refusal("INSTANCE_MISMATCH");
 		if (!tokenMatches(o.token(), request.token)) return refusal("FORBIDDEN");
 		if (request.op === "shutdown") {
-			o.onShutdown(request.reason);
+			const outcome = o.onShutdown(request.reason, { force: request.force === true });
+			if (outcome !== void 0 && !outcome.ok) return refusal(outcome.error);
 			return {
 				v: 1,
 				ok: true,
@@ -71887,6 +79002,21 @@ var ChannelServer = class {
 				phase: "stopping"
 			};
 		}
+		if (request.op === "terminals") {
+			const census = o.onTerminals !== void 0 && o.phase() === "ready" ? o.onTerminals() : NO_TERMINALS;
+			return {
+				v: 1,
+				ok: true,
+				op: "terminals",
+				live: census.live,
+				max: census.max,
+				sessions: census.sessions.slice(0, 50).map(({ name, startedAt }) => ({
+					name,
+					startedAt
+				}))
+			};
+		}
+		if (request.op === "access" && o.onAccess === void 0) return refusal("UNSUPPORTED");
 		if (o.phase() !== "ready") return refusal("NOT_READY");
 		if (request.op === "backup") {
 			let outcome;
@@ -71907,14 +79037,26 @@ var ChannelServer = class {
 				dbSchemaVersion: outcome.dbSchemaVersion
 			} : refusal(outcome.error);
 		}
-		if (request.fromSegment !== null && !SPOOL_SEGMENT_RE.test(request.fromSegment)) return refusal("BAD_REQUEST");
-		const outcome = await o.onIngestReplay(request.fromSegment);
-		return outcome.ok ? {
+		if (request.op === "ingest-replay") {
+			if (request.fromSegment !== null && !SPOOL_SEGMENT_RE.test(request.fromSegment)) return refusal("BAD_REQUEST");
+			const outcome = await o.onIngestReplay(request.fromSegment);
+			return outcome.ok ? {
+				v: 1,
+				ok: true,
+				op: "ingest-replay",
+				segments: outcome.segments
+			} : refusal(outcome.error);
+		}
+		const minted = o.onAccess?.() ?? null;
+		if (minted === null) return refusal("UNSUPPORTED");
+		return {
 			v: 1,
 			ok: true,
-			op: "ingest-replay",
-			segments: outcome.segments
-		} : refusal(outcome.error);
+			op: "access",
+			code: minted.code,
+			expiresAt: isoMsZ(minted.expiresAtMs),
+			ttlSeconds: minted.ttlSeconds
+		};
 	}
 };
 /**
@@ -72089,6 +79231,4605 @@ function runShutdown(o) {
 }
 
 //#endregion
+//#region packages/server/src/routes/auth.ts
+/** The module that mounts the three auth routes; `app.ts` or the boot code adds it beside the verifier of the same service. */
+function createAuthRoutes(options) {
+	const { access, instanceId } = options;
+	const verifier = createAccessVerifier(access, instanceId);
+	return (app, { ctx }) => {
+		registerRoute(app, routes.authSession, ({ req }) => ({ authenticated: verifier.verify(req) !== null }));
+		registerRoute(app, routes.authExchange, ({ body, res }) => {
+			const outcome = access.exchange(body.code);
+			if (outcome.ok) {
+				res.append("Set-Cookie", setCookieHeader(outcome.credential, instanceId));
+				ctx.logger.info("ticket_exchanged", { count: 1 });
+				return { authenticated: true };
+			}
+			if (outcome.reason === "rate_limited") {
+				ctx.logger.info("access_rate_limited", { count: 1 });
+				sendError(res, "access_rate_limited", { retryAfterSeconds: outcome.retryAfterMs / 1e3 });
+				return { authenticated: true };
+			}
+			throw new ApiError("access_code_invalid");
+		});
+		registerRoute(app, routes.authLogout, ({ res }) => {
+			const admitted = accessOf(res);
+			if (admitted?.via !== "cookie") throw new ApiError("access_required");
+			access.revoke(admitted.session.credentialId);
+			res.append("Set-Cookie", clearCookieHeader(instanceId));
+			return { authenticated: false };
+		});
+	};
+}
+
+//#endregion
+//#region packages/server/src/routes/folders.ts
+function stringProperty(value, name) {
+	const property = Reflect.get(value, name);
+	return typeof property === "string" ? property : void 0;
+}
+/** Whether an error is an instance of an engine class, by name (the source and the build copy of a class both map). */
+function isEngineError(error, name) {
+	return error instanceof Error && (error.name === name || error.constructor.name === name);
+}
+/**
+* The engine's `FolderError` and `ResumeRefusal`, recognised by their names, as the other routes do for the errors of the engine.
+* Anything else is rethrown untouched and becomes `internal_error`.
+*/
+async function answering(work) {
+	try {
+		return await work();
+	} catch (error) {
+		if (isEngineError(error, "ResumeRefusal") && stringProperty(error, "code") === "session_not_found") throw new ApiError("session_not_found", { cause: error });
+		if (!isEngineError(error, "FolderError")) throw error;
+		const code = stringProperty(error, "code");
+		if (code === "folder_invalid") {
+			const issue = stringProperty(error, "issue");
+			throw new ApiError("folder_invalid", {
+				...issue === void 0 ? {} : { details: [{
+					path: "path",
+					issue
+				}] },
+				cause: error
+			});
+		}
+		if (code === "folder_limit") throw new ApiError("folder_limit", { cause: error });
+		if (code === "folder_not_found") throw new ApiError("folder_not_found", { cause: error });
+		throw error;
+	}
+}
+/** The module that mounts `listFolders`, `addFolder`, `removeFolder` and `sessionResume`. */
+function createFolderRoutes(options) {
+	const { folders } = options;
+	return (app) => {
+		registerRoute(app, routes.listFolders, () => folders.list());
+		registerRoute(app, routes.addFolder, ({ body }) => answering(() => folders.add(body.path)));
+		registerRoute(app, routes.removeFolder, ({ params }) => answering(() => folders.remove(params.key)));
+		registerRoute(app, routes.sessionResume, ({ params }) => answering(() => folders.resumeEligibility(params.sessionId)));
+	};
+}
+
+//#endregion
+//#region packages/server/src/routes/terminal.ts
+/** What the state says when there is no host at all. */
+const NO_HOST = {
+	available: false,
+	reason: "not_configured",
+	folderPicker: false,
+	resume: false,
+	maxSessions: 0
+};
+/** The module that mounts the five terminal routes; the access chain of `registerRoute` guards every one of them. */
+function createTerminalRoutes(options) {
+	const { ports, epoch, now } = options;
+	/** The host when it can run a terminal; otherwise `terminal_unavailable`. */
+	const usable = () => {
+		if (!ports?.capabilities().available) throw new ApiError("terminal_unavailable");
+		return ports;
+	};
+	return (app) => {
+		registerRoute(app, routes.terminalState, () => {
+			const capabilities = ports === null ? NO_HOST : ports.capabilities();
+			return {
+				capabilities,
+				sessions: ports !== null && capabilities.available ? [...ports.sessions.list()] : [],
+				epoch,
+				generatedAt: isoMsZ(now())
+			};
+		});
+		registerRoute(app, routes.terminalCreateSession, async ({ body }) => {
+			return { session: await usable().sessions.create({ path: body.path }) };
+		});
+		registerRoute(app, routes.terminalKillSession, async ({ params }) => {
+			if (!await usable().sessions.kill(params.name)) throw new ApiError("terminal_not_found");
+			return { name: params.name };
+		});
+		registerRoute(app, routes.terminalPickFolder, async ({ signal }) => {
+			const { picker } = usable();
+			if (picker === null) throw new ApiError("terminal_unavailable");
+			return { path: await picker.pick(signal) };
+		});
+		registerRoute(app, routes.terminalResume, async ({ body }) => {
+			return { session: await usable().resume({
+				sessionId: body.sessionId,
+				fork: body.fork === true
+			}) };
+		});
+	};
+}
+
+//#endregion
+//#region packages/server/src/routes/terminal-socket.ts
+/** What `Sec-WebSocket-Key` looks like: 16 random bytes in base64 (RFC 6455 4.1). */
+const KEY_RE = /^[+/0-9A-Za-z]{22}==$/;
+/** The tokens of a `Connection` header: a comma list, any case (RFC 9110 7.6.1). */
+function connectionTokens(value) {
+	return (value ?? "").split(",").map((token) => token.trim().toLowerCase()).filter((token) => token !== "");
+}
+/**
+* True for a request that asks to upgrade to a WebSocket: `Connection` names `upgrade` (a token list, any case) and `Upgrade` is
+* `websocket` and nothing else, in any case. That is the test `ws` applies to `Upgrade`, and a request it would refuse must not get
+* past here: `ws` answers such a refusal as a raw `text/html` 400 instead of the JSON envelope.
+*/
+function isWebSocketUpgrade(req) {
+	return req.headers.upgrade?.trim().toLowerCase() === "websocket" && connectionTokens(req.headers.connection).includes("upgrade");
+}
+/** A name of the subprotocol list: the token characters of RFC 9110 5.6.2, with the blanks that may surround it. */
+const SUBPROTOCOL_ELEMENT_RE = /^[\t ]*([!#$%&'*+\-.^_`|~0-9A-Za-z]+)[\t ]*$/;
+/**
+* Judges `Sec-WebSocket-Protocol` by the rules `ws` parses it with, so that whatever passes here is also parsed there (a list it
+* cannot parse is answered by `ws` as a raw `text/html` 400): comma separated names of token characters, no empty element, no
+* duplicate, and names compared as written, because `ws` hands the gateway the names as written and the gateway selects
+* `caw.terminal.v1` exactly. Node has already stripped the blanks around the whole value. A missing header, or one that does not
+* offer the subprotocol, is `invalid_value`; one that cannot be parsed is `invalid_format`. Never the value.
+*/
+function subprotocolFault(header) {
+	const path = "Sec-WebSocket-Protocol";
+	if (header === void 0) return {
+		path,
+		issue: "invalid_value"
+	};
+	const offered = /* @__PURE__ */ new Set();
+	for (const element of (Array.isArray(header) ? header.join(",") : header).split(",")) {
+		const name = SUBPROTOCOL_ELEMENT_RE.exec(element)?.[1];
+		if (name === void 0 || offered.has(name)) return {
+			path,
+			issue: "invalid_format"
+		};
+		offered.add(name);
+	}
+	return offered.has("caw.terminal.v1") ? void 0 : {
+		path,
+		issue: "invalid_value"
+	};
+}
+/** The headers of the handshake that the protocol cannot use, by name only. */
+function handshakeFaults(req) {
+	const faults = [];
+	const key = req.headers["sec-websocket-key"];
+	if (typeof key !== "string" || !KEY_RE.test(key)) faults.push({
+		path: "Sec-WebSocket-Key",
+		issue: "invalid_format"
+	});
+	if (req.headers["sec-websocket-version"] !== "13") faults.push({
+		path: "Sec-WebSocket-Version",
+		issue: "invalid_value"
+	});
+	const protocolFault = subprotocolFault(req.headers["sec-websocket-protocol"]);
+	if (protocolFault !== void 0) faults.push(protocolFault);
+	return faults;
+}
+/** The module that mounts the socket route. */
+function createTerminalSocketRoutes(options) {
+	const { ports, gateway, upgrades } = options;
+	return (app) => {
+		registerRoute(app, routes.terminalSocket, ({ params, req, res }) => {
+			const head = upgrades.take(req);
+			if (head === void 0 || !isWebSocketUpgrade(req)) throw new ApiError("upgrade_required");
+			const admitted = accessOf(res);
+			if (admitted?.via !== "cookie") throw new ApiError("access_required");
+			if (!ports?.capabilities().available) throw new ApiError("terminal_unavailable");
+			const faults = handshakeFaults(req);
+			if (faults.length > 0) throw new ApiError("validation_failed", { details: faults });
+			const session = ports.sessions.get(params.name);
+			if (session === null) throw new ApiError("terminal_not_found");
+			gateway.admit(params.name);
+			const { socket } = req;
+			res.locals["handled"] = true;
+			res.detachSocket(socket);
+			try {
+				gateway.accept({
+					req,
+					socket,
+					head,
+					name: params.name,
+					session,
+					credentialId: admitted.session.credentialId
+				});
+			} catch (error) {
+				socket.destroy();
+				throw error;
+			}
+		});
+	};
+}
+
+//#endregion
+//#region packages/server/src/terminal/events.ts
+/** The limits of design 02 6. */
+const TERMINAL_EVENT_LIMITS = {
+	/** Concurrent streams per instance; the 9th gets `503 stream_limit`. */
+	maxStreams: 8,
+	/** The window in which changes of the list become one frame. */
+	coalesceMs: 50,
+	heartbeatMs: STREAM_HEARTBEAT_MS,
+	/** A client undrained for this long is destroyed. */
+	stallMs: 3e4
+};
+function field(name, value) {
+	return `${name}: ${value}\n`;
+}
+/** One SSE frame: the event name, the JSON data (never a raw newline), the blank line. */
+function frameText(event, data) {
+	return `${field("event", event)}${field("data", JSON.stringify(data))}\n`;
+}
+function createTerminalEvents(options) {
+	const { sessions, logger } = options;
+	const limits = {
+		...TERMINAL_EVENT_LIMITS,
+		...options.limits
+	};
+	const clients = /* @__PURE__ */ new Set();
+	let unsubscribeSessions;
+	let unsubscribeRevoked;
+	let window;
+	let version = 0;
+	/** The snapshot of the current list, built once per change; `undefined` after a change until someone needs it. */
+	let snapshot;
+	function snapshotFrame() {
+		if (snapshot !== void 0) return snapshot;
+		version += 1;
+		const data = {
+			version,
+			sessions: [...sessions.list()]
+		};
+		snapshot = {
+			version,
+			text: frameText("sessions", data)
+		};
+		return snapshot;
+	}
+	function helloFrame() {
+		return frameText("hello", {
+			instanceId: options.instanceId,
+			epoch: options.epoch,
+			serverTime: isoMsZ(options.now()),
+			heartbeatMs: limits.heartbeatMs
+		});
+	}
+	function release() {
+		if (clients.size > 0) return;
+		unsubscribeSessions?.();
+		unsubscribeSessions = void 0;
+		unsubscribeRevoked?.();
+		unsubscribeRevoked = void 0;
+		clearTimeout(window);
+		window = void 0;
+		snapshot = void 0;
+	}
+	function remove(client) {
+		if (client.closed) return false;
+		client.closed = true;
+		clearInterval(client.heartbeat);
+		clearTimeout(client.stall);
+		client.heartbeat = void 0;
+		client.stall = void 0;
+		client.pending = void 0;
+		clients.delete(client);
+		release();
+		return true;
+	}
+	/** Removes the client and destroys its sink (a stall, a failed write, a revocation, shutdown). */
+	function evict(client, reason) {
+		if (!remove(client)) return;
+		logger.warn("terminal_events_client_evicted", { reason });
+		try {
+			client.sink.destroy();
+		} catch {}
+	}
+	/** Writes one chunk; a refused write (or a sink that throws) stops the client until the sink drains. */
+	function send(client, chunk) {
+		if (client.closed) return;
+		let accepted;
+		try {
+			accepted = client.sink.write(chunk);
+		} catch {
+			evict(client, "write_failed");
+			return;
+		}
+		if (accepted || client.waiting) return;
+		client.waiting = true;
+		client.stall = setTimeout(() => {
+			evict(client, "stalled");
+		}, limits.stallMs);
+		client.sink.onceDrain(() => {
+			if (client.closed) return;
+			client.waiting = false;
+			clearTimeout(client.stall);
+			client.stall = void 0;
+			const pending = client.pending;
+			client.pending = void 0;
+			if (pending !== void 0 && pending.version > client.version) {
+				client.version = pending.version;
+				send(client, pending.text);
+			}
+		});
+	}
+	/** Latest wins: a client that is waiting keeps only the newest snapshot; any other gets it now. */
+	function deliver(client, frame) {
+		if (client.closed || client.version >= frame.version) return;
+		if (client.waiting) {
+			client.pending = frame;
+			return;
+		}
+		client.version = frame.version;
+		send(client, frame.text);
+	}
+	function heartbeat(client) {
+		if (client.closed || client.waiting) return;
+		send(client, frameText("heartbeat", { serverTime: isoMsZ(options.now()) }));
+	}
+	function changed() {
+		snapshot = void 0;
+		if (window !== void 0 || clients.size === 0) return;
+		window = setTimeout(() => {
+			window = void 0;
+			if (clients.size === 0) return;
+			const frame = snapshotFrame();
+			for (const client of [...clients]) deliver(client, frame);
+		}, limits.coalesceMs);
+	}
+	function revoked(credentialId) {
+		let closed = 0;
+		for (const client of [...clients]) {
+			if (client.credentialId !== credentialId) continue;
+			evict(client, "revoked");
+			closed += 1;
+		}
+		if (closed > 0) logger.info("terminal_events_revoked", { count: closed });
+	}
+	return {
+		get size() {
+			return clients.size;
+		},
+		hasCapacity: () => clients.size < limits.maxStreams,
+		accept(sink, credentialId) {
+			if (clients.size >= limits.maxStreams) return null;
+			const client = {
+				sink,
+				credentialId,
+				closed: false,
+				version: 0,
+				waiting: false,
+				pending: void 0,
+				heartbeat: void 0,
+				stall: void 0
+			};
+			clients.add(client);
+			unsubscribeSessions ??= sessions.subscribe(changed);
+			unsubscribeRevoked ??= options.access.onRevoked(revoked);
+			client.heartbeat = setInterval(() => {
+				heartbeat(client);
+			}, limits.heartbeatMs);
+			send(client, `retry: ${String(STREAM_RETRY_MS)}\n\n`);
+			send(client, helloFrame());
+			deliver(client, snapshotFrame());
+			return { close: () => {
+				remove(client);
+			} };
+		},
+		closeAll() {
+			for (const client of [...clients]) {
+				remove(client);
+				try {
+					client.sink.destroy();
+				} catch {}
+			}
+		}
+	};
+}
+function sinkOf(res) {
+	return {
+		write: (chunk) => res.write(chunk),
+		onceDrain: (callback) => {
+			res.once("drain", callback);
+		},
+		destroy: () => {
+			res.destroy();
+		}
+	};
+}
+const NO_SESSIONS = {
+	list: () => [],
+	subscribe: () => () => void 0
+};
+/** The sessions the feed lists: nothing while the host cannot run a terminal (the state route says the same). */
+function sessionsOf(ports) {
+	if (ports === null) return NO_SESSIONS;
+	return {
+		list: () => ports.capabilities().available ? ports.sessions.list() : [],
+		subscribe: (listener) => ports.sessions.subscribe(listener)
+	};
+}
+/** The module that mounts `GET /api/v3/terminal/events`. The session guard has admitted a cookie before the handler runs. */
+function createTerminalEventsRoutes(options) {
+	return (app, { ctx }) => {
+		const events = createTerminalEvents({
+			sessions: sessionsOf(options.ports),
+			access: options.access,
+			instanceId: ctx.instanceId,
+			epoch: options.epoch,
+			now: options.now,
+			logger: ctx.logger,
+			...options.limits === void 0 ? {} : { limits: options.limits }
+		});
+		options.onEvents?.(events);
+		registerRoute(app, routes.terminalEvents, ({ req, res }) => {
+			const admitted = accessOf(res);
+			if (admitted?.via !== "cookie") throw new ApiError("access_required");
+			if (!events.hasCapacity()) throw new ApiError("stream_limit");
+			if (res.destroyed || req.socket.destroyed) {
+				res.end();
+				return;
+			}
+			res.status(200);
+			res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+			res.setHeader("Cache-Control", "no-store");
+			res.setHeader("Connection", "keep-alive");
+			res.setHeader("X-Accel-Buffering", "no");
+			res.flushHeaders();
+			req.socket.setNoDelay(true);
+			req.socket.setTimeout(0);
+			const handle = events.accept(sinkOf(res), admitted.session.credentialId);
+			if (handle === null) {
+				res.end();
+				return;
+			}
+			options.onResponse?.(res);
+			const leave = () => {
+				handle.close();
+			};
+			res.once("close", leave);
+			res.once("error", leave);
+		});
+	};
+}
+
+//#endregion
+//#region npm/ws/lib/constants.js
+var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const BINARY_TYPES = [
+		"nodebuffer",
+		"arraybuffer",
+		"fragments"
+	];
+	const hasBlob = typeof Blob !== "undefined";
+	if (hasBlob) BINARY_TYPES.push("blob");
+	module.exports = {
+		BINARY_TYPES,
+		CLOSE_TIMEOUT: 3e4,
+		EMPTY_BUFFER: Buffer.alloc(0),
+		GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+		hasBlob,
+		kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
+		kListener: Symbol("kListener"),
+		kStatusCode: Symbol("status-code"),
+		kWebSocket: Symbol("websocket"),
+		NOOP: () => {}
+	};
+}));
+
+//#endregion
+//#region npm/ws/lib/buffer-util.js
+var require_buffer_util = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { EMPTY_BUFFER } = require_constants();
+	const FastBuffer = Buffer[Symbol.species];
+	/**
+	* Merges an array of buffers into a new buffer.
+	*
+	* @param {Buffer[]} list The array of buffers to concat
+	* @param {Number} totalLength The total length of buffers in the list
+	* @return {Buffer} The resulting buffer
+	* @public
+	*/
+	function concat(list, totalLength) {
+		if (list.length === 0) return EMPTY_BUFFER;
+		if (list.length === 1) return list[0];
+		const target = Buffer.allocUnsafe(totalLength);
+		let offset = 0;
+		for (let i = 0; i < list.length; i++) {
+			const buf = list[i];
+			target.set(buf, offset);
+			offset += buf.length;
+		}
+		if (offset < totalLength) return new FastBuffer(target.buffer, target.byteOffset, offset);
+		return target;
+	}
+	/**
+	* Masks a buffer using the given mask.
+	*
+	* @param {Buffer} source The buffer to mask
+	* @param {Buffer} mask The mask to use
+	* @param {Buffer} output The buffer where to store the result
+	* @param {Number} offset The offset at which to start writing
+	* @param {Number} length The number of bytes to mask.
+	* @public
+	*/
+	function _mask(source, mask, output, offset, length) {
+		for (let i = 0; i < length; i++) output[offset + i] = source[i] ^ mask[i & 3];
+	}
+	/**
+	* Unmasks a buffer using the given mask.
+	*
+	* @param {Buffer} buffer The buffer to unmask
+	* @param {Buffer} mask The mask to use
+	* @public
+	*/
+	function _unmask(buffer, mask) {
+		for (let i = 0; i < buffer.length; i++) buffer[i] ^= mask[i & 3];
+	}
+	/**
+	* Converts a buffer to an `ArrayBuffer`.
+	*
+	* @param {Buffer} buf The buffer to convert
+	* @return {ArrayBuffer} Converted buffer
+	* @public
+	*/
+	function toArrayBuffer(buf) {
+		if (buf.length === buf.buffer.byteLength) return buf.buffer;
+		return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+	}
+	/**
+	* Converts `data` to a `Buffer`.
+	*
+	* @param {*} data The data to convert
+	* @return {Buffer} The buffer
+	* @throws {TypeError}
+	* @public
+	*/
+	function toBuffer(data) {
+		toBuffer.readOnly = true;
+		if (Buffer.isBuffer(data)) return data;
+		let buf;
+		if (data instanceof ArrayBuffer) buf = new FastBuffer(data);
+		else if (ArrayBuffer.isView(data)) buf = new FastBuffer(data.buffer, data.byteOffset, data.byteLength);
+		else {
+			buf = Buffer.from(data);
+			toBuffer.readOnly = false;
+		}
+		return buf;
+	}
+	module.exports = {
+		concat,
+		mask: _mask,
+		toArrayBuffer,
+		toBuffer,
+		unmask: _unmask
+	};
+	/* istanbul ignore else  */
+	if (!process.env.WS_NO_BUFFER_UTIL) try {
+		const bufferUtil = __require("bufferutil");
+		module.exports.mask = function(source, mask, output, offset, length) {
+			if (length < 48) _mask(source, mask, output, offset, length);
+			else bufferUtil.mask(source, mask, output, offset, length);
+		};
+		module.exports.unmask = function(buffer, mask) {
+			if (buffer.length < 32) _unmask(buffer, mask);
+			else bufferUtil.unmask(buffer, mask);
+		};
+	} catch (e) {}
+}));
+
+//#endregion
+//#region npm/ws/lib/limiter.js
+var require_limiter = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const kDone = Symbol("kDone");
+	const kRun = Symbol("kRun");
+	/**
+	* A very simple job queue with adjustable concurrency. Adapted from
+	* https://github.com/STRML/async-limiter
+	*/
+	var Limiter = class {
+		/**
+		* Creates a new `Limiter`.
+		*
+		* @param {Number} [concurrency=Infinity] The maximum number of jobs allowed
+		*     to run concurrently
+		*/
+		constructor(concurrency) {
+			this[kDone] = () => {
+				this.pending--;
+				this[kRun]();
+			};
+			this.concurrency = concurrency || Infinity;
+			this.jobs = [];
+			this.pending = 0;
+		}
+		/**
+		* Adds a job to the queue.
+		*
+		* @param {Function} job The job to run
+		* @public
+		*/
+		add(job) {
+			this.jobs.push(job);
+			this[kRun]();
+		}
+		/**
+		* Removes a job from the queue and runs it if possible.
+		*
+		* @private
+		*/
+		[kRun]() {
+			if (this.pending === this.concurrency) return;
+			if (this.jobs.length) {
+				const job = this.jobs.shift();
+				this.pending++;
+				job(this[kDone]);
+			}
+		}
+	};
+	module.exports = Limiter;
+}));
+
+//#endregion
+//#region npm/ws/lib/permessage-deflate.js
+var require_permessage_deflate = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const zlib = __require("zlib");
+	const bufferUtil = require_buffer_util();
+	const Limiter = require_limiter();
+	const { kStatusCode } = require_constants();
+	const FastBuffer = Buffer[Symbol.species];
+	const TRAILER = Buffer.from([
+		0,
+		0,
+		255,
+		255
+	]);
+	const kPerMessageDeflate = Symbol("permessage-deflate");
+	const kTotalLength = Symbol("total-length");
+	const kCallback = Symbol("callback");
+	const kBuffers = Symbol("buffers");
+	const kError = Symbol("error");
+	let zlibLimiter;
+	/**
+	* permessage-deflate implementation.
+	*/
+	var PerMessageDeflate = class {
+		/**
+		* Creates a PerMessageDeflate instance.
+		*
+		* @param {Object} [options] Configuration options
+		* @param {(Boolean|Number)} [options.clientMaxWindowBits] Advertise support
+		*     for, or request, a custom client window size
+		* @param {Boolean} [options.clientNoContextTakeover=false] Advertise/
+		*     acknowledge disabling of client context takeover
+		* @param {Number} [options.concurrencyLimit=10] The number of concurrent
+		*     calls to zlib
+		* @param {Boolean} [options.isServer=false] Create the instance in either
+		*     server or client mode
+		* @param {Number} [options.maxPayload=0] The maximum allowed message length
+		* @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
+		*     use of a custom server window size
+		* @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
+		*     disabling of server context takeover
+		* @param {Number} [options.threshold=1024] Size (in bytes) below which
+		*     messages should not be compressed if context takeover is disabled
+		* @param {Object} [options.zlibDeflateOptions] Options to pass to zlib on
+		*     deflate
+		* @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
+		*     inflate
+		*/
+		constructor(options) {
+			this._options = options || {};
+			this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
+			this._maxPayload = this._options.maxPayload | 0;
+			this._isServer = !!this._options.isServer;
+			this._deflate = null;
+			this._inflate = null;
+			this.params = null;
+			if (!zlibLimiter) {
+				const concurrency = this._options.concurrencyLimit !== void 0 ? this._options.concurrencyLimit : 10;
+				zlibLimiter = new Limiter(concurrency);
+			}
+		}
+		/**
+		* @type {String}
+		*/
+		static get extensionName() {
+			return "permessage-deflate";
+		}
+		/**
+		* Create an extension negotiation offer.
+		*
+		* @return {Object} Extension parameters
+		* @public
+		*/
+		offer() {
+			const params = {};
+			if (this._options.serverNoContextTakeover) params.server_no_context_takeover = true;
+			if (this._options.clientNoContextTakeover) params.client_no_context_takeover = true;
+			if (this._options.serverMaxWindowBits) params.server_max_window_bits = this._options.serverMaxWindowBits;
+			if (this._options.clientMaxWindowBits) params.client_max_window_bits = this._options.clientMaxWindowBits;
+			else if (this._options.clientMaxWindowBits == null) params.client_max_window_bits = true;
+			return params;
+		}
+		/**
+		* Accept an extension negotiation offer/response.
+		*
+		* @param {Array} configurations The extension negotiation offers/reponse
+		* @return {Object} Accepted configuration
+		* @public
+		*/
+		accept(configurations) {
+			configurations = this.normalizeParams(configurations);
+			this.params = this._isServer ? this.acceptAsServer(configurations) : this.acceptAsClient(configurations);
+			return this.params;
+		}
+		/**
+		* Releases all resources used by the extension.
+		*
+		* @public
+		*/
+		cleanup() {
+			if (this._inflate) {
+				this._inflate.close();
+				this._inflate = null;
+			}
+			if (this._deflate) {
+				const callback = this._deflate[kCallback];
+				this._deflate.close();
+				this._deflate = null;
+				if (callback) callback(/* @__PURE__ */ new Error("The deflate stream was closed while data was being processed"));
+			}
+		}
+		/**
+		*  Accept an extension negotiation offer.
+		*
+		* @param {Array} offers The extension negotiation offers
+		* @return {Object} Accepted configuration
+		* @private
+		*/
+		acceptAsServer(offers) {
+			const opts = this._options;
+			const accepted = offers.find((params) => {
+				if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) return false;
+				return true;
+			});
+			if (!accepted) throw new Error("None of the extension offers can be accepted");
+			if (opts.serverNoContextTakeover) accepted.server_no_context_takeover = true;
+			if (opts.clientNoContextTakeover) accepted.client_no_context_takeover = true;
+			if (typeof opts.serverMaxWindowBits === "number") accepted.server_max_window_bits = opts.serverMaxWindowBits;
+			if (typeof opts.clientMaxWindowBits === "number") accepted.client_max_window_bits = opts.clientMaxWindowBits;
+			else if (accepted.client_max_window_bits === true || opts.clientMaxWindowBits === false) delete accepted.client_max_window_bits;
+			return accepted;
+		}
+		/**
+		* Accept the extension negotiation response.
+		*
+		* @param {Array} response The extension negotiation response
+		* @return {Object} Accepted configuration
+		* @private
+		*/
+		acceptAsClient(response) {
+			const params = response[0];
+			if (this._options.clientNoContextTakeover === false && params.client_no_context_takeover) throw new Error("Unexpected parameter \"client_no_context_takeover\"");
+			if (!params.client_max_window_bits) {
+				if (typeof this._options.clientMaxWindowBits === "number") params.client_max_window_bits = this._options.clientMaxWindowBits;
+			} else if (this._options.clientMaxWindowBits === false || typeof this._options.clientMaxWindowBits === "number" && params.client_max_window_bits > this._options.clientMaxWindowBits) throw new Error("Unexpected or invalid parameter \"client_max_window_bits\"");
+			return params;
+		}
+		/**
+		* Normalize parameters.
+		*
+		* @param {Array} configurations The extension negotiation offers/reponse
+		* @return {Array} The offers/response with normalized parameters
+		* @private
+		*/
+		normalizeParams(configurations) {
+			configurations.forEach((params) => {
+				Object.keys(params).forEach((key) => {
+					let value = params[key];
+					if (value.length > 1) throw new Error(`Parameter "${key}" must have only a single value`);
+					value = value[0];
+					if (key === "client_max_window_bits") {
+						if (value !== true) {
+							const num = +value;
+							if (!Number.isInteger(num) || num < 8 || num > 15) throw new TypeError(`Invalid value for parameter "${key}": ${value}`);
+							value = num;
+						} else if (!this._isServer) throw new TypeError(`Invalid value for parameter "${key}": ${value}`);
+					} else if (key === "server_max_window_bits") {
+						const num = +value;
+						if (!Number.isInteger(num) || num < 8 || num > 15) throw new TypeError(`Invalid value for parameter "${key}": ${value}`);
+						value = num;
+					} else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
+						if (value !== true) throw new TypeError(`Invalid value for parameter "${key}": ${value}`);
+					} else throw new Error(`Unknown parameter "${key}"`);
+					params[key] = value;
+				});
+			});
+			return configurations;
+		}
+		/**
+		* Decompress data. Concurrency limited.
+		*
+		* @param {Buffer} data Compressed data
+		* @param {Boolean} fin Specifies whether or not this is the last fragment
+		* @param {Function} callback Callback
+		* @public
+		*/
+		decompress(data, fin, callback) {
+			zlibLimiter.add((done) => {
+				this._decompress(data, fin, (err, result) => {
+					done();
+					callback(err, result);
+				});
+			});
+		}
+		/**
+		* Compress data. Concurrency limited.
+		*
+		* @param {(Buffer|String)} data Data to compress
+		* @param {Boolean} fin Specifies whether or not this is the last fragment
+		* @param {Function} callback Callback
+		* @public
+		*/
+		compress(data, fin, callback) {
+			zlibLimiter.add((done) => {
+				this._compress(data, fin, (err, result) => {
+					done();
+					callback(err, result);
+				});
+			});
+		}
+		/**
+		* Decompress data.
+		*
+		* @param {Buffer} data Compressed data
+		* @param {Boolean} fin Specifies whether or not this is the last fragment
+		* @param {Function} callback Callback
+		* @private
+		*/
+		_decompress(data, fin, callback) {
+			const endpoint = this._isServer ? "client" : "server";
+			if (!this._inflate) {
+				const key = `${endpoint}_max_window_bits`;
+				const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+				this._inflate = zlib.createInflateRaw({
+					...this._options.zlibInflateOptions,
+					windowBits
+				});
+				this._inflate[kPerMessageDeflate] = this;
+				this._inflate[kTotalLength] = 0;
+				this._inflate[kBuffers] = [];
+				this._inflate.on("error", inflateOnError);
+				this._inflate.on("data", inflateOnData);
+			}
+			this._inflate[kCallback] = callback;
+			this._inflate.write(data);
+			if (fin) this._inflate.write(TRAILER);
+			this._inflate.flush(() => {
+				const err = this._inflate[kError];
+				if (err) {
+					this._inflate.close();
+					this._inflate = null;
+					callback(err);
+					return;
+				}
+				const data = bufferUtil.concat(this._inflate[kBuffers], this._inflate[kTotalLength]);
+				if (this._inflate._readableState.endEmitted) {
+					this._inflate.close();
+					this._inflate = null;
+				} else {
+					this._inflate[kTotalLength] = 0;
+					this._inflate[kBuffers] = [];
+					if (fin && this.params[`${endpoint}_no_context_takeover`]) this._inflate.reset();
+				}
+				callback(null, data);
+			});
+		}
+		/**
+		* Compress data.
+		*
+		* @param {(Buffer|String)} data Data to compress
+		* @param {Boolean} fin Specifies whether or not this is the last fragment
+		* @param {Function} callback Callback
+		* @private
+		*/
+		_compress(data, fin, callback) {
+			const endpoint = this._isServer ? "server" : "client";
+			if (!this._deflate) {
+				const key = `${endpoint}_max_window_bits`;
+				const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+				this._deflate = zlib.createDeflateRaw({
+					...this._options.zlibDeflateOptions,
+					windowBits
+				});
+				this._deflate[kTotalLength] = 0;
+				this._deflate[kBuffers] = [];
+				this._deflate.on("data", deflateOnData);
+			}
+			this._deflate[kCallback] = callback;
+			this._deflate.write(data);
+			this._deflate.flush(zlib.Z_SYNC_FLUSH, () => {
+				if (!this._deflate) return;
+				let data = bufferUtil.concat(this._deflate[kBuffers], this._deflate[kTotalLength]);
+				if (fin) data = new FastBuffer(data.buffer, data.byteOffset, data.length - 4);
+				this._deflate[kCallback] = null;
+				this._deflate[kTotalLength] = 0;
+				this._deflate[kBuffers] = [];
+				if (fin && this.params[`${endpoint}_no_context_takeover`]) this._deflate.reset();
+				callback(null, data);
+			});
+		}
+	};
+	module.exports = PerMessageDeflate;
+	/**
+	* The listener of the `zlib.DeflateRaw` stream `'data'` event.
+	*
+	* @param {Buffer} chunk A chunk of data
+	* @private
+	*/
+	function deflateOnData(chunk) {
+		this[kBuffers].push(chunk);
+		this[kTotalLength] += chunk.length;
+	}
+	/**
+	* The listener of the `zlib.InflateRaw` stream `'data'` event.
+	*
+	* @param {Buffer} chunk A chunk of data
+	* @private
+	*/
+	function inflateOnData(chunk) {
+		this[kTotalLength] += chunk.length;
+		if (this[kPerMessageDeflate]._maxPayload < 1 || this[kTotalLength] <= this[kPerMessageDeflate]._maxPayload) {
+			this[kBuffers].push(chunk);
+			return;
+		}
+		this[kError] = /* @__PURE__ */ new RangeError("Max payload size exceeded");
+		this[kError].code = "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH";
+		this[kError][kStatusCode] = 1009;
+		this.removeListener("data", inflateOnData);
+		this.reset();
+	}
+	/**
+	* The listener of the `zlib.InflateRaw` stream `'error'` event.
+	*
+	* @param {Error} err The emitted error
+	* @private
+	*/
+	function inflateOnError(err) {
+		this[kPerMessageDeflate]._inflate = null;
+		if (this[kError]) {
+			this[kCallback](this[kError]);
+			return;
+		}
+		err[kStatusCode] = 1007;
+		this[kCallback](err);
+	}
+}));
+
+//#endregion
+//#region npm/ws/lib/validation.js
+var require_validation = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { isUtf8: isUtf8$1 } = __require("buffer");
+	const { hasBlob } = require_constants();
+	const tokenChars = [
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+		1,
+		0,
+		0,
+		1,
+		1,
+		0,
+		1,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		0,
+		0,
+		0,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		0,
+		1,
+		0,
+		1,
+		0
+	];
+	/**
+	* Checks if a status code is allowed in a close frame.
+	*
+	* @param {Number} code The status code
+	* @return {Boolean} `true` if the status code is valid, else `false`
+	* @public
+	*/
+	function isValidStatusCode(code) {
+		return code >= 1e3 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006 || code >= 3e3 && code <= 4999;
+	}
+	/**
+	* Checks if a given buffer contains only correct UTF-8.
+	* Ported from https://www.cl.cam.ac.uk/%7Emgk25/ucs/utf8_check.c by
+	* Markus Kuhn.
+	*
+	* @param {Buffer} buf The buffer to check
+	* @return {Boolean} `true` if `buf` contains only correct UTF-8, else `false`
+	* @public
+	*/
+	function _isValidUTF8(buf) {
+		const len = buf.length;
+		let i = 0;
+		while (i < len) if ((buf[i] & 128) === 0) i++;
+		else if ((buf[i] & 224) === 192) {
+			if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) return false;
+			i += 2;
+		} else if ((buf[i] & 240) === 224) {
+			if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || buf[i] === 237 && (buf[i + 1] & 224) === 160) return false;
+			i += 3;
+		} else if ((buf[i] & 248) === 240) {
+			if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) return false;
+			i += 4;
+		} else return false;
+		return true;
+	}
+	/**
+	* Determines whether a value is a `Blob`.
+	*
+	* @param {*} value The value to be tested
+	* @return {Boolean} `true` if `value` is a `Blob`, else `false`
+	* @private
+	*/
+	function isBlob(value) {
+		return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
+	}
+	module.exports = {
+		isBlob,
+		isValidStatusCode,
+		isValidUTF8: _isValidUTF8,
+		tokenChars
+	};
+	if (isUtf8$1) module.exports.isValidUTF8 = function(buf) {
+		return buf.length < 24 ? _isValidUTF8(buf) : isUtf8$1(buf);
+	};
+	else if (!process.env.WS_NO_UTF_8_VALIDATE) try {
+		const isValidUTF8 = __require("utf-8-validate");
+		module.exports.isValidUTF8 = function(buf) {
+			return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
+		};
+	} catch (e) {}
+}));
+
+//#endregion
+//#region npm/ws/lib/receiver.js
+var require_receiver = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { Writable } = __require("stream");
+	const PerMessageDeflate = require_permessage_deflate();
+	const { BINARY_TYPES, EMPTY_BUFFER, kStatusCode, kWebSocket } = require_constants();
+	const { concat, toArrayBuffer, unmask } = require_buffer_util();
+	const { isValidStatusCode, isValidUTF8 } = require_validation();
+	const FastBuffer = Buffer[Symbol.species];
+	const GET_INFO = 0;
+	const GET_PAYLOAD_LENGTH_16 = 1;
+	const GET_PAYLOAD_LENGTH_64 = 2;
+	const GET_MASK = 3;
+	const GET_DATA = 4;
+	const INFLATING = 5;
+	const DEFER_EVENT = 6;
+	/**
+	* HyBi Receiver implementation.
+	*
+	* @extends Writable
+	*/
+	var Receiver = class extends Writable {
+		/**
+		* Creates a Receiver instance.
+		*
+		* @param {Object} [options] Options object
+		* @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
+		*     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+		*     multiple times in the same tick
+		* @param {String} [options.binaryType=nodebuffer] The type for binary data
+		* @param {Object} [options.extensions] An object containing the negotiated
+		*     extensions
+		* @param {Boolean} [options.isServer=false] Specifies whether to operate in
+		*     client or server mode
+		* @param {Number} [options.maxBufferedChunks=0] The maximum number of
+		*     buffered data chunks
+		* @param {Number} [options.maxFragments=0] The maximum number of message
+		*     fragments
+		* @param {Number} [options.maxPayload=0] The maximum allowed message length
+		* @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+		*     not to skip UTF-8 validation for text and close messages
+		*/
+		constructor(options = {}) {
+			super();
+			this._allowSynchronousEvents = options.allowSynchronousEvents !== void 0 ? options.allowSynchronousEvents : true;
+			this._binaryType = options.binaryType || BINARY_TYPES[0];
+			this._extensions = options.extensions || {};
+			this._isServer = !!options.isServer;
+			this._maxBufferedChunks = options.maxBufferedChunks | 0;
+			this._maxFragments = options.maxFragments | 0;
+			this._maxPayload = options.maxPayload | 0;
+			this._skipUTF8Validation = !!options.skipUTF8Validation;
+			this[kWebSocket] = void 0;
+			this._bufferedBytes = 0;
+			this._buffers = [];
+			this._compressed = false;
+			this._payloadLength = 0;
+			this._mask = void 0;
+			this._fragmented = 0;
+			this._masked = false;
+			this._fin = false;
+			this._opcode = 0;
+			this._totalPayloadLength = 0;
+			this._messageLength = 0;
+			this._numFragments = 0;
+			this._fragments = [];
+			this._errored = false;
+			this._loop = false;
+			this._state = GET_INFO;
+		}
+		/**
+		* Implements `Writable.prototype._write()`.
+		*
+		* @param {Buffer} chunk The chunk of data to write
+		* @param {String} encoding The character encoding of `chunk`
+		* @param {Function} cb Callback
+		* @private
+		*/
+		_write(chunk, encoding, cb) {
+			if (this._opcode === 8 && this._state == GET_INFO) return cb();
+			if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
+				cb(this.createError(RangeError, "Too many buffered chunks", false, 1008, "WS_ERR_TOO_MANY_BUFFERED_PARTS"));
+				return;
+			}
+			this._bufferedBytes += chunk.length;
+			this._buffers.push(chunk);
+			this.startLoop(cb);
+		}
+		/**
+		* Consumes `n` bytes from the buffered data.
+		*
+		* @param {Number} n The number of bytes to consume
+		* @return {Buffer} The consumed bytes
+		* @private
+		*/
+		consume(n) {
+			this._bufferedBytes -= n;
+			if (n === this._buffers[0].length) return this._buffers.shift();
+			if (n < this._buffers[0].length) {
+				const buf = this._buffers[0];
+				this._buffers[0] = new FastBuffer(buf.buffer, buf.byteOffset + n, buf.length - n);
+				return new FastBuffer(buf.buffer, buf.byteOffset, n);
+			}
+			const dst = Buffer.allocUnsafe(n);
+			do {
+				const buf = this._buffers[0];
+				const offset = dst.length - n;
+				if (n >= buf.length) dst.set(this._buffers.shift(), offset);
+				else {
+					dst.set(new Uint8Array(buf.buffer, buf.byteOffset, n), offset);
+					this._buffers[0] = new FastBuffer(buf.buffer, buf.byteOffset + n, buf.length - n);
+				}
+				n -= buf.length;
+			} while (n > 0);
+			return dst;
+		}
+		/**
+		* Starts the parsing loop.
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		startLoop(cb) {
+			this._loop = true;
+			do
+				switch (this._state) {
+					case GET_INFO:
+						this.getInfo(cb);
+						break;
+					case GET_PAYLOAD_LENGTH_16:
+						this.getPayloadLength16(cb);
+						break;
+					case GET_PAYLOAD_LENGTH_64:
+						this.getPayloadLength64(cb);
+						break;
+					case GET_MASK:
+						this.getMask();
+						break;
+					case GET_DATA:
+						this.getData(cb);
+						break;
+					case INFLATING:
+					case DEFER_EVENT:
+						this._loop = false;
+						return;
+				}
+			while (this._loop);
+			if (!this._errored) cb();
+		}
+		/**
+		* Reads the first two bytes of a frame.
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		getInfo(cb) {
+			if (this._bufferedBytes < 2) {
+				this._loop = false;
+				return;
+			}
+			const buf = this.consume(2);
+			if ((buf[0] & 48) !== 0) {
+				cb(this.createError(RangeError, "RSV2 and RSV3 must be clear", true, 1002, "WS_ERR_UNEXPECTED_RSV_2_3"));
+				return;
+			}
+			const compressed = (buf[0] & 64) === 64;
+			if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+				cb(this.createError(RangeError, "RSV1 must be clear", true, 1002, "WS_ERR_UNEXPECTED_RSV_1"));
+				return;
+			}
+			this._fin = (buf[0] & 128) === 128;
+			this._opcode = buf[0] & 15;
+			this._payloadLength = buf[1] & 127;
+			if (this._opcode === 0) {
+				if (compressed) {
+					cb(this.createError(RangeError, "RSV1 must be clear", true, 1002, "WS_ERR_UNEXPECTED_RSV_1"));
+					return;
+				}
+				if (!this._fragmented) {
+					cb(this.createError(RangeError, "invalid opcode 0", true, 1002, "WS_ERR_INVALID_OPCODE"));
+					return;
+				}
+				this._opcode = this._fragmented;
+			} else if (this._opcode === 1 || this._opcode === 2) {
+				if (this._fragmented) {
+					cb(this.createError(RangeError, `invalid opcode ${this._opcode}`, true, 1002, "WS_ERR_INVALID_OPCODE"));
+					return;
+				}
+				this._compressed = compressed;
+			} else if (this._opcode > 7 && this._opcode < 11) {
+				if (!this._fin) {
+					cb(this.createError(RangeError, "FIN must be set", true, 1002, "WS_ERR_EXPECTED_FIN"));
+					return;
+				}
+				if (compressed) {
+					cb(this.createError(RangeError, "RSV1 must be clear", true, 1002, "WS_ERR_UNEXPECTED_RSV_1"));
+					return;
+				}
+				if (this._payloadLength > 125 || this._opcode === 8 && this._payloadLength === 1) {
+					cb(this.createError(RangeError, `invalid payload length ${this._payloadLength}`, true, 1002, "WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH"));
+					return;
+				}
+			} else {
+				cb(this.createError(RangeError, `invalid opcode ${this._opcode}`, true, 1002, "WS_ERR_INVALID_OPCODE"));
+				return;
+			}
+			if (!this._fin && !this._fragmented) this._fragmented = this._opcode;
+			this._masked = (buf[1] & 128) === 128;
+			if (this._isServer) {
+				if (!this._masked) {
+					cb(this.createError(RangeError, "MASK must be set", true, 1002, "WS_ERR_EXPECTED_MASK"));
+					return;
+				}
+			} else if (this._masked) {
+				cb(this.createError(RangeError, "MASK must be clear", true, 1002, "WS_ERR_UNEXPECTED_MASK"));
+				return;
+			}
+			if (this._payloadLength === 126) this._state = GET_PAYLOAD_LENGTH_16;
+			else if (this._payloadLength === 127) this._state = GET_PAYLOAD_LENGTH_64;
+			else this.haveLength(cb);
+		}
+		/**
+		* Gets extended payload length (7+16).
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		getPayloadLength16(cb) {
+			if (this._bufferedBytes < 2) {
+				this._loop = false;
+				return;
+			}
+			this._payloadLength = this.consume(2).readUInt16BE(0);
+			this.haveLength(cb);
+		}
+		/**
+		* Gets extended payload length (7+64).
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		getPayloadLength64(cb) {
+			if (this._bufferedBytes < 8) {
+				this._loop = false;
+				return;
+			}
+			const buf = this.consume(8);
+			const num = buf.readUInt32BE(0);
+			if (num > Math.pow(2, 21) - 1) {
+				cb(this.createError(RangeError, "Unsupported WebSocket frame: payload length > 2^53 - 1", false, 1009, "WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH"));
+				return;
+			}
+			this._payloadLength = num * Math.pow(2, 32) + buf.readUInt32BE(4);
+			this.haveLength(cb);
+		}
+		/**
+		* Payload length has been read.
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		haveLength(cb) {
+			if (this._payloadLength && this._opcode < 8) {
+				this._totalPayloadLength += this._payloadLength;
+				if (this._totalPayloadLength > this._maxPayload && this._maxPayload > 0) {
+					cb(this.createError(RangeError, "Max payload size exceeded", false, 1009, "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"));
+					return;
+				}
+			}
+			if (this._masked) this._state = GET_MASK;
+			else this._state = GET_DATA;
+		}
+		/**
+		* Reads mask bytes.
+		*
+		* @private
+		*/
+		getMask() {
+			if (this._bufferedBytes < 4) {
+				this._loop = false;
+				return;
+			}
+			this._mask = this.consume(4);
+			this._state = GET_DATA;
+		}
+		/**
+		* Reads data bytes.
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		getData(cb) {
+			let data = EMPTY_BUFFER;
+			if (this._payloadLength) {
+				if (this._bufferedBytes < this._payloadLength) {
+					this._loop = false;
+					return;
+				}
+				data = this.consume(this._payloadLength);
+				if (this._masked && (this._mask[0] | this._mask[1] | this._mask[2] | this._mask[3]) !== 0) unmask(data, this._mask);
+			}
+			if (this._opcode > 7) {
+				this.controlMessage(data, cb);
+				return;
+			}
+			if (this._maxFragments > 0 && ++this._numFragments > this._maxFragments) {
+				cb(this.createError(RangeError, "Too many message fragments", false, 1008, "WS_ERR_TOO_MANY_BUFFERED_PARTS"));
+				return;
+			}
+			if (this._compressed) {
+				this._state = INFLATING;
+				this.decompress(data, cb);
+				return;
+			}
+			if (data.length) {
+				this._messageLength = this._totalPayloadLength;
+				this._fragments.push(data);
+			}
+			this.dataMessage(cb);
+		}
+		/**
+		* Decompresses data.
+		*
+		* @param {Buffer} data Compressed data
+		* @param {Function} cb Callback
+		* @private
+		*/
+		decompress(data, cb) {
+			this._extensions[PerMessageDeflate.extensionName].decompress(data, this._fin, (err, buf) => {
+				if (err) return cb(err);
+				if (buf.length) {
+					this._messageLength += buf.length;
+					if (this._messageLength > this._maxPayload && this._maxPayload > 0) {
+						cb(this.createError(RangeError, "Max payload size exceeded", false, 1009, "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"));
+						return;
+					}
+					this._fragments.push(buf);
+				}
+				this.dataMessage(cb);
+				if (this._state === GET_INFO) this.startLoop(cb);
+			});
+		}
+		/**
+		* Handles a data message.
+		*
+		* @param {Function} cb Callback
+		* @private
+		*/
+		dataMessage(cb) {
+			if (!this._fin) {
+				this._state = GET_INFO;
+				return;
+			}
+			const messageLength = this._messageLength;
+			const fragments = this._fragments;
+			this._totalPayloadLength = 0;
+			this._messageLength = 0;
+			this._fragmented = 0;
+			this._numFragments = 0;
+			this._fragments = [];
+			if (this._opcode === 2) {
+				let data;
+				if (this._binaryType === "nodebuffer") data = concat(fragments, messageLength);
+				else if (this._binaryType === "arraybuffer") data = toArrayBuffer(concat(fragments, messageLength));
+				else if (this._binaryType === "blob") data = new Blob(fragments);
+				else data = fragments;
+				if (this._allowSynchronousEvents) {
+					this.emit("message", data, true);
+					this._state = GET_INFO;
+				} else {
+					this._state = DEFER_EVENT;
+					setImmediate(() => {
+						this.emit("message", data, true);
+						this._state = GET_INFO;
+						this.startLoop(cb);
+					});
+				}
+			} else {
+				const buf = concat(fragments, messageLength);
+				if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
+					cb(this.createError(Error, "invalid UTF-8 sequence", true, 1007, "WS_ERR_INVALID_UTF8"));
+					return;
+				}
+				if (this._state === INFLATING || this._allowSynchronousEvents) {
+					this.emit("message", buf, false);
+					this._state = GET_INFO;
+				} else {
+					this._state = DEFER_EVENT;
+					setImmediate(() => {
+						this.emit("message", buf, false);
+						this._state = GET_INFO;
+						this.startLoop(cb);
+					});
+				}
+			}
+		}
+		/**
+		* Handles a control message.
+		*
+		* @param {Buffer} data Data to handle
+		* @return {(Error|RangeError|undefined)} A possible error
+		* @private
+		*/
+		controlMessage(data, cb) {
+			if (this._opcode === 8) {
+				if (data.length === 0) {
+					this._loop = false;
+					this.emit("conclude", 1005, EMPTY_BUFFER);
+					this.end();
+				} else {
+					const code = data.readUInt16BE(0);
+					if (!isValidStatusCode(code)) {
+						cb(this.createError(RangeError, `invalid status code ${code}`, true, 1002, "WS_ERR_INVALID_CLOSE_CODE"));
+						return;
+					}
+					const buf = new FastBuffer(data.buffer, data.byteOffset + 2, data.length - 2);
+					if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
+						cb(this.createError(Error, "invalid UTF-8 sequence", true, 1007, "WS_ERR_INVALID_UTF8"));
+						return;
+					}
+					this._loop = false;
+					this.emit("conclude", code, buf);
+					this.end();
+				}
+				this._state = GET_INFO;
+				return;
+			}
+			if (this._allowSynchronousEvents) {
+				this.emit(this._opcode === 9 ? "ping" : "pong", data);
+				this._state = GET_INFO;
+			} else {
+				this._state = DEFER_EVENT;
+				setImmediate(() => {
+					this.emit(this._opcode === 9 ? "ping" : "pong", data);
+					this._state = GET_INFO;
+					this.startLoop(cb);
+				});
+			}
+		}
+		/**
+		* Builds an error object.
+		*
+		* @param {function(new:Error|RangeError)} ErrorCtor The error constructor
+		* @param {String} message The error message
+		* @param {Boolean} prefix Specifies whether or not to add a default prefix to
+		*     `message`
+		* @param {Number} statusCode The status code
+		* @param {String} errorCode The exposed error code
+		* @return {(Error|RangeError)} The error
+		* @private
+		*/
+		createError(ErrorCtor, message, prefix, statusCode, errorCode) {
+			this._loop = false;
+			this._errored = true;
+			const err = new ErrorCtor(prefix ? `Invalid WebSocket frame: ${message}` : message);
+			Error.captureStackTrace(err, this.createError);
+			err.code = errorCode;
+			err[kStatusCode] = statusCode;
+			return err;
+		}
+	};
+	module.exports = Receiver;
+}));
+
+//#endregion
+//#region npm/ws/lib/sender.js
+var require_sender = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { Duplex: Duplex$3 } = __require("stream");
+	const { randomFillSync } = __require("crypto");
+	const { types: { isUint8Array } } = __require("util");
+	const PerMessageDeflate = require_permessage_deflate();
+	const { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
+	const { isBlob, isValidStatusCode } = require_validation();
+	const { mask: applyMask, toBuffer } = require_buffer_util();
+	const kByteLength = Symbol("kByteLength");
+	const maskBuffer = Buffer.alloc(4);
+	const RANDOM_POOL_SIZE = 8192;
+	let randomPool;
+	let randomPoolPointer = RANDOM_POOL_SIZE;
+	const DEFAULT = 0;
+	const DEFLATING = 1;
+	const GET_BLOB_DATA = 2;
+	/**
+	* HyBi Sender implementation.
+	*/
+	var Sender = class Sender {
+		/**
+		* Creates a Sender instance.
+		*
+		* @param {Duplex} socket The connection socket
+		* @param {Object} [extensions] An object containing the negotiated extensions
+		* @param {Function} [generateMask] The function used to generate the masking
+		*     key
+		*/
+		constructor(socket, extensions, generateMask) {
+			this._extensions = extensions || {};
+			if (generateMask) {
+				this._generateMask = generateMask;
+				this._maskBuffer = Buffer.alloc(4);
+			}
+			this._socket = socket;
+			this._firstFragment = true;
+			this._compress = false;
+			this._bufferedBytes = 0;
+			this._queue = [];
+			this._state = DEFAULT;
+			this.onerror = NOOP;
+			this[kWebSocket] = void 0;
+		}
+		/**
+		* Frames a piece of data according to the HyBi WebSocket protocol.
+		*
+		* @param {(Buffer|String)} data The data to frame
+		* @param {Object} options Options object
+		* @param {Boolean} [options.fin=false] Specifies whether or not to set the
+		*     FIN bit
+		* @param {Function} [options.generateMask] The function used to generate the
+		*     masking key
+		* @param {Boolean} [options.mask=false] Specifies whether or not to mask
+		*     `data`
+		* @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+		*     key
+		* @param {Number} options.opcode The opcode
+		* @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+		*     modified
+		* @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+		*     RSV1 bit
+		* @return {(Buffer|String)[]} The framed data
+		* @public
+		*/
+		static frame(data, options) {
+			let mask;
+			let merge = false;
+			let offset = 2;
+			let skipMasking = false;
+			if (options.mask) {
+				mask = options.maskBuffer || maskBuffer;
+				if (options.generateMask) options.generateMask(mask);
+				else {
+					if (randomPoolPointer === RANDOM_POOL_SIZE) {
+						/* istanbul ignore else  */
+						if (randomPool === void 0) randomPool = Buffer.alloc(RANDOM_POOL_SIZE);
+						randomFillSync(randomPool, 0, RANDOM_POOL_SIZE);
+						randomPoolPointer = 0;
+					}
+					mask[0] = randomPool[randomPoolPointer++];
+					mask[1] = randomPool[randomPoolPointer++];
+					mask[2] = randomPool[randomPoolPointer++];
+					mask[3] = randomPool[randomPoolPointer++];
+				}
+				skipMasking = (mask[0] | mask[1] | mask[2] | mask[3]) === 0;
+				offset = 6;
+			}
+			let dataLength;
+			if (typeof data === "string") {
+				if ((!options.mask || skipMasking) && options[kByteLength] !== void 0) dataLength = options[kByteLength];
+				else {
+					data = Buffer.from(data);
+					dataLength = data.length;
+				}
+			} else {
+				dataLength = data.length;
+				merge = options.mask && options.readOnly && !skipMasking;
+			}
+			let payloadLength = dataLength;
+			if (dataLength >= 65536) {
+				offset += 8;
+				payloadLength = 127;
+			} else if (dataLength > 125) {
+				offset += 2;
+				payloadLength = 126;
+			}
+			const target = Buffer.allocUnsafe(merge ? dataLength + offset : offset);
+			target[0] = options.fin ? options.opcode | 128 : options.opcode;
+			if (options.rsv1) target[0] |= 64;
+			target[1] = payloadLength;
+			if (payloadLength === 126) target.writeUInt16BE(dataLength, 2);
+			else if (payloadLength === 127) {
+				target[2] = target[3] = 0;
+				target.writeUIntBE(dataLength, 4, 6);
+			}
+			if (!options.mask) return [target, data];
+			target[1] |= 128;
+			target[offset - 4] = mask[0];
+			target[offset - 3] = mask[1];
+			target[offset - 2] = mask[2];
+			target[offset - 1] = mask[3];
+			if (skipMasking) return [target, data];
+			if (merge) {
+				applyMask(data, mask, target, offset, dataLength);
+				return [target];
+			}
+			applyMask(data, mask, data, 0, dataLength);
+			return [target, data];
+		}
+		/**
+		* Sends a close message to the other peer.
+		*
+		* @param {Number} [code] The status code component of the body
+		* @param {(String|Buffer)} [data] The message component of the body
+		* @param {Boolean} [mask=false] Specifies whether or not to mask the message
+		* @param {Function} [cb] Callback
+		* @public
+		*/
+		close(code, data, mask, cb) {
+			let buf;
+			if (code === void 0) buf = EMPTY_BUFFER;
+			else if (typeof code !== "number" || !isValidStatusCode(code)) throw new TypeError("First argument must be a valid error code number");
+			else if (data === void 0 || !data.length) {
+				buf = Buffer.allocUnsafe(2);
+				buf.writeUInt16BE(code, 0);
+			} else {
+				const length = Buffer.byteLength(data);
+				if (length > 123) throw new RangeError("The message must not be greater than 123 bytes");
+				buf = Buffer.allocUnsafe(2 + length);
+				buf.writeUInt16BE(code, 0);
+				if (typeof data === "string") buf.write(data, 2);
+				else if (isUint8Array(data)) buf.set(data, 2);
+				else throw new TypeError("Second argument must be a string or a Uint8Array");
+			}
+			const options = {
+				[kByteLength]: buf.length,
+				fin: true,
+				generateMask: this._generateMask,
+				mask,
+				maskBuffer: this._maskBuffer,
+				opcode: 8,
+				readOnly: false,
+				rsv1: false
+			};
+			if (this._state !== DEFAULT) this.enqueue([
+				this.dispatch,
+				buf,
+				false,
+				options,
+				cb
+			]);
+			else this.sendFrame(Sender.frame(buf, options), cb);
+		}
+		/**
+		* Sends a ping message to the other peer.
+		*
+		* @param {*} data The message to send
+		* @param {Boolean} [mask=false] Specifies whether or not to mask `data`
+		* @param {Function} [cb] Callback
+		* @public
+		*/
+		ping(data, mask, cb) {
+			let byteLength;
+			let readOnly;
+			if (typeof data === "string") {
+				byteLength = Buffer.byteLength(data);
+				readOnly = false;
+			} else if (isBlob(data)) {
+				byteLength = data.size;
+				readOnly = false;
+			} else {
+				data = toBuffer(data);
+				byteLength = data.length;
+				readOnly = toBuffer.readOnly;
+			}
+			if (byteLength > 125) throw new RangeError("The data size must not be greater than 125 bytes");
+			const options = {
+				[kByteLength]: byteLength,
+				fin: true,
+				generateMask: this._generateMask,
+				mask,
+				maskBuffer: this._maskBuffer,
+				opcode: 9,
+				readOnly,
+				rsv1: false
+			};
+			if (isBlob(data)) {
+				if (this._state !== DEFAULT) this.enqueue([
+					this.getBlobData,
+					data,
+					false,
+					options,
+					cb
+				]);
+				else this.getBlobData(data, false, options, cb);
+			} else if (this._state !== DEFAULT) this.enqueue([
+				this.dispatch,
+				data,
+				false,
+				options,
+				cb
+			]);
+			else this.sendFrame(Sender.frame(data, options), cb);
+		}
+		/**
+		* Sends a pong message to the other peer.
+		*
+		* @param {*} data The message to send
+		* @param {Boolean} [mask=false] Specifies whether or not to mask `data`
+		* @param {Function} [cb] Callback
+		* @public
+		*/
+		pong(data, mask, cb) {
+			let byteLength;
+			let readOnly;
+			if (typeof data === "string") {
+				byteLength = Buffer.byteLength(data);
+				readOnly = false;
+			} else if (isBlob(data)) {
+				byteLength = data.size;
+				readOnly = false;
+			} else {
+				data = toBuffer(data);
+				byteLength = data.length;
+				readOnly = toBuffer.readOnly;
+			}
+			if (byteLength > 125) throw new RangeError("The data size must not be greater than 125 bytes");
+			const options = {
+				[kByteLength]: byteLength,
+				fin: true,
+				generateMask: this._generateMask,
+				mask,
+				maskBuffer: this._maskBuffer,
+				opcode: 10,
+				readOnly,
+				rsv1: false
+			};
+			if (isBlob(data)) {
+				if (this._state !== DEFAULT) this.enqueue([
+					this.getBlobData,
+					data,
+					false,
+					options,
+					cb
+				]);
+				else this.getBlobData(data, false, options, cb);
+			} else if (this._state !== DEFAULT) this.enqueue([
+				this.dispatch,
+				data,
+				false,
+				options,
+				cb
+			]);
+			else this.sendFrame(Sender.frame(data, options), cb);
+		}
+		/**
+		* Sends a data message to the other peer.
+		*
+		* @param {*} data The message to send
+		* @param {Object} options Options object
+		* @param {Boolean} [options.binary=false] Specifies whether `data` is binary
+		*     or text
+		* @param {Boolean} [options.compress=false] Specifies whether or not to
+		*     compress `data`
+		* @param {Boolean} [options.fin=false] Specifies whether the fragment is the
+		*     last one
+		* @param {Boolean} [options.mask=false] Specifies whether or not to mask
+		*     `data`
+		* @param {Function} [cb] Callback
+		* @public
+		*/
+		send(data, options, cb) {
+			const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+			let opcode = options.binary ? 2 : 1;
+			let rsv1 = options.compress;
+			let byteLength;
+			let readOnly;
+			if (typeof data === "string") {
+				byteLength = Buffer.byteLength(data);
+				readOnly = false;
+			} else if (isBlob(data)) {
+				byteLength = data.size;
+				readOnly = false;
+			} else {
+				data = toBuffer(data);
+				byteLength = data.length;
+				readOnly = toBuffer.readOnly;
+			}
+			if (this._firstFragment) {
+				this._firstFragment = false;
+				if (rsv1 && perMessageDeflate && perMessageDeflate.params[perMessageDeflate._isServer ? "server_no_context_takeover" : "client_no_context_takeover"]) rsv1 = byteLength >= perMessageDeflate._threshold;
+				this._compress = rsv1;
+			} else {
+				rsv1 = false;
+				opcode = 0;
+			}
+			if (options.fin) this._firstFragment = true;
+			const opts = {
+				[kByteLength]: byteLength,
+				fin: options.fin,
+				generateMask: this._generateMask,
+				mask: options.mask,
+				maskBuffer: this._maskBuffer,
+				opcode,
+				readOnly,
+				rsv1
+			};
+			if (isBlob(data)) {
+				if (this._state !== DEFAULT) this.enqueue([
+					this.getBlobData,
+					data,
+					this._compress,
+					opts,
+					cb
+				]);
+				else this.getBlobData(data, this._compress, opts, cb);
+			} else if (this._state !== DEFAULT) this.enqueue([
+				this.dispatch,
+				data,
+				this._compress,
+				opts,
+				cb
+			]);
+			else this.dispatch(data, this._compress, opts, cb);
+		}
+		/**
+		* Gets the contents of a blob as binary data.
+		*
+		* @param {Blob} blob The blob
+		* @param {Boolean} [compress=false] Specifies whether or not to compress
+		*     the data
+		* @param {Object} options Options object
+		* @param {Boolean} [options.fin=false] Specifies whether or not to set the
+		*     FIN bit
+		* @param {Function} [options.generateMask] The function used to generate the
+		*     masking key
+		* @param {Boolean} [options.mask=false] Specifies whether or not to mask
+		*     `data`
+		* @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+		*     key
+		* @param {Number} options.opcode The opcode
+		* @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+		*     modified
+		* @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+		*     RSV1 bit
+		* @param {Function} [cb] Callback
+		* @private
+		*/
+		getBlobData(blob, compress, options, cb) {
+			this._bufferedBytes += options[kByteLength];
+			this._state = GET_BLOB_DATA;
+			blob.arrayBuffer().then((arrayBuffer) => {
+				if (this._socket.destroyed) {
+					const err = /* @__PURE__ */ new Error("The socket was closed while the blob was being read");
+					process.nextTick(callCallbacks, this, err, cb);
+					return;
+				}
+				this._bufferedBytes -= options[kByteLength];
+				const data = toBuffer(arrayBuffer);
+				if (!compress) {
+					this._state = DEFAULT;
+					this.sendFrame(Sender.frame(data, options), cb);
+					this.dequeue();
+				} else this.dispatch(data, compress, options, cb);
+			}).catch((err) => {
+				process.nextTick(onError, this, err, cb);
+			});
+		}
+		/**
+		* Dispatches a message.
+		*
+		* @param {(Buffer|String)} data The message to send
+		* @param {Boolean} [compress=false] Specifies whether or not to compress
+		*     `data`
+		* @param {Object} options Options object
+		* @param {Boolean} [options.fin=false] Specifies whether or not to set the
+		*     FIN bit
+		* @param {Function} [options.generateMask] The function used to generate the
+		*     masking key
+		* @param {Boolean} [options.mask=false] Specifies whether or not to mask
+		*     `data`
+		* @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+		*     key
+		* @param {Number} options.opcode The opcode
+		* @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+		*     modified
+		* @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+		*     RSV1 bit
+		* @param {Function} [cb] Callback
+		* @private
+		*/
+		dispatch(data, compress, options, cb) {
+			if (!compress) {
+				this.sendFrame(Sender.frame(data, options), cb);
+				return;
+			}
+			const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+			this._bufferedBytes += options[kByteLength];
+			this._state = DEFLATING;
+			perMessageDeflate.compress(data, options.fin, (_, buf) => {
+				if (this._socket.destroyed) {
+					const err = /* @__PURE__ */ new Error("The socket was closed while data was being compressed");
+					callCallbacks(this, err, cb);
+					return;
+				}
+				this._bufferedBytes -= options[kByteLength];
+				this._state = DEFAULT;
+				options.readOnly = false;
+				this.sendFrame(Sender.frame(buf, options), cb);
+				this.dequeue();
+			});
+		}
+		/**
+		* Executes queued send operations.
+		*
+		* @private
+		*/
+		dequeue() {
+			while (this._state === DEFAULT && this._queue.length) {
+				const params = this._queue.shift();
+				this._bufferedBytes -= params[3][kByteLength];
+				Reflect.apply(params[0], this, params.slice(1));
+			}
+		}
+		/**
+		* Enqueues a send operation.
+		*
+		* @param {Array} params Send operation parameters.
+		* @private
+		*/
+		enqueue(params) {
+			this._bufferedBytes += params[3][kByteLength];
+			this._queue.push(params);
+		}
+		/**
+		* Sends a frame.
+		*
+		* @param {(Buffer | String)[]} list The frame to send
+		* @param {Function} [cb] Callback
+		* @private
+		*/
+		sendFrame(list, cb) {
+			if (list.length === 2) {
+				this._socket.cork();
+				this._socket.write(list[0]);
+				this._socket.write(list[1], cb);
+				this._socket.uncork();
+			} else this._socket.write(list[0], cb);
+		}
+	};
+	module.exports = Sender;
+	/**
+	* Calls queued callbacks with an error.
+	*
+	* @param {Sender} sender The `Sender` instance
+	* @param {Error} err The error to call the callbacks with
+	* @param {Function} [cb] The first callback
+	* @private
+	*/
+	function callCallbacks(sender, err, cb) {
+		if (typeof cb === "function") cb(err);
+		for (let i = 0; i < sender._queue.length; i++) {
+			const params = sender._queue[i];
+			const callback = params[params.length - 1];
+			if (typeof callback === "function") callback(err);
+		}
+	}
+	/**
+	* Handles a `Sender` error.
+	*
+	* @param {Sender} sender The `Sender` instance
+	* @param {Error} err The error
+	* @param {Function} [cb] The first pending callback
+	* @private
+	*/
+	function onError(sender, err, cb) {
+		callCallbacks(sender, err, cb);
+		sender.onerror(err);
+	}
+}));
+
+//#endregion
+//#region npm/ws/lib/event-target.js
+var require_event_target = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { kForOnEventAttribute, kListener } = require_constants();
+	const kCode = Symbol("kCode");
+	const kData = Symbol("kData");
+	const kError = Symbol("kError");
+	const kMessage = Symbol("kMessage");
+	const kReason = Symbol("kReason");
+	const kTarget = Symbol("kTarget");
+	const kType = Symbol("kType");
+	const kWasClean = Symbol("kWasClean");
+	/**
+	* Class representing an event.
+	*/
+	var Event = class {
+		/**
+		* Create a new `Event`.
+		*
+		* @param {String} type The name of the event
+		* @throws {TypeError} If the `type` argument is not specified
+		*/
+		constructor(type) {
+			this[kTarget] = null;
+			this[kType] = type;
+		}
+		/**
+		* @type {*}
+		*/
+		get target() {
+			return this[kTarget];
+		}
+		/**
+		* @type {String}
+		*/
+		get type() {
+			return this[kType];
+		}
+	};
+	Object.defineProperty(Event.prototype, "target", { enumerable: true });
+	Object.defineProperty(Event.prototype, "type", { enumerable: true });
+	/**
+	* Class representing a close event.
+	*
+	* @extends Event
+	*/
+	var CloseEvent = class extends Event {
+		/**
+		* Create a new `CloseEvent`.
+		*
+		* @param {String} type The name of the event
+		* @param {Object} [options] A dictionary object that allows for setting
+		*     attributes via object members of the same name
+		* @param {Number} [options.code=0] The status code explaining why the
+		*     connection was closed
+		* @param {String} [options.reason=''] A human-readable string explaining why
+		*     the connection was closed
+		* @param {Boolean} [options.wasClean=false] Indicates whether or not the
+		*     connection was cleanly closed
+		*/
+		constructor(type, options = {}) {
+			super(type);
+			this[kCode] = options.code === void 0 ? 0 : options.code;
+			this[kReason] = options.reason === void 0 ? "" : options.reason;
+			this[kWasClean] = options.wasClean === void 0 ? false : options.wasClean;
+		}
+		/**
+		* @type {Number}
+		*/
+		get code() {
+			return this[kCode];
+		}
+		/**
+		* @type {String}
+		*/
+		get reason() {
+			return this[kReason];
+		}
+		/**
+		* @type {Boolean}
+		*/
+		get wasClean() {
+			return this[kWasClean];
+		}
+	};
+	Object.defineProperty(CloseEvent.prototype, "code", { enumerable: true });
+	Object.defineProperty(CloseEvent.prototype, "reason", { enumerable: true });
+	Object.defineProperty(CloseEvent.prototype, "wasClean", { enumerable: true });
+	/**
+	* Class representing an error event.
+	*
+	* @extends Event
+	*/
+	var ErrorEvent = class extends Event {
+		/**
+		* Create a new `ErrorEvent`.
+		*
+		* @param {String} type The name of the event
+		* @param {Object} [options] A dictionary object that allows for setting
+		*     attributes via object members of the same name
+		* @param {*} [options.error=null] The error that generated this event
+		* @param {String} [options.message=''] The error message
+		*/
+		constructor(type, options = {}) {
+			super(type);
+			this[kError] = options.error === void 0 ? null : options.error;
+			this[kMessage] = options.message === void 0 ? "" : options.message;
+		}
+		/**
+		* @type {*}
+		*/
+		get error() {
+			return this[kError];
+		}
+		/**
+		* @type {String}
+		*/
+		get message() {
+			return this[kMessage];
+		}
+	};
+	Object.defineProperty(ErrorEvent.prototype, "error", { enumerable: true });
+	Object.defineProperty(ErrorEvent.prototype, "message", { enumerable: true });
+	/**
+	* Class representing a message event.
+	*
+	* @extends Event
+	*/
+	var MessageEvent = class extends Event {
+		/**
+		* Create a new `MessageEvent`.
+		*
+		* @param {String} type The name of the event
+		* @param {Object} [options] A dictionary object that allows for setting
+		*     attributes via object members of the same name
+		* @param {*} [options.data=null] The message content
+		*/
+		constructor(type, options = {}) {
+			super(type);
+			this[kData] = options.data === void 0 ? null : options.data;
+		}
+		/**
+		* @type {*}
+		*/
+		get data() {
+			return this[kData];
+		}
+	};
+	Object.defineProperty(MessageEvent.prototype, "data", { enumerable: true });
+	/**
+	* This provides methods for emulating the `EventTarget` interface. It's not
+	* meant to be used directly.
+	*
+	* @mixin
+	*/
+	const EventTarget = {
+		/**
+		* Register an event listener.
+		*
+		* @param {String} type A string representing the event type to listen for
+		* @param {(Function|Object)} handler The listener to add
+		* @param {Object} [options] An options object specifies characteristics about
+		*     the event listener
+		* @param {Boolean} [options.once=false] A `Boolean` indicating that the
+		*     listener should be invoked at most once after being added. If `true`,
+		*     the listener would be automatically removed when invoked.
+		* @public
+		*/
+		addEventListener(type, handler, options = {}) {
+			for (const listener of this.listeners(type)) if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) return;
+			let wrapper;
+			if (type === "message") wrapper = function onMessage(data, isBinary) {
+				const event = new MessageEvent("message", { data: isBinary ? data : data.toString() });
+				event[kTarget] = this;
+				callListener(handler, this, event);
+			};
+			else if (type === "close") wrapper = function onClose(code, message) {
+				const event = new CloseEvent("close", {
+					code,
+					reason: message.toString(),
+					wasClean: this._closeFrameReceived && this._closeFrameSent
+				});
+				event[kTarget] = this;
+				callListener(handler, this, event);
+			};
+			else if (type === "error") wrapper = function onError(error) {
+				const event = new ErrorEvent("error", {
+					error,
+					message: error.message
+				});
+				event[kTarget] = this;
+				callListener(handler, this, event);
+			};
+			else if (type === "open") wrapper = function onOpen() {
+				const event = new Event("open");
+				event[kTarget] = this;
+				callListener(handler, this, event);
+			};
+			else return;
+			wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
+			wrapper[kListener] = handler;
+			if (options.once) this.once(type, wrapper);
+			else this.on(type, wrapper);
+		},
+		/**
+		* Remove an event listener.
+		*
+		* @param {String} type A string representing the event type to remove
+		* @param {(Function|Object)} handler The listener to remove
+		* @public
+		*/
+		removeEventListener(type, handler) {
+			for (const listener of this.listeners(type)) if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+				this.removeListener(type, listener);
+				break;
+			}
+		}
+	};
+	module.exports = {
+		CloseEvent,
+		ErrorEvent,
+		Event,
+		EventTarget,
+		MessageEvent
+	};
+	/**
+	* Call an event listener
+	*
+	* @param {(Function|Object)} listener The listener to call
+	* @param {*} thisArg The value to use as `this`` when calling the listener
+	* @param {Event} event The event to pass to the listener
+	* @private
+	*/
+	function callListener(listener, thisArg, event) {
+		if (typeof listener === "object" && listener.handleEvent) listener.handleEvent.call(listener, event);
+		else listener.call(thisArg, event);
+	}
+}));
+
+//#endregion
+//#region npm/ws/lib/extension.js
+var require_extension = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { tokenChars } = require_validation();
+	/**
+	* Adds an offer to the map of extension offers or a parameter to the map of
+	* parameters.
+	*
+	* @param {Object} dest The map of extension offers or parameters
+	* @param {String} name The extension or parameter name
+	* @param {(Object|Boolean|String)} elem The extension parameters or the
+	*     parameter value
+	* @private
+	*/
+	function push(dest, name, elem) {
+		if (dest[name] === void 0) dest[name] = [elem];
+		else dest[name].push(elem);
+	}
+	/**
+	* Parses the `Sec-WebSocket-Extensions` header into an object.
+	*
+	* @param {String} header The field value of the header
+	* @return {Object} The parsed object
+	* @public
+	*/
+	function parse(header) {
+		const offers = Object.create(null);
+		let params = Object.create(null);
+		let mustUnescape = false;
+		let isEscaping = false;
+		let inQuotes = false;
+		let extensionName;
+		let paramName;
+		let start = -1;
+		let code = -1;
+		let end = -1;
+		let i = 0;
+		for (; i < header.length; i++) {
+			code = header.charCodeAt(i);
+			if (extensionName === void 0) {
+				if (end === -1 && tokenChars[code] === 1) {
+					if (start === -1) start = i;
+				} else if (i !== 0 && (code === 32 || code === 9)) {
+					if (end === -1 && start !== -1) end = i;
+				} else if (code === 59 || code === 44) {
+					if (start === -1) throw new SyntaxError(`Unexpected character at index ${i}`);
+					if (end === -1) end = i;
+					const name = header.slice(start, end);
+					if (code === 44) {
+						push(offers, name, params);
+						params = Object.create(null);
+					} else extensionName = name;
+					start = end = -1;
+				} else throw new SyntaxError(`Unexpected character at index ${i}`);
+			} else if (paramName === void 0) {
+				if (end === -1 && tokenChars[code] === 1) {
+					if (start === -1) start = i;
+				} else if (code === 32 || code === 9) {
+					if (end === -1 && start !== -1) end = i;
+				} else if (code === 59 || code === 44) {
+					if (start === -1) throw new SyntaxError(`Unexpected character at index ${i}`);
+					if (end === -1) end = i;
+					push(params, header.slice(start, end), true);
+					if (code === 44) {
+						push(offers, extensionName, params);
+						params = Object.create(null);
+						extensionName = void 0;
+					}
+					start = end = -1;
+				} else if (code === 61 && start !== -1 && end === -1) {
+					paramName = header.slice(start, i);
+					start = end = -1;
+				} else throw new SyntaxError(`Unexpected character at index ${i}`);
+			} else if (isEscaping) {
+				if (tokenChars[code] !== 1) throw new SyntaxError(`Unexpected character at index ${i}`);
+				if (start === -1) start = i;
+				else if (!mustUnescape) mustUnescape = true;
+				isEscaping = false;
+			} else if (inQuotes) {
+				if (tokenChars[code] === 1) {
+					if (start === -1) start = i;
+				} else if (code === 34 && start !== -1) {
+					inQuotes = false;
+					end = i;
+				} else if (code === 92) isEscaping = true;
+				else throw new SyntaxError(`Unexpected character at index ${i}`);
+			} else if (code === 34 && header.charCodeAt(i - 1) === 61) inQuotes = true;
+			else if (end === -1 && tokenChars[code] === 1) {
+				if (start === -1) start = i;
+			} else if (start !== -1 && (code === 32 || code === 9)) {
+				if (end === -1) end = i;
+			} else if (code === 59 || code === 44) {
+				if (start === -1) throw new SyntaxError(`Unexpected character at index ${i}`);
+				if (end === -1) end = i;
+				let value = header.slice(start, end);
+				if (mustUnescape) {
+					value = value.replace(/\\/g, "");
+					mustUnescape = false;
+				}
+				push(params, paramName, value);
+				if (code === 44) {
+					push(offers, extensionName, params);
+					params = Object.create(null);
+					extensionName = void 0;
+				}
+				paramName = void 0;
+				start = end = -1;
+			} else throw new SyntaxError(`Unexpected character at index ${i}`);
+		}
+		if (start === -1 || inQuotes || code === 32 || code === 9) throw new SyntaxError("Unexpected end of input");
+		if (end === -1) end = i;
+		const token = header.slice(start, end);
+		if (extensionName === void 0) push(offers, token, params);
+		else {
+			if (paramName === void 0) push(params, token, true);
+			else if (mustUnescape) push(params, paramName, token.replace(/\\/g, ""));
+			else push(params, paramName, token);
+			push(offers, extensionName, params);
+		}
+		return offers;
+	}
+	/**
+	* Builds the `Sec-WebSocket-Extensions` header field value.
+	*
+	* @param {Object} extensions The map of extensions and parameters to format
+	* @return {String} A string representing the given object
+	* @public
+	*/
+	function format(extensions) {
+		return Object.keys(extensions).map((extension) => {
+			let configurations = extensions[extension];
+			if (!Array.isArray(configurations)) configurations = [configurations];
+			return configurations.map((params) => {
+				return [extension].concat(Object.keys(params).map((k) => {
+					let values = params[k];
+					if (!Array.isArray(values)) values = [values];
+					return values.map((v) => v === true ? k : `${k}=${v}`).join("; ");
+				})).join("; ");
+			}).join(", ");
+		}).join(", ");
+	}
+	module.exports = {
+		format,
+		parse
+	};
+}));
+
+//#endregion
+//#region npm/ws/lib/websocket.js
+var require_websocket = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const EventEmitter$1 = __require("events");
+	const https = __require("https");
+	const http$1 = __require("http");
+	const net$1 = __require("net");
+	const tls = __require("tls");
+	const { randomBytes: randomBytes$1, createHash: createHash$2 } = __require("crypto");
+	const { Duplex: Duplex$2, Readable } = __require("stream");
+	const { URL: URL$1 } = __require("url");
+	const PerMessageDeflate = require_permessage_deflate();
+	const Receiver = require_receiver();
+	const Sender = require_sender();
+	const { isBlob } = require_validation();
+	const { BINARY_TYPES, CLOSE_TIMEOUT, EMPTY_BUFFER, GUID, kForOnEventAttribute, kListener, kStatusCode, kWebSocket, NOOP } = require_constants();
+	const { EventTarget: { addEventListener, removeEventListener } } = require_event_target();
+	const { format, parse } = require_extension();
+	const { toBuffer } = require_buffer_util();
+	const kAborted = Symbol("kAborted");
+	const protocolVersions = [8, 13];
+	const readyStates = [
+		"CONNECTING",
+		"OPEN",
+		"CLOSING",
+		"CLOSED"
+	];
+	const subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
+	/**
+	* Class representing a WebSocket.
+	*
+	* @extends EventEmitter
+	*/
+	var WebSocket = class WebSocket extends EventEmitter$1 {
+		/**
+		* Create a new `WebSocket`.
+		*
+		* @param {(String|URL)} address The URL to which to connect
+		* @param {(String|String[])} [protocols] The subprotocols
+		* @param {Object} [options] Connection options
+		*/
+		constructor(address, protocols, options) {
+			super();
+			this._binaryType = BINARY_TYPES[0];
+			this._closeCode = 1006;
+			this._closeFrameReceived = false;
+			this._closeFrameSent = false;
+			this._closeMessage = EMPTY_BUFFER;
+			this._closeTimer = null;
+			this._errorEmitted = false;
+			this._extensions = {};
+			this._paused = false;
+			this._protocol = "";
+			this._readyState = WebSocket.CONNECTING;
+			this._receiver = null;
+			this._sender = null;
+			this._socket = null;
+			if (address !== null) {
+				this._bufferedAmount = 0;
+				this._isServer = false;
+				this._redirects = 0;
+				if (protocols === void 0) {
+					if (!options || options.protocols === void 0) protocols = [];
+					else if (Array.isArray(options.protocols)) protocols = options.protocols;
+					else protocols = [options.protocols];
+				} else if (!Array.isArray(protocols)) {
+					if (typeof protocols === "object" && protocols !== null) {
+						options = protocols;
+						if (options.protocols === void 0) protocols = [];
+						else if (Array.isArray(options.protocols)) protocols = options.protocols;
+						else protocols = [options.protocols];
+					} else protocols = [protocols];
+				}
+				initAsClient(this, address, protocols, options);
+			} else {
+				this._autoPong = options.autoPong;
+				this._closeTimeout = options.closeTimeout;
+				this._isServer = true;
+			}
+		}
+		/**
+		* For historical reasons, the custom "nodebuffer" type is used by the default
+		* instead of "blob".
+		*
+		* @type {String}
+		*/
+		get binaryType() {
+			return this._binaryType;
+		}
+		set binaryType(type) {
+			if (!BINARY_TYPES.includes(type)) return;
+			this._binaryType = type;
+			if (this._receiver) this._receiver._binaryType = type;
+		}
+		/**
+		* @type {Number}
+		*/
+		get bufferedAmount() {
+			if (!this._socket) return this._bufferedAmount;
+			return this._socket._writableState.length + this._sender._bufferedBytes;
+		}
+		/**
+		* @type {String}
+		*/
+		get extensions() {
+			return Object.keys(this._extensions).join();
+		}
+		/**
+		* @type {Boolean}
+		*/
+		get isPaused() {
+			return this._paused;
+		}
+		/**
+		* @type {Function}
+		*/
+		/* istanbul ignore next */
+		get onclose() {
+			return null;
+		}
+		/**
+		* @type {Function}
+		*/
+		/* istanbul ignore next */
+		get onerror() {
+			return null;
+		}
+		/**
+		* @type {Function}
+		*/
+		/* istanbul ignore next */
+		get onopen() {
+			return null;
+		}
+		/**
+		* @type {Function}
+		*/
+		/* istanbul ignore next */
+		get onmessage() {
+			return null;
+		}
+		/**
+		* @type {String}
+		*/
+		get protocol() {
+			return this._protocol;
+		}
+		/**
+		* @type {Number}
+		*/
+		get readyState() {
+			return this._readyState;
+		}
+		/**
+		* @type {String}
+		*/
+		get url() {
+			return this._url;
+		}
+		/**
+		* Set up the socket and the internal resources.
+		*
+		* @param {Duplex} socket The network socket between the server and client
+		* @param {Buffer} head The first packet of the upgraded stream
+		* @param {Object} options Options object
+		* @param {Boolean} [options.allowSynchronousEvents=false] Specifies whether
+		*     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+		*     multiple times in the same tick
+		* @param {Function} [options.generateMask] The function used to generate the
+		*     masking key
+		* @param {Number} [options.maxBufferedChunks=0] The maximum number of
+		*     buffered data chunks
+		* @param {Number} [options.maxFragments=0] The maximum number of message
+		*     fragments
+		* @param {Number} [options.maxPayload=0] The maximum allowed message size
+		* @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+		*     not to skip UTF-8 validation for text and close messages
+		* @private
+		*/
+		setSocket(socket, head, options) {
+			const receiver = new Receiver({
+				allowSynchronousEvents: options.allowSynchronousEvents,
+				binaryType: this.binaryType,
+				extensions: this._extensions,
+				isServer: this._isServer,
+				maxBufferedChunks: options.maxBufferedChunks,
+				maxFragments: options.maxFragments,
+				maxPayload: options.maxPayload,
+				skipUTF8Validation: options.skipUTF8Validation
+			});
+			const sender = new Sender(socket, this._extensions, options.generateMask);
+			this._receiver = receiver;
+			this._sender = sender;
+			this._socket = socket;
+			receiver[kWebSocket] = this;
+			sender[kWebSocket] = this;
+			socket[kWebSocket] = this;
+			receiver.on("conclude", receiverOnConclude);
+			receiver.on("drain", receiverOnDrain);
+			receiver.on("error", receiverOnError);
+			receiver.on("message", receiverOnMessage);
+			receiver.on("ping", receiverOnPing);
+			receiver.on("pong", receiverOnPong);
+			sender.onerror = senderOnError;
+			if (socket.setTimeout) socket.setTimeout(0);
+			if (socket.setNoDelay) socket.setNoDelay();
+			if (head.length > 0) socket.unshift(head);
+			socket.on("close", socketOnClose);
+			socket.on("data", socketOnData);
+			socket.on("end", socketOnEnd);
+			socket.on("error", socketOnError);
+			this._readyState = WebSocket.OPEN;
+			this.emit("open");
+		}
+		/**
+		* Emit the `'close'` event.
+		*
+		* @private
+		*/
+		emitClose() {
+			if (!this._socket) {
+				this._readyState = WebSocket.CLOSED;
+				this.emit("close", this._closeCode, this._closeMessage);
+				return;
+			}
+			if (this._extensions[PerMessageDeflate.extensionName]) this._extensions[PerMessageDeflate.extensionName].cleanup();
+			this._receiver.removeAllListeners();
+			this._readyState = WebSocket.CLOSED;
+			this.emit("close", this._closeCode, this._closeMessage);
+		}
+		/**
+		* Start a closing handshake.
+		*
+		*          +----------+   +-----------+   +----------+
+		*     - - -|ws.close()|-->|close frame|-->|ws.close()|- - -
+		*    |     +----------+   +-----------+   +----------+     |
+		*          +----------+   +-----------+         |
+		* CLOSING  |ws.close()|<--|close frame|<--+-----+       CLOSING
+		*          +----------+   +-----------+   |
+		*    |           |                        |   +---+        |
+		*                +------------------------+-->|fin| - - - -
+		*    |         +---+                      |   +---+
+		*     - - - - -|fin|<---------------------+
+		*              +---+
+		*
+		* @param {Number} [code] Status code explaining why the connection is closing
+		* @param {(String|Buffer)} [data] The reason why the connection is
+		*     closing
+		* @public
+		*/
+		close(code, data) {
+			if (this.readyState === WebSocket.CLOSED) return;
+			if (this.readyState === WebSocket.CONNECTING) {
+				abortHandshake(this, this._req, "WebSocket was closed before the connection was established");
+				return;
+			}
+			if (this.readyState === WebSocket.CLOSING) {
+				if (this._closeFrameSent && (this._closeFrameReceived || this._receiver._writableState.errorEmitted)) this._socket.end();
+				return;
+			}
+			this._sender.close(code, data, !this._isServer, (err) => {
+				if (err) return;
+				this._closeFrameSent = true;
+				if (this._closeFrameReceived || this._receiver._writableState.errorEmitted) this._socket.end();
+			});
+			this._readyState = WebSocket.CLOSING;
+			setCloseTimer(this);
+		}
+		/**
+		* Pause the socket.
+		*
+		* @public
+		*/
+		pause() {
+			if (this.readyState === WebSocket.CONNECTING || this.readyState === WebSocket.CLOSED) return;
+			this._paused = true;
+			this._socket.pause();
+		}
+		/**
+		* Send a ping.
+		*
+		* @param {*} [data] The data to send
+		* @param {Boolean} [mask] Indicates whether or not to mask `data`
+		* @param {Function} [cb] Callback which is executed when the ping is sent
+		* @public
+		*/
+		ping(data, mask, cb) {
+			if (this.readyState === WebSocket.CONNECTING) throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+			if (typeof data === "function") {
+				cb = data;
+				data = mask = void 0;
+			} else if (typeof mask === "function") {
+				cb = mask;
+				mask = void 0;
+			}
+			if (typeof data === "number") data = data.toString();
+			if (this.readyState !== WebSocket.OPEN) {
+				sendAfterClose(this, data, cb);
+				return;
+			}
+			if (mask === void 0) mask = !this._isServer;
+			this._sender.ping(data || EMPTY_BUFFER, mask, cb);
+		}
+		/**
+		* Send a pong.
+		*
+		* @param {*} [data] The data to send
+		* @param {Boolean} [mask] Indicates whether or not to mask `data`
+		* @param {Function} [cb] Callback which is executed when the pong is sent
+		* @public
+		*/
+		pong(data, mask, cb) {
+			if (this.readyState === WebSocket.CONNECTING) throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+			if (typeof data === "function") {
+				cb = data;
+				data = mask = void 0;
+			} else if (typeof mask === "function") {
+				cb = mask;
+				mask = void 0;
+			}
+			if (typeof data === "number") data = data.toString();
+			if (this.readyState !== WebSocket.OPEN) {
+				sendAfterClose(this, data, cb);
+				return;
+			}
+			if (mask === void 0) mask = !this._isServer;
+			this._sender.pong(data || EMPTY_BUFFER, mask, cb);
+		}
+		/**
+		* Resume the socket.
+		*
+		* @public
+		*/
+		resume() {
+			if (this.readyState === WebSocket.CONNECTING || this.readyState === WebSocket.CLOSED) return;
+			this._paused = false;
+			if (!this._receiver._writableState.needDrain) this._socket.resume();
+		}
+		/**
+		* Send a data message.
+		*
+		* @param {*} data The message to send
+		* @param {Object} [options] Options object
+		* @param {Boolean} [options.binary] Specifies whether `data` is binary or
+		*     text
+		* @param {Boolean} [options.compress] Specifies whether or not to compress
+		*     `data`
+		* @param {Boolean} [options.fin=true] Specifies whether the fragment is the
+		*     last one
+		* @param {Boolean} [options.mask] Specifies whether or not to mask `data`
+		* @param {Function} [cb] Callback which is executed when data is written out
+		* @public
+		*/
+		send(data, options, cb) {
+			if (this.readyState === WebSocket.CONNECTING) throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+			if (typeof options === "function") {
+				cb = options;
+				options = {};
+			}
+			if (typeof data === "number") data = data.toString();
+			if (this.readyState !== WebSocket.OPEN) {
+				sendAfterClose(this, data, cb);
+				return;
+			}
+			const opts = {
+				binary: typeof data !== "string",
+				mask: !this._isServer,
+				compress: true,
+				fin: true,
+				...options
+			};
+			if (!this._extensions[PerMessageDeflate.extensionName]) opts.compress = false;
+			this._sender.send(data || EMPTY_BUFFER, opts, cb);
+		}
+		/**
+		* Forcibly close the connection.
+		*
+		* @public
+		*/
+		terminate() {
+			if (this.readyState === WebSocket.CLOSED) return;
+			if (this.readyState === WebSocket.CONNECTING) {
+				abortHandshake(this, this._req, "WebSocket was closed before the connection was established");
+				return;
+			}
+			if (this._socket) {
+				this._readyState = WebSocket.CLOSING;
+				this._socket.destroy();
+			}
+		}
+	};
+	/**
+	* @constant {Number} CONNECTING
+	* @memberof WebSocket
+	*/
+	Object.defineProperty(WebSocket, "CONNECTING", {
+		enumerable: true,
+		value: readyStates.indexOf("CONNECTING")
+	});
+	/**
+	* @constant {Number} CONNECTING
+	* @memberof WebSocket.prototype
+	*/
+	Object.defineProperty(WebSocket.prototype, "CONNECTING", {
+		enumerable: true,
+		value: readyStates.indexOf("CONNECTING")
+	});
+	/**
+	* @constant {Number} OPEN
+	* @memberof WebSocket
+	*/
+	Object.defineProperty(WebSocket, "OPEN", {
+		enumerable: true,
+		value: readyStates.indexOf("OPEN")
+	});
+	/**
+	* @constant {Number} OPEN
+	* @memberof WebSocket.prototype
+	*/
+	Object.defineProperty(WebSocket.prototype, "OPEN", {
+		enumerable: true,
+		value: readyStates.indexOf("OPEN")
+	});
+	/**
+	* @constant {Number} CLOSING
+	* @memberof WebSocket
+	*/
+	Object.defineProperty(WebSocket, "CLOSING", {
+		enumerable: true,
+		value: readyStates.indexOf("CLOSING")
+	});
+	/**
+	* @constant {Number} CLOSING
+	* @memberof WebSocket.prototype
+	*/
+	Object.defineProperty(WebSocket.prototype, "CLOSING", {
+		enumerable: true,
+		value: readyStates.indexOf("CLOSING")
+	});
+	/**
+	* @constant {Number} CLOSED
+	* @memberof WebSocket
+	*/
+	Object.defineProperty(WebSocket, "CLOSED", {
+		enumerable: true,
+		value: readyStates.indexOf("CLOSED")
+	});
+	/**
+	* @constant {Number} CLOSED
+	* @memberof WebSocket.prototype
+	*/
+	Object.defineProperty(WebSocket.prototype, "CLOSED", {
+		enumerable: true,
+		value: readyStates.indexOf("CLOSED")
+	});
+	[
+		"binaryType",
+		"bufferedAmount",
+		"extensions",
+		"isPaused",
+		"protocol",
+		"readyState",
+		"url"
+	].forEach((property) => {
+		Object.defineProperty(WebSocket.prototype, property, { enumerable: true });
+	});
+	[
+		"open",
+		"error",
+		"close",
+		"message"
+	].forEach((method) => {
+		Object.defineProperty(WebSocket.prototype, `on${method}`, {
+			enumerable: true,
+			get() {
+				for (const listener of this.listeners(method)) if (listener[kForOnEventAttribute]) return listener[kListener];
+				return null;
+			},
+			set(handler) {
+				for (const listener of this.listeners(method)) if (listener[kForOnEventAttribute]) {
+					this.removeListener(method, listener);
+					break;
+				}
+				if (typeof handler !== "function") return;
+				this.addEventListener(method, handler, { [kForOnEventAttribute]: true });
+			}
+		});
+	});
+	WebSocket.prototype.addEventListener = addEventListener;
+	WebSocket.prototype.removeEventListener = removeEventListener;
+	module.exports = WebSocket;
+	/**
+	* Initialize a WebSocket client.
+	*
+	* @param {WebSocket} websocket The client to initialize
+	* @param {(String|URL)} address The URL to which to connect
+	* @param {Array} protocols The subprotocols
+	* @param {Object} [options] Connection options
+	* @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether any
+	*     of the `'message'`, `'ping'`, and `'pong'` events can be emitted multiple
+	*     times in the same tick
+	* @param {Boolean} [options.autoPong=true] Specifies whether or not to
+	*     automatically send a pong in response to a ping
+	* @param {Number} [options.closeTimeout=30000] Duration in milliseconds to wait
+	*     for the closing handshake to finish after `websocket.close()` is called
+	* @param {Function} [options.finishRequest] A function which can be used to
+	*     customize the headers of each http request before it is sent
+	* @param {Boolean} [options.followRedirects=false] Whether or not to follow
+	*     redirects
+	* @param {Function} [options.generateMask] The function used to generate the
+	*     masking key
+	* @param {Number} [options.handshakeTimeout] Timeout in milliseconds for the
+	*     handshake request
+	* @param {Number} [options.maxBufferedChunks=262144] The maximum number of
+	*     buffered data chunks
+	* @param {Number} [options.maxFragments=16384] The maximum number of message
+	*     fragments
+	* @param {Number} [options.maxPayload=104857600] The maximum allowed message
+	*     size
+	* @param {Number} [options.maxRedirects=10] The maximum number of redirects
+	*     allowed
+	* @param {String} [options.origin] Value of the `Origin` or
+	*     `Sec-WebSocket-Origin` header
+	* @param {(Boolean|Object)} [options.perMessageDeflate=true] Enable/disable
+	*     permessage-deflate
+	* @param {Number} [options.protocolVersion=13] Value of the
+	*     `Sec-WebSocket-Version` header
+	* @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+	*     not to skip UTF-8 validation for text and close messages
+	* @private
+	*/
+	function initAsClient(websocket, address, protocols, options) {
+		const opts = {
+			allowSynchronousEvents: true,
+			autoPong: true,
+			closeTimeout: CLOSE_TIMEOUT,
+			protocolVersion: protocolVersions[1],
+			maxBufferedChunks: 262144,
+			maxFragments: 16384,
+			maxPayload: 104857600,
+			skipUTF8Validation: false,
+			perMessageDeflate: true,
+			followRedirects: false,
+			maxRedirects: 10,
+			...options,
+			socketPath: void 0,
+			hostname: void 0,
+			protocol: void 0,
+			protocols: void 0,
+			timeout: void 0,
+			method: "GET",
+			host: void 0,
+			path: void 0,
+			port: void 0
+		};
+		websocket._autoPong = opts.autoPong;
+		websocket._closeTimeout = opts.closeTimeout;
+		if (!protocolVersions.includes(opts.protocolVersion)) throw new RangeError(`Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`);
+		let parsedUrl;
+		if (address instanceof URL$1) parsedUrl = address;
+		else try {
+			parsedUrl = new URL$1(address);
+		} catch {
+			throw new SyntaxError(`Invalid URL: ${address}`);
+		}
+		if (parsedUrl.protocol === "http:") parsedUrl.protocol = "ws:";
+		else if (parsedUrl.protocol === "https:") parsedUrl.protocol = "wss:";
+		websocket._url = parsedUrl.href;
+		const isSecure = parsedUrl.protocol === "wss:";
+		const isIpcUrl = parsedUrl.protocol === "ws+unix:";
+		let invalidUrlMessage;
+		if (parsedUrl.protocol !== "ws:" && !isSecure && !isIpcUrl) invalidUrlMessage = "The URL's protocol must be one of \"ws:\", \"wss:\", \"http:\", \"https:\", or \"ws+unix:\"";
+		else if (isIpcUrl && !parsedUrl.pathname) invalidUrlMessage = "The URL's pathname is empty";
+		else if (parsedUrl.hash) invalidUrlMessage = "The URL contains a fragment identifier";
+		if (invalidUrlMessage) {
+			const err = new SyntaxError(invalidUrlMessage);
+			if (websocket._redirects === 0) throw err;
+			else {
+				emitErrorAndClose(websocket, err);
+				return;
+			}
+		}
+		const defaultPort = isSecure ? 443 : 80;
+		const key = randomBytes$1(16).toString("base64");
+		const request = isSecure ? https.request : http$1.request;
+		const protocolSet = /* @__PURE__ */ new Set();
+		let perMessageDeflate;
+		opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
+		opts.defaultPort = opts.defaultPort || defaultPort;
+		opts.port = parsedUrl.port || defaultPort;
+		opts.host = parsedUrl.hostname.startsWith("[") ? parsedUrl.hostname.slice(1, -1) : parsedUrl.hostname;
+		opts.headers = {
+			...opts.headers,
+			"Sec-WebSocket-Version": opts.protocolVersion,
+			"Sec-WebSocket-Key": key,
+			Connection: "Upgrade",
+			Upgrade: "websocket"
+		};
+		opts.path = parsedUrl.pathname + parsedUrl.search;
+		opts.timeout = opts.handshakeTimeout;
+		if (opts.perMessageDeflate) {
+			perMessageDeflate = new PerMessageDeflate({
+				...opts.perMessageDeflate,
+				isServer: false,
+				maxPayload: opts.maxPayload
+			});
+			opts.headers["Sec-WebSocket-Extensions"] = format({ [PerMessageDeflate.extensionName]: perMessageDeflate.offer() });
+		}
+		if (protocols.length) {
+			for (const protocol of protocols) {
+				if (typeof protocol !== "string" || !subprotocolRegex.test(protocol) || protocolSet.has(protocol)) throw new SyntaxError("An invalid or duplicated subprotocol was specified");
+				protocolSet.add(protocol);
+			}
+			opts.headers["Sec-WebSocket-Protocol"] = protocols.join(",");
+		}
+		if (opts.origin) {
+			if (opts.protocolVersion < 13) opts.headers["Sec-WebSocket-Origin"] = opts.origin;
+			else opts.headers.Origin = opts.origin;
+		}
+		if (parsedUrl.username || parsedUrl.password) opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
+		if (isIpcUrl) {
+			const parts = opts.path.split(":");
+			opts.socketPath = parts[0];
+			opts.path = parts[1];
+		}
+		let req;
+		if (opts.followRedirects) {
+			if (websocket._redirects === 0) {
+				websocket._originalIpc = isIpcUrl;
+				websocket._originalSecure = isSecure;
+				websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
+				const headers = options && options.headers;
+				options = {
+					...options,
+					headers: {}
+				};
+				if (headers) for (const [key, value] of Object.entries(headers)) options.headers[key.toLowerCase()] = value;
+			} else if (websocket.listenerCount("redirect") === 0) {
+				const isSameHost = isIpcUrl ? websocket._originalIpc ? opts.socketPath === websocket._originalHostOrSocketPath : false : websocket._originalIpc ? false : parsedUrl.host === websocket._originalHostOrSocketPath;
+				if (!isSameHost || websocket._originalSecure && !isSecure) {
+					delete opts.headers.authorization;
+					delete opts.headers.cookie;
+					if (!isSameHost) delete opts.headers.host;
+					opts.auth = void 0;
+				}
+			}
+			if (opts.auth && !options.headers.authorization) options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
+			req = websocket._req = request(opts);
+			if (websocket._redirects) websocket.emit("redirect", websocket.url, req);
+		} else req = websocket._req = request(opts);
+		if (opts.timeout) req.on("timeout", () => {
+			abortHandshake(websocket, req, "Opening handshake has timed out");
+		});
+		req.on("error", (err) => {
+			if (req === null || req[kAborted]) return;
+			req = websocket._req = null;
+			emitErrorAndClose(websocket, err);
+		});
+		req.on("response", (res) => {
+			const location = res.headers.location;
+			const statusCode = res.statusCode;
+			if (location && opts.followRedirects && statusCode >= 300 && statusCode < 400) {
+				if (++websocket._redirects > opts.maxRedirects) {
+					abortHandshake(websocket, req, "Maximum redirects exceeded");
+					return;
+				}
+				req.abort();
+				let addr;
+				try {
+					addr = new URL$1(location, address);
+				} catch (e) {
+					emitErrorAndClose(websocket, /* @__PURE__ */ new SyntaxError(`Invalid URL: ${location}`));
+					return;
+				}
+				initAsClient(websocket, addr, protocols, options);
+			} else if (!websocket.emit("unexpected-response", req, res)) abortHandshake(websocket, req, `Unexpected server response: ${res.statusCode}`);
+		});
+		req.on("upgrade", (res, socket, head) => {
+			websocket.emit("upgrade", res);
+			if (websocket.readyState !== WebSocket.CONNECTING) return;
+			req = websocket._req = null;
+			const upgrade = res.headers.upgrade;
+			if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
+				abortHandshake(websocket, socket, "Invalid Upgrade header");
+				return;
+			}
+			const digest = createHash$2("sha1").update(key + GUID).digest("base64");
+			if (res.headers["sec-websocket-accept"] !== digest) {
+				abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
+				return;
+			}
+			const serverProt = res.headers["sec-websocket-protocol"];
+			let protError;
+			if (serverProt !== void 0) {
+				if (!protocolSet.size) protError = "Server sent a subprotocol but none was requested";
+				else if (!protocolSet.has(serverProt)) protError = "Server sent an invalid subprotocol";
+			} else if (protocolSet.size) protError = "Server sent no subprotocol";
+			if (protError) {
+				abortHandshake(websocket, socket, protError);
+				return;
+			}
+			if (serverProt) websocket._protocol = serverProt;
+			const secWebSocketExtensions = res.headers["sec-websocket-extensions"];
+			if (secWebSocketExtensions !== void 0) {
+				if (!perMessageDeflate) {
+					abortHandshake(websocket, socket, "Server sent a Sec-WebSocket-Extensions header but no extension was requested");
+					return;
+				}
+				let extensions;
+				try {
+					extensions = parse(secWebSocketExtensions);
+				} catch (err) {
+					abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Extensions header");
+					return;
+				}
+				const extensionNames = Object.keys(extensions);
+				if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+					abortHandshake(websocket, socket, "Server indicated an extension that was not requested");
+					return;
+				}
+				try {
+					perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+				} catch (err) {
+					abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Extensions header");
+					return;
+				}
+				websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+			}
+			websocket.setSocket(socket, head, {
+				allowSynchronousEvents: opts.allowSynchronousEvents,
+				generateMask: opts.generateMask,
+				maxBufferedChunks: opts.maxBufferedChunks,
+				maxFragments: opts.maxFragments,
+				maxPayload: opts.maxPayload,
+				skipUTF8Validation: opts.skipUTF8Validation
+			});
+		});
+		if (opts.finishRequest) opts.finishRequest(req, websocket);
+		else req.end();
+	}
+	/**
+	* Emit the `'error'` and `'close'` events.
+	*
+	* @param {WebSocket} websocket The WebSocket instance
+	* @param {Error} The error to emit
+	* @private
+	*/
+	function emitErrorAndClose(websocket, err) {
+		websocket._readyState = WebSocket.CLOSING;
+		websocket._errorEmitted = true;
+		websocket.emit("error", err);
+		websocket.emitClose();
+	}
+	/**
+	* Create a `net.Socket` and initiate a connection.
+	*
+	* @param {Object} options Connection options
+	* @return {net.Socket} The newly created socket used to start the connection
+	* @private
+	*/
+	function netConnect(options) {
+		options.path = options.socketPath;
+		return net$1.connect(options);
+	}
+	/**
+	* Create a `tls.TLSSocket` and initiate a connection.
+	*
+	* @param {Object} options Connection options
+	* @return {tls.TLSSocket} The newly created socket used to start the connection
+	* @private
+	*/
+	function tlsConnect(options) {
+		options.path = void 0;
+		if (!options.servername && options.servername !== "") options.servername = net$1.isIP(options.host) ? "" : options.host;
+		return tls.connect(options);
+	}
+	/**
+	* Abort the handshake and emit an error.
+	*
+	* @param {WebSocket} websocket The WebSocket instance
+	* @param {(http.ClientRequest|net.Socket|tls.Socket)} stream The request to
+	*     abort or the socket to destroy
+	* @param {String} message The error message
+	* @private
+	*/
+	function abortHandshake(websocket, stream, message) {
+		websocket._readyState = WebSocket.CLOSING;
+		const err = new Error(message);
+		Error.captureStackTrace(err, abortHandshake);
+		if (stream.setHeader) {
+			stream[kAborted] = true;
+			stream.abort();
+			if (stream.socket && !stream.socket.destroyed) stream.socket.destroy();
+			process.nextTick(emitErrorAndClose, websocket, err);
+		} else {
+			stream.destroy(err);
+			stream.once("error", websocket.emit.bind(websocket, "error"));
+			stream.once("close", websocket.emitClose.bind(websocket));
+		}
+	}
+	/**
+	* Handle cases where the `ping()`, `pong()`, or `send()` methods are called
+	* when the `readyState` attribute is `CLOSING` or `CLOSED`.
+	*
+	* @param {WebSocket} websocket The WebSocket instance
+	* @param {*} [data] The data to send
+	* @param {Function} [cb] Callback
+	* @private
+	*/
+	function sendAfterClose(websocket, data, cb) {
+		if (data) {
+			const length = isBlob(data) ? data.size : toBuffer(data).length;
+			if (websocket._socket) websocket._sender._bufferedBytes += length;
+			else websocket._bufferedAmount += length;
+		}
+		if (cb) {
+			const err = /* @__PURE__ */ new Error(`WebSocket is not open: readyState ${websocket.readyState} (${readyStates[websocket.readyState]})`);
+			process.nextTick(cb, err);
+		}
+	}
+	/**
+	* The listener of the `Receiver` `'conclude'` event.
+	*
+	* @param {Number} code The status code
+	* @param {Buffer} reason The reason for closing
+	* @private
+	*/
+	function receiverOnConclude(code, reason) {
+		const websocket = this[kWebSocket];
+		websocket._closeFrameReceived = true;
+		websocket._closeMessage = reason;
+		websocket._closeCode = code;
+		if (websocket._socket[kWebSocket] === void 0) return;
+		websocket._socket.removeListener("data", socketOnData);
+		process.nextTick(resume, websocket._socket);
+		if (code === 1005) websocket.close();
+		else websocket.close(code, reason);
+	}
+	/**
+	* The listener of the `Receiver` `'drain'` event.
+	*
+	* @private
+	*/
+	function receiverOnDrain() {
+		const websocket = this[kWebSocket];
+		if (!websocket.isPaused) websocket._socket.resume();
+	}
+	/**
+	* The listener of the `Receiver` `'error'` event.
+	*
+	* @param {(RangeError|Error)} err The emitted error
+	* @private
+	*/
+	function receiverOnError(err) {
+		const websocket = this[kWebSocket];
+		if (websocket._socket[kWebSocket] !== void 0) {
+			websocket._socket.removeListener("data", socketOnData);
+			process.nextTick(resume, websocket._socket);
+			websocket.close(err[kStatusCode]);
+		}
+		if (!websocket._errorEmitted) {
+			websocket._errorEmitted = true;
+			websocket.emit("error", err);
+		}
+	}
+	/**
+	* The listener of the `Receiver` `'finish'` event.
+	*
+	* @private
+	*/
+	function receiverOnFinish() {
+		this[kWebSocket].emitClose();
+	}
+	/**
+	* The listener of the `Receiver` `'message'` event.
+	*
+	* @param {Buffer|ArrayBuffer|Buffer[])} data The message
+	* @param {Boolean} isBinary Specifies whether the message is binary or not
+	* @private
+	*/
+	function receiverOnMessage(data, isBinary) {
+		this[kWebSocket].emit("message", data, isBinary);
+	}
+	/**
+	* The listener of the `Receiver` `'ping'` event.
+	*
+	* @param {Buffer} data The data included in the ping frame
+	* @private
+	*/
+	function receiverOnPing(data) {
+		const websocket = this[kWebSocket];
+		if (websocket._autoPong) websocket.pong(data, !this._isServer, NOOP);
+		websocket.emit("ping", data);
+	}
+	/**
+	* The listener of the `Receiver` `'pong'` event.
+	*
+	* @param {Buffer} data The data included in the pong frame
+	* @private
+	*/
+	function receiverOnPong(data) {
+		this[kWebSocket].emit("pong", data);
+	}
+	/**
+	* Resume a readable stream
+	*
+	* @param {Readable} stream The readable stream
+	* @private
+	*/
+	function resume(stream) {
+		stream.resume();
+	}
+	/**
+	* The `Sender` error event handler.
+	*
+	* @param {Error} The error
+	* @private
+	*/
+	function senderOnError(err) {
+		const websocket = this[kWebSocket];
+		if (websocket.readyState === WebSocket.CLOSED) return;
+		if (websocket.readyState === WebSocket.OPEN) {
+			websocket._readyState = WebSocket.CLOSING;
+			setCloseTimer(websocket);
+		}
+		this._socket.end();
+		if (!websocket._errorEmitted) {
+			websocket._errorEmitted = true;
+			websocket.emit("error", err);
+		}
+	}
+	/**
+	* Set a timer to destroy the underlying raw socket of a WebSocket.
+	*
+	* @param {WebSocket} websocket The WebSocket instance
+	* @private
+	*/
+	function setCloseTimer(websocket) {
+		websocket._closeTimer = setTimeout(websocket._socket.destroy.bind(websocket._socket), websocket._closeTimeout);
+	}
+	/**
+	* The listener of the socket `'close'` event.
+	*
+	* @private
+	*/
+	function socketOnClose() {
+		const websocket = this[kWebSocket];
+		this.removeListener("close", socketOnClose);
+		this.removeListener("data", socketOnData);
+		this.removeListener("end", socketOnEnd);
+		websocket._readyState = WebSocket.CLOSING;
+		if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
+			const chunk = this.read(this._readableState.length);
+			websocket._receiver.write(chunk);
+		}
+		websocket._receiver.end();
+		this[kWebSocket] = void 0;
+		clearTimeout(websocket._closeTimer);
+		if (websocket._receiver._writableState.finished || websocket._receiver._writableState.errorEmitted) websocket.emitClose();
+		else {
+			websocket._receiver.on("error", receiverOnFinish);
+			websocket._receiver.on("finish", receiverOnFinish);
+		}
+	}
+	/**
+	* The listener of the socket `'data'` event.
+	*
+	* @param {Buffer} chunk A chunk of data
+	* @private
+	*/
+	function socketOnData(chunk) {
+		if (!this[kWebSocket]._receiver.write(chunk)) this.pause();
+	}
+	/**
+	* The listener of the socket `'end'` event.
+	*
+	* @private
+	*/
+	function socketOnEnd() {
+		const websocket = this[kWebSocket];
+		websocket._readyState = WebSocket.CLOSING;
+		websocket._receiver.end();
+		this.end();
+	}
+	/**
+	* The listener of the socket `'error'` event.
+	*
+	* @private
+	*/
+	function socketOnError() {
+		const websocket = this[kWebSocket];
+		this.removeListener("error", socketOnError);
+		this.on("error", NOOP);
+		if (websocket) {
+			websocket._readyState = WebSocket.CLOSING;
+			this.destroy();
+		}
+	}
+}));
+
+//#endregion
+//#region npm/ws/lib/stream.js
+var require_stream = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	require_websocket();
+	const { Duplex: Duplex$1 } = __require("stream");
+	/**
+	* Emits the `'close'` event on a stream.
+	*
+	* @param {Duplex} stream The stream.
+	* @private
+	*/
+	function emitClose(stream) {
+		stream.emit("close");
+	}
+	/**
+	* The listener of the `'end'` event.
+	*
+	* @private
+	*/
+	function duplexOnEnd() {
+		if (!this.destroyed && this._writableState.finished) this.destroy();
+	}
+	/**
+	* The listener of the `'error'` event.
+	*
+	* @param {Error} err The error
+	* @private
+	*/
+	function duplexOnError(err) {
+		this.removeListener("error", duplexOnError);
+		this.destroy();
+		if (this.listenerCount("error") === 0) this.emit("error", err);
+	}
+	/**
+	* Wraps a `WebSocket` in a duplex stream.
+	*
+	* @param {WebSocket} ws The `WebSocket` to wrap
+	* @param {Object} [options] The options for the `Duplex` constructor
+	* @return {Duplex} The duplex stream
+	* @public
+	*/
+	function createWebSocketStream(ws, options) {
+		let terminateOnDestroy = true;
+		const duplex = new Duplex$1({
+			...options,
+			autoDestroy: false,
+			emitClose: false,
+			objectMode: false,
+			writableObjectMode: false
+		});
+		ws.on("message", function message(msg, isBinary) {
+			const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+			if (!duplex.push(data)) ws.pause();
+		});
+		ws.once("error", function error(err) {
+			if (duplex.destroyed) return;
+			terminateOnDestroy = false;
+			duplex.destroy(err);
+		});
+		ws.once("close", function close() {
+			if (duplex.destroyed) return;
+			duplex.push(null);
+		});
+		duplex._destroy = function(err, callback) {
+			if (ws.readyState === ws.CLOSED) {
+				callback(err);
+				process.nextTick(emitClose, duplex);
+				return;
+			}
+			let called = false;
+			ws.once("error", function error(err) {
+				called = true;
+				callback(err);
+			});
+			ws.once("close", function close() {
+				if (!called) callback(err);
+				process.nextTick(emitClose, duplex);
+			});
+			if (terminateOnDestroy) ws.terminate();
+		};
+		duplex._final = function(callback) {
+			if (ws.readyState === ws.CONNECTING) {
+				ws.once("open", function open() {
+					duplex._final(callback);
+				});
+				return;
+			}
+			if (ws._socket === null) return;
+			if (ws._socket._writableState.finished) {
+				callback();
+				if (duplex._readableState.endEmitted) duplex.destroy();
+			} else {
+				ws._socket.once("finish", function finish() {
+					callback();
+				});
+				ws.close();
+			}
+		};
+		duplex._read = function() {
+			if (ws.isPaused) ws.resume();
+		};
+		duplex._write = function(chunk, encoding, callback) {
+			if (ws.readyState === ws.CONNECTING) {
+				ws.once("open", function open() {
+					duplex._write(chunk, encoding, callback);
+				});
+				return;
+			}
+			ws.send(chunk, callback);
+		};
+		duplex.on("end", duplexOnEnd);
+		duplex.on("error", duplexOnError);
+		return duplex;
+	}
+	module.exports = createWebSocketStream;
+}));
+
+//#endregion
+//#region npm/ws/lib/subprotocol.js
+var require_subprotocol = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const { tokenChars } = require_validation();
+	/**
+	* Parses the `Sec-WebSocket-Protocol` header into a set of subprotocol names.
+	*
+	* @param {String} header The field value of the header
+	* @return {Set} The subprotocol names
+	* @public
+	*/
+	function parse(header) {
+		const protocols = /* @__PURE__ */ new Set();
+		let start = -1;
+		let end = -1;
+		let i = 0;
+		for (; i < header.length; i++) {
+			const code = header.charCodeAt(i);
+			if (end === -1 && tokenChars[code] === 1) {
+				if (start === -1) start = i;
+			} else if (i !== 0 && (code === 32 || code === 9)) {
+				if (end === -1 && start !== -1) end = i;
+			} else if (code === 44) {
+				if (start === -1) throw new SyntaxError(`Unexpected character at index ${i}`);
+				if (end === -1) end = i;
+				const protocol = header.slice(start, end);
+				if (protocols.has(protocol)) throw new SyntaxError(`The "${protocol}" subprotocol is duplicated`);
+				protocols.add(protocol);
+				start = end = -1;
+			} else throw new SyntaxError(`Unexpected character at index ${i}`);
+		}
+		if (start === -1 || end !== -1) throw new SyntaxError("Unexpected end of input");
+		const protocol = header.slice(start, i);
+		if (protocols.has(protocol)) throw new SyntaxError(`The "${protocol}" subprotocol is duplicated`);
+		protocols.add(protocol);
+		return protocols;
+	}
+	module.exports = { parse };
+}));
+
+//#endregion
+//#region npm/ws/lib/websocket-server.js
+var require_websocket_server = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	const EventEmitter = __require("events");
+	const http = __require("http");
+	const { Duplex } = __require("stream");
+	const { createHash: createHash$1 } = __require("crypto");
+	const extension = require_extension();
+	const PerMessageDeflate = require_permessage_deflate();
+	const subprotocol = require_subprotocol();
+	const WebSocket = require_websocket();
+	const { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
+	const keyRegex = /^[+/0-9A-Za-z]{22}==$/;
+	const RUNNING = 0;
+	const CLOSING = 1;
+	const CLOSED = 2;
+	/**
+	* Class representing a WebSocket server.
+	*
+	* @extends EventEmitter
+	*/
+	var WebSocketServer = class extends EventEmitter {
+		/**
+		* Create a `WebSocketServer` instance.
+		*
+		* @param {Object} options Configuration options
+		* @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
+		*     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+		*     multiple times in the same tick
+		* @param {Boolean} [options.autoPong=true] Specifies whether or not to
+		*     automatically send a pong in response to a ping
+		* @param {Number} [options.backlog=511] The maximum length of the queue of
+		*     pending connections
+		* @param {Boolean} [options.clientTracking=true] Specifies whether or not to
+		*     track clients
+		* @param {Number} [options.closeTimeout=30000] Duration in milliseconds to
+		*     wait for the closing handshake to finish after `websocket.close()` is
+		*     called
+		* @param {Function} [options.handleProtocols] A hook to handle protocols
+		* @param {String} [options.host] The hostname where to bind the server
+		* @param {Number} [options.maxBufferedChunks=262144] The maximum number of
+		*     buffered data chunks
+		* @param {Number} [options.maxFragments=16384] The maximum number of message
+		*     fragments
+		* @param {Number} [options.maxPayload=104857600] The maximum allowed message
+		*     size
+		* @param {Boolean} [options.noServer=false] Enable no server mode
+		* @param {String} [options.path] Accept only connections matching this path
+		* @param {(Boolean|Object)} [options.perMessageDeflate=false] Enable/disable
+		*     permessage-deflate
+		* @param {Number} [options.port] The port where to bind the server
+		* @param {(http.Server|https.Server)} [options.server] A pre-created HTTP/S
+		*     server to use
+		* @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+		*     not to skip UTF-8 validation for text and close messages
+		* @param {Function} [options.verifyClient] A hook to reject connections
+		* @param {Function} [options.WebSocket=WebSocket] Specifies the `WebSocket`
+		*     class to use. It must be the `WebSocket` class or class that extends it
+		* @param {Function} [callback] A listener for the `listening` event
+		*/
+		constructor(options, callback) {
+			super();
+			options = {
+				allowSynchronousEvents: true,
+				autoPong: true,
+				maxBufferedChunks: 262144,
+				maxFragments: 16384,
+				maxPayload: 104857600,
+				skipUTF8Validation: false,
+				perMessageDeflate: false,
+				handleProtocols: null,
+				clientTracking: true,
+				closeTimeout: CLOSE_TIMEOUT,
+				verifyClient: null,
+				noServer: false,
+				backlog: null,
+				server: null,
+				host: null,
+				path: null,
+				port: null,
+				WebSocket,
+				...options
+			};
+			if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) throw new TypeError("One and only one of the \"port\", \"server\", or \"noServer\" options must be specified");
+			if (options.port != null) {
+				this._server = http.createServer((req, res) => {
+					const body = http.STATUS_CODES[426];
+					res.writeHead(426, {
+						"Content-Length": body.length,
+						"Content-Type": "text/plain"
+					});
+					res.end(body);
+				});
+				this._server.listen(options.port, options.host, options.backlog, callback);
+			} else if (options.server) this._server = options.server;
+			if (this._server) {
+				const emitConnection = this.emit.bind(this, "connection");
+				this._removeListeners = addListeners(this._server, {
+					listening: this.emit.bind(this, "listening"),
+					error: this.emit.bind(this, "error"),
+					upgrade: (req, socket, head) => {
+						this.handleUpgrade(req, socket, head, emitConnection);
+					}
+				});
+			}
+			if (options.perMessageDeflate === true) options.perMessageDeflate = {};
+			if (options.clientTracking) {
+				this.clients = /* @__PURE__ */ new Set();
+				this._shouldEmitClose = false;
+			}
+			this.options = options;
+			this._state = RUNNING;
+		}
+		/**
+		* Returns the bound address, the address family name, and port of the server
+		* as reported by the operating system if listening on an IP socket.
+		* If the server is listening on a pipe or UNIX domain socket, the name is
+		* returned as a string.
+		*
+		* @return {(Object|String|null)} The address of the server
+		* @public
+		*/
+		address() {
+			if (this.options.noServer) throw new Error("The server is operating in \"noServer\" mode");
+			if (!this._server) return null;
+			return this._server.address();
+		}
+		/**
+		* Stop the server from accepting new connections and emit the `'close'` event
+		* when all existing connections are closed.
+		*
+		* @param {Function} [cb] A one-time listener for the `'close'` event
+		* @public
+		*/
+		close(cb) {
+			if (this._state === CLOSED) {
+				if (cb) this.once("close", () => {
+					cb(/* @__PURE__ */ new Error("The server is not running"));
+				});
+				process.nextTick(emitClose, this);
+				return;
+			}
+			if (cb) this.once("close", cb);
+			if (this._state === CLOSING) return;
+			this._state = CLOSING;
+			if (this.options.noServer || this.options.server) {
+				if (this._server) {
+					this._removeListeners();
+					this._removeListeners = this._server = null;
+				}
+				if (this.clients) {
+					if (!this.clients.size) process.nextTick(emitClose, this);
+					else this._shouldEmitClose = true;
+				} else process.nextTick(emitClose, this);
+			} else {
+				const server = this._server;
+				this._removeListeners();
+				this._removeListeners = this._server = null;
+				server.close(() => {
+					emitClose(this);
+				});
+			}
+		}
+		/**
+		* See if a given request should be handled by this server instance.
+		*
+		* @param {http.IncomingMessage} req Request object to inspect
+		* @return {Boolean} `true` if the request is valid, else `false`
+		* @public
+		*/
+		shouldHandle(req) {
+			if (this.options.path) {
+				const index = req.url.indexOf("?");
+				if ((index !== -1 ? req.url.slice(0, index) : req.url) !== this.options.path) return false;
+			}
+			return true;
+		}
+		/**
+		* Handle a HTTP Upgrade request.
+		*
+		* @param {http.IncomingMessage} req The request object
+		* @param {Duplex} socket The network socket between the server and client
+		* @param {Buffer} head The first packet of the upgraded stream
+		* @param {Function} cb Callback
+		* @public
+		*/
+		handleUpgrade(req, socket, head, cb) {
+			socket.on("error", socketOnError);
+			const key = req.headers["sec-websocket-key"];
+			const upgrade = req.headers.upgrade;
+			const version = +req.headers["sec-websocket-version"];
+			if (req.method !== "GET") {
+				abortHandshakeOrEmitwsClientError(this, req, socket, 405, "Invalid HTTP method");
+				return;
+			}
+			if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
+				abortHandshakeOrEmitwsClientError(this, req, socket, 400, "Invalid Upgrade header");
+				return;
+			}
+			if (key === void 0 || !keyRegex.test(key)) {
+				abortHandshakeOrEmitwsClientError(this, req, socket, 400, "Missing or invalid Sec-WebSocket-Key header");
+				return;
+			}
+			if (version !== 13 && version !== 8) {
+				abortHandshakeOrEmitwsClientError(this, req, socket, 400, "Missing or invalid Sec-WebSocket-Version header", { "Sec-WebSocket-Version": "13, 8" });
+				return;
+			}
+			if (!this.shouldHandle(req)) {
+				abortHandshake(socket, 400);
+				return;
+			}
+			const secWebSocketProtocol = req.headers["sec-websocket-protocol"];
+			let protocols = /* @__PURE__ */ new Set();
+			if (secWebSocketProtocol !== void 0) try {
+				protocols = subprotocol.parse(secWebSocketProtocol);
+			} catch (err) {
+				abortHandshakeOrEmitwsClientError(this, req, socket, 400, "Invalid Sec-WebSocket-Protocol header");
+				return;
+			}
+			const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
+			const extensions = {};
+			if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
+				const perMessageDeflate = new PerMessageDeflate({
+					...this.options.perMessageDeflate,
+					isServer: true,
+					maxPayload: this.options.maxPayload
+				});
+				try {
+					const offers = extension.parse(secWebSocketExtensions);
+					if (offers[PerMessageDeflate.extensionName]) {
+						perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
+						extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+					}
+				} catch (err) {
+					abortHandshakeOrEmitwsClientError(this, req, socket, 400, "Invalid or unacceptable Sec-WebSocket-Extensions header");
+					return;
+				}
+			}
+			if (this.options.verifyClient) {
+				const info = {
+					origin: req.headers[`${version === 8 ? "sec-websocket-origin" : "origin"}`],
+					secure: !!(req.socket.authorized || req.socket.encrypted),
+					req
+				};
+				if (this.options.verifyClient.length === 2) {
+					this.options.verifyClient(info, (verified, code, message, headers) => {
+						if (!verified) return abortHandshake(socket, code || 401, message, headers);
+						this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
+					});
+					return;
+				}
+				if (!this.options.verifyClient(info)) return abortHandshake(socket, 401);
+			}
+			this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
+		}
+		/**
+		* Upgrade the connection to WebSocket.
+		*
+		* @param {Object} extensions The accepted extensions
+		* @param {String} key The value of the `Sec-WebSocket-Key` header
+		* @param {Set} protocols The subprotocols
+		* @param {http.IncomingMessage} req The request object
+		* @param {Duplex} socket The network socket between the server and client
+		* @param {Buffer} head The first packet of the upgraded stream
+		* @param {Function} cb Callback
+		* @throws {Error} If called more than once with the same socket
+		* @private
+		*/
+		completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
+			if (!socket.readable || !socket.writable) return socket.destroy();
+			if (socket[kWebSocket]) throw new Error("server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration");
+			if (this._state > RUNNING) return abortHandshake(socket, 503);
+			const headers = [
+				"HTTP/1.1 101 Switching Protocols",
+				"Upgrade: websocket",
+				"Connection: Upgrade",
+				`Sec-WebSocket-Accept: ${createHash$1("sha1").update(key + GUID).digest("base64")}`
+			];
+			const ws = new this.options.WebSocket(null, void 0, this.options);
+			if (protocols.size) {
+				const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
+				if (protocol) {
+					headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
+					ws._protocol = protocol;
+				}
+			}
+			if (extensions[PerMessageDeflate.extensionName]) {
+				const params = extensions[PerMessageDeflate.extensionName].params;
+				const value = extension.format({ [PerMessageDeflate.extensionName]: [params] });
+				headers.push(`Sec-WebSocket-Extensions: ${value}`);
+				ws._extensions = extensions;
+			}
+			this.emit("headers", headers, req);
+			socket.write(headers.concat("\r\n").join("\r\n"));
+			socket.removeListener("error", socketOnError);
+			ws.setSocket(socket, head, {
+				allowSynchronousEvents: this.options.allowSynchronousEvents,
+				maxBufferedChunks: this.options.maxBufferedChunks,
+				maxFragments: this.options.maxFragments,
+				maxPayload: this.options.maxPayload,
+				skipUTF8Validation: this.options.skipUTF8Validation
+			});
+			if (this.clients) {
+				this.clients.add(ws);
+				ws.on("close", () => {
+					this.clients.delete(ws);
+					if (this._shouldEmitClose && !this.clients.size) process.nextTick(emitClose, this);
+				});
+			}
+			cb(ws, req);
+		}
+	};
+	module.exports = WebSocketServer;
+	/**
+	* Add event listeners on an `EventEmitter` using a map of <event, listener>
+	* pairs.
+	*
+	* @param {EventEmitter} server The event emitter
+	* @param {Object.<String, Function>} map The listeners to add
+	* @return {Function} A function that will remove the added listeners when
+	*     called
+	* @private
+	*/
+	function addListeners(server, map) {
+		for (const event of Object.keys(map)) server.on(event, map[event]);
+		return function removeListeners() {
+			for (const event of Object.keys(map)) server.removeListener(event, map[event]);
+		};
+	}
+	/**
+	* Emit a `'close'` event on an `EventEmitter`.
+	*
+	* @param {EventEmitter} server The event emitter
+	* @private
+	*/
+	function emitClose(server) {
+		server._state = CLOSED;
+		server.emit("close");
+	}
+	/**
+	* Handle socket errors.
+	*
+	* @private
+	*/
+	function socketOnError() {
+		this.destroy();
+	}
+	/**
+	* Close the connection when preconditions are not fulfilled.
+	*
+	* @param {Duplex} socket The socket of the upgrade request
+	* @param {Number} code The HTTP response status code
+	* @param {String} [message] The HTTP response body
+	* @param {Object} [headers] Additional HTTP response headers
+	* @private
+	*/
+	function abortHandshake(socket, code, message, headers) {
+		message = message || http.STATUS_CODES[code];
+		headers = {
+			Connection: "close",
+			"Content-Type": "text/html",
+			"Content-Length": Buffer.byteLength(message),
+			...headers
+		};
+		socket.once("finish", socket.destroy);
+		socket.end(`HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r\n` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message);
+	}
+	/**
+	* Emit a `'wsClientError'` event on a `WebSocketServer` if there is at least
+	* one listener for it, otherwise call `abortHandshake()`.
+	*
+	* @param {WebSocketServer} server The WebSocket server
+	* @param {http.IncomingMessage} req The request object
+	* @param {Duplex} socket The socket of the upgrade request
+	* @param {Number} code The HTTP response status code
+	* @param {String} message The HTTP response body
+	* @param {Object} [headers] The HTTP response headers
+	* @private
+	*/
+	function abortHandshakeOrEmitwsClientError(server, req, socket, code, message, headers) {
+		if (server.listenerCount("wsClientError")) {
+			const err = new Error(message);
+			Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
+			server.emit("wsClientError", err, socket, req);
+		} else abortHandshake(socket, code, message, headers);
+	}
+}));
+
+//#endregion
+//#region npm/ws/wrapper.mjs
+var import_stream = /* @__PURE__ */ __toESM(require_stream(), 1);
+var import_extension = /* @__PURE__ */ __toESM(require_extension(), 1);
+var import_permessage_deflate = /* @__PURE__ */ __toESM(require_permessage_deflate(), 1);
+var import_receiver = /* @__PURE__ */ __toESM(require_receiver(), 1);
+var import_sender = /* @__PURE__ */ __toESM(require_sender(), 1);
+var import_subprotocol = /* @__PURE__ */ __toESM(require_subprotocol(), 1);
+var import_websocket = /* @__PURE__ */ __toESM(require_websocket(), 1);
+var import_websocket_server = /* @__PURE__ */ __toESM(require_websocket_server(), 1);
+
+//#endregion
+//#region packages/server/src/terminal/output-batcher.ts
+/** The most bytes of one frame. */
+const OUTPUT_FRAME_BYTES = 65536;
+/** The most bytes that may wait for the next ticks before the viewer counts as too slow. */
+const OUTPUT_MAX_PENDING_BYTES = 4194304;
+const immediate = (run) => {
+	const handle = setImmediate(run);
+	return () => {
+		clearImmediate(handle);
+	};
+};
+function bufferOf(chunk) {
+	return Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+}
+function positive(name, value) {
+	if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`createOutputBatcher: ${name} must be a positive integer, got ${String(value)}`);
+	return value;
+}
+function createOutputBatcher(options) {
+	const frameBytes = positive("frameBytes", options.frameBytes ?? 65536);
+	const maxPendingBytes = positive("maxPendingBytes", options.maxPendingBytes ?? 4194304);
+	const schedule = options.schedule ?? immediate;
+	const { send, congested, onHighWater } = options;
+	/** The chunks that wait, `queue[at]` first; `at` moves instead of shifting an array that may hold many small chunks. */
+	let queue = [];
+	let at = 0;
+	let pending = 0;
+	let cancel;
+	let closed = false;
+	function takeFrame() {
+		const parts = [];
+		let room = frameBytes;
+		while (room > 0 && at < queue.length) {
+			const chunk = queue[at];
+			if (chunk === void 0) break;
+			if (chunk.length <= room) {
+				parts.push(chunk);
+				room -= chunk.length;
+				at += 1;
+			} else {
+				parts.push(chunk.subarray(0, room));
+				queue[at] = chunk.subarray(room);
+				room = 0;
+			}
+		}
+		if (at > 1024 && at * 2 > queue.length) {
+			queue = queue.slice(at);
+			at = 0;
+		}
+		const frame = parts.length === 1 && parts[0] !== void 0 ? parts[0] : Buffer.concat(parts);
+		pending -= frame.length;
+		return frame;
+	}
+	function stop() {
+		closed = true;
+		cancel?.();
+		cancel = void 0;
+		queue = [];
+		at = 0;
+		pending = 0;
+	}
+	function highWater() {
+		if (closed) return;
+		stop();
+		onHighWater?.();
+	}
+	/** Sends one frame; false when nothing was sent (nothing waits, or the consumer is congested and the batcher stopped). */
+	function sendOne() {
+		if (closed || pending === 0) return false;
+		if (congested?.() === true) {
+			highWater();
+			return false;
+		}
+		send(takeFrame());
+		return true;
+	}
+	function tick() {
+		cancel = void 0;
+		sendOne();
+		if (!closed && pending > 0) cancel = schedule(tick);
+	}
+	return {
+		push(chunk) {
+			if (closed || chunk.byteLength === 0) return;
+			if (pending + chunk.byteLength > maxPendingBytes) {
+				highWater();
+				return;
+			}
+			queue.push(bufferOf(chunk));
+			pending += chunk.byteLength;
+			cancel ??= schedule(tick);
+		},
+		flush() {
+			if (closed || pending === 0) return;
+			cancel?.();
+			cancel = void 0;
+			while (sendOne());
+		},
+		close: stop,
+		get pendingBytes() {
+			return pending;
+		},
+		get closed() {
+			return closed;
+		}
+	};
+}
+
+//#endregion
+//#region packages/server/src/terminal/gateway.ts
+/** The limits of design 02 5.3; tests shorten the intervals and the water mark through `limits`. */
+const TERMINAL_SOCKET_LIMITS = {
+	/** Sockets of the instance and of one session; the 33rd and the 9th get `503 stream_limit` before the upgrade. */
+	maxClients: 32,
+	maxPerSession: 8,
+	/** The largest binary message (input); `ws` closes a longer one with 1009. One limit for the whole path. */
+	maxMessageBytes: TERMINAL_INPUT_MAX_BYTES,
+	/** The largest text frame; a longer one closes the socket with 1009. */
+	maxControlBytes: 256,
+	outputFrameBytes: OUTPUT_FRAME_BYTES,
+	replayChunkBytes: 65536,
+	/** A socket that holds more than this is too slow: 1013. */
+	highWaterBytes: 4194304,
+	pingIntervalMs: 3e4,
+	/** How long a close handshake may take before the socket is terminated. */
+	closeGraceMs: 1e3
+};
+/** The reason strings of a close frame: fixed tokens, never request data (design 02 5.4). */
+const TERMINAL_CLOSE_REASONS = {
+	shuttingDown: "shutting_down",
+	badMessage: "bad_message",
+	tooBig: "too_big",
+	slowConsumer: "slow_consumer",
+	internalError: "internal_error",
+	exited: "exited",
+	killed: "killed",
+	signedOut: "signed_out"
+};
+/** The text of a message of the client as bytes, whatever shape `ws` gave it. */
+function bytesOf(data) {
+	if (Array.isArray(data)) return Buffer.concat(data);
+	return data instanceof ArrayBuffer ? Buffer.from(data) : data;
+}
+/** The code of a `ws` protocol error (`WS_ERR_UNSUPPORTED_MESSAGE_LENGTH`, ...) or `unknown`: never the message, which may quote the peer. */
+function wsErrorCodeOf(error) {
+	const code = typeof error === "object" && error !== null ? Reflect.get(error, "code") : void 0;
+	return typeof code === "string" && /^WS_ERR_[A-Z_]{1,60}$/.test(code) ? code : "unknown";
+}
+/** An exit code as the schema wants it: a whole number or `null`. */
+function exitCodeOf(code) {
+	return typeof code === "number" && Number.isSafeInteger(code) ? code : null;
+}
+/** A signal as the schema wants it: 1 to 32 plain characters or `null`. */
+function signalOf(signal) {
+	return typeof signal === "string" && /^[A-Za-z0-9_]{1,32}$/.test(signal) ? signal : null;
+}
+function createTerminalGateway(options) {
+	const { access, logger } = options;
+	const limits = {
+		...TERMINAL_SOCKET_LIMITS,
+		...options.limits
+	};
+	const clients = /* @__PURE__ */ new Set();
+	const perSession = /* @__PURE__ */ new Map();
+	const idleWaiters = [];
+	let unsubscribeRevoked;
+	let pinger;
+	let draining = false;
+	const wss = new import_websocket_server.default({
+		noServer: true,
+		maxPayload: limits.maxMessageBytes,
+		perMessageDeflate: false,
+		clientTracking: false,
+		handleProtocols: (protocols) => protocols.has("caw.terminal.v1") ? TERMINAL_SUBPROTOCOL : false
+	});
+	function sendText(client, message) {
+		if (client.closing || client.ws.readyState !== import_websocket.default.OPEN) return;
+		client.ws.send(JSON.stringify(message));
+	}
+	function sendBinary(client, frame) {
+		if (client.closing || client.ws.readyState !== import_websocket.default.OPEN) return;
+		client.ws.send(frame, { binary: true });
+	}
+	/** Starts the close handshake with a code and a fixed reason; the socket is terminated when the peer does not answer in time. */
+	function close(client, code, reason) {
+		if (client.closing) return;
+		client.closing = true;
+		client.batcher.close();
+		client.attachment?.detach();
+		client.attachment = void 0;
+		try {
+			client.ws.close(code, reason);
+		} catch {
+			client.ws.terminate();
+			return;
+		}
+		client.grace = setTimeout(() => {
+			client.ws.terminate();
+		}, limits.closeGraceMs);
+		client.grace.unref();
+	}
+	function tick() {
+		access.verify(void 0);
+		for (const client of [...clients]) {
+			if (client.closing) continue;
+			if (!client.alive) {
+				logger.warn("terminal_socket_dead_peer", { count: clients.size });
+				client.ws.terminate();
+				continue;
+			}
+			client.alive = false;
+			try {
+				client.ws.ping();
+			} catch {
+				client.ws.terminate();
+			}
+		}
+	}
+	function revoked(credentialId) {
+		gateway.closeByCredential(credentialId, TERMINAL_CLOSE_CODES.signedOut, TERMINAL_CLOSE_REASONS.signedOut);
+	}
+	function register(client) {
+		clients.add(client);
+		perSession.set(client.name, (perSession.get(client.name) ?? 0) + 1);
+		unsubscribeRevoked ??= access.onRevoked(revoked);
+		if (pinger === void 0) {
+			pinger = setInterval(tick, limits.pingIntervalMs);
+			pinger.unref();
+		}
+	}
+	function unregister(client, code) {
+		if (!clients.delete(client)) return;
+		clearTimeout(client.grace);
+		client.grace = void 0;
+		client.closing = true;
+		client.batcher.close();
+		client.attachment?.detach();
+		client.attachment = void 0;
+		const left = (perSession.get(client.name) ?? 1) - 1;
+		if (left > 0) perSession.set(client.name, left);
+		else perSession.delete(client.name);
+		logger.info("terminal_socket_close", {
+			code,
+			count: clients.size
+		});
+		if (clients.size > 0) return;
+		unsubscribeRevoked?.();
+		unsubscribeRevoked = void 0;
+		clearInterval(pinger);
+		pinger = void 0;
+		for (const done of idleWaiters.splice(0)) done();
+	}
+	function onMessage(client, data, isBinary) {
+		if (client.closing) return;
+		const bytes = bytesOf(data);
+		try {
+			if (isBinary) {
+				if (bytes.length > 0) client.session.write(bytes);
+				return;
+			}
+			if (bytes.length > limits.maxControlBytes) {
+				close(client, TERMINAL_CLOSE_CODES.tooBig, TERMINAL_CLOSE_REASONS.tooBig);
+				return;
+			}
+			let parsed;
+			try {
+				parsed = JSON.parse(bytes.toString("utf8"));
+			} catch {
+				close(client, TERMINAL_CLOSE_CODES.badMessage, TERMINAL_CLOSE_REASONS.badMessage);
+				return;
+			}
+			const checked = TerminalClientMessageSchema.safeParse(parsed);
+			if (!checked.success) {
+				close(client, TERMINAL_CLOSE_CODES.badMessage, TERMINAL_CLOSE_REASONS.badMessage);
+				return;
+			}
+			const size = clampTerminalSize(checked.data.cols, checked.data.rows);
+			client.session.resize(size.cols, size.rows);
+		} catch {
+			logger.warn("terminal_socket_session_failed", { count: clients.size });
+			close(client, TERMINAL_CLOSE_CODES.internalError, TERMINAL_CLOSE_REASONS.internalError);
+		}
+	}
+	function start(ws, request) {
+		ws.binaryType = "nodebuffer";
+		const holder = {};
+		const allowance = { bytes: 0 };
+		const batcher = createOutputBatcher({
+			frameBytes: limits.outputFrameBytes,
+			maxPendingBytes: limits.highWaterBytes,
+			send: (frame) => {
+				if (holder.client !== void 0) sendBinary(holder.client, frame);
+			},
+			congested: () => ws.bufferedAmount > limits.highWaterBytes + allowance.bytes,
+			onHighWater: () => {
+				logger.warn("terminal_socket_slow_consumer", { count: clients.size });
+				if (holder.client !== void 0) close(holder.client, TERMINAL_CLOSE_CODES.slowConsumer, TERMINAL_CLOSE_REASONS.slowConsumer);
+			}
+		});
+		const client = {
+			ws,
+			name: request.name,
+			credentialId: request.credentialId,
+			session: request.session,
+			batcher,
+			attachment: void 0,
+			alive: true,
+			closing: false,
+			grace: void 0
+		};
+		holder.client = client;
+		register(client);
+		ws.on("message", (data, isBinary) => {
+			onMessage(client, data, isBinary);
+		});
+		ws.on("pong", () => {
+			client.alive = true;
+		});
+		ws.on("error", (error) => {
+			logger.info("terminal_socket_error", {
+				count: clients.size,
+				code: wsErrorCodeOf(error)
+			});
+		});
+		ws.on("close", (code) => {
+			unregister(client, code);
+		});
+		const viewer = {
+			onData: (chunk) => {
+				if (!client.closing) batcher.push(chunk);
+			},
+			onSize: (cols, rows) => {
+				if (client.closing) return;
+				batcher.flush();
+				const size = clampTerminalSize(cols, rows);
+				sendText(client, {
+					type: "size",
+					cols: size.cols,
+					rows: size.rows
+				});
+			},
+			onExit: (exit) => {
+				if (client.closing) return;
+				batcher.flush();
+				if (batcher.closed) return;
+				sendText(client, {
+					type: "exit",
+					code: exitCodeOf(exit.code),
+					signal: signalOf(exit.signal)
+				});
+				close(client, exit.killed ? TERMINAL_CLOSE_CODES.killed : TERMINAL_CLOSE_CODES.exited, exit.killed ? TERMINAL_CLOSE_REASONS.killed : TERMINAL_CLOSE_REASONS.exited);
+			}
+		};
+		let attachment;
+		try {
+			attachment = request.session.attach(viewer);
+		} catch {
+			logger.warn("terminal_socket_attach_failed", { count: clients.size });
+			close(client, TERMINAL_CLOSE_CODES.internalError, TERMINAL_CLOSE_REASONS.internalError);
+			return;
+		}
+		client.attachment = attachment;
+		const { replay } = attachment;
+		allowance.bytes = replay.byteLength;
+		const size = clampTerminalSize(attachment.cols, attachment.rows);
+		sendText(client, {
+			type: "ready",
+			v: 1,
+			cols: size.cols,
+			rows: size.rows,
+			replayBytes: replay.byteLength,
+			viewers: perSession.get(client.name) ?? 1
+		});
+		for (let at = 0; at < replay.byteLength; at += limits.replayChunkBytes) {
+			const length = Math.min(limits.replayChunkBytes, replay.byteLength - at);
+			sendBinary(client, Buffer.from(replay.buffer, replay.byteOffset + at, length));
+		}
+		sendText(client, { type: "live" });
+		logger.info("terminal_socket_open", { count: clients.size });
+	}
+	const gateway = {
+		get size() {
+			return clients.size;
+		},
+		admit(name) {
+			if (draining) throw new ApiError("shutting_down");
+			if (clients.size >= limits.maxClients || (perSession.get(name) ?? 0) >= limits.maxPerSession) throw new ApiError("stream_limit");
+		},
+		accept(request) {
+			wss.handleUpgrade(request.req, request.socket, request.head, (ws) => {
+				start(ws, request);
+			});
+		},
+		closeByCredential(credentialId, code, reason) {
+			let closed = 0;
+			for (const client of [...clients]) {
+				if (client.credentialId !== credentialId || client.closing) continue;
+				close(client, code, reason);
+				closed += 1;
+			}
+			if (closed > 0) logger.info("terminal_socket_revoked", { count: closed });
+			return closed;
+		},
+		closeAll(code, reason) {
+			draining = true;
+			for (const client of [...clients]) close(client, code, reason);
+			if (clients.size === 0) return Promise.resolve();
+			return new Promise((resolve) => {
+				idleWaiters.push(resolve);
+			});
+		}
+	};
+	return gateway;
+}
+
+//#endregion
+//#region packages/server/src/terminal/upgrade.ts
+function ignoreSocketError() {}
+function createUpgradeRegistry() {
+	const heads = /* @__PURE__ */ new WeakMap();
+	return {
+		take(req) {
+			const head = heads.get(req);
+			heads.delete(req);
+			return head;
+		},
+		listener(app) {
+			return (req, socket, head) => {
+				if (!(socket instanceof Socket)) {
+					socket.destroy();
+					return;
+				}
+				heads.set(req, head);
+				socket.on("error", ignoreSocketError);
+				req.push(null);
+				const res = new ServerResponse(req);
+				res.shouldKeepAlive = false;
+				res.assignSocket(socket);
+				res.once("finish", () => {
+					socket.destroySoon();
+				});
+				try {
+					app(req, res);
+				} catch {
+					socket.destroy();
+				}
+			};
+		}
+	};
+}
+
+//#endregion
+//#region packages/server/src/terminal/index.ts
+function createTerminalServer(options) {
+	const { ctx, ports, access, folders = null, logger, limits } = options;
+	const upgrades = createUpgradeRegistry();
+	const gateway = createTerminalGateway({
+		access,
+		logger,
+		...limits?.socket === void 0 ? {} : { limits: limits.socket }
+	});
+	let events;
+	const modules = [
+		createAuthRoutes({
+			access,
+			instanceId: ctx.instanceId
+		}),
+		createTerminalRoutes({
+			ports,
+			epoch: ctx.db.epoch,
+			now: () => ctx.clock.now()
+		}),
+		createTerminalEventsRoutes({
+			ports,
+			access,
+			epoch: ctx.db.epoch,
+			now: () => ctx.clock.now(),
+			...limits?.events === void 0 ? {} : { limits: limits.events },
+			onEvents: (created) => {
+				events = created;
+			}
+		}),
+		createTerminalSocketRoutes({
+			ports,
+			gateway,
+			upgrades
+		})
+	];
+	if (folders !== null) modules.push(createFolderRoutes({ folders }));
+	let closing = null;
+	return {
+		modules,
+		upgrades,
+		close() {
+			closing ??= (async () => {
+				events?.closeAll();
+				await gateway.closeAll(1001, TERMINAL_CLOSE_REASONS.shuttingDown);
+			})();
+			return closing;
+		}
+	};
+}
+
+//#endregion
 //#region packages/server/src/state-file.ts
 const STATE_FILE_NAME = "state.json";
 /** A state file larger than this is not a state file (the real one is under 1 KiB). */
@@ -72245,6 +83986,56 @@ async function ingestReplayOutcome(runtime, fromSegment, warn) {
 			error: "NOT_READY"
 		};
 	}
+}
+/**
+* Step 2, second half: a `kind: "user"` workspace must be the one in the reserved user root, so that a hand-edited task cannot
+* become a terminal host (ADR 0091 item 5). Any other place is `WORKSPACE_INVALID` (exit 17); a user instance whose home folder
+* cannot be found is `CONFIG_INVALID` (exit 10). A task is never looked at. The message names no path.
+*/
+function assertUserLocation(kind, root, env) {
+	if (kind !== "user" || isUserRoot(root, env)) return;
+	throw new McsError("WORKSPACE_INVALID", "this workspace is marked as the user instance but is not in the user folder: start it with `caw start`");
+}
+/**
+* The census of the user services; the empty one while there is no runtime and for a task instance (the services are late-bound).
+* In test mode the test hook FAKE_TERMINALS adds scripted sessions to the census of a user instance (`withFakeTerminals`).
+*/
+function censusOf(runtime, env = process.env) {
+	const census = runtime?.user?.census;
+	return census === void 0 ? EMPTY_CENSUS : withFakeTerminals(census, env);
+}
+/** A fresh access code of the user services, or `null` (the control op answers `UNSUPPORTED`): no runtime, a task, no minter. */
+function mintOutcome(runtime) {
+	return runtime?.user?.access?.mint() ?? null;
+}
+/** The answer of the control op `terminals`: `live` is the count of starting, live and lost sessions, whatever the list shows. */
+function terminalsOutcome(census, max) {
+	return {
+		live: census.count(),
+		max,
+		sessions: census.sessions(50)
+	};
+}
+/**
+* The control op `shutdown` (06 3.2, ADR 0093): the server decides (`decideShutdown`), so the answer cannot race with the count the
+* CLI read. A refusal changes nothing: no drain, no trigger. An allow decision has already started the drain of the census in the
+* same call, and the trigger follows in the same tick, so no terminal can start between the decision and the stop.
+*/
+function answerShutdown(w, reason, force) {
+	const decision = decideShutdown({
+		kind: w.kind,
+		reason,
+		force,
+		stopping: w.stopping(),
+		census: w.census()
+	});
+	if (!decision.allow) return {
+		ok: false,
+		error: "TERMINALS_LIVE"
+	};
+	if (!decision.drained) w.warn("terminal_drain_failed", { phase: "shutdown" });
+	w.trigger(reason);
+	return { ok: true };
 }
 /**
 * Wires the one debug line per spawned child (06 3.6 rule 9, CR-WP-16-3) to the instance logger: event `child_run` with the
@@ -72489,6 +84280,22 @@ async function quietly(action) {
 		await action();
 	} catch {}
 }
+/**
+* The access service with the control token of this boot also accepted as the Bearer of the `reader` routes (design 02 amendment
+* A1): the token the control channel checks is the one `run/control.token` holds, so the reader routes and the channel agree
+* whatever the service reads from disk. The comparison is over hashes, as the service's own.
+*/
+function withControlToken(service, token) {
+	const expected = createHash("sha256").update(token).digest();
+	return {
+		verify: (credential) => service.verify(credential),
+		verifyBearer: (header) => {
+			if (service.verifyBearer(header)) return true;
+			const given = typeof header === "string" && header.length <= 512 ? /^Bearer ([0-9a-f]{64})$/.exec(header)?.[1] : void 0;
+			return given !== void 0 && timingSafeEqual(createHash("sha256").update(given).digest(), expected);
+		}
+	};
+}
 async function bootServer(input) {
 	const clock = input.clock ?? systemClock;
 	const stderr = input.stderr ?? writeStderr;
@@ -72514,6 +84321,7 @@ async function bootServer(input) {
 	if (!parsed.ok) return fail(SERVER_EXIT_CODES.WORKSPACE_INVALID, parsed.message);
 	const args = parsed.args;
 	let ws;
+	let kind = "task";
 	try {
 		const dir = path.resolve(args.instanceDir);
 		ws = resolveWorkspace(path.dirname(dir), path.basename(dir));
@@ -72521,6 +84329,8 @@ async function bootServer(input) {
 		if (instance === null) throw new McsError("WORKSPACE_INVALID", "the folder has no instance.json: start it with `mcs start` (or `mcs init`) first");
 		await readTaskFile(ws);
 		if (instance.instanceId !== args.instanceId) throw new McsError("IDENTITY_MISMATCH", "the instance id of the command line is not the one of instance.json");
+		kind = instanceKindOf(instance);
+		assertUserLocation(kind, ws.root, input.env);
 	} catch (error) {
 		return failFrom(error);
 	}
@@ -72553,9 +84363,15 @@ async function bootServer(input) {
 				url: port === null ? null : `http://${BIND_HOST}:${String(port)}`,
 				startedAt: isoMsZ(startedAtMs)
 			}),
-			onShutdown: (reason) => {
-				gate.request(reason);
-			},
+			onShutdown: (reason, { force }) => answerShutdown({
+				kind,
+				census: () => censusOf(res.runtime, input.env),
+				stopping: () => currentPhase() === "stopping",
+				trigger: (r) => {
+					gate.request(r);
+				},
+				warn: lateLog("warn")
+			}, reason, force),
 			onBackup: async (dest) => {
 				const ctx = res.ctx;
 				if (ctx === void 0) return {
@@ -72580,6 +84396,10 @@ async function bootServer(input) {
 				}
 			},
 			onIngestReplay: (fromSegment) => ingestReplayOutcome(res.runtime, fromSegment, lateLog("warn")),
+			...kind === "user" ? {
+				onTerminals: () => terminalsOutcome(censusOf(res.runtime, input.env), res.ctx?.config.runtime.terminal.maxSessions ?? 0),
+				onAccess: () => mintOutcome(res.runtime)
+			} : {},
 			logger: {
 				debug: lateLog("debug"),
 				info: lateLog("info"),
@@ -72593,6 +84413,7 @@ async function bootServer(input) {
 	if (channel === null) return fail(SERVER_EXIT_CODES.INSTANCE_LOCKED, "the control channel of this instance is taken: another runtime is running");
 	const openChannel = channel;
 	const closeHttp = async () => {
+		await quietly(() => res.terminal?.close());
 		const http = res.http;
 		if (http === void 0) return;
 		const closed = new Promise((resolve) => {
@@ -72768,6 +84589,22 @@ async function bootServer(input) {
 			});
 		}
 		const task = await readLegacyTask(ctx.instanceDir);
+		let terminal = null;
+		let verifier = null;
+		const user = ctx.kind === "user" ? runtime.user : null;
+		if (ctx.kind === "user") {
+			const accessService = user?.accessService ?? null;
+			if (user === null || accessService === null) return await abort(fail(SERVER_EXIT_CODES.INTERNAL, "the user instance has no access service"));
+			verifier = createAccessVerifier(withControlToken(accessService, token), ctx.instanceId);
+			terminal = createTerminalServer({
+				ctx,
+				ports: user.terminal ?? null,
+				access: accessService,
+				folders: user.folders ?? null,
+				logger: ctx.logger
+			});
+			res.terminal = terminal;
+		}
 		const app = createApp({
 			ctx,
 			port: () => port ?? ctx.config.effectivePort,
@@ -72776,10 +84613,15 @@ async function bootServer(input) {
 			},
 			task,
 			runtime,
-			site
+			site,
+			...terminal === null || verifier === null ? {} : {
+				access: verifier,
+				extraModules: terminal.modules
+			}
 		});
 		const http = createHttpServer(app, ctx.config.runtime.server.requestTimeoutMs);
 		res.http = http;
+		if (terminal !== null) http.on("upgrade", terminal.upgrades.listener(app));
 		const bound = await bindFirstFreePort(http, ctx.config.effectivePort, ctx.config.runtime.server.portScan);
 		if (!bound.ok) return await abort(fail(SERVER_EXIT_CODES.PORT_EXHAUSTED, bound.message));
 		port = bound.port;
