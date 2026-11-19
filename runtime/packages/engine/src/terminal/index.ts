@@ -16,6 +16,7 @@ export * from './host.ts';
 export * from './limits.ts';
 export * from './manager.ts';
 export * from './names.ts';
+export * from './native-terminal.ts';
 export * from './native-targets.ts';
 export * from './node-pty-backend.ts';
 export * from './node-pty-loader.ts';

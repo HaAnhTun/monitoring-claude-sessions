@@ -434,6 +434,99 @@ describe('POST /terminal/resume', () => {
   });
 });
 
+describe('POST /terminal/open-native', () => {
+  it('asks the host with the id and the fork flag, and answers the way and the flag, nothing else', async () => {
+    const h = await start();
+    const reply = await post(h, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+    expect(reply.status).toBe(200);
+    expect(routes.terminalOpenNative.response.parse(JSON.parse(reply.body))).toEqual({
+      via: 'windows-terminal',
+      fork: false,
+    });
+    h.ports.nativeVia = 'console';
+    const copy = await post(h, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID, fork: true });
+    expect(JSON.parse(copy.body)).toEqual({ via: 'console', fork: true });
+    expect(h.ports.openedNative).toEqual([
+      { sessionId: FAKE_SESSION_ID, fork: false },
+      { sessionId: FAKE_SESSION_ID, fork: true },
+    ]);
+    // no terminal of the app is created
+    expect(h.ports.resumed).toEqual([]);
+    expect(h.ports.sessions.list()).toEqual([]);
+  });
+
+  it('turns every code a TerminalError carries into its code, with the details the host gave', async () => {
+    const h = await start();
+    for (const code of [
+      'session_not_found',
+      'resume_unavailable',
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+      'terminal_limit',
+    ] as const) {
+      h.ports.openNativeFailure = new FakeTerminalError(code, [{ path: 'sessionId', issue: 'live_elsewhere' }]);
+      const reply = await post(h, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+      expect(codeOf(reply), code).toBe(code);
+      const error = ErrorEnvelopeSchema.parse(JSON.parse(reply.body)).error;
+      expect(error.details, code).toEqual([{ path: 'sessionId', issue: 'live_elsewhere' }]);
+    }
+    for (const [thrown, code] of [
+      ['SESSION_LIMIT', 'terminal_limit'],
+      ['SPAWN_FAILED', 'terminal_unavailable'],
+      ['CLAUDE_NOT_FOUND', 'claude_not_found'],
+      ['FOLDER_NOT_FOUND', 'folder_invalid'],
+      ['UNSUPPORTED_OS', 'terminal_unavailable'],
+    ] as const) {
+      h.ports.openNativeFailure = new FakeTerminalError(thrown);
+      expect(codeOf(await post(h, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID })), thrown).toBe(code);
+    }
+  });
+
+  it('refuses a body with a path, a command, arguments, an environment, a bad id or a bad flag; the host is not asked', async () => {
+    const h = await start();
+    for (const body of [
+      { sessionId: FAKE_SESSION_ID, path: 'C:\\work' },
+      { sessionId: FAKE_SESSION_ID, folder: 'C:\\work' },
+      { sessionId: FAKE_SESSION_ID, command: 'cmd.exe' },
+      { sessionId: FAKE_SESSION_ID, args: ['x'] },
+      { sessionId: FAKE_SESSION_ID, env: { A: '1' } },
+      { sessionId: '../x' },
+      { sessionId: FAKE_SESSION_ID, fork: 'yes' },
+      {},
+    ]) {
+      const reply = await post(h, routes.terminalOpenNative.path, body);
+      expect(reply.status, JSON.stringify(body)).toBe(400);
+      expect(codeOf(reply)).toBe('validation_failed');
+    }
+    expect(h.ports.openedNative).toEqual([]);
+  });
+
+  it('answers terminal_unavailable when the host cannot run a terminal or there is no host', async () => {
+    const none = await start(null);
+    expect(codeOf(await post(none, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID }))).toBe(
+      'terminal_unavailable',
+    );
+    const ports = new FakeTerminalPorts();
+    ports.capabilitiesValue = unavailableCapabilities('addon_missing');
+    const off = await start(ports);
+    expect(codeOf(await post(off, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID }))).toBe(
+      'terminal_unavailable',
+    );
+    expect(ports.openedNative).toEqual([]);
+  });
+
+  it('never writes the id or a folder to the log, on success or on failure', async () => {
+    const h = await start();
+    await post(h, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+    h.ports.openNativeFailure = new FakeTerminalError('SPAWN_FAILED');
+    await post(h, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+    const text = h.logs.join('\n');
+    expect(text).not.toContain(FAKE_SESSION_ID);
+    expect(text).not.toContain('secret');
+  });
+});
+
 describe('the access chain', () => {
   it('TC-SEC-02: refuses all five routes without the cookie, with a wrong cookie and with another instance cookie', async () => {
     const h = await start();
@@ -446,6 +539,7 @@ describe('the access chain', () => {
         killPath('alpha-1'),
         routes.terminalPickFolder.path,
         routes.terminalResume.path,
+        routes.terminalOpenNative.path,
       ]) {
         expect(codeOf(await post(h, path, {}, cookie)), path).toBe('access_required');
       }
@@ -454,6 +548,7 @@ describe('the access chain', () => {
     expect(h.ports.sessions.killed).toEqual([]);
     expect(h.ports.fakePicker.calls).toBe(0);
     expect(h.ports.resumed).toEqual([]);
+    expect(h.ports.openedNative).toEqual([]);
   });
 
   it('refuses a write without the Origin of the page', async () => {
@@ -497,6 +592,7 @@ describe('the vocabulary', () => {
       ...routes.terminalKillSession.errors,
       ...routes.terminalPickFolder.errors,
       ...routes.terminalResume.errors,
+      ...routes.terminalOpenNative.errors,
     ]);
     for (const code of TERMINAL_ERROR_CODES) expect(raised.has(code), code).toBe(true);
   });

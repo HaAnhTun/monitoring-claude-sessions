@@ -58,6 +58,7 @@ sent. The contract rules (versioning, ids, times, pagination, errors) are in `do
 | [`terminalSocket`](#terminalsocket) | GET | `/api/v3/terminal/sessions/:name/socket` | session | WebSocket (subprotocol caw.terminal.v1) to one terminal: binary frames are the raw bytes in both directions, text frames are the protocol messages; a plain GET answers 426. |
 | [`terminalPickFolder`](#terminalpickfolder) | POST | `/api/v3/terminal/pick-folder` | session | Opens the folder dialog of the computer and answers the chosen folder, or null when the dialog was closed. |
 | [`terminalResume`](#terminalresume) | POST | `/api/v3/terminal/resume` | session | Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments. |
+| [`terminalOpenNative`](#terminalopennative) | POST | `/api/v3/terminal/open-native` | session | Opens a monitored session in a new window of the person's own terminal (claude --resume); the engine plans the folder and the arguments. |
 | [`explainCompletion`](#explaincompletion) | GET | `/api/v3/completion` | open | Whether an unattended run really finished: the outcome (completed, failed or not terminal), the lifecycle state and the evidence. Give exactly one of session (a session id), label (an exact, case-sensitive label, 1..200 characters) and attemptPart (0..512 characters; the empty part is allowed). A terminal outcome rests on observed evidence only. |
 
 ## Access
@@ -642,6 +643,18 @@ Resumes a monitored session in a new terminal (claude --resume), or a copy of it
 - Access: session
 - Body: `sessionId` (required), `fork` ([`api/terminalResume.body.schema.json`](../../schemas/api/terminalResume.body.schema.json))
 - Response: [`api/terminalResume.response.schema.json`](../../schemas/api/terminalResume.response.schema.json)
+- Specific errors: `session_not_found`, `resume_unavailable`, `folder_invalid`, `claude_not_found`, `terminal_unavailable`, `terminal_limit`
+
+## terminalOpenNative
+
+`POST /api/v3/terminal/open-native`
+
+Opens a monitored session in a new window of the person's own terminal (claude --resume); the engine plans the folder and the arguments.
+
+- Success: 200 `application/json`
+- Access: session
+- Body: `sessionId` (required), `fork` ([`api/terminalOpenNative.body.schema.json`](../../schemas/api/terminalOpenNative.body.schema.json))
+- Response: [`api/terminalOpenNative.response.schema.json`](../../schemas/api/terminalOpenNative.response.schema.json)
 - Specific errors: `session_not_found`, `resume_unavailable`, `folder_invalid`, `claude_not_found`, `terminal_unavailable`, `terminal_limit`
 
 ## explainCompletion

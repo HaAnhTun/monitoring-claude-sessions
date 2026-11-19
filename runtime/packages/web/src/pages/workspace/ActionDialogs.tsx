@@ -8,6 +8,7 @@ import { Link } from 'react-router';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { describeApiError } from '../../data/api-errors.ts';
 import {
+  useOpenNativeTerminal,
   useResumeEligibility,
   useResumeTerminalSession,
   useStartInFolder,
@@ -15,9 +16,11 @@ import {
 } from '../../data/hooks/useTerminalActions.ts';
 import { useT } from '../../i18n/context.ts';
 import type { MessageKey, TFunction } from '../../i18n/types.ts';
+import { useAnnounce } from '../../state/announcer.tsx';
 import type { LiveSession } from '../../lib/workspace-view.ts';
 
-type FailureKey = 'workspace.error.create' | 'workspace.error.stop' | 'workspace.error.resume';
+type FailureKey =
+  'workspace.error.create' | 'workspace.error.stop' | 'workspace.error.resume' | 'workspace.error.native';
 
 /** What a failed request says inside the dialog: the sentence of the action with the reason of the failure. */
 function failureText(t: TFunction, key: FailureKey, error: Error | null): string | null {
@@ -168,18 +171,29 @@ export interface ResumeDialogProps {
   /** The monitored session to resume; `null` keeps the dialog closed. */
   sessionId: string | null;
   onCancel: () => void;
-  onResumed: (session: LiveSession) => void;
+  /** The session of the terminal the app started (target `app`); a native window is not one, so it is not called for `native`. */
+  onResumed?: (session: LiveSession) => void;
+  /**
+   * Where the session runs: a new terminal of this app (default), or a window of the person's own terminal (CAW-145). The check,
+   * the refusals and the words about a session open elsewhere are the same; the title, the confirm buttons and the request differ.
+   * A native window closes the dialog and is announced; nothing navigates.
+   */
+  target?: 'app' | 'native';
 }
 
 /**
  * "Resume this session in a terminal?": asks the server first (`sessionResume`) and shows what it said: resume, resume a copy,
  * show the terminal that already runs it, or why it cannot be resumed.
  */
-export function ResumeDialog({ sessionId, onCancel, onResumed }: ResumeDialogProps) {
+export function ResumeDialog({ sessionId, onCancel, onResumed, target = 'app' }: ResumeDialogProps) {
   const t = useT();
+  const announce = useAnnounce();
+  const native = target === 'native';
   const eligibility = useResumeEligibility(sessionId);
   const resume = useResumeTerminalSession();
-  const { mutateAsync, reset, isPending, error } = resume;
+  const openNative = useOpenNativeTerminal();
+  const action = native ? openNative : resume;
+  const { reset, isPending, error } = action;
   const open = sessionId !== null;
   useEffect(() => {
     if (!open) reset();
@@ -192,16 +206,17 @@ export function ResumeDialog({ sessionId, onCancel, onResumed }: ResumeDialogPro
   const confirmLabel = ((): string | undefined => {
     if (!canConfirm) return undefined;
     if (isPending) return t('workspace.dialog.busy');
+    if (native) return fork ? t('workspace.dialog.native.fork') : t('workspace.dialog.native.confirm');
     return fork ? t('workspace.dialog.resume.fork') : t('workspace.dialog.resume.confirm');
   })();
+  const failureKey: FailureKey = native ? 'workspace.error.native' : 'workspace.error.resume';
   const failure =
-    failureText(t, 'workspace.error.resume', error) ??
-    (eligibility.isError ? failureText(t, 'workspace.error.resume', eligibility.error) : null);
+    failureText(t, failureKey, error) ?? (eligibility.isError ? failureText(t, failureKey, eligibility.error) : null);
 
   return (
     <ConfirmDialog
       open={open}
-      title={t('workspace.dialog.resume.title')}
+      title={native ? t('workspace.dialog.native.title') : t('workspace.dialog.resume.title')}
       {...(confirmLabel === undefined ? {} : { confirmLabel })}
       cancelLabel={t('workspace.dialog.cancel')}
       busy={isPending}
@@ -209,7 +224,17 @@ export function ResumeDialog({ sessionId, onCancel, onResumed }: ResumeDialogPro
       onCancel={onCancel}
       onConfirm={() => {
         if (sessionId === null || !canConfirm) return;
-        mutateAsync({ sessionId, fork }).then(onResumed, () => undefined);
+        if (native) {
+          openNative.mutateAsync({ sessionId, fork }).then(
+            () => {
+              announce(t('workspace.dialog.native.done'));
+              onCancel();
+            },
+            () => undefined,
+          );
+          return;
+        }
+        resume.mutateAsync({ sessionId, fork }).then(onResumed, () => undefined);
       }}
     >
       {answer === undefined || outcome === null ? (
@@ -219,7 +244,7 @@ export function ResumeDialog({ sessionId, onCancel, onResumed }: ResumeDialogPro
           </p>
         )
       ) : (
-        <ResumeAnswer answer={answer} outcome={outcome} onShowTerminal={onCancel} />
+        <ResumeAnswer answer={answer} outcome={outcome} native={native} onShowTerminal={onCancel} />
       )}
     </ConfirmDialog>
   );
@@ -228,11 +253,13 @@ export function ResumeDialog({ sessionId, onCancel, onResumed }: ResumeDialogPro
 interface ResumeAnswerProps {
   answer: ResumeEligibility;
   outcome: Outcome;
+  /** The window of the person's own terminal: the body says that, the rest of the words are the same. */
+  native: boolean;
   /** The person went to the terminal that runs the session: the dialog has nothing left to ask. */
   onShowTerminal: () => void;
 }
 
-function ResumeAnswer({ answer, outcome, onShowTerminal }: ResumeAnswerProps) {
+function ResumeAnswer({ answer, outcome, native, onShowTerminal }: ResumeAnswerProps) {
   const t = useT();
   const redirect =
     answer.redirectTo === null ? null : <p className="dialog__note muted">{t('workspace.dialog.resume.redirect')}</p>;
@@ -240,7 +267,7 @@ function ResumeAnswer({ answer, outcome, onShowTerminal }: ResumeAnswerProps) {
     case 'resume':
       return (
         <>
-          <p>{t('workspace.dialog.resume.body')}</p>
+          <p>{t(native ? 'workspace.dialog.native.body' : 'workspace.dialog.resume.body')}</p>
           {answer.folder === null ? null : <p className="dialog__path muted">{answer.folder.path}</p>}
           {redirect}
         </>

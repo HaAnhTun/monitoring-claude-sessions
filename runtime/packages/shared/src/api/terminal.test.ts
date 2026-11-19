@@ -16,6 +16,7 @@ import {
   FolderPathSchema,
   KillSessionResponseSchema,
   LogoutResponseSchema,
+  OpenNativeResponseSchema,
   PickFolderResponseSchema,
   ResumeBodySchema,
   ResumeResponseSchema,
@@ -345,8 +346,25 @@ describe('bodies and responses are strict objects (an extra key is validation_fa
     expect(ResumeResponseSchema.safeParse({ session, extra: 1 }).success).toBe(false);
   });
 
+  it('open-native takes the resume body and answers the way it opened and whether it is a copy', () => {
+    expect(OpenNativeResponseSchema.safeParse({ via: 'windows-terminal', fork: false }).success).toBe(true);
+    expect(OpenNativeResponseSchema.safeParse({ via: 'console', fork: true }).success).toBe(true);
+    expect(OpenNativeResponseSchema.safeParse({ via: 'wt', fork: true }).success).toBe(false);
+    expect(OpenNativeResponseSchema.safeParse({ via: 'console' }).success).toBe(false);
+    expect(OpenNativeResponseSchema.safeParse({ via: 'console', fork: false, path: `D:${BACKSLASH}x` }).success).toBe(
+      false,
+    );
+  });
+
+  it('the capabilities carry an optional nativeOpen flag', () => {
+    expect(TerminalCapabilitiesSchema.safeParse({ ...capabilities, nativeOpen: true }).success).toBe(true);
+    expect(TerminalCapabilitiesSchema.safeParse({ ...capabilities, nativeOpen: false }).success).toBe(true);
+    expect(TerminalCapabilitiesSchema.safeParse({ ...capabilities, nativeOpen: 'yes' }).success).toBe(false);
+  });
+
   it('every body and response converts to JSON Schema', () => {
     const schemas = [
+      OpenNativeResponseSchema,
       EmptyBodySchema,
       ExchangeBodySchema,
       ExchangeResponseSchema,

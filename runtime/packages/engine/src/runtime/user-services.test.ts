@@ -101,6 +101,7 @@ describe('UserServices: the members the terminal and the folder list add', () =>
         },
         picker: null,
         resume: () => Promise.reject(new Error('none')),
+        openNative: () => Promise.reject(new Error('none')),
         census: EMPTY_CENSUS,
         close: () => undefined,
       },

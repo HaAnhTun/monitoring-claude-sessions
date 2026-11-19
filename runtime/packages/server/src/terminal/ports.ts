@@ -8,7 +8,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 
-import type { TerminalCapabilities, TerminalSessionInfo } from '@mcs/shared';
+import type { OpenNativeResponse, TerminalCapabilities, TerminalSessionInfo } from '@mcs/shared';
 
 /** How a process ended: the exit code (or the signal) and whether the kill route ended it. */
 export interface TerminalExit {
@@ -76,6 +76,12 @@ export interface TerminalPorts {
   readonly picker: FolderPickerPort | null;
   /** Plans the folder and the arguments from the monitor's facts, links and spawns `claude --resume`; throws `TerminalError`. */
   resume(input: { readonly sessionId: string; readonly fork: boolean }): Promise<TerminalSessionInfo>;
+  /**
+   * Opens a window of the person's own terminal running `claude --resume` of a monitored session (CAW-145): the host plans the folder
+   * and the arguments like `resume`, starts the window and keeps no control of it. Answers the way it opened and whether it is a copy;
+   * throws `TerminalError` (`terminal_unavailable` where there is no such launcher).
+   */
+  openNative(input: { readonly sessionId: string; readonly fork: boolean }): Promise<OpenNativeResponse>;
 }
 
 /** What the gateway of the socket route needs to be handed (design 02 5.3; the implementation is the WS-SOCKET package). */

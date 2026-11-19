@@ -15,6 +15,7 @@ import type { LogFields, LogLevel, Logger } from '../log/logger.ts';
 import { hostPlatform } from '../platform/host.ts';
 import { FakePtyBackend } from '../terminal/fake-pty.ts';
 import type { FolderPickerPort } from '../terminal/folder-picker.ts';
+import type { NativeTerminal } from '../terminal/native-terminal.ts';
 import type { TerminalService } from '../terminal/manager.ts';
 import type { SweepResult } from '../terminal/types.ts';
 import { initWorkspace } from '../workspace/init.ts';
@@ -235,6 +236,28 @@ describe('what createUserServices builds', () => {
     // without the hook and off Windows there is no dialog; on Windows the real one is the default
     const plain = build(env, { env: {} }, true);
     expect(plain.terminal?.picker === null).toBe(hostPlatform !== 'win32');
+  });
+
+  it('CAW-145 hands the host the native launcher it is told to, and builds the real one by default', async () => {
+    const env = await makeEnv();
+    const open = vi.fn<NativeTerminal['open']>(() => Promise.resolve('console'));
+    const native: NativeTerminal = { capabilities: () => ({ available: true, via: 'console' }), open };
+    // with a launcher the host plans the resume first: the session is unknown to this empty monitor
+    const wired = build(env, { native });
+    await expect(wired.terminal?.openNative({ sessionId: ID, fork: false })).rejects.toMatchObject({
+      code: 'session_not_found',
+    });
+    expect(open).not.toHaveBeenCalled();
+    // without one there is nothing to open a window with
+    const none = build(env, { native: null });
+    await expect(none.terminal?.openNative({ sessionId: ID, fork: false })).rejects.toMatchObject({
+      code: 'terminal_unavailable',
+    });
+    expect(none.terminal?.capabilities()).not.toHaveProperty('nativeOpen');
+    // by default the launcher exists for the platform: the scripted environment holds no claude, so the terminal is unavailable
+    const plain = build(env, { terminal: { backend: new FakePtyBackend(), env: () => ({}), platform: 'win32' } });
+    expect(plain.terminal?.capabilities()).toMatchObject({ available: false });
+    expect(plain.terminal?.capabilities()).not.toHaveProperty('nativeOpen');
   });
 
   it('answers the capabilities of the terminal service it made (a scripted backend that is unsupported is unavailable)', async () => {

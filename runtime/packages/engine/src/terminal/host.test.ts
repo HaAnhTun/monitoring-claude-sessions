@@ -18,6 +18,7 @@ import {
   type TerminalHost,
 } from './host.ts';
 import { createTerminalService, type TerminalDeps, type TerminalService } from './manager.ts';
+import type { NativeTerminal, NativeVia } from './native-terminal.ts';
 import { KILL_TREE_WAIT_MS } from './session.ts';
 import type { UnsupportedReason } from './types.ts';
 
@@ -126,6 +127,8 @@ interface RigOptions {
   readonly files?: readonly string[];
   readonly folders?: readonly string[];
   readonly picker?: { pick: (signal: AbortSignal) => Promise<string | null> } | null;
+  /** The native launcher; `undefined` for a host without one. */
+  readonly native?: { available: boolean; via?: 'windows-terminal' | 'console' } | null;
 }
 
 function rig(o: RigOptions = {}) {
@@ -157,8 +160,25 @@ function rig(o: RigOptions = {}) {
   const planResume = vi.fn<(id: string, o?: { fork?: boolean }) => Promise<ResumePlan>>(() => Promise.resolve(plan()));
   const pick = vi.fn<(signal: AbortSignal) => Promise<string | null>>(() => Promise.resolve(null));
   const picker = o.picker === undefined ? { pick } : o.picker;
-  const host: TerminalHost = createTerminalHost({ service, folders: { planResume }, linker, picker, clock });
-  return { host, service, backend, linker, planResume, clock, deps, pick };
+  const nativeOpen = vi.fn<(input: { folder: string; sessionId: string; fork: boolean }) => Promise<NativeVia>>(() =>
+    Promise.resolve(o.native?.via ?? 'windows-terminal'),
+  );
+  const native: NativeTerminal | undefined =
+    o.native === undefined || o.native === null
+      ? undefined
+      : {
+          capabilities: () => ({ available: o.native?.available === true, via: o.native?.via ?? 'windows-terminal' }),
+          open: nativeOpen,
+        };
+  const host: TerminalHost = createTerminalHost({
+    service,
+    folders: { planResume },
+    linker,
+    picker,
+    clock,
+    ...(native === undefined ? {} : { native }),
+  });
+  return { host, service, backend, linker, planResume, clock, deps, pick, nativeOpen };
 }
 
 type Rig = ReturnType<typeof rig>;
@@ -493,6 +513,94 @@ describe('resume: the plan of the folder service, then a terminal', () => {
   });
 });
 
+describe('CAW-145 openNative: the plan of the folder service, then a window of the own terminal', () => {
+  it('plans first with the fork flag and opens the window in the planned folder with the planned id, never an input', async () => {
+    const r = rig({ native: { available: true } });
+    await expect(r.host.openNative({ sessionId: SESSION_ID, fork: false })).resolves.toEqual({
+      via: 'windows-terminal',
+      fork: false,
+    });
+    expect(r.planResume).toHaveBeenCalledWith(SESSION_ID, { fork: false });
+    expect(r.nativeOpen).toHaveBeenCalledWith({ folder: FOLDER, sessionId: SESSION_ID, fork: false });
+    // no terminal of the app is created: the window is not tracked
+    expect(r.backend.spawns).toHaveLength(0);
+    expect(r.linker.tracked).toHaveLength(0);
+  });
+
+  it('uses the folder and the id of the plan when they differ from the request', async () => {
+    const r = rig({ native: { available: true, via: 'console' } });
+    r.planResume.mockResolvedValueOnce(plan({ sessionId: 'f0f0f0f0-aaaa-bbbb-cccc-111122223333', folderPath: OTHER }));
+    await expect(r.host.openNative({ sessionId: SESSION_ID, fork: true })).resolves.toEqual({
+      via: 'console',
+      fork: true,
+    });
+    expect(r.nativeOpen).toHaveBeenCalledWith({
+      folder: OTHER,
+      sessionId: 'f0f0f0f0-aaaa-bbbb-cccc-111122223333',
+      fork: true,
+    });
+  });
+
+  it.each([
+    ['transcript_gone', false],
+    ['folder_missing', false],
+    ['folder_unknown', false],
+    ['live_in_terminal', false],
+    ['live_in_terminal', true],
+    ['live_elsewhere', false],
+    ['live_elsewhere', true],
+  ] as const)('refuses like resume: %s (fork %s) is resume_unavailable and opens nothing', async (code, fork) => {
+    const r = rig({ native: { available: true } });
+    r.planResume.mockRejectedValueOnce(new ResumeRefusal(code, code === 'live_in_terminal' ? 'proj-9' : null));
+    const error = await failure(r.host.openNative({ sessionId: SESSION_ID, fork }));
+    expect(error).toMatchObject({
+      name: 'TerminalError',
+      code: 'resume_unavailable',
+      details: [{ path: 'sessionId', issue: code }],
+    });
+    expect((error as Error).message).not.toContain('proj-9');
+    expect(r.nativeOpen).not.toHaveBeenCalled();
+  });
+
+  it('keeps session_not_found for a session the monitor does not know', async () => {
+    const r = rig({ native: { available: true } });
+    r.planResume.mockRejectedValueOnce(new ResumeRefusal('session_not_found'));
+    expect(await failure(r.host.openNative({ sessionId: SESSION_ID, fork: false }))).toMatchObject({
+      code: 'session_not_found',
+    });
+    expect(r.nativeOpen).not.toHaveBeenCalled();
+  });
+
+  it('is terminal_unavailable without a native launcher, and plans nothing', async () => {
+    const r = rig();
+    expect(await failure(r.host.openNative({ sessionId: SESSION_ID, fork: false }))).toMatchObject({
+      name: 'TerminalError',
+      code: 'terminal_unavailable',
+    });
+    expect(r.planResume).not.toHaveBeenCalled();
+    const off = rig({ native: { available: false } });
+    expect(await failure(off.host.openNative({ sessionId: SESSION_ID, fork: false }))).toMatchObject({
+      code: 'terminal_unavailable',
+    });
+  });
+
+  it.each([
+    ['CLAUDE_NOT_FOUND'],
+    ['FOLDER_INVALID'],
+    ['FOLDER_NOT_FOUND'],
+    ['ARGS_UNSAFE'],
+    ['SESSION_LIMIT'],
+    ['SPAWN_FAILED'],
+    ['UNSUPPORTED_OS'],
+  ] as const)('passes the engine failure %s through as a TerminalError (the server maps it)', async (code) => {
+    const r = rig({ native: { available: true } });
+    r.nativeOpen.mockRejectedValueOnce(new TerminalError(code));
+    const error = await failure(r.host.openNative({ sessionId: SESSION_ID, fork: false }));
+    expect(error).toBeInstanceOf(TerminalError);
+    expect((error as TerminalError).code).toBe(code);
+  });
+});
+
 describe('capabilities (the shared reasons)', () => {
   const FOUND = { found: true };
   const MISSING = { found: false };
@@ -527,6 +635,25 @@ describe('capabilities (the shared reasons)', () => {
     expect(
       capabilitiesOf({ supported: true, reason: null, claude: FOUND }, { folderPicker: false, maxSessions: 3 }),
     ).toEqual({ available: true, reason: null, folderPicker: false, resume: true, maxSessions: 3 });
+  });
+
+  it('CAW-145 nativeOpen is true only when the terminal is available and the native launcher says so', () => {
+    expect(rig({ native: { available: true } }).host.capabilities()).toMatchObject({
+      available: true,
+      nativeOpen: true,
+    });
+    expect(rig({ native: { available: false } }).host.capabilities()).not.toHaveProperty('nativeOpen');
+    expect(rig().host.capabilities()).not.toHaveProperty('nativeOpen');
+    expect(rig({ native: { available: true }, files: [] }).host.capabilities()).not.toHaveProperty('nativeOpen');
+    expect(
+      rig({ native: { available: true }, support: { supported: false, reason: 'native-missing' } }).host.capabilities(),
+    ).not.toHaveProperty('nativeOpen');
+    expect(
+      capabilitiesOf(
+        { supported: true, reason: null, claude: FOUND },
+        { folderPicker: true, maxSessions: 8, nativeOpen: true },
+      ),
+    ).toEqual({ available: true, reason: null, folderPicker: true, resume: true, maxSessions: 8, nativeOpen: true });
   });
 
   it('the host reads the service, so a scripted backend that is unsupported is unavailable', () => {

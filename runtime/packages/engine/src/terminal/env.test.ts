@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { HostPlatform } from '../platform/host.ts';
-import { buildTerminalEnv, envValue, type EnvSource } from './env.ts';
+import { buildNativeEnv, buildTerminalEnv, envValue, type EnvSource } from './env.ts';
 import { TERM_PROGRAM } from './limits.ts';
 
 const build = (source: EnvSource, platform: HostPlatform = 'win32', keep: readonly string[] = []) =>
@@ -210,5 +210,52 @@ describe('TC-UNIT-03 envValue', () => {
   it('elsewhere is exact', () => {
     expect(envValue({ Path: 'a' }, 'PATH', 'linux')).toBeUndefined();
     expect(envValue({ PATH: 'b' }, 'PATH', 'linux')).toBe('b');
+  });
+});
+
+describe('CAW-145 buildNativeEnv: the environment of a window of a native terminal', () => {
+  const native = (source: EnvSource, platform: HostPlatform = 'win32', keep: readonly string[] = []) =>
+    buildNativeEnv(source, { keep, platform });
+
+  it.each(['CLAUDE_CODE_ENTRYPOINT', 'CLAUDECODE', 'CLAUDE_SESSION_ID', 'MCS_HOOK_DISABLE'])('drops %s', (name) => {
+    expect(native({ [name]: '1', KEEP_ME: 'yes' })).not.toHaveProperty(name);
+    expect(native({ [name]: '1', KEEP_ME: 'yes' }, 'linux')).not.toHaveProperty(name);
+    expect(native({ [name.toLowerCase()]: '1' }, 'win32')).not.toHaveProperty(name.toLowerCase());
+    expect(native({ [name]: '1' }, 'win32', [name])).toHaveProperty(name, '1');
+  });
+
+  it('keeps NO_COLOR and FORCE_COLOR as the person set them, unlike the in-app terminal', () => {
+    const out = native({ NO_COLOR: '1', FORCE_COLOR: '3' });
+    expect(out['NO_COLOR']).toBe('1');
+    expect(out['FORCE_COLOR']).toBe('3');
+    expect(build({ NO_COLOR: '1', FORCE_COLOR: '3' })).not.toHaveProperty('NO_COLOR');
+  });
+
+  it('sets none of TERM, COLORTERM and TERM_PROGRAM: the terminal of the person sets its own', () => {
+    const out = native({ PATH: 'C:\bin', Path: 'x' });
+    for (const name of ['TERM', 'COLORTERM', 'TERM_PROGRAM']) expect(out, name).not.toHaveProperty(name);
+    expect(out['PATH']).toBe('C:\bin');
+  });
+
+  it('sets NoDefaultCurrentDirectoryInExePath over any value and keeps the rest of the environment', () => {
+    const out = native({ NoDefaultCurrentDirectoryInExePath: '0', PATH: 'C:\bin', OTHER: 'v', gone: undefined });
+    expect(out['NoDefaultCurrentDirectoryInExePath']).toBe('1');
+    expect(out['OTHER']).toBe('v');
+    expect(out).not.toHaveProperty('gone');
+    expect(Object.keys(out).filter((key) => key.toLowerCase() === 'nodefaultcurrentdirectoryinexepath')).toHaveLength(
+      1,
+    );
+  });
+
+  it('does not change the input and buildTerminalEnv keeps its own result', () => {
+    const source = { CLAUDECODE: '1', NO_COLOR: '1', TERM: 'dumb' };
+    native(source);
+    expect(source).toEqual({ CLAUDECODE: '1', NO_COLOR: '1', TERM: 'dumb' });
+    expect(build(source)).toEqual({
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      TERM_PROGRAM,
+      NoDefaultCurrentDirectoryInExePath: '1',
+    });
   });
 });

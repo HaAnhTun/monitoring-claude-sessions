@@ -1,6 +1,7 @@
 // "Resume in terminal" on the session page (design 04 6.5): the way from a monitored session to a terminal that runs it. It exists
 // only on the user instance, for a browser that holds the session cookie, on a system whose terminal can resume. When a terminal of
-// this app already runs the session, the same place says "Open its terminal" and links to it instead.
+// this app already runs the session, the same place says "Open its terminal" and links to it instead. Where the host can open a
+// window of the person's own terminal (`capabilities.nativeOpen`, CAW-145) a second button does that, with the same dialog.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 
@@ -31,6 +32,7 @@ function ResumeControl({ sessionId }: ResumeInTerminalButtonProps) {
   // This page has no events stream, so the list is refreshed at the slow rate: it only decides which of two labels to show.
   const terminals = useTerminalState({ eventsOpen: true });
   const [open, setOpen] = useState(false);
+  const [nativeOpen, setNativeOpen] = useState(false);
 
   const view = terminals.data;
   if (auth.data?.authenticated !== true || view === undefined) return null;
@@ -57,6 +59,25 @@ function ResumeControl({ sessionId }: ResumeInTerminalButtonProps) {
       >
         {t('detail.resume.action')}
       </Button>
+      {view.capabilities.nativeOpen === true ? (
+        <Button
+          icon="external"
+          onClick={() => {
+            setNativeOpen(true);
+          }}
+        >
+          {t('detail.resume.native')}
+        </Button>
+      ) : null}
+      {view.capabilities.nativeOpen === true ? (
+        <ResumeDialog
+          sessionId={nativeOpen ? sessionId : null}
+          target="native"
+          onCancel={() => {
+            setNativeOpen(false);
+          }}
+        />
+      ) : null}
       <ResumeDialog
         sessionId={open ? sessionId : null}
         onCancel={() => {

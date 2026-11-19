@@ -24,6 +24,7 @@ import { ApiError } from '../api-errors.ts';
 import { qk } from '../query-keys.ts';
 import {
   useCreateTerminalSession,
+  useOpenNativeTerminal,
   usePickFolder,
   useResumeEligibility,
   useResumeTerminalSession,
@@ -588,6 +589,61 @@ describe('useResumeTerminalSession', () => {
         });
       });
     }
+  });
+});
+
+describe('useOpenNativeTerminal', () => {
+  it('posts the session and the fork choice, answers the way, and changes no cached list', async () => {
+    const { api } = setup({ terminalOpenNative: () => ({ via: 'windows-terminal', fork: true }) });
+    const { result, queryClient } = renderHookWithProviders(() => useOpenNativeTerminal(), { api });
+    const before = makeTerminalState([makeTerminalSession(1)]);
+    queryClient.setQueryData(qk.terminalState(IID), before);
+    let answer: unknown;
+    await act(async () => {
+      answer = await result.current.mutateAsync({ sessionId: sessionId(3), fork: true });
+    });
+    expect(answer).toEqual({ via: 'windows-terminal', fork: true });
+    expect(api.callsTo('terminalOpenNative')[0]?.body).toEqual({ sessionId: sessionId(3), fork: true });
+    expect(api.callsTo('terminalOpenNative')[0]?.method).toBe('POST');
+    // no terminal of the app is created: the list is the one that was there, and nothing is asked again
+    expect(queryClient.getQueryData(qk.terminalState(IID))).toBe(before);
+    expect(api.callsTo('terminalState')).toHaveLength(0);
+    await act(async () => {
+      await result.current.mutateAsync({ sessionId: sessionId(3), fork: false });
+    });
+    expect(api.callsTo('terminalOpenNative')[1]?.body).toEqual({ sessionId: sessionId(3), fork: false });
+  });
+
+  it('lets each refusal reach the caller with its code, and never retries', async () => {
+    const { api } = setup({ terminalOpenNative: () => errorResponse('resume_unavailable') });
+    const { result } = renderHookWithProviders(() => useOpenNativeTerminal(), { api });
+    for (const code of [
+      'resume_unavailable',
+      'session_not_found',
+      'terminal_limit',
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+    ] as const) {
+      api.handlers.terminalOpenNative = () => errorResponse(code);
+      await act(async () => {
+        await expect(result.current.mutateAsync({ sessionId: sessionId(3), fork: false })).rejects.toMatchObject({
+          info: { code },
+        });
+      });
+    }
+    expect(api.callsTo('terminalOpenNative')).toHaveLength(6);
+  });
+
+  it('TC-UI-10 locks the page when the route answers access_required', async () => {
+    const { api } = setup({ terminalOpenNative: () => errorResponse('access_required') });
+    const { result, queryClient } = renderHookWithProviders(() => useOpenNativeTerminal(), { api });
+    await act(async () => {
+      await expect(result.current.mutateAsync({ sessionId: sessionId(3), fork: false })).rejects.toBeInstanceOf(
+        ApiError,
+      );
+    });
+    expect(queryClient.getQueryData(qk.authSession(IID))).toEqual({ authenticated: false });
   });
 });
 

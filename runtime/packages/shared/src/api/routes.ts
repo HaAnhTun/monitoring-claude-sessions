@@ -70,6 +70,7 @@ import {
   ExchangeResponseSchema,
   KillSessionResponseSchema,
   LogoutResponseSchema,
+  OpenNativeResponseSchema,
   PickFolderResponseSchema,
   ResumeBodySchema,
   ResumeResponseSchema,
@@ -922,6 +923,30 @@ export const routes = {
     access: 'session',
   }),
   // @wp-end CAW-09
+  // @wp-begin CAW-145
+  terminalOpenNative: defineRoute({
+    id: 'terminalOpenNative',
+    method: 'POST',
+    path: '/api/v3/terminal/open-native',
+    params: null,
+    query: null,
+    body: ResumeBodySchema,
+    response: OpenNativeResponseSchema,
+    successStatus: 200,
+    errors: [
+      'session_not_found',
+      'resume_unavailable',
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+      'terminal_limit',
+    ],
+    summary:
+      "Opens a monitored session in a new window of the person's own terminal (claude --resume); the engine plans the folder and the arguments.",
+    contentType: 'application/json',
+    access: 'session',
+  }),
+  // @wp-end CAW-145
   // @wp-begin WP-29
   explainCompletion: defineRoute({
     id: 'explainCompletion',
@@ -1000,6 +1025,7 @@ export const ACCESS_POLICY: Readonly<Record<RouteId, RouteAccess>> = {
   terminalSocket: 'session',
   terminalPickFolder: 'session',
   terminalResume: 'session',
+  terminalOpenNative: 'session',
   explainCompletion: 'open',
 };
 
@@ -1017,6 +1043,7 @@ export const WRITE_ROUTE_IDS: readonly RouteId[] = [
   'terminalKillSession',
   'terminalPickFolder',
   'terminalResume',
+  'terminalOpenNative',
 ];
 
 // ---- URL building --------------------------------------------------------------------------------------------------

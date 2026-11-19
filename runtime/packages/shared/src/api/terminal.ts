@@ -76,6 +76,8 @@ export const TerminalCapabilitiesSchema = z.strictObject({
   folderPicker: z.boolean(),
   resume: z.boolean(),
   maxSessions: CountSchema,
+  /** The host can open a monitored session in a window of the person's own terminal (CAW-145). Absent means false. */
+  nativeOpen: z.boolean().optional(),
 });
 export type TerminalCapabilities = z.infer<typeof TerminalCapabilitiesSchema>;
 
@@ -124,6 +126,18 @@ export const PickFolderResponseSchema = z.strictObject({ path: FolderPathSchema.
  */
 export const ResumeBodySchema = z.strictObject({ sessionId: SessionIdSchema, fork: z.boolean().optional() });
 export const ResumeResponseSchema = z.strictObject({ session: TerminalSessionInfoSchema });
+
+/** How the window of `POST /terminal/open-native` was started: Windows Terminal, or a plain console window. */
+export const NATIVE_OPEN_VIAS = ['windows-terminal', 'console'] as const;
+export const NativeOpenViaSchema = z.enum(NATIVE_OPEN_VIAS);
+export type NativeOpenVia = z.infer<typeof NativeOpenViaSchema>;
+
+/**
+ * `POST /terminal/open-native`: the body is `ResumeBodySchema` (no path, command or argument; the engine plans the folder). The
+ * answer says how the window was started and whether it resumes a copy. It names no folder, program or process.
+ */
+export const OpenNativeResponseSchema = z.strictObject({ via: NativeOpenViaSchema, fork: z.boolean() });
+export type OpenNativeResponse = z.infer<typeof OpenNativeResponseSchema>;
 
 // ---- the terminal size ---------------------------------------------------------------------------------------------------
 

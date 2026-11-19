@@ -95,6 +95,7 @@ describe('createTerminalServer: the routes', () => {
         'terminalSocket',
         'terminalPickFolder',
         'terminalResume',
+        'terminalOpenNative',
       ]),
     );
     expect(ids).not.toContain('listFolders');

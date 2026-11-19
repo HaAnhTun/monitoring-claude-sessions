@@ -288,6 +288,10 @@ export class FakeTerminalPorts implements TerminalPorts {
   hasPicker = true;
   readonly resumed: { readonly sessionId: string; readonly fork: boolean }[] = [];
   resumeFailure: Error | undefined;
+  /** The calls of `openNative` (CAW-145), what the answer says, and a failure for the next call. */
+  readonly openedNative: { readonly sessionId: string; readonly fork: boolean }[] = [];
+  openNativeFailure: Error | undefined;
+  nativeVia: 'windows-terminal' | 'console' = 'windows-terminal';
   nextResumed: TerminalSessionInfo | undefined;
   capabilityReads = 0;
 
@@ -312,6 +316,19 @@ export class FakeTerminalPorts implements TerminalPorts {
     this.nextResumed = undefined;
     this.sessions.add(new FakeSession(info));
     return Promise.resolve(info);
+  }
+
+  openNative(input: {
+    readonly sessionId: string;
+    readonly fork: boolean;
+  }): Promise<{ via: 'windows-terminal' | 'console'; fork: boolean }> {
+    this.openedNative.push({ sessionId: input.sessionId, fork: input.fork });
+    const failure = this.openNativeFailure;
+    if (failure !== undefined) {
+      this.openNativeFailure = undefined;
+      return Promise.reject(failure);
+    }
+    return Promise.resolve({ via: this.nativeVia, fork: input.fork });
   }
 
   /** Adds a live session (the feed and the state see it at once). */

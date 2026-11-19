@@ -7,6 +7,8 @@
 //     the same viewer is fed live (the single thread makes the hand-over lossless); size changes come from the service's change feed;
 //   - `create` takes the link after the service created the process (`linker.track`), and the `ended` change forgets it;
 //   - `resume` asks the folder service for the plan, then creates `claude --resume <id>` (`--fork-session` for a copy) and tracks it;
+//   - `openNative` plans the same way, then asks the native launcher (CAW-145) to open a window of the person's own terminal; no
+//     terminal of the application is created, so nothing is tracked or linked;
 //   - `capabilities` says what this host can do, with the shared reasons; `census` is what a stop must not drop.
 // The engine never imports the server: the types below mirror `server/src/terminal/ports.ts` member for member, and the host is
 // assignable to its `TerminalPorts` (the server adapts nothing but names). A failure that the server shows is an `Error` named
@@ -30,6 +32,7 @@ import type { TerminalCensus } from '../runtime/user-services.ts';
 import { TerminalError } from './errors.ts';
 import type { FolderPickerPort } from './folder-picker.ts';
 import type { TerminalService } from './manager.ts';
+import type { NativeTerminal, NativeVia } from './native-terminal.ts';
 import type {
   CreateSessionRequest,
   SessionInfo,
@@ -128,6 +131,12 @@ export interface TerminalHost {
   readonly picker: FolderPickerPort | null;
   /** Plans the folder and the arguments from the monitor's facts, creates `claude --resume`, tracks it. */
   resume(input: { readonly sessionId: string; readonly fork: boolean }): Promise<TerminalSessionInfo>;
+  /**
+   * Plans exactly like `resume` (the same refusals, the folder from the plan and never from the caller), then opens a window of the
+   * person's own terminal running `claude --resume`. Nothing of the application tracks that window. `terminal_unavailable` without a
+   * native launcher on this host.
+   */
+  openNative(input: { readonly sessionId: string; readonly fork: boolean }): Promise<{ via: NativeVia; fork: boolean }>;
   /** The count and the list of what a stop would drop, and the drain; the shutdown decision of the control channel reads it. */
   readonly census: TerminalCensus;
   /** Takes the host off the service and the linker. Idempotent. */
@@ -157,7 +166,7 @@ const UNAVAILABLE_REASON: Readonly<Record<NonNullable<TerminalStatus['reason']>,
  */
 export function capabilitiesOf(
   facts: CapabilityFacts,
-  o: { readonly folderPicker: boolean; readonly maxSessions: number },
+  o: { readonly folderPicker: boolean; readonly maxSessions: number; readonly nativeOpen?: boolean },
 ): TerminalCapabilities {
   const unavailable = (reason: TerminalUnavailableReason): TerminalCapabilities => ({
     available: false,
@@ -168,7 +177,15 @@ export function capabilitiesOf(
   });
   if (!facts.supported) return unavailable(facts.reason === null ? 'addon_missing' : UNAVAILABLE_REASON[facts.reason]);
   if (!facts.claude.found) return unavailable('claude_not_found');
-  return { available: true, reason: null, folderPicker: o.folderPicker, resume: true, maxSessions: o.maxSessions };
+  return {
+    available: true,
+    reason: null,
+    folderPicker: o.folderPicker,
+    resume: true,
+    maxSessions: o.maxSessions,
+    // absent means false: no fixture of a capabilities object needs the key
+    ...(o.nativeOpen === true ? { nativeOpen: true } : {}),
+  };
 }
 
 // ---- the host -------------------------------------------------------------------------------------------------------------------
@@ -178,6 +195,8 @@ export interface TerminalHostDeps {
   readonly folders: Pick<FolderService, 'planResume'>;
   readonly linker: Pick<TerminalLinker, 'track' | 'forget' | 'link' | 'onChange'>;
   readonly picker: FolderPickerPort | null;
+  /** The launcher of a window of the person's own terminal (CAW-145); none on a host that cannot open one. */
+  readonly native?: Pick<NativeTerminal, 'capabilities' | 'open'> | null;
   /** The spawn time given to the linker is read here, just before the service creates the process. */
   readonly clock: Clock;
 }
@@ -219,6 +238,7 @@ function isoOf(ms: number): string {
 
 export function createTerminalHost(deps: TerminalHostDeps): TerminalHost {
   const { service, linker, picker, clock } = deps;
+  const native = deps.native ?? null;
   /** The viewers of each live session, for the size changes. */
   const attached = new Map<string, Set<Attached>>();
   const listeners = new Set<() => void>();
@@ -388,13 +408,23 @@ export function createTerminalHost(deps: TerminalHostDeps): TerminalHost {
   return {
     capabilities: () => {
       const status = service.status();
-      return capabilitiesOf(status, { folderPicker: picker !== null, maxSessions: status.maxSessions });
+      return capabilitiesOf(status, {
+        folderPicker: picker !== null,
+        maxSessions: status.maxSessions,
+        nativeOpen: native?.capabilities().available === true,
+      });
     },
     sessions,
     picker,
     resume: async ({ sessionId, fork }) => {
       const plan = await planOf(sessionId, fork);
       return createTracked({ folder: plan.folderPath, resume: plan.sessionId, ...(fork ? { fork: true } : {}) });
+    },
+    openNative: async ({ sessionId, fork }) => {
+      if (native?.capabilities().available !== true) throw new TerminalApiError('terminal_unavailable');
+      const plan = await planOf(sessionId, fork);
+      const via = await native.open({ folder: plan.folderPath, sessionId: plan.sessionId, fork });
+      return { via, fork };
     },
     census,
     close: () => {

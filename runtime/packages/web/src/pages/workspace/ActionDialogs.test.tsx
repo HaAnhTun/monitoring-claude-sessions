@@ -16,6 +16,7 @@ import {
   sessionId,
 } from '../../test/fixtures/index.ts';
 import { msg } from '../../test/msg.ts';
+import { AnnouncerProvider } from '../../state/announcer.tsx';
 import { renderWithIntl } from '../../test/render.tsx';
 import { FolderPathDialog, NewSessionDialog, ResumeDialog, StopSessionDialog } from './ActionDialogs.tsx';
 
@@ -610,5 +611,135 @@ describe('the other dialogs in both languages', () => {
       ).toEqual([]);
       second.unmount();
     }
+  });
+});
+
+describe('ResumeDialog opening a window of the own terminal (CAW-145, target native)', () => {
+  const SID = sessionId(1);
+
+  function renderNative(
+    eligibility: ResumeEligibility | Response | (() => Promise<ResumeEligibility>),
+    handlers: FakeHandlers = {},
+  ) {
+    const api = fakeApi({
+      sessionResume: () => (typeof eligibility === 'function' ? eligibility() : eligibility),
+      terminalOpenNative: () => ({ via: 'windows-terminal', fork: false }),
+      ...handlers,
+    });
+    const props = { onCancel: vi.fn(), onResumed: vi.fn() };
+    const rendered = renderWithIntl(
+      <AnnouncerProvider>
+        <ResumeDialog sessionId={SID} target="native" {...props} />
+      </AnnouncerProvider>,
+      { api },
+    );
+    return { ...rendered, api, props };
+  }
+
+  it('checks first with the same words and offers only Cancel', async () => {
+    const gate = deferred<ResumeEligibility>();
+    renderNative(() => gate.promise);
+    const dialog = await screen.findByRole('dialog', { name: msg('workspace.dialog.native.title') });
+    expect(within(dialog).getByText(msg('workspace.dialog.resume.checking'))).toBeInTheDocument();
+    expect(buttonNames()).toEqual([msg('workspace.dialog.cancel')]);
+    await act(async () => {
+      gate.resolve(makeResumeEligibility(1));
+      await gate.promise;
+    });
+  });
+
+  it('says what it will do with the folder, and opens the window: one request, no session, the dialog closes and says so', async () => {
+    const user = userEvent.setup();
+    const { api, props } = renderNative(makeResumeEligibility(1));
+    expect(await screen.findByText(msg('workspace.dialog.native.body'))).toBeInTheDocument();
+    expect(screen.getByText('/fixture/projects/app-1')).toBeInTheDocument();
+    expect(buttonNames()).toEqual([msg('workspace.dialog.cancel'), msg('workspace.dialog.native.confirm')]);
+    await user.click(screen.getByRole('button', { name: msg('workspace.dialog.native.confirm') }));
+    await waitFor(() => {
+      expect(props.onCancel).toHaveBeenCalledTimes(1);
+    });
+    expect(api.callsTo('terminalOpenNative')).toHaveLength(1);
+    expect(api.callsTo('terminalOpenNative')[0]?.body).toEqual({ sessionId: SID, fork: false });
+    expect(api.callsTo('terminalResume')).toHaveLength(0);
+    // nothing is navigated to: no terminal of the app was created
+    expect(props.onResumed).not.toHaveBeenCalled();
+    expect(await screen.findByText(msg('workspace.dialog.native.done'))).toBeInTheDocument();
+  });
+
+  it('offers only a copy for a session open elsewhere, with the words of the resume dialog', async () => {
+    const user = userEvent.setup();
+    const { api } = renderNative(
+      makeResumeEligibility(1, { allowed: false, liveElsewhere: true, forkAllowed: true, reason: 'live_elsewhere' }),
+      { terminalOpenNative: () => ({ via: 'console', fork: true }) },
+    );
+    expect(await screen.findByText(msg('workspace.dialog.resume.elsewhere'))).toBeInTheDocument();
+    expect(buttonNames()).toEqual([msg('workspace.dialog.cancel'), msg('workspace.dialog.native.fork')]);
+    await user.click(screen.getByRole('button', { name: msg('workspace.dialog.native.fork') }));
+    await waitFor(() => {
+      expect(api.callsTo('terminalOpenNative')).toHaveLength(1);
+    });
+    expect(api.callsTo('terminalOpenNative')[0]?.body).toEqual({ sessionId: SID, fork: true });
+  });
+
+  it('shows the link to the terminal of this app that holds the session, and no confirm button', async () => {
+    const user = userEvent.setup();
+    const { api, props } = renderNative(
+      makeResumeEligibility(1, {
+        allowed: false,
+        forkAllowed: false,
+        reason: 'live_in_terminal',
+        liveTerminal: 'fixture-term-1',
+      }),
+    );
+    expect(await screen.findByText(msg('workspace.dialog.resume.inTerminal'))).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: msg('workspace.dialog.resume.show') });
+    expect(link).toHaveAttribute('href', '/?session=fixture-term-1');
+    expect(buttonNames()).toEqual([msg('workspace.dialog.cancel')]);
+    await user.click(link);
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+    expect(api.callsTo('terminalOpenNative')).toHaveLength(0);
+  });
+
+  it.each(['transcript_gone', 'folder_missing', 'folder_unknown'] as const)(
+    'refuses with the words of the reason %s and offers only Cancel',
+    async (why) => {
+      const { api } = renderNative(makeResumeEligibility(1, { allowed: false, forkAllowed: false, reason: why }));
+      expect(
+        await screen.findByText(
+          msg('workspace.dialog.resume.refused', { reason: msg(`workspace.resume.reason.${why}`) }),
+        ),
+      ).toBeInTheDocument();
+      expect(buttonNames()).toEqual([msg('workspace.dialog.cancel')]);
+      expect(api.callsTo('terminalOpenNative')).toHaveLength(0);
+    },
+  );
+
+  it('shows the failure with the sentence of this action and keeps the dialog open', async () => {
+    const user = userEvent.setup();
+    const { props } = renderNative(makeResumeEligibility(1), {
+      terminalOpenNative: () => errorResponse('claude_not_found'),
+    });
+    await user.click(await screen.findByRole('button', { name: msg('workspace.dialog.native.confirm') }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(msg('workspace.error.native', { detail: '' }).trim().slice(0, 20));
+    expect(alert.textContent).not.toContain(msg('workspace.error.resume', { detail: '' }).trim().slice(0, 20));
+    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('keeps the app target as it was: the default asks the resume route and shows the resume words', async () => {
+    const api = fakeApi({ sessionResume: () => makeResumeEligibility(1) });
+    renderWithIntl(<ResumeDialog sessionId={SID} onCancel={() => undefined} onResumed={() => undefined} />, { api });
+    expect(await screen.findByRole('dialog', { name: msg('workspace.dialog.resume.title') })).toBeInTheDocument();
+    expect(await screen.findByText(msg('workspace.dialog.resume.body'))).toBeInTheDocument();
+    expect(screen.queryByText(msg('workspace.dialog.native.body'))).toBeNull();
+  });
+
+  it('has no accessibility violation', async () => {
+    renderNative(makeResumeEligibility(1));
+    const dialog = await screen.findByRole('dialog', { name: msg('workspace.dialog.native.title') });
+    await screen.findByText(msg('workspace.dialog.native.body'));
+    const results = await axe.run(dialog);
+    expect(results.violations).toEqual([]);
   });
 });

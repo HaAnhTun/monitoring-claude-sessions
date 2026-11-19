@@ -23,11 +23,13 @@ import { createRegistrySnapshot, type RegistrySnapshot } from '../external/regis
 import { createFolderService, type FolderServiceDeps } from '../folders/service.ts';
 import { createTerminalLinker } from '../link/linker.ts';
 import type { ProcessTreePort } from '../link/types.ts';
+import { hostPlatform } from '../platform/host.ts';
 import { listDescendantPids, pidAlive } from '../platform/process.ts';
 import { createDefaultTerminalService, type DefaultTerminalOptions } from '../terminal/default.ts';
 import { createFolderPicker, type FolderPickerPort } from '../terminal/folder-picker.ts';
 import { createTerminalHost } from '../terminal/host.ts';
 import type { TerminalService } from '../terminal/manager.ts';
+import { createRealNativeTerminal, type NativeTerminal } from '../terminal/native-terminal.ts';
 import { assertNotLink } from '../workspace/fsio.ts';
 import { createAccessService } from './access-service.ts';
 import type { InstanceContext } from './context.ts';
@@ -58,6 +60,11 @@ export interface CreateUserServicesOptions {
   >;
   /** The folder dialog; `null` for none. Default: `createFolderPicker` (the Windows dialog, or the fake one under the test hook). */
   readonly picker?: FolderPickerPort | null;
+  /**
+   * The launcher of a window of the person's own terminal (CAW-145); `null` for none. Default: the real one for the platform of the
+   * terminal options, over the environment of `terminal.env`.
+   */
+  readonly native?: NativeTerminal | null;
   /** The environment the picker reads its test hook from. Default: `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Replaces pieces of the folder service (the DA memory, the file system). */
@@ -161,7 +168,17 @@ export function createUserServices(
     options.picker !== undefined
       ? options.picker
       : createFolderPicker(options.env === undefined ? {} : { env: options.env });
-  const host = createTerminalHost({ service: terminal, folders, linker, picker, clock: ctx.clock });
+  const native =
+    options.native !== undefined
+      ? options.native
+      : createRealNativeTerminal({
+          config: ctx.config.runtime.terminal,
+          logger: ctx.logger,
+          clock: ctx.clock,
+          platform: options.terminal?.platform ?? hostPlatform,
+          ...(options.terminal?.env === undefined ? {} : { env: options.terminal.env }),
+        });
+  const host = createTerminalHost({ service: terminal, folders, linker, picker, native, clock: ctx.clock });
   const access = createAccessService({
     clock: ctx.clock,
     controlToken: options.controlToken ?? controlTokenOf(path.join(ctx.instanceDir, 'run', 'control.token')),

@@ -1,5 +1,5 @@
 // The REST routes of the terminal (CAW-20, design 02 2.1 and 8): the state, the start and the kill of a session, the folder
-// dialog and the resume. A handler asks the terminal host (`TerminalPorts`) and nothing else; the server starts no process.
+// dialog, the resume and the open in the native terminal. A handler asks the terminal host (`TerminalPorts`) and nothing else; the server starts no process.
 //   - Usable ports: a host exists and says `capabilities().available`. Without them every route but the state answers
 //     `terminal_unavailable`, and the state says so (`available: false`, the reason, an empty list), so the page can show why.
 //   - Failures are the host's `TerminalError`: `mapError` turns each code into the code of the catalogue (and forwards its
@@ -32,7 +32,7 @@ const NO_HOST: TerminalCapabilities = {
   maxSessions: 0,
 };
 
-/** The module that mounts the five terminal routes; the access chain of `registerRoute` guards every one of them. */
+/** The module that mounts the six terminal routes; the access chain of `registerRoute` guards every one of them. */
 export function createTerminalRoutes(options: TerminalRoutesOptions): RouteModule {
   const { ports, epoch, now } = options;
 
@@ -73,6 +73,12 @@ export function createTerminalRoutes(options: TerminalRoutesOptions): RouteModul
     registerRoute(app, routes.terminalResume, async ({ body }) => {
       const session = await usable().resume({ sessionId: body.sessionId, fork: body.fork === true });
       return { session };
+    });
+
+    // CAW-145: a window of the person's own terminal. The body is the resume body (no folder, command or argument can be sent); the
+    // host plans the folder. No logging here, like the other handlers: the host logs the way and the copy flag only.
+    registerRoute(app, routes.terminalOpenNative, async ({ body }) => {
+      return usable().openNative({ sessionId: body.sessionId, fork: body.fork === true });
     });
   };
 }

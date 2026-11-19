@@ -1,8 +1,14 @@
 // What a person does with terminals (ADR 0099, design 04 4.2): start one, stop one, pick a folder, start in a folder by path,
-// resume a session and ask whether it can be resumed. Every write is a mutation that never retries; the cached terminal list is
+// resume a session, open it in the native terminal and ask whether it can be resumed. Every write is a mutation that never retries; the cached terminal list is
 // kept in step at once (a started session is added, a stopped one is removed) and then refreshed, so the sidebar does not wait for
 // the events channel. A request the session protects that answers `access_required` locks the page.
-import { routes, type ResumeEligibility, type TerminalSessionInfo, type TerminalState } from '@mcs/shared';
+import {
+  routes,
+  type OpenNativeResponse,
+  type ResumeEligibility,
+  type TerminalSessionInfo,
+  type TerminalState,
+} from '@mcs/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -240,6 +246,26 @@ export function useResumeTerminalSession() {
       refreshTerminalState(queryClient, iid);
       void queryClient.invalidateQueries({ queryKey: qk.resumeEligibility(iid, input.sessionId) });
     },
+  });
+}
+
+/**
+ * `POST /terminal/open-native`: a window of the person's own terminal running `claude --resume` (CAW-145), or a copy with `fork`.
+ * The app starts no terminal of its own and keeps no control of the window, so no cached list changes and nothing is refreshed.
+ */
+export function useOpenNativeTerminal() {
+  const { api, iid, queryClient } = useWriteEnv();
+  return useMutation<OpenNativeResponse, ApiError, { sessionId: string; fork: boolean }>({
+    mutationFn: ({ sessionId, fork }) =>
+      guarded(queryClient, iid, () =>
+        api.post(
+          'terminalOpenNative',
+          routes.terminalOpenNative.path,
+          { sessionId, fork },
+          routes.terminalOpenNative.response,
+          { timeoutMs: TERMINAL_WRITE_TIMEOUT_MS },
+        ),
+      ),
   });
 }
 

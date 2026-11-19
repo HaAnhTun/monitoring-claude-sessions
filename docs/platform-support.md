@@ -70,6 +70,17 @@ exist for POSIX and are unit-tested with an injected platform, so the Linux Dock
 listed in ADR 0083, decision 2: more prebuilt targets and pins, the execute bit of the helper, a process-group kill, start times from `/proc`, the
 registry enabled and the real-terminal tests un-gated.
 
+### Open in the native terminal (Windows only)
+
+The button "Open in Windows Terminal" (ADR 0136) starts a window of the person's own terminal that runs `claude --resume` of a monitored session in its folder.
+It needs no pseudo console, but it is offered only where the in-app terminal is available (the capability `nativeOpen`).
+
+| Host                                                                    | Result                                                                                   | Evidence                                                     |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Windows with Windows Terminal (`wt.exe` on the PATH or the Store alias) | a new tab of Windows Terminal, in the folder, `via` is `windows-terminal`                | probe N1 on Windows 11 with Windows Terminal 1.25 (ADR 0136) |
+| Windows without `wt.exe`                                                | a plain console window (`cmd.exe`), `via` is `console`                                   | probe N1 with `wt.exe` hidden from the PATH (ADR 0136)       |
+| Linux, macOS                                                            | not offered (`capabilities.nativeOpen` absent), the route answers `terminal_unavailable` | `native-terminal.test.ts`                                    |
+
 ## Defects the Docker runs found
 
 - `openSqlite` on a folder: Linux opens a folder read-only and fails only on the first read (`db_io`), Windows refuses it

@@ -159,6 +159,7 @@ describe('endpoints: names and routes', () => {
       terminalKillSession: 'terminalKillSession',
       terminalPickFolder: 'terminalPickFolder',
       terminalResume: 'terminalResume',
+      terminalOpenNative: 'terminalOpenNative',
       folders: 'listFolders',
       addFolder: 'addFolder',
       sessionResume: 'sessionResume',
@@ -172,7 +173,7 @@ describe('endpoints: names and routes', () => {
     }
   });
 
-  it('calls exactly the seven write routes of the UI with a POST and keeps the rest GET', () => {
+  it('calls exactly the eight write routes of the UI with a POST and keeps the rest GET', () => {
     const posts = ENDPOINT_NAMES.filter((name) => routes[ENDPOINT_ROUTE[name]].method === 'POST');
     expect([...posts].sort()).toEqual(
       [
@@ -182,6 +183,7 @@ describe('endpoints: names and routes', () => {
         'terminalKillSession',
         'terminalPickFolder',
         'terminalResume',
+        'terminalOpenNative',
         'addFolder',
       ].sort(),
     );

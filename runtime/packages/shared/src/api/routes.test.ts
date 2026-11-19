@@ -30,6 +30,7 @@ import {
   ExchangeResponseSchema,
   KillSessionResponseSchema,
   LogoutResponseSchema,
+  OpenNativeResponseSchema,
   PickFolderResponseSchema,
   ResumeBodySchema,
   ResumeResponseSchema,
@@ -266,6 +267,20 @@ const TABLE: [RouteId, string, string, string, ErrorCode[]][] = [
       'terminal_limit',
     ],
   ],
+  [
+    'terminalOpenNative',
+    'POST',
+    '/api/v3/terminal/open-native',
+    '',
+    [
+      'session_not_found',
+      'resume_unavailable',
+      'folder_invalid',
+      'claude_not_found',
+      'terminal_unavailable',
+      'terminal_limit',
+    ],
+  ],
 ];
 
 /** The routes of the projects area: every one of them needs the session cookie (design 03 7.2). */
@@ -280,6 +295,7 @@ const TERMINAL_ROUTE_IDS: readonly RouteId[] = [
   'terminalSocket',
   'terminalPickFolder',
   'terminalResume',
+  'terminalOpenNative',
 ];
 
 /** The write routes, spelled out here as the independent expectation of `WRITE_ROUTE_IDS` of the registry. */
@@ -293,6 +309,7 @@ const EXPECTED_WRITE_ROUTE_IDS: readonly string[] = [
   'terminalKillSession',
   'terminalPickFolder',
   'terminalResume',
+  'terminalOpenNative',
 ];
 
 /** Every open route (any local client that passes the guards): the monitoring reads, the nudge and the session probe. */
@@ -351,8 +368,8 @@ describe('route registry (03 6.1, 13)', () => {
     const all: readonly string[] = ROUTE_IDS;
     const own = all.filter((id) => id !== 'explainCompletion');
     expect([...own].sort()).toEqual(TABLE.map(([id]) => id).sort());
-    expect(own).toHaveLength(48);
-    expect(all).toHaveLength(all.includes('explainCompletion') ? 49 : 48);
+    expect(own).toHaveLength(49);
+    expect(all).toHaveLength(all.includes('explainCompletion') ? 50 : 49);
     expect(Object.keys(routes).sort()).toEqual([...ROUTE_IDS].sort());
   });
 
@@ -452,11 +469,12 @@ describe('route registry (03 6.1, 13)', () => {
     expect(listedBy('upgrade_required')).toEqual(['terminalSocket']);
     expect(listedBy('picker_busy')).toEqual(['terminalPickFolder']);
     expect(listedBy('terminal_not_found')).toEqual(['terminalKillSession', 'terminalSocket']);
-    expect(listedBy('terminal_limit')).toEqual(['terminalCreateSession', 'terminalResume']);
-    expect(listedBy('resume_unavailable')).toEqual(['terminalResume']);
-    expect(listedBy('claude_not_found')).toEqual(['terminalCreateSession', 'terminalResume']);
+    expect(listedBy('terminal_limit')).toEqual(['terminalCreateSession', 'terminalOpenNative', 'terminalResume']);
+    expect(listedBy('resume_unavailable')).toEqual(['terminalOpenNative', 'terminalResume']);
+    expect(listedBy('claude_not_found')).toEqual(['terminalCreateSession', 'terminalOpenNative', 'terminalResume']);
     expect(listedBy('terminal_unavailable')).toEqual([
       'terminalCreateSession',
+      'terminalOpenNative',
       'terminalPickFolder',
       'terminalResume',
       'terminalSocket',
@@ -524,7 +542,7 @@ describe('route metadata (02 2.1, A1)', () => {
       expect(routes[id].access, id).toBe(expected);
     }
     expect(ROUTE_IDS.filter((id) => routes[id].access === 'reader')).toHaveLength(9);
-    expect(ROUTE_IDS.filter((id) => routes[id].access === 'session')).toHaveLength(12);
+    expect(ROUTE_IDS.filter((id) => routes[id].access === 'session')).toHaveLength(13);
     expect(ROUTE_IDS.filter((id) => routes[id].access === 'ticket')).toEqual(['authExchange']);
   });
 
@@ -706,6 +724,7 @@ describe('access and terminal routes (CAW-09, design 02 2.1)', () => {
       'terminalKillSession',
       'terminalPickFolder',
       'terminalResume',
+      'terminalOpenNative',
     ] as const) {
       expect(routes[id].method, id).toBe('POST');
       expect(routes[id].body, id).not.toBeNull();
@@ -732,6 +751,8 @@ describe('access and terminal routes (CAW-09, design 02 2.1)', () => {
     expect(routes.terminalPickFolder.response).toBe(PickFolderResponseSchema);
     expect(routes.terminalResume.body).toBe(ResumeBodySchema);
     expect(routes.terminalResume.response).toBe(ResumeResponseSchema);
+    expect(routes.terminalOpenNative.body).toBe(ResumeBodySchema);
+    expect(routes.terminalOpenNative.response).toBe(OpenNativeResponseSchema);
   });
 
   it('the events feed is a server-sent stream and the socket is a websocket upgrade: neither has a response schema', () => {
@@ -760,7 +781,7 @@ describe('access and terminal routes (CAW-09, design 02 2.1)', () => {
     expect(body.safeParse({ sessionId: SID, fork: true }).success).toBe(true);
     for (const key of ['command', 'args', 'env', 'cwd'])
       expect(body.safeParse({ sessionId: SID, [key]: 'x' }).success).toBe(false);
-    for (const id of ['terminalCreateSession', 'terminalResume'] as const) {
+    for (const id of ['terminalCreateSession', 'terminalResume', 'terminalOpenNative'] as const) {
       const keys = Object.keys(routes[id].body.shape);
       for (const forbidden of ['command', 'args', 'env', 'cmd', 'argv']) expect(keys, id).not.toContain(forbidden);
     }
@@ -776,6 +797,7 @@ describe('access and terminal routes (CAW-09, design 02 2.1)', () => {
     expect(routes.terminalPickFolder.errors).toEqual(['picker_busy', 'terminal_unavailable']);
     expect(routes.terminalResume.errors).toContain('resume_unavailable');
     expect(routes.terminalResume.errors).toContain('session_not_found');
+    expect(routes.terminalOpenNative.errors).toEqual(routes.terminalResume.errors);
   });
 
   it('every route has a one-sentence summary that says what it does', () => {

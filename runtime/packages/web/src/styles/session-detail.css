@@ -82,6 +82,11 @@
 }
 .session-header > .session-header__resume {
   flex: none;
+  /* Resume in terminal and, where the host can, Open in Windows Terminal (CAW-145) */
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
 }
 .session-header > :not(.session-header__title, .session-header__state, .copy-btn, .session-header__resume) {
   flex: 1 1 100%;

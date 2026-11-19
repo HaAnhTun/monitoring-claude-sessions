@@ -321,6 +321,10 @@
 .workspace-recent__row .btn {
   margin-inline-start: auto;
 }
+/* the quiet native-terminal button (CAW-145) sits right after Resume, which already takes the free space */
+.workspace-recent__row .btn + .btn {
+  margin-inline-start: 0;
+}
 .workspace-recent__all {
   display: inline-block;
   padding: var(--sp-1) var(--sp-3);

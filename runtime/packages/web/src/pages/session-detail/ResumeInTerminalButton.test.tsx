@@ -162,3 +162,76 @@ describe('ResumeInTerminalButton', () => {
     }
   });
 });
+
+describe('ResumeInTerminalButton: open in the native terminal (CAW-145)', () => {
+  const nativeLabel = (): string => msg('detail.resume.native');
+  const withNative = makeTerminalState([], { capabilities: makeTerminalCapabilities({ nativeOpen: true }) });
+
+  it('shows a second button only when the capabilities say nativeOpen', async () => {
+    setup({ state: withNative });
+    expect(await screen.findByRole('button', { name: nativeLabel() })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: resumeLabel() })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['absent', makeTerminalState()],
+    ['false', makeTerminalState([], { capabilities: makeTerminalCapabilities({ nativeOpen: false }) })],
+  ])('shows no native button when nativeOpen is %s', async (_name, state) => {
+    setup({ state });
+    await screen.findByRole('button', { name: resumeLabel() });
+    expect(screen.queryByRole('button', { name: nativeLabel() })).toBeNull();
+  });
+
+  it('shows nothing of it on a task instance', async () => {
+    setup({ kind: 'task', state: withNative });
+    await Promise.resolve();
+    expect(screen.queryByRole('button', { name: nativeLabel() })).toBeNull();
+  });
+
+  it('shows the link to the terminal of the app, and no native button, when the app already runs the session', async () => {
+    const state = makeTerminalState([makeLinkedTerminalSession(1)], {
+      capabilities: makeTerminalCapabilities({ nativeOpen: true }),
+    });
+    setup({ state });
+    await screen.findByRole('link', { name: msg('detail.resume.open') });
+    expect(screen.queryByRole('button', { name: nativeLabel() })).toBeNull();
+  });
+
+  it('opens the dialog of the native target, opens the window and stays on the page', async () => {
+    const user = userEvent.setup();
+    const { api } = setup({
+      state: withNative,
+      handlers: { terminalOpenNative: () => ({ via: 'windows-terminal', fork: false }) },
+    });
+    const button = await screen.findByRole('button', { name: nativeLabel() });
+    await user.click(button);
+    expect(await screen.findByRole('dialog', { name: msg('workspace.dialog.native.title') })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: msg('workspace.dialog.native.confirm') }));
+    await waitFor(() => {
+      expect(api.callsTo('terminalOpenNative')).toHaveLength(1);
+    });
+    expect(api.callsTo('terminalOpenNative')[0]?.body).toEqual({ sessionId: SID, fork: false });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(screen.getByTestId('where')).toHaveTextContent('/');
+    expect(screen.getByTestId('where')).not.toHaveTextContent('session=');
+    expect(api.callsTo('terminalResume')).toHaveLength(0);
+    expect(button).toHaveFocus();
+  });
+
+  it('has no axe violation with the two buttons and the dialog open (en and vi)', async () => {
+    for (const locale of ['en', 'vi'] as const) {
+      const user = userEvent.setup();
+      const rendered = setup({ locale, state: withNative });
+      await user.click(await screen.findByRole('button', { name: msg('detail.resume.native', undefined, locale) }));
+      await screen.findByRole('dialog');
+      const results = await axe.run(rendered.container, { rules: { 'color-contrast': { enabled: false } } });
+      expect(
+        results.violations.map((violation) => violation.id),
+        locale,
+      ).toEqual([]);
+      rendered.unmount();
+    }
+  });
+});

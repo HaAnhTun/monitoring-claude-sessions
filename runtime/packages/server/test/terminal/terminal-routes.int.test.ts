@@ -62,6 +62,81 @@ function post(s: Signed, path: string, body: unknown = {}, cookie: string | null
 
 const killPath = (name: string): string => routes.terminalKillSession.path.replace(':name', name);
 
+describe('POST /terminal/open-native with a signed-in page', () => {
+  it('answers 200 with the way and the flag only, parses with the route schema, and creates no terminal', async () => {
+    const s = await signedIn();
+    const reply = await post(s, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID, fork: true });
+    expect(reply.status).toBe(200);
+    expect(reply.headers['cache-control']).toBe('no-store');
+    expect(routes.terminalOpenNative.response.parse(JSON.parse(reply.body))).toEqual({
+      via: 'windows-terminal',
+      fork: true,
+    });
+    expect(Object.keys(routes.terminalOpenNative.response.parse(JSON.parse(reply.body))).sort()).toEqual([
+      'fork',
+      'via',
+    ]);
+    expect(reply.body).not.toMatch(/[A-Za-z]:\\/);
+    expect(s.ports.openedNative).toEqual([{ sessionId: FAKE_SESSION_ID, fork: true }]);
+    expect(s.ports.resumed).toEqual([]);
+    expect(s.ports.sessions.list()).toEqual([]);
+  });
+
+  it('is 400 validation_failed for a path, a command, arguments, an environment and a bad id', async () => {
+    const s = await signedIn();
+    for (const body of [
+      { sessionId: FAKE_SESSION_ID, path: FOLDER },
+      { sessionId: FAKE_SESSION_ID, command: 'cmd.exe /c calc' },
+      { sessionId: FAKE_SESSION_ID, args: ['--dangerously-skip-permissions'] },
+      { sessionId: FAKE_SESSION_ID, env: { NODE_OPTIONS: '--require x' } },
+      { sessionId: 'not-a-uuid' },
+      { sessionId: `${FAKE_SESSION_ID}/..` },
+    ]) {
+      const reply = await post(s, routes.terminalOpenNative.path, body);
+      expect(reply.status, JSON.stringify(body)).toBe(400);
+      expect(codeOf(reply), JSON.stringify(body)).toBe('validation_failed');
+    }
+    expect(s.ports.openedNative).toEqual([]);
+  });
+
+  it('is 401 without the cookie, 403 without X-MCS-Request, 403 with a foreign Origin or none; the host is not asked', async () => {
+    const s = await signedIn();
+    const body = JSON.stringify({ sessionId: FAKE_SESSION_ID });
+    const noCookie = await post(s, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID }, null);
+    expect(noCookie.status).toBe(401);
+    expect(codeOf(noCookie)).toBe('access_required');
+    const noHeader = await httpRequest(s.app.port, routes.terminalOpenNative.path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: s.cookie },
+      origin: pageOrigin(s.app.port),
+      body,
+    });
+    expect(noHeader.status).toBe(403);
+    expect(codeOf(noHeader)).toBe('csrf_rejected');
+    for (const origin of [undefined, 'http://evil.example', 'null', 'http://127.0.0.1:1']) {
+      const reply = await httpRequest(s.app.port, routes.terminalOpenNative.path, {
+        method: 'POST',
+        headers: writeHeaders(s.cookie),
+        ...(origin === undefined ? {} : { origin }),
+        body,
+      });
+      expect(reply.status, String(origin)).toBe(403);
+      expect(codeOf(reply), String(origin)).toBe('origin_not_allowed');
+    }
+    expect(s.ports.openedNative).toEqual([]);
+  });
+
+  it('is 503 terminal_unavailable when the host says it cannot run a terminal', async () => {
+    const ports = new FakeTerminalPorts();
+    ports.capabilitiesValue = unavailableCapabilities('addon_missing');
+    const s = await signedIn(ports);
+    const reply = await post(s, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+    expect(reply.status).toBe(503);
+    expect(codeOf(reply)).toBe('terminal_unavailable');
+    expect(ports.openedNative).toEqual([]);
+  });
+});
+
 describe('the five routes with a signed-in page', () => {
   it('state, create, state, kill, state: each response fits its schema and the list follows', async () => {
     const s = await signedIn();
@@ -114,6 +189,8 @@ describe('the five routes with a signed-in page', () => {
       ['GET', killPath('demo-1'), 'POST'],
       ['GET', routes.terminalPickFolder.path, 'POST'],
       ['GET', routes.terminalResume.path, 'POST'],
+      ['GET', routes.terminalOpenNative.path, 'POST'],
+      ['DELETE', routes.terminalOpenNative.path, 'POST'],
       ['POST', routes.terminalState.path, 'GET, HEAD'],
     ];
     for (const [method, path, allow] of cases) {
@@ -180,6 +257,29 @@ describe('the codes of a thrown TerminalError reach the client through the whole
       expect(codeOf(reply), code).toBe(code);
       const error = ErrorEnvelopeSchema.parse(JSON.parse(reply.body)).error;
       expect(error.details, code).toEqual([{ path: 'sessionId', issue: 'live_elsewhere' }]);
+      expect(reply.body, code).not.toContain(FAKE_SESSION_ID);
+    }
+  });
+
+  it('open-native: the six codes with their statuses and details, and no id in the body', async () => {
+    const s = await signedIn();
+    const cases: readonly (readonly [ErrorCode, number])[] = [
+      ['session_not_found', 404],
+      ['resume_unavailable', 409],
+      ['folder_invalid', 400],
+      ['claude_not_found', 503],
+      ['terminal_unavailable', 503],
+      ['terminal_limit', 429],
+    ];
+    for (const [code, status] of cases) {
+      s.ports.openNativeFailure = new FakeTerminalError(code, [{ path: 'sessionId', issue: 'live_elsewhere' }]);
+      const reply = await post(s, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+      expect(reply.status, code).toBe(status);
+      expect(codeOf(reply), code).toBe(code);
+      expect(reply.headers['cache-control'], code).toBe('no-store');
+      expect(ErrorEnvelopeSchema.parse(JSON.parse(reply.body)).error.details, code).toEqual([
+        { path: 'sessionId', issue: 'live_elsewhere' },
+      ]);
       expect(reply.body, code).not.toContain(FAKE_SESSION_ID);
     }
   });
@@ -338,6 +438,7 @@ describe('the guards in front of the routes (TC-SEC-02, TC-SEC-12, TC-SEC-14)', 
         killPath('alpha-1'),
         routes.terminalPickFolder.path,
         routes.terminalResume.path,
+        routes.terminalOpenNative.path,
       ]) {
         const reply = await post(s, path, { path: FOLDER, sessionId: FAKE_SESSION_ID }, cookie);
         expect(reply.status, path).toBe(401);
@@ -348,6 +449,7 @@ describe('the guards in front of the routes (TC-SEC-02, TC-SEC-12, TC-SEC-14)', 
     expect(s.ports.sessions.killed).toEqual([]);
     expect(s.ports.fakePicker.calls).toBe(0);
     expect(s.ports.resumed).toEqual([]);
+    expect(s.ports.openedNative).toEqual([]);
   });
 
   it('TC-SEC-02: an expired credential is refused', async () => {
@@ -427,6 +529,7 @@ describe('an instance whose terminal cannot run (TC-WS-12)', () => {
       [killPath('alpha-1'), {}],
       [routes.terminalPickFolder.path, {}],
       [routes.terminalResume.path, { sessionId: FAKE_SESSION_ID }],
+      [routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID }],
     ] as const) {
       const reply = await post(s, path, body);
       expect(reply.status, path).toBe(503);
@@ -469,6 +572,9 @@ describe('the log file (rule 7)', () => {
     await post(s, routes.terminalPickFolder.path);
     s.ports.resumeFailure = new FakeTerminalError('SPAWN_FAILED');
     await post(s, routes.terminalResume.path, { sessionId: FAKE_SESSION_ID });
+    await post(s, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
+    s.ports.openNativeFailure = new FakeTerminalError('SPAWN_FAILED');
+    await post(s, routes.terminalOpenNative.path, { sessionId: FAKE_SESSION_ID });
     await get(s, routes.terminalState.path);
     await s.app.ctx.logger.close();
     const log = readFileSync(s.app.logFile, 'utf8');
