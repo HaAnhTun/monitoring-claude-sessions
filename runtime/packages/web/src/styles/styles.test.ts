@@ -519,6 +519,46 @@ describe('style architecture (ADR 0071 decision 10)', () => {
     });
   });
 
+  describe('the bleed frame and the forced rail (design 04 2.3, CAW-46)', () => {
+    const css = (file: string): string => sources[file] ?? '';
+    const declared = (file: string, selector: string, property: string, media: string | null = null): string =>
+      declarationsOf(css(file), selector, media).get(property) ?? '';
+    const RAIL_MEDIA = '@media (min-width: 900px)';
+    const RAIL = ".sidebar[data-mode='rail']";
+
+    it('keys the rail rules on data-mode under min-width 900 px, so a forced rail looks like the 900 to 1199 px rail', () => {
+      expect(declared('shell.css', RAIL, 'flex-basis', RAIL_MEDIA)).toBe('var(--side-w-rail)');
+      expect(declared('shell.css', RAIL, 'width', RAIL_MEDIA)).toBe('var(--side-w-rail)');
+      expect(declared('shell.css', `${RAIL} .sidebar__inner`, 'overflow-x', RAIL_MEDIA)).toBe('hidden');
+      expect(declared('shell.css', `${RAIL} .sidebar-nav__link`, 'justify-content', RAIL_MEDIA)).toBe('center');
+      expect(declared('shell.css', `${RAIL} .sidebar-nav__label`, 'clip-path', RAIL_MEDIA)).toBe('inset(50%)');
+      expect(declared('shell.css', `${RAIL} .sidebar-nav__count`, 'border-radius', RAIL_MEDIA)).toBe('50%');
+      expect(declared('shell.css', `${RAIL} .sidebar-nav__count[data-tone='alert']`, 'background', RAIL_MEDIA)).toBe(
+        'var(--state-failed-dot)',
+      );
+    });
+
+    it('has no rail rule left behind the 1199 px media query', () => {
+      expect(css('shell.css')).not.toMatch(/@media[^{]*max-width:\s*1199px/);
+    });
+
+    it('keeps the count of the rail a disc in forced colours, keyed on the same attribute', () => {
+      const forcedRail = '@media (forced-colors: active) and (min-width: 900px)';
+      expect(declared('shell.css', `${RAIL} .sidebar-nav__count`, 'forced-color-adjust', forcedRail)).toBe('none');
+      expect(declared('shell.css', `${RAIL} .sidebar-nav__count`, 'background', forcedRail)).toBe('CanvasText');
+    });
+
+    it('lets a bleed route fill the window height and manage its own scrolling', () => {
+      const body = "html[data-layout='bleed'] body";
+      expect(declared('layout.css', body, 'height')).toBe('100dvh');
+      expect(declared('layout.css', body, 'min-height')).toBe('0');
+      expect(declared('layout.css', body, 'overflow')).toBe('hidden');
+      expect(declared('layout.css', '.main--bleed', 'padding')).toBe('0');
+      expect(declared('layout.css', '.main--bleed', 'gap')).toBe('0');
+      expect(declared('layout.css', '.main--bleed', 'overflow')).toBe('hidden');
+    });
+  });
+
   describe('the checks themselves (negative probes)', () => {
     it('finds a selector defined in two files', () => {
       expect(duplicateSelectors({ 'a.css': '.x { color: red }', 'b.css': '.y, .x { color: blue }' })).toEqual([

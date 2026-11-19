@@ -12,6 +12,17 @@
 .main:focus {
   outline: none;
 }
+/* A bleed route (the Workspace) fills the window height and scrolls inside its own panes: the page itself never scrolls. */
+html[data-layout='bleed'] body {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.main--bleed {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
 .page {
   display: flex;
   flex-direction: column;

@@ -3,10 +3,15 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
+import { qk } from '../data/query-keys.ts';
+
 import { createPrefs } from '../lib/prefs.ts';
 import { AnnouncerProvider } from '../state/announcer.tsx';
 import { createPrefsStore, type PrefsStore } from '../state/prefs-store.ts';
 import { ShortcutRegistryProvider, useShortcutRegistry } from '../state/shortcuts-registry.tsx';
+import { createFakeApi, errorResponse, type FakeHandlers } from '../test/fake-api.ts';
+import { FIXTURE_INSTANCE_ID, makeAuthSession, makeInstance } from '../test/fixtures/index.ts';
+import { createToastStore, ToastStoreContext } from '../state/toast-store.ts';
 import { msg } from '../test/msg.ts';
 import { renderWithProviders } from '../test/render.tsx';
 import { UserMenu } from './UserMenu.tsx';
@@ -222,5 +227,105 @@ describe('UserMenu in Vietnamese', () => {
       expect(within(menu).getByRole('group', { name: msg(key, undefined, 'vi') })).toBeInTheDocument();
     }
     expect(within(menu).getByRole('menuitem', { name: msg('menu.shortcuts', undefined, 'vi') })).toBeInTheDocument();
+  });
+});
+
+describe('UserMenu: Lock terminals (design 04 2.3)', () => {
+  function setupUser(options: { kind?: 'user' | 'task'; authenticated?: boolean; handlers?: FakeHandlers } = {}) {
+    const instance = makeInstance({ kind: options.kind ?? 'user' });
+    const api = createFakeApi({
+      instance: () => instance,
+      authSession: () => makeAuthSession(options.authenticated ?? true),
+      authLogout: () => ({ authenticated: false }),
+      ...options.handlers,
+    });
+    const toasts = createToastStore();
+    const store = createPrefsStore(createPrefs(null));
+    store.setPref('lastTerminal', 'fixture-term-1');
+    const rendered = renderWithProviders(<UserMenu />, {
+      api,
+      instance,
+      prefsStore: store,
+      wrap: (children: ReactNode) => (
+        <AnnouncerProvider>
+          <ShortcutRegistryProvider>
+            <ToastStoreContext value={toasts}>{children}</ToastStoreContext>
+          </ShortcutRegistryProvider>
+        </AnnouncerProvider>
+      ),
+    });
+    return { ...rendered, api, store, toasts, user: userEvent.setup() };
+  }
+
+  it('offers the item to a signed-in browser of a user instance', async () => {
+    const { user } = setupUser();
+    const menu = await open(user);
+    await waitFor(() => {
+      expect(within(menu).getByRole('menuitem', { name: msg('shell.userMenu.lock') })).toBeInTheDocument();
+    });
+  });
+
+  it('hides the item without the session cookie', async () => {
+    const { user, queryClient } = setupUser({ authenticated: false });
+    const menu = await open(user);
+    await waitFor(() => {
+      expect(queryClient.getQueryData(qk.authSession(FIXTURE_INSTANCE_ID))).toEqual({ authenticated: false });
+    });
+    expect(within(menu).queryByRole('menuitem', { name: msg('shell.userMenu.lock') })).toBeNull();
+  });
+
+  it('hides the item, and asks nothing, on a task instance', async () => {
+    const { user, api } = setupUser({ kind: 'task' });
+    const menu = await open(user);
+    expect(within(menu).queryByRole('menuitem', { name: msg('shell.userMenu.lock') })).toBeNull();
+    expect(api.callsTo('authSession')).toHaveLength(0);
+  });
+
+  it('logs out, locks the page, forgets the terminal and announces it', async () => {
+    const { user, api, queryClient, store } = setupUser();
+    const menu = await open(user);
+    await user.click(await within(menu).findByRole('menuitem', { name: msg('shell.userMenu.lock') }));
+    await waitFor(() => {
+      expect(liveRegion()).toHaveTextContent(msg('access.lockedAnnounce'));
+    });
+    expect(api.callsTo('authLogout')).toHaveLength(1);
+    expect(queryClient.getQueryData(qk.authSession(FIXTURE_INSTANCE_ID))).toEqual({ authenticated: false });
+    expect(store.getSnapshot().lastTerminal).toBe('');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('shows a failed logout as an error toast and keeps the session', async () => {
+    const { user, queryClient, toasts } = setupUser({
+      handlers: { authLogout: () => errorResponse('internal_error') },
+    });
+    const menu = await open(user);
+    await user.click(await within(menu).findByRole('menuitem', { name: msg('shell.userMenu.lock') }));
+    await waitFor(() => {
+      expect(toasts.getSnapshot()).toHaveLength(1);
+    });
+    expect(toasts.getSnapshot()[0]?.kind).toBe('error');
+    expect(queryClient.getQueryData(qk.authSession(FIXTURE_INSTANCE_ID))).toEqual({ authenticated: true });
+  });
+
+  it('words the item in Vietnamese', async () => {
+    const instance = makeInstance({ kind: 'user' });
+    const api = createFakeApi({ instance: () => instance, authSession: () => makeAuthSession(true) });
+    const { user } = {
+      ...renderWithProviders(<UserMenu />, {
+        api,
+        instance,
+        locale: 'vi',
+        wrap: (children: ReactNode) => (
+          <AnnouncerProvider>
+            <ShortcutRegistryProvider>{children}</ShortcutRegistryProvider>
+          </AnnouncerProvider>
+        ),
+      }),
+      user: userEvent.setup(),
+    };
+    const menu = await open(user, 'vi');
+    expect(
+      await within(menu).findByRole('menuitem', { name: msg('shell.userMenu.lock', undefined, 'vi') }),
+    ).toBeInTheDocument();
   });
 });

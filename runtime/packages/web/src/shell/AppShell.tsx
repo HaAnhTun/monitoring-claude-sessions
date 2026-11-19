@@ -3,15 +3,19 @@ import { useContext, useEffect, type ReactNode } from 'react';
 import { Outlet } from 'react-router';
 
 import { PageSkeleton } from '../app/PageSkeleton.tsx';
+import { useRouteLayout } from '../app/routes.tsx';
 import { ErrorState } from '../components/ErrorState.tsx';
 import { Icon } from '../components/Icon.tsx';
+import { AccessFlowContext, useCreateAccessFlow } from '../data/hooks/useAuth.ts';
 import { ApiContext, InstanceIdContext, useInstance } from '../data/hooks/useInstance.ts';
 import { useT } from '../i18n/context.ts';
 import { AnnouncerProvider } from '../state/announcer.tsx';
 import { applyDisplayPrefs, resolveDisplay, usePrefs } from '../state/prefs-store.ts';
 import { ShortcutRegistryProvider, useShortcut, useShortcutRegistry } from '../state/shortcuts-registry.tsx';
 import { useToasts } from '../state/toast-store.ts';
+import { AccessGate } from './AccessGate.tsx';
 import { InstanceChangedNotice } from './InstanceChangedNotice.tsx';
+import { OutdatedNotice } from './OutdatedNotice.tsx';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { MAIN_ID, SkipLinks } from './SkipLinks.tsx';
@@ -43,15 +47,30 @@ function ToastRegion() {
   );
 }
 
-/** The frame once the instance is known: top bar, sidebar, the routed page, dialogs and notices. */
+/**
+ * The frame once the instance is known: top bar, sidebar, the routed page, dialogs and notices. A bleed route (the Workspace) is
+ * marked on `<html data-layout>` and on `main` (no padding, the page does not scroll); only a page route is the scope of the stale
+ * outline. A user instance also redeems its login link (`AccessGate`), shares the access flow with its pages and shows the
+ * outdated notice under the instance-changed one.
+ */
 function Frame({ instance }: { instance: InstanceInfo }) {
   const t = useT();
+  const layout = useRouteLayout();
+  const accessFlow = useCreateAccessFlow();
+  const user = instance.kind === 'user';
   const { prefs } = usePrefs();
   const { setHelpOpen } = useShortcutRegistry();
   const { theme, density } = resolveDisplay(prefs, instance.ui);
   useEffect(() => {
     applyDisplayPrefs(document.documentElement, { theme, density });
   }, [theme, density]);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset['layout'] = layout;
+    return () => {
+      delete root.dataset['layout'];
+    };
+  }, [layout]);
   useShortcut(
     '?',
     () => {
@@ -60,19 +79,28 @@ function Frame({ instance }: { instance: InstanceInfo }) {
     { description: t('shell.shortcutsHelp') },
   );
   return (
-    <div className="shell">
-      <SkipLinks />
-      <TopBar />
-      <InstanceChangedNotice />
-      <div className="shell__body">
-        <Sidebar />
-        <main id={MAIN_ID} className="main" tabIndex={-1} data-stale-scope>
-          <Outlet />
-        </main>
+    <AccessFlowContext value={accessFlow}>
+      <div className="shell">
+        <SkipLinks />
+        <TopBar />
+        <InstanceChangedNotice />
+        {user ? <OutdatedNotice /> : null}
+        {user ? <AccessGate /> : null}
+        <div className="shell__body">
+          <Sidebar />
+          <main
+            id={MAIN_ID}
+            className={layout === 'bleed' ? 'main main--bleed' : 'main'}
+            tabIndex={-1}
+            data-stale-scope={layout === 'page' ? '' : undefined}
+          >
+            <Outlet />
+          </main>
+        </div>
+        <ShortcutsDialog />
+        <ToastRegion />
       </div>
-      <ShortcutsDialog />
-      <ToastRegion />
-    </div>
+    </AccessFlowContext>
   );
 }
 

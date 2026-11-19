@@ -1,12 +1,15 @@
 import { Menu, MenuGroup, MenuItem, MenuRadio, MenuSeparator } from '../components/Menu.tsx';
 import type { IconName } from '../components/icons.ts';
+import { describeApiError } from '../data/api-errors.ts';
+import { useAuthSession, useLogout } from '../data/hooks/useAuth.ts';
 import { useInstance } from '../data/hooks/useInstance.ts';
-import { useI18n } from '../i18n/context.ts';
+import { useI18n, useT } from '../i18n/context.ts';
 import { LOCALES, type Locale, type LocalePreference, type MessageKey } from '../i18n/types.ts';
 import type { PrefsData } from '../lib/prefs.ts';
 import { useAnnounce } from '../state/announcer.tsx';
 import { resolveDisplay, usePrefs } from '../state/prefs-store.ts';
 import { useShortcutRegistry } from '../state/shortcuts-registry.tsx';
+import { useShowToast } from '../state/toast-store.ts';
 
 type Theme = PrefsData['theme'];
 type Density = PrefsData['density'];
@@ -37,9 +40,38 @@ export function languageName(code: Locale, fallback: string): string {
 }
 
 /**
+ * "Lock terminals" (design 04 2.3): ends the terminal session of this browser (`useLogout` locks the page, drops what the session
+ * protected and announces it). It shows only for a browser that holds the session; the answer of `GET /auth/session` is the
+ * shell's cached one. A logout that fails leaves the session as it was and says why in an error toast.
+ */
+function LockTerminalsItem() {
+  const t = useT();
+  const session = useAuthSession();
+  const logout = useLogout();
+  const showToast = useShowToast();
+  if (session.data?.authenticated !== true) return null;
+  return (
+    <>
+      <MenuSeparator />
+      <MenuItem
+        icon="terminal"
+        onSelect={() => {
+          logout().catch((error: unknown) => {
+            const reason = error instanceof Error ? describeApiError(error, t) : undefined;
+            showToast(reason ?? t('shell.userMenu.lock'), { kind: 'error' });
+          });
+        }}
+      >
+        {t('shell.userMenu.lock')}
+      </MenuItem>
+    </>
+  );
+}
+
+/**
  * The one menu of the top bar (ADR 0073 decision 6): Theme (automatic, light, dark), Density (comfortable, compact), Language and
  * the keyboard shortcuts. A choice is applied at once, announced politely and leaves the menu open; the shortcuts item closes it
- * and opens the dialog. The preferences are the ones of `usePrefs`; the language goes through the i18n provider, which also sets
+ * and opens the dialog; on a user instance "Lock terminals" ends the terminal session. The preferences are the ones of `usePrefs`; the language goes through the i18n provider, which also sets
  * `<html lang>`.
  */
 export function UserMenu() {
@@ -47,7 +79,8 @@ export function UserMenu() {
   const { prefs, setPref } = usePrefs();
   const announce = useAnnounce();
   const { setHelpOpen } = useShortcutRegistry();
-  const { theme, density } = resolveDisplay(prefs, useInstance().data?.ui);
+  const instance = useInstance().data;
+  const { theme, density } = resolveDisplay(prefs, instance?.ui);
 
   const languages: readonly { value: LocalePreference; label: string }[] = [
     { value: 'auto', label: t('lang.auto') },
@@ -108,6 +141,7 @@ export function UserMenu() {
       >
         {t('menu.shortcuts')}
       </MenuItem>
+      {instance?.kind === 'user' ? <LockTerminalsItem /> : null}
     </Menu>
   );
 }

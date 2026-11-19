@@ -1,5 +1,5 @@
 /* Application shell (ADR 0071 decision 6, ADR 0073 decision 4): skip links, the sidebar in three layouts, the session switcher,
-   notices and toasts. Loaded in the pages layer. The widths are the literals of the ADR: 1200 (sidebar to rail), 900 (rail to sheet). */
+   notices and toasts. Loaded in the pages layer. The widths are the literals of the ADR: 1200 (sidebar to rail), 900 (rail to sheet); the rail itself is chosen by the shell (data-mode). */
 
 .shell {
   display: flex;
@@ -244,22 +244,22 @@
   border-color: var(--state-failed-dot);
 }
 
-/* ---- the rail: 56 px from 900 px; labels are tooltips, a count is a dot on the icon ---- */
-@media (min-width: 900px) and (max-width: 1199px) {
-  .sidebar {
+/* ---- the rail: 56 px from 900 px, chosen by the shell (data-mode='rail': the window is 900 to 1199 px, or a bleed route forces it); labels are tooltips, a count is a dot on the icon ---- */
+@media (min-width: 900px) {
+  .sidebar[data-mode='rail'] {
     flex-basis: var(--side-w-rail);
     width: var(--side-w-rail);
   }
   /* The collapsed labels are clipped away (clip-path), not cut by an overflow of their own, so the column cuts what sticks out sideways. */
-  .sidebar__inner {
+  .sidebar[data-mode='rail'] .sidebar__inner {
     padding: var(--sp-4) var(--sp-2);
     overflow-x: hidden;
   }
-  .sidebar-nav__link {
+  .sidebar[data-mode='rail'] .sidebar-nav__link {
     justify-content: center;
     padding: 0;
   }
-  .sidebar-nav__label {
+  .sidebar[data-mode='rail'] .sidebar-nav__label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -269,7 +269,7 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .sidebar-nav__count {
+  .sidebar[data-mode='rail'] .sidebar-nav__count {
     position: absolute;
     top: 5px;
     right: 7px;
@@ -284,11 +284,11 @@
     font-size: var(--fs-xs);
     line-height: 0;
   }
-  .sidebar-nav__link:hover .sidebar-nav__count,
-  .sidebar-nav__link[aria-current='page'] .sidebar-nav__count {
+  .sidebar[data-mode='rail'] .sidebar-nav__link:hover .sidebar-nav__count,
+  .sidebar[data-mode='rail'] .sidebar-nav__link[aria-current='page'] .sidebar-nav__count {
     box-shadow: 0 0 0 2px var(--surface-2);
   }
-  .sidebar-nav__count[data-tone='alert'] {
+  .sidebar[data-mode='rail'] .sidebar-nav__count[data-tone='alert'] {
     background: var(--state-failed-dot);
   }
 }
@@ -351,9 +351,9 @@
   }
 }
 /* The count of the rail is a dot on the icon: it stays a disc (the number is in the title of the link). */
-@media (forced-colors: active) and (min-width: 900px) and (max-width: 1199px) {
-  .sidebar-nav__count,
-  .sidebar-nav__count[data-tone='alert'] {
+@media (forced-colors: active) and (min-width: 900px) {
+  .sidebar[data-mode='rail'] .sidebar-nav__count,
+  .sidebar[data-mode='rail'] .sidebar-nav__count[data-tone='alert'] {
     forced-color-adjust: none;
     background: CanvasText;
   }

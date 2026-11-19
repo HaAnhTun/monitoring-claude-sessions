@@ -1,13 +1,14 @@
 import type { InstanceInfo } from '@mcs/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { lazy, useState, type ComponentType, type ReactNode } from 'react';
+import { lazy, useContext, useState, type ComponentType, type ReactNode } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PageRegistryContext, type PageRegistry } from '../app/routes.tsx';
 import { usePageChrome } from '../app/usePageChrome.ts';
 import { StaleDataIndicator } from '../components/StaleDataIndicator.tsx';
+import { AccessFlowContext } from '../data/hooks/useAuth.ts';
 import { qk } from '../data/query-keys.ts';
 import { createPrefs } from '../lib/prefs.ts';
 import { AnnouncerProvider, useAnnounce } from '../state/announcer.tsx';
@@ -16,6 +17,8 @@ import { ShortcutRegistryProvider, useShortcut } from '../state/shortcuts-regist
 import { createToastStore, ToastStoreContext, useShowToast, useToasts, type ToastStore } from '../state/toast-store.ts';
 import { createFakeApi, errorResponse, type FakeApi } from '../test/fake-api.ts';
 import {
+  makeAuthSession,
+  makeHealth,
   makeInstance,
   makeMetric,
   makeOverview,
@@ -42,6 +45,12 @@ function Page({ title }: { title: string }) {
       <output data-testid="location">{pathname + search + hash}</output>
     </section>
   );
+}
+
+/** Shows whether the shell provides the access flow to its pages. */
+function FlowProbe() {
+  const flow = useContext(AccessFlowContext);
+  return <output data-testid="flow">{flow === null ? 'none' : 'provided'}</output>;
 }
 
 /** A page whose own refresh fails: it shows the stale line, which marks the shell's `main` (UI-I5). */
@@ -79,6 +88,7 @@ function Pages() {
         <Route path="/sessions/:sessionId" element={<Page title="Session" />} />
         <Route path="/settings" element={<Page title="Settings" />} />
         <Route path="/stale" element={<StalePage />} />
+        <Route path="/flow" element={<FlowProbe />} />
         <Route path="*" element={<Page title="Unknown" />} />
       </Route>
     </Routes>
@@ -986,5 +996,237 @@ describe('toast store', () => {
     store.show('two');
     store.dismiss(first);
     expect(store.getSnapshot().map((t) => t.message)).toEqual(['two']);
+  });
+});
+
+// ---- CAW-46: the bleed layout, the forced rail, the skip links of the Workspace, the access gate and the outdated notice ----
+
+const GATE_CODE = 'fixtureShellAccessCode0123456789abcdefABCDEF';
+
+interface UserShellOptions extends ShellOptions {
+  kind?: 'user' | 'task';
+  authenticated?: boolean;
+  outdated?: boolean;
+}
+
+function renderUserShell(options: UserShellOptions = {}) {
+  const instance = makeInstance({
+    kind: options.kind ?? 'user',
+    commands: { ...makeInstance().commands, restart: 'caw restart' },
+  });
+  const health = makeHealth('ok');
+  let authenticated = options.authenticated ?? true;
+  const api = createFakeApi({
+    instance: () => instance,
+    authSession: () => makeAuthSession(authenticated),
+    authExchange: () => {
+      authenticated = true;
+      return { authenticated: true };
+    },
+    health: () => ({ ...health, runtime: { ...health.runtime, outdated: options.outdated ?? false } }),
+    listSessions: () => makeSessionPage([]),
+    overview: () => makeOverview({ metrics: [], alerts: { open: 0, critical: 0, items: [] } }),
+  });
+  return renderShell({ ...options, instance, api });
+}
+
+/** The markup of a subtree, attributes included: what a person, a script or an extension could read. */
+function markup(root: Element): string {
+  return new XMLSerializer().serializeToString(root);
+}
+
+function sidebarMode(): string | null {
+  return document.getElementById('sidebar')?.getAttribute('data-mode') ?? null;
+}
+
+function navLink(name: string): HTMLElement {
+  return within(screen.getByRole('navigation', { name: msg('nav.label') })).getByRole('link', { name });
+}
+
+describe('AppShell: bleed layout (design 04 2.3)', () => {
+  beforeEach(() => {
+    stubWidth(1440);
+  });
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-layout');
+  });
+
+  it('gives the Workspace route the bleed frame: html data-layout, main--bleed and no stale scope', async () => {
+    renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    expect(document.documentElement.dataset['layout']).toBe('bleed');
+    const main = screen.getByRole('main');
+    expect(main).toHaveClass('main', 'main--bleed');
+    expect(main).not.toHaveAttribute('data-stale-scope');
+  });
+
+  it('keeps the page frame on a monitor route: data-layout page, the stale scope on main', async () => {
+    renderUserShell({ route: '/overview' });
+    await screen.findByRole('complementary');
+    expect(document.documentElement.dataset['layout']).toBe('page');
+    const main = screen.getByRole('main');
+    expect(main).toHaveClass('main');
+    expect(main).not.toHaveClass('main--bleed');
+    expect(main).toHaveAttribute('data-stale-scope');
+  });
+
+  it('follows the route: bleed on the Workspace, page on the next route, removed on unmount', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    expect(document.documentElement.dataset['layout']).toBe('bleed');
+    await user.click(navLink(msg('route.overview.title')));
+    await waitFor(() => {
+      expect(document.documentElement.dataset['layout']).toBe('page');
+    });
+    expect(screen.getByRole('main')).toHaveAttribute('data-stale-scope');
+    await user.click(navLink(msg('route.workspace.title')));
+    await waitFor(() => {
+      expect(document.documentElement.dataset['layout']).toBe('bleed');
+    });
+    unmount();
+    expect(document.documentElement).not.toHaveAttribute('data-layout');
+  });
+
+  it('forces the 56 px rail on a bleed route at a wide window, and only there', async () => {
+    const bleed = renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    expect(sidebarMode()).toBe('rail');
+    bleed.unmount();
+
+    renderUserShell({ route: '/overview' });
+    await screen.findByRole('complementary');
+    expect(sidebarMode()).toBe('full');
+  });
+
+  it('puts the names of the entries into tooltips on the forced rail', async () => {
+    renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    expect(navLink(msg('route.overview.title'))).toHaveAttribute('title');
+  });
+
+  it('leaves the sheet alone: below 900 px a bleed route has the Menu bar and no rail', async () => {
+    stubWidth(800);
+    renderUserShell({ route: '/' });
+    expect(await screen.findByRole('button', { name: msg('shell.menu.open') })).toBeInTheDocument();
+    expect(sidebarMode()).toBe('sheet');
+  });
+});
+
+describe('AppShell: skip links of the Workspace (design 04 2.3)', () => {
+  beforeEach(() => {
+    stubWidth(1440);
+  });
+
+  function skipLinks(): HTMLElement[] {
+    return within(document.querySelector('.skip-links')!).getAllByRole('link');
+  }
+
+  it('adds the project list and the terminal on a bleed route, after the main link, with literal hrefs', async () => {
+    renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    expect(skipLinks().map((link) => link.textContent)).toEqual([
+      msg('shell.skip.main'),
+      msg('shell.skip.projects'),
+      msg('shell.skip.terminal'),
+    ]);
+    expect(skipLinks().map((link) => link.getAttribute('href'))).toEqual(['#main', '#project-list', '#terminal']);
+  });
+
+  it('has only the main link on a page route', async () => {
+    renderUserShell({ route: '/overview' });
+    await screen.findByRole('complementary');
+    expect(skipLinks().map((link) => link.textContent)).toEqual([msg('shell.skip.main')]);
+  });
+
+  it('moves the focus to the element and leaves the URL alone', async () => {
+    const user = userEvent.setup();
+    renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    const list = document.createElement('nav');
+    list.id = 'project-list';
+    list.tabIndex = -1;
+    const terminal = document.createElement('div');
+    terminal.id = 'terminal';
+    terminal.tabIndex = -1;
+    document.body.append(list, terminal);
+    try {
+      const before = window.location.href;
+      await user.click(screen.getByRole('link', { name: msg('shell.skip.projects') }));
+      expect(list).toHaveFocus();
+      await user.click(screen.getByRole('link', { name: msg('shell.skip.terminal') }));
+      expect(terminal).toHaveFocus();
+      expect(window.location.href).toBe(before);
+    } finally {
+      list.remove();
+      terminal.remove();
+    }
+  });
+
+  it('falls back to the main region when the target is not on the page (a locked or empty Workspace)', async () => {
+    const user = userEvent.setup();
+    renderUserShell({ route: '/' });
+    await screen.findByRole('complementary');
+    await user.click(screen.getByRole('link', { name: msg('shell.skip.terminal') }));
+    expect(screen.getByRole('main')).toHaveFocus();
+    await user.click(screen.getByRole('link', { name: msg('shell.skip.projects') }));
+    expect(screen.getByRole('main')).toHaveFocus();
+  });
+});
+
+describe('AppShell: access gate and outdated notice of a user instance', () => {
+  beforeEach(() => {
+    stubWidth(1440);
+    window.history.replaceState(null, '', '/');
+  });
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('redeems the fragment of the address bar once and strips it', async () => {
+    window.history.replaceState(null, '', `/#code=${GATE_CODE}`);
+    const { api } = renderUserShell({ authenticated: false });
+    await waitFor(() => {
+      expect(window.location.hash).toBe('');
+    });
+    expect(api.callsTo('authExchange')).toHaveLength(1);
+    expect(markup(document.body)).not.toContain(GATE_CODE);
+  });
+
+  it('does not touch the session of a task instance, and leaves a fragment alone', async () => {
+    window.history.replaceState(null, '', `/#code=${GATE_CODE}`);
+    const { api } = renderUserShell({ kind: 'task', authenticated: false });
+    await screen.findByRole('complementary');
+    expect(api.callsTo('authSession')).toHaveLength(0);
+    expect(api.callsTo('authExchange')).toHaveLength(0);
+    expect(window.location.hash).toBe(`#code=${GATE_CODE}`);
+  });
+
+  it('provides the access flow to the pages of a user instance', async () => {
+    renderUserShell({ route: '/flow' });
+    expect(await screen.findByTestId('flow')).toHaveTextContent('provided');
+  });
+
+  it('shows the outdated notice under the top bar for a user instance that runs old code', async () => {
+    renderUserShell({ outdated: true });
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent('caw restart');
+    expect(screen.getByRole('banner').compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(screen.getByRole('main')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows no notice while the code is current, and none for a task instance', async () => {
+    const current = renderUserShell({ outdated: false });
+    await waitFor(() => {
+      expect(current.api.callsTo('health').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole('note')).toBeNull();
+    current.unmount();
+
+    const task = renderUserShell({ kind: 'task', outdated: true });
+    await waitFor(() => {
+      expect(task.api.callsTo('health').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole('note')).toBeNull();
   });
 });

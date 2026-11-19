@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router';
 
+import { useRouteLayout, type RouteLayout } from '../app/routes.tsx';
 import { Button } from '../components/Button.tsx';
 import { useT } from '../i18n/context.ts';
 import { usePrefs } from '../state/prefs-store.ts';
@@ -9,6 +10,13 @@ import { SessionSwitcher, useShowSwitcher } from './SessionSwitcher.tsx';
 import { ConnectedSidebarNav } from './SidebarNav.tsx';
 
 export const SIDEBAR_ID = 'sidebar';
+
+/**
+ * The one switch of the forced rail (design 04 2.3): on a bleed route (the Workspace) the navigation is the 56 px rail at every
+ * width from 900 px, so the project list and the terminal get the room. Set `bleed` to `false` to give the Workspace the 240 px
+ * sidebar again; nothing else changes.
+ */
+export const FORCE_RAIL: Readonly<Record<RouteLayout, boolean>> = { page: false, bleed: true };
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -21,14 +29,15 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
 /**
  * The navigation of the shell in three layouts (ADR 0071 decision 6, ADR 0073 decision 4). The widths are CSS media queries:
  * a 240 px sidebar from 1200 px, a 56 px rail of icons from 900 px (labels move into tooltips, counts become dots), and below
- * 900 px a one-line Menu bar under the top bar that opens the navigation as a sheet. The sheet is a modal dialog: it takes the
- * focus, keeps it inside, closes on Escape, on a click outside and after a navigation, and gives the focus back to the Menu button.
+ * 900 px a one-line Menu bar under the top bar that opens the navigation as a sheet. A bleed route forces the rail
+ * (`FORCE_RAIL`). The sheet is a modal dialog: it takes the focus, keeps it inside, closes on Escape, on a click outside and after a navigation, and gives the focus back to the Menu button.
  * Its state is the `navOpen` preference. The session switcher shows in the full sidebar on the session page only.
  */
 export function Sidebar() {
   const t = useT();
   const sheet = useMediaQuery(MQ_SHEET);
-  const rail = useMediaQuery(MQ_RAIL) && !sheet;
+  const layout = useRouteLayout();
+  const rail = (useMediaQuery(MQ_RAIL) || FORCE_RAIL[layout]) && !sheet;
   const switcher = useShowSwitcher();
   const { prefs, setPref } = usePrefs();
   const { pathname } = useLocation();
