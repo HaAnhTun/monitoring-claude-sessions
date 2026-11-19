@@ -256,6 +256,35 @@ describe('checkBudget: the terminal chunk', () => {
     );
   });
 
+  it('does not walk into the entry: the terminal page imports it, and its dynamic imports are every other page', () => {
+    const fixture = standardFixture();
+    fixture.files['assets/OtherPage-z.js'] = noise(30 * KB, 12);
+    fixture.manifest['src/pages/OtherPage.tsx'] = { file: 'assets/OtherPage-z.js', isDynamicEntry: true };
+    const entry = fixture.manifest['index.html'];
+    const view = fixture.manifest['src/terminal/TerminalView.tsx'];
+    if (entry === undefined || view === undefined) throw new Error('fixture');
+    entry.dynamicImports = [...(entry.dynamicImports ?? []), 'src/pages/OtherPage.tsx'];
+    view.imports = [...(view.imports ?? []), 'index.html'];
+    const result = budget.checkBudget(makeDist(fixture));
+    const plain = budget.checkBudget(makeDist(standardFixture()));
+    expect(row(result, 'Terminal chunk (gzip)').size).toBe(row(plain, 'Terminal chunk (gzip)').size);
+  });
+
+  it('does not count what the page that loads the terminal fetches anyway: that page, and the chunks it imports', () => {
+    const fixture = standardFixture();
+    fixture.files['assets/pane-y.js'] = noise(20 * KB, 13);
+    fixture.manifest['_pane-y.js'] = { file: 'assets/pane-y.js' };
+    const page = fixture.manifest['src/pages/WorkspacePage.tsx'];
+    const view = fixture.manifest['src/terminal/TerminalView.tsx'];
+    if (page === undefined || view === undefined) throw new Error('fixture');
+    page.imports = [...(page.imports ?? []), '_pane-y.js'];
+    // the bundler leaves a module out of a shared chunk when the lazily loaded page can count on its importer: the page chunk is imported
+    view.imports = [...(view.imports ?? []), '_pane-y.js', 'src/pages/WorkspacePage.tsx'];
+    const result = budget.checkBudget(makeDist(fixture));
+    const plain = budget.checkBudget(makeDist(standardFixture()));
+    expect(row(result, 'Terminal chunk (gzip)').size).toBe(row(plain, 'Terminal chunk (gzip)').size);
+  });
+
   it('is measured from the loader alone while the page does not exist yet', () => {
     const fixture = standardFixture();
     delete fixture.manifest['src/terminal/TerminalView.tsx'];

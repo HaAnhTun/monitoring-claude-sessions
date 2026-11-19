@@ -59,7 +59,7 @@ describe('NotFoundPage', () => {
     expect(primary).toHaveFocus();
     expect(primary).toHaveClass('btn-primary');
     await user.keyboard('{Enter}');
-    expect(screen.getByTestId('where')).toHaveAttribute('data-path', '/');
+    expect(screen.getByTestId('where')).toHaveAttribute('data-path', '/overview');
   });
 
   it('links to the sessions list as the second stop', async () => {

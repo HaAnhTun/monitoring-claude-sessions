@@ -87,15 +87,33 @@ function jsFiles(manifest, keys) {
   return [...keys].map((key) => manifest[key].file).filter((file) => file.endsWith('.js'));
 }
 
-/** Every manifest key reachable from `roots` through static and dynamic imports (the graph of what loading them can ever fetch). */
-function reachableKeys(manifest, roots) {
+/** Every manifest key reachable from `roots` through static and dynamic imports, never entering a key of `stop`. */
+function reachableKeys(manifest, roots, stop) {
   const seen = new Set();
   const visit = (key) => {
-    if (seen.has(key) || manifest[key] === undefined) return;
+    if (seen.has(key) || stop.has(key) || manifest[key] === undefined) return;
     seen.add(key);
     for (const next of [...(manifest[key].imports ?? []), ...(manifest[key].dynamicImports ?? [])]) visit(next);
   };
   for (const root of roots) visit(root);
+  return seen;
+}
+
+/**
+ * The keys of the pages that load a terminal entry lazily (the Workspace page) and every chunk they import statically: the first thing
+ * the browser has fetched when the terminal chunk starts to load. The bundler leaves a module out of a shared chunk when the lazily
+ * loaded terminal page can count on its importer, so the terminal page imports the page's own chunk and its shared chunks.
+ */
+function loaderKeys(manifest, roots) {
+  const seen = new Set();
+  const visit = (key) => {
+    if (seen.has(key) || manifest[key] === undefined) return;
+    seen.add(key);
+    for (const next of manifest[key].imports ?? []) visit(next);
+  };
+  for (const [key, chunk] of Object.entries(manifest)) {
+    if ((chunk.dynamicImports ?? []).some((next) => roots.includes(next))) visit(key);
+  }
   return seen;
 }
 
@@ -113,11 +131,12 @@ export function checkBudget(distDir) {
   const allJs = files.filter((f) => f.endsWith('.js')).reduce((sum, f) => sum + gzipSize(join(dist, f)), 0);
   const css = files.filter((f) => f.endsWith('.css')).reduce((sum, f) => sum + gzipSize(join(dist, f)), 0);
 
-  // The terminal chunk: what the terminal page and the loader can fetch, less what the first load fetches anyway.
+  // The terminal chunk: what the terminal page and the loader can fetch, less what the first load fetches anyway and less what the
+  // page that opens the terminal has fetched by then. The walk does not enter those keys (the entry's dynamic imports are every page).
   const terminalRoots = TERMINAL_ENTRIES.filter((key) => manifest[key] !== undefined);
-  const initialFileSet = new Set(initialFiles);
-  const terminalFiles = jsFiles(manifest, reachableKeys(manifest, terminalRoots)).filter(
-    (file) => !initialFileSet.has(file),
+  const alreadyFetched = new Set([...initialSet, ...loaderKeys(manifest, terminalRoots)]);
+  const terminalFiles = jsFiles(manifest, reachableKeys(manifest, terminalRoots, alreadyFetched)).filter(
+    (file) => !initialFiles.includes(file),
   );
   const terminalJs = terminalFiles.reduce((sum, file) => sum + gzipSize(join(dist, file)), 0);
 

@@ -325,3 +325,140 @@
   display: inline-block;
   padding: var(--sp-1) var(--sp-3);
 }
+
+/* ---- the pane: header, ended banner, notices and the locked form (design 04 6.3) ---- */
+.workspace-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+/* a notice (loading, nothing selected, locked, failed) sits at the top of the pane and scrolls on its own when it must */
+.workspace-pane > .state,
+.workspace-pane > .workspace-locked {
+  align-self: center;
+  max-width: 40rem;
+  margin: var(--sp-7) var(--sp-5);
+  overflow: auto;
+}
+.workspace-pane__loading {
+  margin: 0;
+  padding: var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border);
+  background: var(--surface);
+}
+.workspace-header__main {
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.workspace-header__title {
+  min-width: 0;
+}
+.workspace-header__name {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.workspace-header__name:focus {
+  outline: none;
+}
+.workspace-header__path {
+  margin: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.workspace-header__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  min-width: 0;
+}
+.workspace-header__note {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.workspace-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.workspace-header__actions .btn[data-tone='danger'] {
+  border-color: var(--state-failed-fg);
+  color: var(--state-failed-fg);
+}
+.workspace-ended {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border-strong);
+  background: var(--surface-2);
+}
+.workspace-ended__text {
+  min-width: 0;
+}
+.workspace-ended__title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.workspace-ended__text p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.workspace-ended__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.workspace-locked__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-block: var(--sp-4);
+}
+.workspace-locked__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.workspace-locked__row .input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.workspace-locked__message {
+  min-height: 1lh;
+  margin: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.workspace-locked__message:empty {
+  display: none;
+}
+@media (forced-colors: active) {
+  .workspace-header__actions .btn[data-tone='danger'] {
+    border-color: ButtonText;
+    color: ButtonText;
+  }
+}

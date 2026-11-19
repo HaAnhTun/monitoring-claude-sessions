@@ -59,6 +59,7 @@ const page = lazyOf(() => null);
 
 /** Every page of the route table is registered, so the navigation lists them all (the shell reads the registry from the router). */
 const ALL_PAGES: PageRegistry = {
+  workspace: page,
   overview: page,
   sessions: page,
   sessionDetail: page,
@@ -72,7 +73,8 @@ function Pages() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/" element={<Page title="Overview" />} />
+        <Route path="/" element={<Page title="Workspace" />} />
+        <Route path="/overview" element={<Page title="Overview" />} />
         <Route path="/sessions" element={<Page title="Sessions" />} />
         <Route path="/sessions/:sessionId" element={<Page title="Session" />} />
         <Route path="/settings" element={<Page title="Settings" />} />
@@ -113,7 +115,7 @@ function renderShell(options: ShellOptions = {}) {
         }),
     });
   const rendered = renderWithProviders(<Pages />, {
-    route: options.route ?? '/',
+    route: options.route ?? '/overview',
     instance,
     api,
     prefsStore: store,
@@ -284,7 +286,7 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('main')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Workspace' })).toBeInTheDocument();
     expect(screen.queryByRole('complementary')).toBeNull();
   });
 
@@ -317,7 +319,7 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
     });
 
     it('has no link to the switcher where there is no switcher', async () => {
-      renderShell({ route: '/' });
+      renderShell({ route: '/overview' });
       await screen.findByRole('complementary');
       expect(screen.queryByRole('link', { name: msg('shell.skip.switcher') })).toBeNull();
     });
@@ -331,12 +333,28 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
         within(nav)
           .getAllByRole('link')
           .map((a) => a.getAttribute('href')),
-      ).toEqual(['/', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
+      ).toEqual(['/overview', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
       expect(within(nav).getByRole('link', { name: new RegExp(`^${msg('route.sessions.title')}`) })).toHaveAttribute(
         'aria-current',
         'page',
       );
       expect(within(nav).getByRole('link', { name: msg('route.overview.title') })).not.toHaveAttribute('aria-current');
+    });
+
+    it('lists the Workspace first, at "/", for a user instance and marks it current there', async () => {
+      renderShell({ route: '/', instance: makeInstance({ kind: 'user' }) });
+      const nav = await screen.findByRole('navigation', { name: msg('nav.label') });
+      expect(
+        within(nav)
+          .getAllByRole('link')
+          .map((a) => a.getAttribute('href')),
+      ).toEqual(['/', '/overview', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
+      expect(within(nav).getByRole('link', { name: msg('route.workspace.title') })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(within(nav).getByRole('link', { name: msg('route.overview.title') })).not.toHaveAttribute('aria-current');
+      expect(await screen.findByRole('heading', { level: 1, name: 'Workspace' })).toBeInTheDocument();
     });
 
     it('keeps Sessions current on a session page', async () => {

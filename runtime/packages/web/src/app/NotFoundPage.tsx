@@ -25,7 +25,7 @@ export function NotFoundPage() {
         primary={{
           label: t('notFound.openOverview'),
           onClick: () => {
-            void navigate('/');
+            void navigate('/overview');
           },
         }}
         secondary={<Link to="/sessions">{t('notFound.openSessions')}</Link>}

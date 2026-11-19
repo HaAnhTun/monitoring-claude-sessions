@@ -8,7 +8,7 @@ import {
   type LazyExoticComponent,
   type ReactNode,
 } from 'react';
-import { Navigate, Outlet, Route, Routes, useParams } from 'react-router';
+import { matchPath, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router';
 
 import type { IconName } from '../components/icons.ts';
 import { useT } from '../i18n/context.ts';
@@ -24,7 +24,10 @@ import { usePageChrome } from './usePageChrome.ts';
 // from this table and the registry (`navItems`): a page that is not registered is not listed.
 
 export type PageKey =
-  'overview' | 'sessions' | 'sessionDetail' | 'activity' | 'tasks' | 'analytics' | 'search' | 'settings';
+  'workspace' | 'overview' | 'sessions' | 'sessionDetail' | 'activity' | 'tasks' | 'analytics' | 'search' | 'settings';
+
+/** How the shell frames a page: `page` pads and scrolls it; `bleed` gives it the whole area and lets it manage its own scrolling. */
+export type RouteLayout = 'page' | 'bleed';
 
 /** Where an entry sits in the navigation: the main list, or the footer list below it (Settings). */
 export type NavGroup = 'main' | 'footer';
@@ -45,12 +48,21 @@ export interface RouteSpec {
   path: string;
   /** The page name: the heading, the document title and the label of its navigation entry. */
   titleKey: RouteTitleKey;
+  /** Default `page`. The Workspace is `bleed`: no padding, the shell fills the window height. */
+  layout?: RouteLayout;
   /** Present when the page has a navigation entry. */
   nav?: RouteNav;
 }
 
 export const ROUTES = [
-  { key: 'overview', path: '/', titleKey: 'route.overview.title', nav: { icon: 'overview', group: 'main' } },
+  {
+    key: 'workspace',
+    path: '/',
+    titleKey: 'route.workspace.title',
+    layout: 'bleed',
+    nav: { icon: 'terminal', group: 'main' },
+  },
+  { key: 'overview', path: '/overview', titleKey: 'route.overview.title', nav: { icon: 'overview', group: 'main' } },
   {
     key: 'sessions',
     path: '/sessions',
@@ -78,6 +90,24 @@ export const ROUTES = [
 /** The table typed as a plain list, for the code that reads `nav` of every entry. */
 const ROUTE_LIST: readonly RouteSpec[] = ROUTES;
 
+/** The route of a pathname, most specific first (`/sessions/:sessionId` before `/sessions`); `null` for a path that is no route. */
+export function routeSpecOf(pathname: string): RouteSpec | null {
+  const matches = ROUTE_LIST.filter((spec) => matchPath({ path: spec.path, end: true }, pathname) !== null);
+  // a longer pattern is a more specific one; the table has no two entries of the same length that both match
+  matches.sort((a, b) => b.path.length - a.path.length);
+  return matches[0] ?? null;
+}
+
+/** The route of the current location, or `null` for an unknown path (the not-found page). */
+export function useRouteSpec(): RouteSpec | null {
+  return routeSpecOf(useLocation().pathname);
+}
+
+/** The layout of the current route: `page` unless the route says `bleed`. */
+export function useRouteLayout(): RouteLayout {
+  return useRouteSpec()?.layout ?? 'page';
+}
+
 /** `shell` is the layout route (renders an Outlet); `legacyHashRedirect` runs before the routes (04-ui.md 3.3). */
 export type RegistryKey = PageKey | 'shell' | 'legacyHashRedirect';
 export type PageRegistry = Partial<Record<RegistryKey, LazyExoticComponent<ComponentType>>>;
@@ -101,6 +131,9 @@ export const pageRegistry: PageRegistry = {
   // @wp-begin WP-53
   activity: lazyPage(() => import('../pages/activity/ActivityPage.tsx').then((m) => ({ default: m.ActivityPage }))),
   // @wp-end WP-53
+  // @wp-begin WP-136
+  workspace: lazyPage(() => import('../pages/workspace/WorkspacePage.tsx').then((m) => ({ default: m.WorkspacePage }))),
+  // @wp-end WP-136
   // @wp-begin WP-54
   overview: lazyPage(() => import('../pages/overview/OverviewPage.tsx').then((m) => ({ default: m.OverviewPage }))),
   // @wp-end WP-54
@@ -137,14 +170,20 @@ export interface NavItem {
 /**
  * The navigation entries: the routes that have `nav` metadata and a registered page, the main group first and the footer group
  * after it, each in the order of the route table. The Search entry also needs an instance that searches all sessions
- * (`features.transcriptSearch === 'instance'`); a page that is not registered, or an unknown instance, hides it.
+ * (`features.transcriptSearch === 'instance'`); a page that is not registered, or an unknown instance, hides it. The Workspace
+ * entry needs a user instance (`kind === 'user'`): a task instance, or one not known yet, never lists it.
  */
-export function navItems(registry: PageRegistry, features: InstanceInfo['features'] | null): NavItem[] {
+export function navItems(
+  registry: PageRegistry,
+  features: InstanceInfo['features'] | null,
+  kind: InstanceInfo['kind'] | null = null,
+): NavItem[] {
   const items: NavItem[] = [];
   for (const spec of ROUTE_LIST) {
     const { nav } = spec;
     if (nav === undefined || registry[spec.key] === undefined) continue;
     if (spec.key === 'search' && features?.transcriptSearch !== 'instance') continue;
+    if (spec.key === 'workspace' && kind !== 'user') continue;
     items.push({
       key: spec.key,
       to: spec.path,

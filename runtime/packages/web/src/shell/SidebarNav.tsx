@@ -93,7 +93,13 @@ export function SidebarNav({ items, counts, tooltips = false }: SidebarNavProps)
 /** The navigation of the running application: the entries come from the registry and the instance, the figures from the overview. */
 export function ConnectedSidebarNav({ tooltips }: { tooltips: boolean }) {
   const registry = usePageRegistry();
-  const features = useInstance().data?.features ?? null;
+  const instance = useInstance().data;
   const counts = useNavCounts();
-  return <SidebarNav items={navItems(registry, features)} counts={counts} tooltips={tooltips} />;
+  return (
+    <SidebarNav
+      items={navItems(registry, instance?.features ?? null, instance?.kind ?? null)}
+      counts={counts}
+      tooltips={tooltips}
+    />
+  );
 }

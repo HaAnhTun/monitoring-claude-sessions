@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enMessages } from '../i18n/messages/en.ts';
 import { viMessages } from '../i18n/messages/vi.ts';
 import { msg } from '../test/msg.ts';
-import { AppRoutes, ROUTES, navItems, type PageRegistry } from './routes.tsx';
+import { AppRoutes, ROUTES, navItems, useRouteLayout, useRouteSpec, type PageRegistry } from './routes.tsx';
 
 // CR-WP-49-2: the route-table tests never touch the default registry. Loading the real shell here would pull the whole frame (and
 // its data hooks) into a test about paths and titles, so loading it fails the test.
@@ -46,6 +46,7 @@ const FEATURES: InstanceInfo['features'] = {
 };
 
 const ALL_PAGES: PageRegistry = {
+  workspace: lazyOf(() => null),
   overview: lazyOf(() => null),
   sessions: lazyOf(() => null),
   sessionDetail: lazyOf(() => null),
@@ -59,8 +60,11 @@ const ALL_PAGES: PageRegistry = {
 const without = (registry: PageRegistry, key: string): PageRegistry =>
   Object.fromEntries(Object.entries(registry).filter(([name]) => name !== key));
 
-const navKeys = (registry: PageRegistry, features: InstanceInfo['features'] | null = FEATURES): string[] =>
-  navItems(registry, features).map((item) => item.key);
+const navKeys = (
+  registry: PageRegistry,
+  features: InstanceInfo['features'] | null = FEATURES,
+  kind: InstanceInfo['kind'] | null = 'user',
+): string[] => navItems(registry, features, kind).map((item) => item.key);
 
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -73,7 +77,8 @@ afterEach(() => {
 describe('route table (ADR 0073 decision 2)', () => {
   it('lists the pages, their paths and their title keys', () => {
     expect(ROUTES.map((r) => [r.key, r.path, r.titleKey])).toEqual([
-      ['overview', '/', 'route.overview.title'],
+      ['workspace', '/', 'route.workspace.title'],
+      ['overview', '/overview', 'route.overview.title'],
       ['sessions', '/sessions', 'route.sessions.title'],
       ['sessionDetail', '/sessions/:sessionId', 'route.sessionDetail.title'],
       ['activity', '/activity', 'route.activity.title'],
@@ -91,13 +96,21 @@ describe('route table (ADR 0073 decision 2)', () => {
     }
   });
 
-  it('makes "/" the Overview', () => {
-    expect(ROUTES[0]).toMatchObject({ key: 'overview', path: '/', titleKey: 'route.overview.title' });
+  it('makes "/" the Workspace, a bleed page, and moves the Overview to "/overview"', () => {
+    expect(ROUTES[0]).toMatchObject({
+      key: 'workspace',
+      path: '/',
+      titleKey: 'route.workspace.title',
+      layout: 'bleed',
+    });
+    expect(ROUTES[1]).toMatchObject({ key: 'overview', path: '/overview', titleKey: 'route.overview.title' });
+    expect(msg('route.workspace.title')).toBe('Workspace');
     expect(msg('route.overview.title')).toBe('Overview');
   });
 
   it.each([
-    ['/', 'route.overview.title'],
+    ['/', 'route.workspace.title'],
+    ['/overview', 'route.overview.title'],
     ['/sessions', 'route.sessions.title'],
     ['/sessions/abc-123', 'route.sessionDetail.title'],
     ['/activity', 'route.activity.title'],
@@ -160,6 +173,7 @@ describe('route table (ADR 0073 decision 2)', () => {
 describe('navigation generated from the registry (ADR 0073 decision 3, R-01)', () => {
   it('lists exactly the registered pages, in the order of the decision, with Settings last', () => {
     expect(navKeys(ALL_PAGES, { ...FEATURES, transcriptSearch: 'instance' })).toEqual([
+      'workspace',
       'overview',
       'sessions',
       'activity',
@@ -168,7 +182,33 @@ describe('navigation generated from the registry (ADR 0073 decision 3, R-01)', (
       'search',
       'settings',
     ]);
-    expect(navKeys(ALL_PAGES)).toEqual(['overview', 'sessions', 'activity', 'tasks', 'analytics', 'settings']);
+    expect(navKeys(ALL_PAGES)).toEqual([
+      'workspace',
+      'overview',
+      'sessions',
+      'activity',
+      'tasks',
+      'analytics',
+      'settings',
+    ]);
+  });
+
+  it('lists the Workspace only for a user instance (a task instance, or one not known yet, keeps the old landing page)', () => {
+    expect(navKeys(ALL_PAGES, FEATURES, 'user')).toContain('workspace');
+    expect(navKeys(ALL_PAGES, FEATURES, 'task')).not.toContain('workspace');
+    expect(navKeys(ALL_PAGES, FEATURES, null)).not.toContain('workspace');
+    expect(navKeys(ALL_PAGES, FEATURES, 'task')).toEqual([
+      'overview',
+      'sessions',
+      'activity',
+      'tasks',
+      'analytics',
+      'settings',
+    ]);
+  });
+
+  it('keeps the two-argument form: the Workspace is then hidden', () => {
+    expect(navItems(ALL_PAGES, FEATURES).map((item) => item.key)).not.toContain('workspace');
   });
 
   it('never lists the session detail route', () => {
@@ -176,7 +216,14 @@ describe('navigation generated from the registry (ADR 0073 decision 3, R-01)', (
   });
 
   it('drops a page that is not registered', () => {
-    expect(navKeys(without(ALL_PAGES, 'tasks'))).toEqual(['overview', 'sessions', 'activity', 'analytics', 'settings']);
+    expect(navKeys(without(ALL_PAGES, 'tasks'))).toEqual([
+      'workspace',
+      'overview',
+      'sessions',
+      'activity',
+      'analytics',
+      'settings',
+    ]);
     expect(navKeys({})).toEqual([]);
   });
 
@@ -189,7 +236,7 @@ describe('navigation generated from the registry (ADR 0073 decision 3, R-01)', (
   });
 
   it('carries the icon, the group and the count of each entry; Tasks has no count', () => {
-    const items = navItems(ALL_PAGES, FEATURES);
+    const items = navItems(ALL_PAGES, FEATURES, 'user');
     const byKey = Object.fromEntries(items.map((item) => [item.key, item]));
     expect(byKey['sessions']).toMatchObject({ to: '/sessions', icon: 'sessions', group: 'main', countKey: 'sessions' });
     expect(byKey['settings']).toMatchObject({
@@ -199,7 +246,44 @@ describe('navigation generated from the registry (ADR 0073 decision 3, R-01)', (
       countKey: 'settings',
     });
     expect(byKey['tasks']?.countKey).toBeUndefined();
-    expect(byKey['overview']).toMatchObject({ to: '/', titleKey: 'route.overview.title' });
+    expect(byKey['overview']).toMatchObject({ to: '/overview', titleKey: 'route.overview.title' });
+    expect(byKey['workspace']).toMatchObject({ to: '/', icon: 'terminal', group: 'main' });
+    expect(byKey['workspace']?.countKey).toBeUndefined();
+  });
+});
+
+function LayoutProbe() {
+  const spec = useRouteSpec();
+  const layout = useRouteLayout();
+  return <output data-testid="route-spec" data-key={spec?.key ?? 'none'} data-layout={layout} />;
+}
+
+describe('route spec and layout of the current location (design 04 2.1)', () => {
+  it.each([
+    ['/', 'workspace', 'bleed'],
+    ['/overview', 'overview', 'page'],
+    ['/sessions', 'sessions', 'page'],
+    ['/sessions/abc-123', 'sessionDetail', 'page'],
+    ['/settings', 'settings', 'page'],
+    ['/no/such/page', 'none', 'page'],
+  ] as const)('reads %s as %s with the %s layout', (path, key, layout) => {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <LayoutProbe />
+      </MemoryRouter>,
+    );
+    const probe = screen.getByTestId('route-spec');
+    expect(probe).toHaveAttribute('data-key', key);
+    expect(probe).toHaveAttribute('data-layout', layout);
+  });
+
+  it('matches the path alone: a query on "/" is still the Workspace', () => {
+    render(
+      <MemoryRouter initialEntries={['/?session=fixture-term-1']}>
+        <LayoutProbe />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('route-spec')).toHaveAttribute('data-key', 'workspace');
   });
 });
 

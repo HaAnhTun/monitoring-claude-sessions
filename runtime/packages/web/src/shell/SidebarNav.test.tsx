@@ -2,11 +2,12 @@ import { screen, within } from '@testing-library/react';
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { navItems, type PageRegistry } from '../app/routes.tsx';
+import { navItems, PageRegistryContext, type PageRegistry } from '../app/routes.tsx';
+import { createFakeApi } from '../test/fake-api.ts';
 import { makeInstance } from '../test/fixtures/index.ts';
 import { msg } from '../test/msg.ts';
 import { renderWithIntl } from '../test/render.tsx';
-import { SidebarNav, type NavCounts } from './SidebarNav.tsx';
+import { ConnectedSidebarNav, SidebarNav, type NavCounts } from './SidebarNav.tsx';
 
 function lazyOf(component: ComponentType): LazyExoticComponent<ComponentType> {
   return lazy(() => Promise.resolve({ default: component }));
@@ -14,6 +15,7 @@ function lazyOf(component: ComponentType): LazyExoticComponent<ComponentType> {
 
 const page = lazyOf(() => null);
 const ALL: PageRegistry = {
+  workspace: page,
   overview: page,
   sessions: page,
   sessionDetail: page,
@@ -27,7 +29,7 @@ const ALL: PageRegistry = {
 function renderNav(
   options: { counts?: NavCounts | null; route?: string; registry?: PageRegistry; tooltips?: boolean } = {},
 ) {
-  const items = navItems(options.registry ?? ALL, makeInstance().features);
+  const items = navItems(options.registry ?? ALL, makeInstance().features, 'user');
   return renderWithIntl(
     <SidebarNav items={items} counts={options.counts ?? null} tooltips={options.tooltips ?? false} />,
     {
@@ -45,12 +47,12 @@ const hrefs = (): (string | null)[] =>
 describe('SidebarNav (ADR 0073 decision 3)', () => {
   it('lists the registered pages in order and no entry for a page that is missing', () => {
     renderNav();
-    expect(hrefs()).toEqual(['/', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
+    expect(hrefs()).toEqual(['/', '/overview', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
   });
 
   it('drops an unregistered page', () => {
     renderNav({ registry: Object.fromEntries(Object.entries(ALL).filter(([key]) => key !== 'activity')) });
-    expect(hrefs()).toEqual(['/', '/sessions', '/tasks', '/analytics', '/settings']);
+    expect(hrefs()).toEqual(['/', '/overview', '/sessions', '/tasks', '/analytics', '/settings']);
   });
 
   it('labels the entries from the catalogue in the language that is shown', () => {
@@ -59,7 +61,7 @@ describe('SidebarNav (ADR 0073 decision 3)', () => {
   });
 
   it('words the entries in Vietnamese', () => {
-    const items = navItems(ALL, makeInstance().features);
+    const items = navItems(ALL, makeInstance().features, 'user');
     renderWithIntl(<SidebarNav items={items} counts={null} />, { locale: 'vi' });
     expect(screen.getByRole('navigation', { name: msg('nav.label', undefined, 'vi') })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: msg('route.sessions.title', undefined, 'vi') })).toHaveAttribute(
@@ -76,13 +78,33 @@ describe('SidebarNav (ADR 0073 decision 3)', () => {
     ]);
   });
 
-  it('keeps Sessions current on a session page and Overview current only on "/"', () => {
+  it('keeps the Workspace current on "/" only (with or without a selected session) and Overview on "/overview"', () => {
+    renderNav({ route: '/?session=fixture-term-1' });
+    const current = (): (string | null)[] =>
+      within(nav())
+        .getAllByRole('link')
+        .filter((a) => a.getAttribute('aria-current') === 'page')
+        .map((a) => a.getAttribute('href'));
+    expect(current()).toEqual(['/']);
+  });
+
+  it('marks only Overview current on "/overview"', () => {
+    renderNav({ route: '/overview' });
+    expect(within(nav()).getByRole('link', { name: msg('route.overview.title') })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(nav()).getByRole('link', { name: msg('route.workspace.title') })).not.toHaveAttribute('aria-current');
+  });
+
+  it('keeps Sessions current on a session page and Overview and the Workspace current on neither', () => {
     renderNav({ route: '/sessions/abc' });
     expect(within(nav()).getByRole('link', { name: new RegExp(`^${msg('route.sessions.title')}`) })).toHaveAttribute(
       'aria-current',
       'page',
     );
     expect(within(nav()).getByRole('link', { name: msg('route.overview.title') })).not.toHaveAttribute('aria-current');
+    expect(within(nav()).getByRole('link', { name: msg('route.workspace.title') })).not.toHaveAttribute('aria-current');
   });
 
   it('shows the active sessions with their unit and open alerts with theirs', () => {
@@ -155,5 +177,29 @@ describe('SidebarNav (ADR 0073 decision 3)', () => {
     view.unmount();
     renderNav({ counts: { sessions: 3 } });
     expect(within(nav()).getByRole('link', { name: new RegExp('^' + sessions) })).not.toHaveAttribute('title');
+  });
+});
+
+describe('ConnectedSidebarNav passes the kind of the instance (design 04 2.1)', () => {
+  function renderConnected(kind: 'user' | 'task') {
+    const api = createFakeApi({ instance: () => makeInstance({ kind }) });
+    return renderWithIntl(
+      <PageRegistryContext value={ALL}>
+        <ConnectedSidebarNav tooltips={false} />
+      </PageRegistryContext>,
+      { api, instance: makeInstance({ kind }) },
+    );
+  }
+
+  it('lists the Workspace first for a user instance', () => {
+    renderConnected('user');
+    expect(hrefs()[0]).toBe('/');
+    expect(within(nav()).getByRole('link', { name: msg('route.workspace.title') })).toBeInTheDocument();
+  });
+
+  it('hides the Workspace for a task instance, whose landing page stays the Overview', () => {
+    renderConnected('task');
+    expect(hrefs()).toEqual(['/overview', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
+    expect(within(nav()).queryByRole('link', { name: msg('route.workspace.title') })).toBeNull();
   });
 });
