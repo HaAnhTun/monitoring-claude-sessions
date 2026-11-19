@@ -3,17 +3,28 @@
 // arrives while the server is still starting, and the exit code of the real process. Real workspace, database and sockets.
 import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { defaultSkillDir, initWorkspace, openInstanceDb, type RuntimeFactories } from '@mcs/engine';
-import { RUNTIME_VERSION } from '@mcs/shared';
+import {
+  createDaMemoryReader,
+  createUserServices,
+  defaultSkillDir,
+  initWorkspace,
+  openInstanceDb,
+  userRootOf,
+  type RuntimeFactories,
+} from '@mcs/engine';
+import { FakePtyBackend } from '@mcs/engine/testing';
+import { RUNTIME_VERSION, routes } from '@mcs/shared';
 import {
   allocatePort,
   assertPortClosed,
   hermeticEnv,
   httpRequest,
   killAllTracked,
+  openTerminalSocket,
   spawnTracked,
   useTempDirs,
   waitFor,
@@ -23,6 +34,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { bootServer, type BootInput, type RunningServer } from '../src/boot.ts';
 import { controlAddress, requestControl } from '../src/control-channel.ts';
 import { SHUTDOWN_STEP_NAMES, createShutdownGate } from '../src/shutdown.ts';
+import { pageOrigin, postExchange, writeHeaders } from './terminal/helpers/auth.ts';
 
 const makeTemp = useTempDirs();
 const REAL_BOOT = fileURLToPath(new URL('../dist/boot.js', import.meta.url));
@@ -261,6 +273,126 @@ describe('T-LC-05: graceful shutdown by the control channel (01 4.5)', () => {
     ).toBe(true);
     expect(lines.find((line) => line.event === 'shutdown_done')).toMatchObject({ status: 'deadline' });
     await expect(requestControl(controlAddress(f.id), { v: 1, op: 'identify' }, { timeoutMs: 1500 })).rejects.toThrow();
+    await assertPortClosed(port);
+  });
+});
+
+// ---- the sockets and streams of a user instance (CAW-32, design 02 5.5 and 9) ----------------------------------------------------
+
+/** The user instance of a temporary MCS_HOME, with `terminal.command` naming a file that exists (the scripted pty never runs it). */
+async function userFixture(): Promise<Fixture & { readonly work: string }> {
+  const base = await fixture();
+  const userRoot = userRootOf(base.env);
+  mkdirSync(userRoot, { recursive: true });
+  const id = randomUUID();
+  const { ws } = await initWorkspace({
+    repo: userRoot,
+    root: userRoot,
+    name: 'Claude Agent Workspace',
+    slug: 'user',
+    kind: 'user',
+    newId: () => id,
+  });
+  const command = path.join(base.root, process.platform === 'win32' ? 'fake-claude.exe' : 'fake-claude');
+  writeFileSync(command, '', { mode: 0o755 });
+  writeFileSync(path.join(ws.dir, 'runtime.json'), JSON.stringify({ schema_version: 1, terminal: { command } }));
+  const work = path.join(base.root, 'work');
+  mkdirSync(work);
+  return { ...base, ws: ws.dir, id, work };
+}
+
+function realUserServices(root: string): RuntimeFactories['createUserServices'] {
+  return (ctx, services) =>
+    createUserServices(ctx, services, {
+      terminal: { backend: new FakePtyBackend(), env: () => ({}) },
+      picker: null,
+      folders: { daMemory: createDaMemoryReader({ dir: path.join(root, 'no-da-memory'), cacheMs: 0 }), homeDir: root },
+    });
+}
+
+/** A signed-in cookie (the code of the control op, exchanged over HTTP) and a session started through the create route. */
+async function signedInWithSession(
+  f: Fixture & { readonly work: string },
+  port: number,
+): Promise<{ cookie: string; name: string }> {
+  const minted = await requestControl(
+    controlAddress(f.id),
+    { v: 1, op: 'access', instanceId: f.id, token: tokenOf(f) },
+    { timeoutMs: 10_000 },
+  );
+  if (!minted.ok || minted.op !== 'access') throw new Error('the control op access did not answer a code');
+  const reply = await postExchange(port, minted.code);
+  const cookie = reply.headers['set-cookie']?.split(';')[0];
+  if (reply.status !== 200 || cookie === undefined) throw new Error(`the exchange answered ${String(reply.status)}`);
+  const created = await httpRequest(port, routes.terminalCreateSession.path, {
+    method: 'POST',
+    headers: writeHeaders(cookie),
+    origin: pageOrigin(port),
+    body: JSON.stringify({ path: f.work }),
+  });
+  if (created.status !== 200) throw new Error(`the create route answered ${String(created.status)}`);
+  return { cookie, name: routes.terminalCreateSession.response.parse(JSON.parse(created.body)).session.name };
+}
+
+describe('a user instance with sockets and streams open at shutdown (design 02 5.5)', () => {
+  it('closes every terminal socket with 1001 inside the grace, ends the event stream, and exits 0', async () => {
+    const f = await userFixture();
+    const { server, port } = await start(f, { factories: { createUserServices: realUserServices(f.root) } });
+    const { cookie, name } = await signedInWithSession(f, port);
+    const first = await openTerminalSocket(port, name, { cookie });
+    const second = await openTerminalSocket(port, name, { cookie });
+
+    const events = request({
+      host: '127.0.0.1',
+      port,
+      path: routes.terminalEvents.path,
+      headers: { Host: `127.0.0.1:${String(port)}`, Cookie: cookie },
+      agent: false,
+    });
+    const streamEnded = new Promise<void>((resolve) => {
+      events.once('response', (res) => {
+        res.on('data', () => undefined);
+        res.once('close', () => {
+          resolve();
+        });
+      });
+      events.once('error', () => {
+        resolve();
+      });
+    });
+    events.end();
+
+    const graceMs = server.ctx.config.runtime.server.shutdownGraceMs;
+    const started = Date.now();
+    server.requestShutdown('stop');
+    await first.client.waitClosed();
+    await second.client.waitClosed();
+    expect(first.client.closeInfo()).toMatchObject({ code: 1001, reason: 'shutting_down' });
+    expect(second.client.closeInfo()).toMatchObject({ code: 1001, reason: 'shutting_down' });
+    await streamEnded;
+    const outcome = await server.closed;
+    expect(outcome.exitCode).toBe(0);
+    expect(Date.now() - started).toBeLessThan(graceMs);
+    await assertPortClosed(port);
+    expect(exists(f, 'state.json')).toBe(false);
+    expect(exists(f, 'run', 'control.token')).toBe(false);
+  });
+
+  it('terminates a socket whose client never answers the close, after the grace of the gateway, and still exits 0', async () => {
+    const f = await userFixture();
+    const { server, port } = await start(f, { factories: { createUserServices: realUserServices(f.root) } });
+    const { cookie, name } = await signedInWithSession(f, port);
+    const stuck = await openTerminalSocket(port, name, { cookie });
+    stuck.client.pauseReading();
+
+    server.requestShutdown('stop');
+    const outcome = await server.closed;
+    expect(outcome.exitCode).toBe(0);
+    // the gateway ended the socket inside its own grace: no step of the shutdown ran into the deadline
+    expect(outcome.deadlineExceededAtStep).toBeNull();
+    // a paused socket sees the end of the connection only when it reads again
+    stuck.client.resumeReading();
+    await stuck.client.waitClosed();
     await assertPortClosed(port);
   });
 });

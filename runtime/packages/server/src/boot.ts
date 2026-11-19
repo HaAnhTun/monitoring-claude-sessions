@@ -12,7 +12,10 @@
 //   (10, 11, 14, 15, 16, 17) -- `buildInstanceContext` (WP-16) does these three in one call, in the order configuration,
 //   logger, database; the stamp is read before it, because it needs the stamp  8 web build and HTTP app  9 bind (13)
 //   10 token, then state.json  11 `runtime.start()`, phase ready. Any failure after step 3 cleans up what exists and exits.
-import { randomBytes } from 'node:crypto';
+// Step 8 of a user instance also builds the terminal side (`createTerminalServer`: auth, terminal, event, socket and folder routes,
+// the upgrade listener, the one `close()` that the shutdown awaits before the HTTP server closes); a task instance mounts none of
+// it and gives the app no access verifier (CAW-32, design 02 section 9).
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { writeSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { Server as NetServer } from 'node:net';
@@ -44,6 +47,7 @@ import {
   withFakeTerminals,
   workspacePath,
   type AccessMint,
+  type AccessService,
   type InstanceContext,
   type ChildLogSink,
   type InstanceRuntime,
@@ -86,6 +90,7 @@ import {
   type ShutdownAnswer,
   type TerminalsOutcome,
 } from './control-channel.ts';
+import { createAccessVerifier, type AccessVerifier } from './http/access-guard.ts';
 import { readLegacyTask } from './routes/meta.ts';
 import {
   createShutdownGate,
@@ -94,6 +99,7 @@ import {
   type ShutdownOutcome,
   type ShutdownReason,
 } from './shutdown.ts';
+import { createTerminalServer, type TerminalServer } from './terminal/index.ts';
 import {
   STATE_FILE_NAME,
   buildStateFile,
@@ -555,11 +561,34 @@ async function quietly(action: () => unknown): Promise<void> {
   }
 }
 
+/**
+ * The access service with the control token of this boot also accepted as the Bearer of the `reader` routes (design 02 amendment
+ * A1): the token the control channel checks is the one `run/control.token` holds, so the reader routes and the channel agree
+ * whatever the service reads from disk. The comparison is over hashes, as the service's own.
+ */
+export function withControlToken(
+  service: AccessService,
+  token: string,
+): Pick<AccessService, 'verify' | 'verifyBearer'> {
+  const expected = createHash('sha256').update(token).digest();
+  return {
+    verify: (credential) => service.verify(credential),
+    verifyBearer: (header) => {
+      if (service.verifyBearer(header)) return true;
+      const given =
+        typeof header === 'string' && header.length <= 512 ? /^Bearer ([0-9a-f]{64})$/.exec(header)?.[1] : undefined;
+      return given !== undefined && timingSafeEqual(createHash('sha256').update(given).digest(), expected);
+    },
+  };
+}
+
 /** What exists at a given moment of the boot: what a failure or a shutdown has to close. */
 interface Resources {
   ctx?: InstanceContext;
   runtime?: InstanceRuntime;
   http?: Server;
+  /** The terminal side of a user instance (routes, sockets, event streams); absent on a task instance. */
+  terminal?: TerminalServer;
   /** The bytes of `state.json` this process wrote or would have written (the watchdog compares against them). */
   state?: BuiltStateFile;
   /** True when this process wrote `state.json`. */
@@ -705,6 +734,8 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
   // ---- what undoes the boot (a failure) and what ends a run (the shutdown) share these closers --------------------------------
 
   const closeHttp = async (): Promise<void> => {
+    // the sockets of the terminal first: `closeAllConnections` does not know an upgraded socket (design 02 5.5)
+    await quietly(() => res.terminal?.close());
     const http = res.http;
     if (http === undefined) return;
     const closed = new Promise<void>((resolve) => {
@@ -893,6 +924,26 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
       });
     }
     const task = await readLegacyTask(ctx.instanceDir);
+    // the terminal side exists on the user instance only (design 02 section 9): a task instance mounts nothing and gives the app no
+    // verifier, so a session route cannot exist there (fail closed); a user instance without an access service does not start
+    let terminal: TerminalServer | null = null;
+    let verifier: AccessVerifier | null = null;
+    const user = ctx.kind === 'user' ? runtime.user : null;
+    if (ctx.kind === 'user') {
+      const accessService = user?.accessService ?? null;
+      if (user === null || accessService === null) {
+        return await abort(fail(SERVER_EXIT_CODES.INTERNAL, 'the user instance has no access service'));
+      }
+      verifier = createAccessVerifier(withControlToken(accessService, token), ctx.instanceId);
+      terminal = createTerminalServer({
+        ctx,
+        ports: user.terminal ?? null,
+        access: accessService,
+        folders: user.folders ?? null,
+        logger: ctx.logger,
+      });
+      res.terminal = terminal;
+    }
     const app = createApp({
       ctx,
       port: () => port ?? ctx.config.effectivePort,
@@ -902,9 +953,11 @@ export async function bootServer(input: BootInput): Promise<BootResult> {
       task,
       runtime,
       site,
+      ...(terminal === null || verifier === null ? {} : { access: verifier, extraModules: terminal.modules }),
     });
     const http = createHttpServer(app, ctx.config.runtime.server.requestTimeoutMs);
     res.http = http;
+    if (terminal !== null) http.on('upgrade', terminal.upgrades.listener(app));
 
     // 9. bind (the bind is the reservation)
     const bound = await bindFirstFreePort(http, ctx.config.effectivePort, ctx.config.runtime.server.portScan);

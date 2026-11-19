@@ -9,6 +9,7 @@ import path from 'node:path';
 
 import {
   EMPTY_USER_SERVICES,
+  createAccessService,
   defaultSkillDir,
   initWorkspace,
   userRootOf,
@@ -17,7 +18,7 @@ import {
   type TerminalCensus,
   type TerminalCensusEntry,
 } from '@mcs/engine';
-import { InstanceInfoSchema, RUNTIME_VERSION } from '@mcs/shared';
+import { InstanceInfoSchema, RUNTIME_VERSION, systemClock } from '@mcs/shared';
 import type { ControlRequest } from '@mcs/shared/protocol';
 import { allocatePort, assertPortClosed, hermeticEnv, httpRequest, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -129,8 +130,10 @@ function userServices(
   census: TerminalCensus,
   minted: { count: number } = { count: 0 },
 ): RuntimeFactories['createUserServices'] {
+  // a user instance boots only with an access service (CAW-32); the control op `access` still goes to the minter below
   return () => ({
     census,
+    accessService: createAccessService({ clock: systemClock }),
     access: {
       mint: () => {
         minted.count += 1;
@@ -306,7 +309,15 @@ describe('the control op access', () => {
 
   it('answers UNSUPPORTED while the user services have no minter', async () => {
     const f = await userFixture();
-    await start(f, { factories: { createUserServices: () => ({ ...EMPTY_USER_SERVICES, access: null }) } });
+    await start(f, {
+      factories: {
+        createUserServices: () => ({
+          ...EMPTY_USER_SERVICES,
+          access: null,
+          accessService: createAccessService({ clock: systemClock }),
+        }),
+      },
+    });
     expect(await access(f)).toEqual({ v: 1, ok: false, error: 'UNSUPPORTED' });
   });
 

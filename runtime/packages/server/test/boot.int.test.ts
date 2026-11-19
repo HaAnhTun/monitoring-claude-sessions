@@ -10,8 +10,20 @@ import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { defaultSkillDir, initWorkspace, openInstanceDb, openSqlite, pragmaValue } from '@mcs/engine';
-import { RUNTIME_VERSION, StateFileSchema } from '@mcs/shared';
+import {
+  EMPTY_USER_SERVICES,
+  createDaMemoryReader,
+  createUserServices,
+  defaultSkillDir,
+  initWorkspace,
+  openInstanceDb,
+  openSqlite,
+  pragmaValue,
+  userRootOf,
+  type RuntimeFactories,
+} from '@mcs/engine';
+import { FakePtyBackend } from '@mcs/engine/testing';
+import { RUNTIME_VERSION, StateFileSchema, routes } from '@mcs/shared';
 import {
   allocatePort,
   assertPortClosed,
@@ -27,6 +39,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { bootServer, type BootInput, type BootResult, type RunningServer } from '../src/boot.ts';
 import { controlAddress, requestControl } from '../src/control-channel.ts';
+import { pageOrigin, postExchange, writeHeaders } from './terminal/helpers/auth.ts';
 
 const makeTemp = useTempDirs();
 const REAL_BOOT = fileURLToPath(new URL('../dist/boot.js', import.meta.url));
@@ -595,4 +608,260 @@ describe('the real entry (dist/main.js)', () => {
     expect(result.stderr).toContain('--mcs-instance');
     expect(result.stdout).toBe('');
   }, 30_000);
+});
+
+// ---- the user instance (CAW-32, design 02 section 9) -----------------------------------------------------------------------------
+
+/** The user instance of a temporary MCS_HOME, with `terminal.command` naming a file that exists (the scripted pty never runs it). */
+async function userFixture(): Promise<Fixture & { readonly work: string }> {
+  const root = makeTemp('serve-boot-user').path;
+  const skillDir = path.join(root, 'skill');
+  const runtimeDir = path.join(skillDir, 'runtime');
+  mkdirSync(path.join(skillDir, 'config'), { recursive: true });
+  mkdirSync(runtimeDir, { recursive: true });
+  copyFileSync(path.join(defaultSkillDir(), 'config', 'defaults.json'), path.join(skillDir, 'config', 'defaults.json'));
+  writeFileSync(path.join(runtimeDir, 'defaults.json'), '{"schema_version": 1}\n');
+  writeFileSync(path.join(runtimeDir, '.mcs-build.json'), JSON.stringify(STAMP));
+  const env = hermeticEnv(root);
+  const userRoot = userRootOf(env);
+  mkdirSync(userRoot, { recursive: true });
+  const id = randomUUID();
+  const { ws } = await initWorkspace({
+    repo: userRoot,
+    root: userRoot,
+    name: 'Claude Agent Workspace',
+    slug: 'user',
+    kind: 'user',
+    newId: () => id,
+  });
+  const command = path.join(root, process.platform === 'win32' ? 'fake-claude.exe' : 'fake-claude');
+  writeFileSync(command, '', { mode: 0o755 });
+  writeFileSync(path.join(ws.dir, 'runtime.json'), JSON.stringify({ schema_version: 1, terminal: { command } }));
+  const work = path.join(root, 'work');
+  mkdirSync(work);
+  return { root, skillDir, runtimeDir, ws: ws.dir, id, env, work };
+}
+
+/** The real user services over the scripted pty: the host, the access service, the folder service, no folder dialog. */
+function realUserServices(root: string): RuntimeFactories['createUserServices'] {
+  return (ctx, services) =>
+    createUserServices(ctx, services, {
+      terminal: { backend: new FakePtyBackend(), env: () => ({}) },
+      picker: null,
+      folders: { daMemory: createDaMemoryReader({ dir: path.join(root, 'no-da-memory'), cacheMs: 0 }), homeDir: root },
+    });
+}
+
+const tokenOf = (f: Fixture): string => readFileSync(path.join(f.ws, 'run', 'control.token'), 'utf8').trim();
+
+/** The code of the control op `access` (what `caw open` asks for). */
+async function mintedCode(f: Fixture): Promise<string> {
+  const minted = await requestControl(
+    controlAddress(f.id),
+    { v: 1, op: 'access', instanceId: f.id, token: tokenOf(f) },
+    { timeoutMs: 10_000 },
+  );
+  if (!minted.ok || minted.op !== 'access') throw new Error('the control op access did not answer a code');
+  return minted.code;
+}
+
+/** The code exchanged over HTTP for the `<name>=<value>` cookie pair. */
+async function signIn(f: Fixture, port: number): Promise<string> {
+  const reply = await postExchange(port, await mintedCode(f));
+  const cookie = reply.headers['set-cookie']?.split(';')[0];
+  if (reply.status !== 200 || cookie === undefined) throw new Error(`the exchange answered ${String(reply.status)}`);
+  return cookie;
+}
+
+function getWith(port: number, urlPath: string, headers: Record<string, string> = {}) {
+  return httpRequest(port, urlPath, { headers });
+}
+
+function postWith(port: number, urlPath: string, cookie: string, body: unknown = {}) {
+  return httpRequest(port, urlPath, {
+    method: 'POST',
+    headers: writeHeaders(cookie),
+    origin: pageOrigin(port),
+    body: JSON.stringify(body),
+  });
+}
+
+describe('the user instance wires the terminal side (CAW-32, design 02 section 9)', () => {
+  it('redeems the code of the control op over HTTP and serves the state, create and kill routes with the cookie', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    await booted(f, port, { factories: { createUserServices: realUserServices(f.root) } });
+
+    const cookie = await signIn(f, port);
+    expect(cookie).toMatch(/^caw_[0-9a-f]{8}=[A-Za-z0-9_-]{43}$/);
+    expect((await getWith(port, routes.terminalState.path)).status).toBe(401);
+    const stateOf = async () =>
+      routes.terminalState.response.parse(
+        JSON.parse((await getWith(port, routes.terminalState.path, { Cookie: cookie })).body),
+      );
+    const first = await stateOf();
+    expect(first.capabilities.available).toBe(true);
+    expect(first.sessions).toEqual([]);
+
+    const created = await postWith(port, routes.terminalCreateSession.path, cookie, { path: f.work });
+    expect(created.status).toBe(200);
+    const session = routes.terminalCreateSession.response.parse(JSON.parse(created.body)).session;
+    expect((await stateOf()).sessions.map((row) => row.name)).toEqual([session.name]);
+
+    const killed = await postWith(port, routes.terminalKillSession.path.replace(':name', session.name), cookie);
+    expect(killed.status).toBe(200);
+    expect((await stateOf()).sessions).toEqual([]);
+  });
+
+  it('serves the folder routes with the cookie only, and the reader routes also with the control token as a Bearer value', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    await booted(f, port, { factories: { createUserServices: realUserServices(f.root) } });
+    const cookie = await signIn(f, port);
+    const bearer = { Authorization: `Bearer ${tokenOf(f)}` };
+
+    expect((await getWith(port, routes.listFolders.path)).status).toBe(401);
+    expect((await getWith(port, routes.listFolders.path, { Cookie: cookie })).status).toBe(200);
+    expect((await getWith(port, routes.listFolders.path, bearer)).status).toBe(401);
+
+    const reader = routes.listToolCalls.path;
+    expect((await getWith(port, reader)).status).toBe(401);
+    expect((await getWith(port, reader, { Cookie: cookie })).status).toBe(200);
+    expect((await getWith(port, reader, bearer)).status).toBe(200);
+    expect((await getWith(port, reader, { Authorization: `Bearer ${'0'.repeat(64)}` })).status).toBe(401);
+    // what carries no transcript stays open to local clients
+    expect((await getWith(port, routes.health.path)).status).toBe(200);
+  });
+
+  it('accepts the control token of this boot as the Bearer value even when the access service has no token source of its own', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    const factory: RuntimeFactories['createUserServices'] = (ctx, services) => {
+      const real = realUserServices(f.root)(ctx, services);
+      const service = real.accessService;
+      // a hand-built access service, as a test makes one: its own check never knows the token
+      return {
+        ...real,
+        accessService: service === undefined || service === null ? null : { ...service, verifyBearer: () => false },
+      };
+    };
+    await booted(f, port, { factories: { createUserServices: factory } });
+    const reader = routes.listToolCalls.path;
+    expect((await getWith(port, reader, { Authorization: `Bearer ${tokenOf(f)}` })).status).toBe(200);
+    expect((await getWith(port, reader, { Authorization: `Bearer ${'1'.repeat(64)}` })).status).toBe(401);
+  });
+
+  it('mounts nothing on a task instance: every auth, terminal and folder path is a 404 or 405, folders included (TC-SEC-60)', async () => {
+    const task = await fixture();
+    const port = await allocatePort();
+    await booted(task, port);
+    const paths = [
+      routes.authSession.path,
+      routes.authExchange.path,
+      routes.authLogout.path,
+      routes.terminalState.path,
+      routes.terminalEvents.path,
+      routes.terminalCreateSession.path,
+      routes.terminalPickFolder.path,
+      routes.terminalResume.path,
+      routes.terminalKillSession.path.replace(':name', 'demo-1'),
+      routes.terminalSocket.path.replace(':name', 'demo-1'),
+      routes.listFolders.path,
+      routes.addFolder.path,
+      routes.removeFolder.path.replace(':key', 'demo'),
+      routes.sessionResume.path.replace(':sessionId', randomUUID()),
+      '/api/v3/folders/demo/remove/extra',
+      '/api/v3/terminal',
+      '/api/v3/terminal/',
+      '/api/v3/terminal/sessions/',
+    ];
+    const cookie = `caw_${task.id.slice(0, 8)}=${'A'.repeat(43)}`;
+    for (const url of paths) {
+      for (const method of ['GET', 'POST']) {
+        const reply = await httpRequest(port, url, {
+          method,
+          headers: writeHeaders(cookie),
+          origin: pageOrigin(port),
+          ...(method === 'POST' ? { body: '{}' } : {}),
+        });
+        expect([404, 405], `${method} ${url}`).toContain(reply.status);
+        expect(JSON.parse(reply.body) as { error: { code: string } }, `${method} ${url}`).toMatchObject({
+          error: { code: reply.status === 404 ? 'route_not_found' : 'method_not_allowed' },
+        });
+      }
+    }
+    // a task instance serves its reader routes open, as it always did
+    expect((await getWith(port, routes.listToolCalls.path)).status).toBe(200);
+  });
+
+  it('does not start a user instance whose services have no access service: exit 70, and nothing is left behind', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    const stderr: string[] = [];
+    const result = await bootServer({
+      argv: argvOf(f, port),
+      env: f.env,
+      runtimeDir: f.runtimeDir,
+      stderr: (text) => stderr.push(text),
+      factories: { createUserServices: () => ({ ...EMPTY_USER_SERVICES, accessService: null }) },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.exitCode).toBe(70);
+    expect(stderr.join('')).toContain('no access service');
+    expect(exists(f, 'state.json')).toBe(false);
+    expect(exists(f, 'run', 'control.token')).toBe(false);
+    await expectChannelFree(f);
+    await assertPortClosed(port);
+  });
+
+  it('does not start either when hand-built services leave the access service out altogether', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    const result = await bootServer({
+      argv: argvOf(f, port),
+      env: f.env,
+      runtimeDir: f.runtimeDir,
+      stderr: () => undefined,
+      factories: {
+        createUserServices: () => ({
+          census: EMPTY_USER_SERVICES.census,
+          access: null,
+          components: [],
+        }),
+      },
+    });
+    expect(result.ok ? 0 : result.exitCode).toBe(70);
+  });
+
+  it('starts a user instance with no terminal host: the state says why and the create route answers terminal_unavailable', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    await booted(f, port, {
+      factories: {
+        createUserServices: (ctx, services) => ({ ...realUserServices(f.root)(ctx, services), terminal: null }),
+      },
+    });
+    const cookie = await signIn(f, port);
+    const state = routes.terminalState.response.parse(
+      JSON.parse((await getWith(port, routes.terminalState.path, { Cookie: cookie })).body),
+    );
+    expect(state.capabilities.available).toBe(false);
+    expect(state.sessions).toEqual([]);
+    const created = await postWith(port, routes.terminalCreateSession.path, cookie, { path: f.work });
+    expect(JSON.parse(created.body)).toMatchObject({ error: { code: 'terminal_unavailable' } });
+  });
+
+  it('spends a code once and ends the cookie at logout', async () => {
+    const f = await userFixture();
+    const port = await allocatePort();
+    await booted(f, port, { factories: { createUserServices: realUserServices(f.root) } });
+    const code = await mintedCode(f);
+    const first = await postExchange(port, code);
+    const cookie = first.headers['set-cookie']?.split(';')[0] ?? '';
+    expect(first.status).toBe(200);
+    expect((await postExchange(port, code)).status).toBe(401);
+    expect((await postWith(port, routes.authLogout.path, cookie)).status).toBe(200);
+    expect((await getWith(port, routes.terminalState.path, { Cookie: cookie })).status).toBe(401);
+  });
 });
