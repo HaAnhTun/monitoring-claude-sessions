@@ -11,6 +11,9 @@ export interface Disposable {
   dispose(): void;
 }
 
+/** The shapes of the cursor xterm draws. */
+export type CursorStyle = 'block' | 'bar' | 'underline';
+
 /** The options the app gives a terminal, whole at creation and in part afterwards (`terminal.options.theme = ...`). */
 export interface TerminalOptions {
   fontSize: number;
@@ -19,6 +22,10 @@ export interface TerminalOptions {
   lineHeight: number;
   scrollback: number;
   cursorBlink: boolean;
+  /** The cursor shape (the `terminalCursor` preference); live: it can change while a terminal runs. */
+  cursorStyle: CursorStyle;
+  /** The characters a double click stops at (`WORD_SEPARATOR` of options.ts). */
+  wordSeparator: string;
   theme: TerminalTheme;
   screenReaderMode: boolean;
   /** 1 turns the minimum contrast off (the decision of ADR 0097); a higher value makes the renderer adjust each cell's colour. */
@@ -39,6 +46,7 @@ export interface LiveTerminalOptions {
   lineHeight?: number;
   scrollback?: number;
   cursorBlink?: boolean;
+  cursorStyle?: CursorStyle;
   screenReaderMode?: boolean;
   minimumContrastRatio?: number;
 }
@@ -62,10 +70,14 @@ export interface TerminalLike {
   hasSelection(): boolean;
   getSelection(): string;
   clearSelection(): void;
+  /** Puts text into the terminal as a paste: line ends become carriage returns and the text is bracketed when the program asked. */
+  paste(data: string): void;
   onData(listener: (data: string) => void): Disposable;
   onBinary(listener: (data: string) => void): Disposable;
   onResize(listener: (size: { cols: number; rows: number }) => void): Disposable;
   onScroll(listener: () => void): Disposable;
+  /** The selection changed (a drag, a double click, a clear); the listener reads `getSelection()` itself. */
+  onSelectionChange(listener: () => void): Disposable;
   /** The handler returns true to let xterm handle the event and false to take it (see `decideKey`). */
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void;
 }
@@ -76,10 +88,36 @@ export interface FitLike {
   proposeDimensions(): { cols: number; rows: number } | undefined;
 }
 
+/** What draws the cells: the WebGL renderer (an optional addon) or xterm's own DOM renderer. */
+export type RendererKind = 'webgl' | 'dom';
+
+/**
+ * The optional GPU renderer of one terminal (CAW-144, ADR 0135). It never throws and never fails the engine: when it cannot be
+ * had, the terminal keeps xterm's DOM renderer and every method still answers.
+ */
+export interface RendererLike {
+  /**
+   * Tries to switch to the WebGL renderer; call it once, right after `terminal.open(host)`. Returns the renderer in force:
+   * `'dom'` without constructing anything when the module is absent, the preference said no, WebGL2 is missing or four terminals
+   * already use the GPU; also `'dom'` when the addon threw (it is disposed).
+   */
+  attach(): RendererKind;
+  /** The renderer in force now. */
+  kind(): RendererKind;
+  /** The GPU context was lost for good and the terminal went back to the DOM renderer; called at most once per terminal. */
+  onFallback(listener: () => void): Disposable;
+}
+
+/** What `loadEngine` is told: whether the GPU renderer may be loaded (the preference is not `dom`). */
+export interface EngineLoadOptions {
+  gpu: boolean;
+}
+
 /** One terminal with its fit helper; `dispose` removes the terminal, its addons and its listeners. */
 export interface TerminalInstance {
   terminal: TerminalLike;
   fit: FitLike;
+  renderer: RendererLike;
   dispose(): void;
 }
 

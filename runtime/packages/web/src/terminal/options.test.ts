@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { readTerminalOptions, TERMINAL_FONT, type TerminalLook } from '../lib/term-theme.ts';
-import { DOM_RENDERER_MIN_CONTRAST, TERMINAL_SCROLLBACK, terminalOptionsFor } from './options.ts';
+import { DOM_RENDERER_MIN_CONTRAST, TERMINAL_SCROLLBACK, terminalOptionsFor, WORD_SEPARATOR } from './options.ts';
 
 // Design 04 7.2: `terminalOptionsFor` is the one place that mixes the values of the visual system (`readTerminalOptions`: theme, font,
 // size) with the ones of the terminal area (scrollback, cursor, screen reader mode, the Windows hint, the contrast ratio).
@@ -78,6 +78,7 @@ describe('terminalOptionsFor', () => {
     expect(Object.keys(terminalOptionsFor({ base: look(), ...CALM })).sort()).toEqual(
       [
         'cursorBlink',
+        'cursorStyle',
         'fontFamily',
         'fontSize',
         'lineHeight',
@@ -85,8 +86,26 @@ describe('terminalOptionsFor', () => {
         'screenReaderMode',
         'scrollback',
         'theme',
+        'wordSeparator',
       ].sort(),
     );
+  });
+
+  it('draws a block cursor until the person chose another style', () => {
+    expect(terminalOptionsFor({ base: look(), ...CALM }).cursorStyle).toBe('block');
+    expect(
+      terminalOptionsFor({ base: look(), prefs: { terminalCursor: 'block' }, reducedMotion: false }).cursorStyle,
+    ).toBe('block');
+    expect(
+      terminalOptionsFor({ base: look(), prefs: { terminalCursor: 'bar' }, reducedMotion: false }).cursorStyle,
+    ).toBe('bar');
+    expect(
+      terminalOptionsFor({ base: look(), prefs: { terminalCursor: 'underline' }, reducedMotion: false }).cursorStyle,
+    ).toBe('underline');
+  });
+
+  it('gives a double click the word separators of WORD_SEPARATOR', () => {
+    expect(terminalOptionsFor({ base: look(), ...CALM }).wordSeparator).toBe(WORD_SEPARATOR);
   });
 
   it('does not change its input', () => {
@@ -95,4 +114,19 @@ describe('terminalOptionsFor', () => {
     terminalOptionsFor({ base, prefs: { terminalScreenReader: true }, reducedMotion: true, windowsHost: true });
     expect(base).toEqual(copy);
   });
+});
+
+describe('WORD_SEPARATOR', () => {
+  it('is exactly space, brackets, quotes, comma and the vertical box line', () => {
+    expect(Array.from(WORD_SEPARATOR).sort()).toEqual(
+      [' ', '"', "'", '(', ')', ',', '[', ']', '`', '{', '}', '\u2502'].sort(),
+    );
+  });
+
+  it.each(['\\', '/', '.', '-', ':', ';', '_', '~', '@', '#', '%', '=', '+', '?', '&'])(
+    'does not split a path, a URL or a file name at %j',
+    (character) => {
+      expect(WORD_SEPARATOR).not.toContain(character);
+    },
+  );
 });

@@ -457,6 +457,26 @@ export const viMessages: Record<MessageKey, string> = {
   'settings.prefs.resetHint':
     'Xóa những gì trình duyệt này đã lưu: giao diện, mật độ, ngôn ngữ, cột và tùy chọn bản ghi hội thoại.',
   'settings.prefs.resetDone': 'Đã đặt lại các tùy chọn hiển thị.',
+  'settings.prefs.terminal': 'Terminal',
+  'settings.prefs.renderer': 'Bộ vẽ',
+  'settings.prefs.renderer.auto': 'Tự động (card đồ họa nếu có)',
+  'settings.prefs.renderer.dom': 'DOM (chữ, không dùng card đồ họa)',
+  'settings.prefs.renderer.hint':
+    'Card đồ họa vẽ viền khung liền nét và nhanh hơn; bộ vẽ DOM cho chữ nét hơn một chút. Chỉ áp dụng cho terminal mở từ bây giờ.',
+  'settings.prefs.cursor': 'Con trỏ',
+  'settings.prefs.cursor.block': 'Khối',
+  'settings.prefs.cursor.bar': 'Thanh dọc',
+  'settings.prefs.cursor.underline': 'Gạch chân',
+  'settings.prefs.rightClick': 'Nhấp chuột phải',
+  'settings.prefs.rightClick.smart': 'Sao chép vùng chọn, hoặc dán',
+  'settings.prefs.rightClick.menu': 'Menu của trình duyệt',
+  'settings.prefs.rightClick.hint':
+    'Thông minh: nhấp chuột phải sao chép đoạn đang chọn, và dán khi chưa chọn gì. Shift và nhấp chuột phải luôn mở menu của trình duyệt.',
+  'settings.prefs.copyOnSelect': 'Sao chép khi chọn',
+  'settings.prefs.copyOnSelect.hint':
+    'Chọn chữ là sao chép ngay, như Windows Terminal. Ctrl+C khi đang chọn vẫn sao chép.',
+  'terminal.clipboard.pasteBlocked':
+    'Trình duyệt không cho đọc bộ nhớ tạm. Nhấp chuột phải lần nữa để mở menu của trình duyệt, hoặc nhấn Ctrl+V.',
   'settings.data.lead':
     'Trình giám sát lưu những gì và trong bao lâu. Trang này không bao giờ thay đổi dữ liệu; hãy chạy các lệnh trong terminal.',
   'settings.data.storage': 'Lưu trữ',

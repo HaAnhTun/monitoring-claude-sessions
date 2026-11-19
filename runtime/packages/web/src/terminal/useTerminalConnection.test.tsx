@@ -4,8 +4,10 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { qk } from '../data/query-keys.ts';
+import { createPrefs } from '../lib/prefs.ts';
 import { TERMINAL_FONT } from '../lib/term-theme.ts';
 import { AnnouncerProvider } from '../state/announcer.tsx';
+import { createPrefsStore, type PrefsStore } from '../state/prefs-store.ts';
 import {
   fakeEngine,
   fakeSeams,
@@ -20,6 +22,7 @@ import type { FakeWebSocket } from '../test/fake-websocket.ts';
 import { FIXTURE_INSTANCE_ID } from '../test/fixtures/index.ts';
 import { msg } from '../test/msg.ts';
 import { renderHookWithProviders, renderWithProviders } from '../test/render.tsx';
+import { WORD_SEPARATOR } from './options.ts';
 import { encodeResize, RELEASE_CHORD, terminalSocketUrl } from './protocol.ts';
 import { TerminalSeamsContext } from './seams.ts';
 import {
@@ -62,6 +65,8 @@ interface MountOptions {
   /** The size of the host box in px; 0 by 0 is a host that is not laid out. */
   box?: { width: number; height: number };
   windowsHost?: boolean;
+  /** Preferences that are already stored when the view mounts (the engine is asked for at once, with what they say). */
+  prefsStore?: PrefsStore;
 }
 
 function mount(options: MountOptions = {}): Rig {
@@ -85,6 +90,7 @@ function mount(options: MountOptions = {}): Rig {
     },
     {
       initialProps: { gone: false, focusOnLive: options.focusOnLive ?? true },
+      ...(options.prefsStore === undefined ? {} : { prefsStore: options.prefsStore }),
       wrap: (children: ReactNode) => (
         <TerminalSeamsContext value={fake.seams}>
           <AnnouncerProvider>{children}</AnnouncerProvider>
@@ -141,9 +147,17 @@ function resizeFrames(socket: FakeWebSocket): string[] {
   return socket.sentText;
 }
 
-function stubClipboard(writeText: (text: string) => Promise<void>): void {
-  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+function stubClipboard(
+  writeText: (text: string) => Promise<void>,
+  readText: () => Promise<string> = () => Promise.resolve(''),
+): void {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, readText } });
   vi.stubGlobal('isSecureContext', true);
+}
+
+/** Tells the page which platform it runs on (`navigator.userAgentData.platform`, the first thing `platformIsMac` reads). */
+function stubPlatform(platform: string): void {
+  Object.defineProperty(navigator, 'userAgentData', { configurable: true, value: { platform } });
 }
 
 interface MediaStub {
@@ -180,12 +194,14 @@ function stubMatchMedia(initial: Record<string, boolean> = {}): MediaStub {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  stubPlatform('Windows');
 });
 
 afterEach(() => {
   vi.useRealTimers();
   document.documentElement.removeAttribute('data-theme');
   Reflect.deleteProperty(navigator, 'clipboard');
+  Reflect.deleteProperty(navigator, 'userAgentData');
   document.body.replaceChildren();
 });
 
@@ -839,10 +855,9 @@ describe('copy, interrupt, paste and the way out (TC-UI-07, TC-UI-12)', () => {
     expect(writeText).toHaveBeenCalledWith('picked');
   });
 
-  it('paste goes through the paste path of xterm itself: Ctrl+V and Shift+Insert pass, the text arrives as input', async () => {
+  it('paste goes through the paste path of xterm itself: Ctrl+Shift+V and Shift+Insert pass, the text arrives as input', async () => {
     const rig = await mountLive();
     const terminal = terminalOf(rig);
-    expect(terminal.pressKey({ key: 'v', ctrlKey: true })).toBe(true);
     expect(terminal.pressKey({ key: 'V', ctrlKey: true, shiftKey: true })).toBe(true);
     expect(terminal.pressKey({ key: 'Insert', shiftKey: true })).toBe(true);
     terminal.paste('pasted text');
@@ -990,6 +1005,410 @@ describe('theme, font size and preferences follow the page', () => {
     expect(terminal.options.cursorBlink).toBe(false);
     media.set(MQ_REDUCED_MOTION, false);
     expect(terminal.options.cursorBlink).toBe(true);
+  });
+});
+
+describe('Ctrl+V pastes (CAW-144: xterm 6.0.0 would send 0x16 and cancel the paste)', () => {
+  it('takes the key away from xterm without preventing the default, so the browser fires paste; the hook sends nothing itself', async () => {
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    expect(terminal.pressKey({ key: 'v', ctrlKey: true })).toBe(false);
+    expect(terminal.takenKeys).toHaveLength(1);
+    expect(terminal.takenKeys[0]?.defaultPrevented).toBe(false);
+    expect(rig.socket.sentBinary).toEqual([]);
+    // the browser's paste event reaches xterm's own paste path, which sends the text as input
+    terminal.paste('two lines');
+    expect(sentTextOf(rig.socket)).toEqual(['two lines']);
+  });
+
+  it('does the same with a selection (the selection is not copied or cleared)', async () => {
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    terminal.setSelection('picked');
+    expect(terminal.pressKey({ key: 'V', ctrlKey: true })).toBe(false);
+    expect(terminal.takenKeys[0]?.defaultPrevented).toBe(false);
+    expect(terminal.hasSelection()).toBe(true);
+  });
+
+  it('leaves Ctrl+V to the program on macOS, and Alt+V (the image paste) everywhere', async () => {
+    stubPlatform('macOS');
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    expect(terminal.pressKey({ key: 'v', ctrlKey: true })).toBe(true);
+    expect(terminal.takenKeys).toEqual([]);
+    expect(terminal.pressKey({ key: 'v', altKey: true })).toBe(true);
+    expect(terminal.takenKeys).toEqual([]);
+  });
+});
+
+describe('the GPU renderer (CAW-144, ADR 0135)', () => {
+  it('asks the engine for the GPU renderer unless the preference says dom, and attaches once, after open', async () => {
+    const rig = mount();
+    await settle();
+    expect(rig.fake.loadOptions).toEqual([{ gpu: true }]);
+    const renderer = rig.fake.engine.last().renderer;
+    expect(renderer.attachCalls).toBe(1);
+    expect(renderer.openedAtAttach).toEqual([true]);
+    expect(renderer.kind()).toBe('webgl');
+  });
+
+  it('does not ask for the GPU renderer when the preference is dom', async () => {
+    const fake = fakeSeams();
+    const prefsStore = createPrefsStore(createPrefs(null));
+    prefsStore.setPref('terminalRenderer', 'dom');
+    mount({ fake, prefsStore });
+    await settle();
+    expect(fake.loadOptions).toEqual([{ gpu: false }]);
+  });
+
+  it('keeps working on the DOM renderer when the engine says it could not attach', async () => {
+    const fake = fakeSeams();
+    fake.engine.rendererKind = 'dom';
+    const rig = await mountLive({ fake });
+    expect(rig.result.current.status).toEqual({ kind: 'live' });
+    expect(rig.fake.engine.last().renderer.kind()).toBe('dom');
+  });
+
+  it('survives an attach that throws: the terminal is not the engine failing', async () => {
+    const fake = fakeSeams();
+    fake.engine.failNextAttach = new Error('attach failed');
+    const rig = await mountLive({ fake });
+    expect(rig.result.current.status).toEqual({ kind: 'live' });
+    expect(fake.engine.instances).toHaveLength(1);
+    expect(terminalOf(rig).disposed).toBe(false);
+  });
+
+  it('fits again after the GPU context is lost for good (the cell size may differ), and does nothing else', async () => {
+    const rig = await mountLive();
+    const instance = rig.fake.engine.last();
+    const calls = instance.fit.fitCalls;
+    const sent = rig.socket.sent.length;
+    instance.renderer.fireFallback();
+    expect(instance.fit.fitCalls).toBe(calls);
+    await settle(100);
+    expect(instance.fit.fitCalls).toBeGreaterThan(calls);
+    expect(rig.result.current.status).toEqual({ kind: 'live' });
+    expect(rig.socket.sent.length).toBeGreaterThanOrEqual(sent);
+    expect(document.getElementById('live-region')?.textContent ?? '').toBe('');
+  });
+
+  it('stops listening for the fallback when the view goes away', async () => {
+    const rig = await mountLive();
+    const instance = rig.fake.engine.last();
+    rig.unmount();
+    expect(() => {
+      instance.renderer.fireFallback();
+    }).not.toThrow();
+  });
+});
+
+/** A right click on the terminal: it starts in xterm's own element, inside the host, and is cancelable. */
+function rightClick(rig: Rig, init: MouseEventInit = {}): MouseEvent {
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, ...init });
+  (rig.host.querySelector('.xterm') ?? rig.host).dispatchEvent(event);
+  return event;
+}
+
+describe('right click (CAW-144)', () => {
+  it('copies a selection, clears it, announces it and keeps the browser menu away', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const readText = vi.fn<() => Promise<string>>().mockResolvedValue('from the clipboard');
+    stubClipboard(writeText, readText);
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    terminal.setSelection('selected words');
+    const event = rightClick(rig);
+    await settle(50);
+    expect(event.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('selected words');
+    expect(terminal.hasSelection()).toBe(false);
+    expect(readText).not.toHaveBeenCalled();
+    expect(terminal.pastes).toEqual([]);
+    expect(document.getElementById('live-region')?.textContent).toBe(msg('common.copied'));
+  });
+
+  it('keeps the selection and says so when the copy is refused', async () => {
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockRejectedValue(new Error('denied')));
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    terminal.setSelection('abc');
+    rightClick(rig);
+    await settle(50);
+    expect(terminal.hasSelection()).toBe(true);
+    expect(document.getElementById('live-region')?.textContent).toBe(msg('common.copyFailed'));
+  });
+
+  it('pastes the clipboard text through the paste path of xterm when nothing is selected', async () => {
+    const readText = vi.fn<() => Promise<string>>().mockResolvedValue('line one');
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined), readText);
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    const event = rightClick(rig);
+    await settle(50);
+    expect(event.defaultPrevented).toBe(true);
+    expect(terminal.pastes).toEqual(['line one']);
+    expect(sentTextOf(rig.socket)).toEqual(['line one']);
+  });
+
+  it('pastes nothing for an empty clipboard', async () => {
+    stubClipboard(
+      vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined),
+      vi.fn<() => Promise<string>>().mockResolvedValue(''),
+    );
+    const rig = await mountLive();
+    const event = rightClick(rig);
+    await settle(50);
+    expect(event.defaultPrevented).toBe(true);
+    expect(terminalOf(rig).pastes).toEqual([]);
+    expect(rig.socket.sentBinary).toEqual([]);
+  });
+
+  it('says once that the clipboard is closed and lets the next right click through to the browser menu', async () => {
+    const readText = vi.fn<() => Promise<string>>().mockRejectedValue(new Error('denied'));
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined), readText);
+    const rig = await mountLive();
+    const first = rightClick(rig);
+    await settle(50);
+    expect(first.defaultPrevented).toBe(true);
+    expect(document.getElementById('live-region')?.textContent).toBe(msg('terminal.clipboard.pasteBlocked'));
+    expect(readText).toHaveBeenCalledTimes(1);
+
+    const second = rightClick(rig);
+    await settle(50);
+    expect(second.defaultPrevented).toBe(false);
+    expect(readText).toHaveBeenCalledTimes(1);
+
+    // after the menu was let through, the smart behaviour is back
+    const third = rightClick(rig);
+    await settle(50);
+    expect(third.defaultPrevented).toBe(true);
+    expect(readText).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets the browser menu through at once, and says nothing, when the page policy forbids reading the clipboard', async () => {
+    // the server sends `Permissions-Policy: clipboard-read=()`: readText could never work, so a click must not pretend to paste
+    const allowsFeature = vi.fn((feature: string) => feature !== 'clipboard-read');
+    Object.defineProperty(document, 'permissionsPolicy', { configurable: true, value: { allowsFeature } });
+    try {
+      const readText = vi.fn<() => Promise<string>>().mockResolvedValue('never read');
+      stubClipboard(vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined), readText);
+      const rig = await mountLive();
+      const terminal = terminalOf(rig);
+      const menu = rightClick(rig);
+      await settle(50);
+      expect(menu.defaultPrevented).toBe(false);
+      expect(allowsFeature).toHaveBeenCalledWith('clipboard-read');
+      expect(readText).not.toHaveBeenCalled();
+      expect(document.getElementById('live-region')?.textContent ?? '').toBe('');
+      // copying a selection needs the write permission, which the policy gives the page
+      terminal.setSelection('picked');
+      const copy = rightClick(rig);
+      await settle(50);
+      expect(copy.defaultPrevented).toBe(true);
+      expect(terminal.hasSelection()).toBe(false);
+    } finally {
+      Reflect.deleteProperty(document, 'permissionsPolicy');
+    }
+  });
+
+  it('treats a browser without a readable clipboard like a refusal', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    const rig = await mountLive();
+    const first = rightClick(rig);
+    await settle(50);
+    expect(first.defaultPrevented).toBe(true);
+    expect(document.getElementById('live-region')?.textContent).toBe(msg('terminal.clipboard.pasteBlocked'));
+    expect(rightClick(rig).defaultPrevented).toBe(false);
+  });
+
+  it('opens the browser menu on Shift and right click, whatever the preference', async () => {
+    const readText = vi.fn<() => Promise<string>>().mockResolvedValue('x');
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined), readText);
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    terminal.setSelection('abc');
+    const event = rightClick(rig, { shiftKey: true });
+    await settle(50);
+    expect(event.defaultPrevented).toBe(false);
+    expect(terminal.hasSelection()).toBe(true);
+    expect(readText).not.toHaveBeenCalled();
+  });
+
+  it('does nothing with the menu preference, and follows a change of the preference while the terminal lives', async () => {
+    const readText = vi.fn<() => Promise<string>>().mockResolvedValue('pasted');
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined), readText);
+    const rig = await mountLive();
+    act(() => {
+      rig.prefsStore.setPref('terminalRightClick', 'menu');
+    });
+    const menu = rightClick(rig);
+    await settle(50);
+    expect(menu.defaultPrevented).toBe(false);
+    expect(readText).not.toHaveBeenCalled();
+    expect(terminalOf(rig).pastes).toEqual([]);
+
+    act(() => {
+      rig.prefsStore.setPref('terminalRightClick', 'smart');
+    });
+    const smart = rightClick(rig);
+    await settle(50);
+    expect(smart.defaultPrevented).toBe(true);
+    expect(terminalOf(rig).pastes).toEqual(['pasted']);
+  });
+
+  it('does not paste after the view went away while the clipboard was being read', async () => {
+    let resolve: (text: string) => void = () => undefined;
+    const readText = vi.fn<() => Promise<string>>(
+      () =>
+        new Promise<string>((done) => {
+          resolve = done;
+        }),
+    );
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined), readText);
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    rightClick(rig);
+    rig.unmount();
+    resolve('late text');
+    await settle(50);
+    expect(terminal.pastes).toEqual([]);
+  });
+
+  it('removes its listener with the view', async () => {
+    const rig = await mountLive();
+    rig.unmount();
+    expect(rightClick(rig).defaultPrevented).toBe(false);
+  });
+});
+
+/** The mouse button goes up somewhere on the page: a drag selection ends. */
+function mouseUp(): void {
+  document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+}
+
+describe('copy on select (CAW-144)', () => {
+  it('is off by default: a selection is not copied', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const rig = await mountLive();
+    terminalOf(rig).setSelection('abc');
+    mouseUp();
+    await settle(50);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('copies the selection silently when the mouse goes up, once for a whole drag, and keeps the selection', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const rig = await mountLive();
+    act(() => {
+      rig.prefsStore.setPref('terminalCopyOnSelect', true);
+    });
+    const terminal = terminalOf(rig);
+    terminal.setSelection('a');
+    terminal.setSelection('ab');
+    terminal.setSelection('abc');
+    expect(writeText).not.toHaveBeenCalled();
+    mouseUp();
+    await settle(50);
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('abc');
+    expect(terminal.hasSelection()).toBe(true);
+    expect(document.getElementById('live-region')?.textContent ?? '').toBe('');
+    // a mouse up that changed no selection copies nothing again
+    mouseUp();
+    await settle(50);
+    expect(writeText).toHaveBeenCalledOnce();
+  });
+
+  it('copies nothing when the selection was cleared before the copy ran', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const rig = await mountLive();
+    act(() => {
+      rig.prefsStore.setPref('terminalCopyOnSelect', true);
+    });
+    const terminal = terminalOf(rig);
+    terminal.setSelection('abc');
+    mouseUp();
+    terminal.clearSelection();
+    await settle(50);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('does not copy an old selection when the preference is switched on later', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const rig = await mountLive();
+    terminalOf(rig).setSelection('old');
+    mouseUp();
+    await settle(50);
+    act(() => {
+      rig.prefsStore.setPref('terminalCopyOnSelect', true);
+    });
+    mouseUp();
+    await settle(50);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('still says so when the clipboard refuses', async () => {
+    stubClipboard(vi.fn<(text: string) => Promise<void>>().mockRejectedValue(new Error('denied')));
+    const rig = await mountLive();
+    act(() => {
+      rig.prefsStore.setPref('terminalCopyOnSelect', true);
+    });
+    terminalOf(rig).setSelection('abc');
+    mouseUp();
+    await settle(50);
+    expect(document.getElementById('live-region')?.textContent).toBe(msg('common.copyFailed'));
+  });
+
+  it('stops listening with the view', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const rig = await mountLive();
+    act(() => {
+      rig.prefsStore.setPref('terminalCopyOnSelect', true);
+    });
+    const terminal = terminalOf(rig);
+    terminal.setSelection('abc');
+    rig.unmount();
+    mouseUp();
+    await settle(50);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
+describe('cursor style and word separators (CAW-144)', () => {
+  it('creates a block cursor and the word separators of the app', async () => {
+    const rig = mount();
+    await settle();
+    const options = rig.fake.engine.last().options;
+    expect(options.cursorStyle).toBe('block');
+    expect(options.wordSeparator).toBe(WORD_SEPARATOR);
+  });
+
+  it('creates the cursor the preference names', async () => {
+    const fake = fakeSeams();
+    const rig = mount({ fake });
+    act(() => {
+      rig.prefsStore.setPref('terminalCursor', 'underline');
+    });
+    await settle();
+    expect(fake.engine.last().options.cursorStyle).toBe('underline');
+  });
+
+  it('changes the cursor of an open terminal at once', async () => {
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    expect(terminal.options.cursorStyle).toBe('block');
+    act(() => {
+      rig.prefsStore.setPref('terminalCursor', 'bar');
+    });
+    expect(terminal.options.cursorStyle).toBe('bar');
+    act(() => {
+      rig.prefsStore.setPref('terminalCursor', 'block');
+    });
+    expect(terminal.options.cursorStyle).toBe('block');
   });
 });
 

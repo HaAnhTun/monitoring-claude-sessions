@@ -165,6 +165,91 @@ describe('PreferencesForm', () => {
     });
   });
 
+  describe('the Terminal card (CAW-144)', () => {
+    const terminalCard = (language?: 'vi'): HTMLElement => {
+      const title = msg('settings.prefs.terminal', undefined, language);
+      return screen.getByRole('heading', { name: title }).closest('section') ?? document.body;
+    };
+
+    it('offers the renderer, the cursor, the right click and copy on select, with the defaults checked', () => {
+      setup();
+      const card = within(terminalCard());
+      const renderer = within(card.getByRole('group', { name: msg('settings.prefs.renderer') }));
+      expect(renderer.getByRole('radio', { name: msg('settings.prefs.renderer.auto') })).toBeChecked();
+      expect(renderer.getByRole('radio', { name: msg('settings.prefs.renderer.dom') })).not.toBeChecked();
+      const cursor = within(card.getByRole('group', { name: msg('settings.prefs.cursor') }));
+      expect(cursor.getByRole('radio', { name: msg('settings.prefs.cursor.block') })).toBeChecked();
+      const rightClick = within(card.getByRole('group', { name: msg('settings.prefs.rightClick') }));
+      expect(rightClick.getByRole('radio', { name: msg('settings.prefs.rightClick.smart') })).toBeChecked();
+      expect(card.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.copyOnSelect')) })).not.toBeChecked();
+      expect(card.getByText(msg('settings.prefs.renderer.hint'))).toBeInTheDocument();
+      expect(card.getByText(msg('settings.prefs.rightClick.hint'))).toBeInTheDocument();
+      expect(card.getByText(msg('settings.prefs.copyOnSelect.hint'))).toBeInTheDocument();
+    });
+
+    it('leaves the screen reader mode where it was, in the appearance card', () => {
+      setup();
+      const appearance = screen.getByRole('heading', { name: msg('settings.prefs.appearance') }).closest('section');
+      expect(
+        within(appearance ?? document.body).getByRole('checkbox', {
+          name: new RegExp(msg('settings.prefs.screenReader')),
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it('writes each choice to its preference', async () => {
+      const { user, prefsStore } = setup();
+      const card = within(terminalCard());
+      await user.click(card.getByRole('radio', { name: msg('settings.prefs.renderer.dom') }));
+      expect(prefsStore.getSnapshot().terminalRenderer).toBe('dom');
+      await user.click(card.getByRole('radio', { name: msg('settings.prefs.cursor.bar') }));
+      expect(prefsStore.getSnapshot().terminalCursor).toBe('bar');
+      await user.click(card.getByRole('radio', { name: msg('settings.prefs.cursor.underline') }));
+      expect(prefsStore.getSnapshot().terminalCursor).toBe('underline');
+      await user.click(card.getByRole('radio', { name: msg('settings.prefs.rightClick.menu') }));
+      expect(prefsStore.getSnapshot().terminalRightClick).toBe('menu');
+      const copyOnSelect = card.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.copyOnSelect')) });
+      await user.click(copyOnSelect);
+      expect(prefsStore.getSnapshot().terminalCopyOnSelect).toBe(true);
+      expect(copyOnSelect).toBeChecked();
+      await user.click(card.getByRole('radio', { name: msg('settings.prefs.renderer.auto') }));
+      expect(prefsStore.getSnapshot().terminalRenderer).toBe('auto');
+    });
+
+    it('shows the stored choices, in both languages', () => {
+      const storage = new MemoryStorage();
+      storage.items.set(
+        PREFS_KEY,
+        JSON.stringify({
+          terminalRenderer: 'dom',
+          terminalCursor: 'bar',
+          terminalRightClick: 'menu',
+          terminalCopyOnSelect: true,
+        }),
+      );
+      const { unmount } = setup(storage);
+      const en = within(terminalCard());
+      expect(en.getByRole('radio', { name: msg('settings.prefs.renderer.dom') })).toBeChecked();
+      expect(en.getByRole('radio', { name: msg('settings.prefs.cursor.bar') })).toBeChecked();
+      expect(en.getByRole('radio', { name: msg('settings.prefs.rightClick.menu') })).toBeChecked();
+      expect(en.getByRole('checkbox', { name: new RegExp(msg('settings.prefs.copyOnSelect')) })).toBeChecked();
+      unmount();
+      setup(storage, 'vi');
+      const vi = within(terminalCard('vi'));
+      expect(vi.getByRole('radio', { name: msg('settings.prefs.renderer.dom', undefined, 'vi') })).toBeChecked();
+      expect(vi.getByRole('radio', { name: msg('settings.prefs.cursor.bar', undefined, 'vi') })).toBeChecked();
+    });
+
+    it('forgets the four choices with the other display preferences', async () => {
+      const storage = new MemoryStorage();
+      storage.items.set(PREFS_KEY, JSON.stringify({ terminalRenderer: 'dom', terminalCursor: 'bar' }));
+      const { user, prefsStore } = setup(storage);
+      await user.click(screen.getByRole('button', { name: msg('settings.prefs.reset') }));
+      expect(prefsStore.getSnapshot().terminalRenderer).toBeUndefined();
+      expect(prefsStore.getSnapshot().terminalCursor).toBeUndefined();
+    });
+  });
+
   it('says so when this browser cannot store preferences, and not otherwise', () => {
     const { unmount } = setup(null);
     expect(screen.getByText(msg('settings.prefs.memoryOnly'))).toBeInTheDocument();

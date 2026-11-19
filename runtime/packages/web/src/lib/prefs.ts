@@ -33,6 +33,14 @@ export interface PrefsData {
   workspaceCollapsed: boolean;
   /** Screen-reader mode of the terminal (design 04 6.5). */
   terminalScreenReader: boolean;
+  /** Which renderer a new terminal draws with (CAW-144): `auto` is the graphics card when WebGL2 exists, `dom` is xterm's own. */
+  terminalRenderer: 'auto' | 'dom';
+  /** The cursor shape of the terminal. */
+  terminalCursor: 'block' | 'bar' | 'underline';
+  /** A right click in the terminal: `smart` copies a selection or pastes, `menu` leaves the browser menu. */
+  terminalRightClick: 'smart' | 'menu';
+  /** Selecting text copies it at once. */
+  terminalCopyOnSelect: boolean;
 }
 
 export type PrefName = keyof PrefsData;
@@ -101,6 +109,10 @@ const VALIDATORS: Validators = {
   lastTerminal: isTerminalName,
   workspaceCollapsed: isBool,
   terminalScreenReader: isBool,
+  terminalRenderer: (v): v is PrefsData['terminalRenderer'] => v === 'auto' || v === 'dom',
+  terminalCursor: (v): v is PrefsData['terminalCursor'] => v === 'block' || v === 'bar' || v === 'underline',
+  terminalRightClick: (v): v is PrefsData['terminalRightClick'] => v === 'smart' || v === 'menu',
+  terminalCopyOnSelect: isBool,
 };
 
 const PREF_NAMES = Object.keys(VALIDATORS).filter((k): k is PrefName => Object.hasOwn(VALIDATORS, k));

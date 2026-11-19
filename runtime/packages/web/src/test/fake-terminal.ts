@@ -14,8 +14,11 @@ import { vi } from 'vitest';
 
 import type {
   Disposable,
+  EngineLoadOptions,
   FitLike,
   LiveTerminalOptions,
+  RendererKind,
+  RendererLike,
   TerminalEngine,
   TerminalInstance,
   TerminalLike,
@@ -89,6 +92,7 @@ export class FakeTerminal implements TerminalLike {
   private readonly binary = new Emitter<string>();
   private readonly resize_ = new Emitter<Size>();
   private readonly scroll = new Emitter<void>();
+  private readonly selectionChange = new Emitter<void>();
 
   constructor(options: TerminalOptions) {
     this.created = options;
@@ -101,7 +105,7 @@ export class FakeTerminal implements TerminalLike {
   }
 
   get listenerCount(): number {
-    return this.data.size + this.binary.size + this.resize_.size + this.scroll.size;
+    return this.data.size + this.binary.size + this.resize_.size + this.scroll.size + this.selectionChange.size;
   }
 
   open(host: HTMLElement): void {
@@ -152,6 +156,7 @@ export class FakeTerminal implements TerminalLike {
     this.binary.clear();
     this.resize_.clear();
     this.scroll.clear();
+    this.selectionChange.clear();
     this.keyHandler = null;
     this.host?.querySelector('.xterm')?.remove();
   }
@@ -171,7 +176,9 @@ export class FakeTerminal implements TerminalLike {
   }
 
   clearSelection(): void {
+    const had = this.selection !== '';
     this.selection = '';
+    if (had) this.selectionChange.emit();
   }
 
   onData(listener: (data: string) => void): Disposable {
@@ -190,6 +197,10 @@ export class FakeTerminal implements TerminalLike {
     return this.scroll.on(listener);
   }
 
+  onSelectionChange(listener: () => void): Disposable {
+    return this.selectionChange.on(listener);
+  }
+
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
     this.keyHandler = handler;
   }
@@ -206,8 +217,10 @@ export class FakeTerminal implements TerminalLike {
     this.binary.emit(text);
   }
 
+  /** The selection changed, as a drag or a double click does: `onSelectionChange` listeners are told. */
   setSelection(text: string): void {
     this.selection = text;
+    this.selectionChange.emit();
   }
 
   /** The viewport moved: `viewportY` below `baseY` means scrolled up into the history. */
@@ -264,9 +277,57 @@ export class FakeFit implements FitLike {
   }
 }
 
+/**
+ * The GPU renderer of a fake terminal. `attach` answers what the engine was told to answer (`FakeEngine.rendererKind`), and
+ * `fireFallback` plays the loss of the GPU context for good.
+ */
+export class FakeRenderer implements RendererLike {
+  attachCalls = 0;
+  /** What the hook had done to the terminal when `attach` ran: the host was opened already. */
+  openedAtAttach: boolean[] = [];
+  /** The next `attach` throws this (the real one never does; the hook must still survive it). */
+  failNextAttach: Error | null = null;
+  private current: RendererKind = 'dom';
+  private readonly fallback = new Emitter<void>();
+  private readonly terminal: FakeTerminal;
+  private readonly willBe: RendererKind;
+
+  constructor(terminal: FakeTerminal, willBe: RendererKind) {
+    this.terminal = terminal;
+    this.willBe = willBe;
+  }
+
+  attach(): RendererKind {
+    this.attachCalls += 1;
+    this.openedAtAttach.push(this.terminal.host !== null);
+    if (this.failNextAttach !== null) {
+      const error = this.failNextAttach;
+      this.failNextAttach = null;
+      throw error;
+    }
+    this.current = this.willBe;
+    return this.current;
+  }
+
+  kind(): RendererKind {
+    return this.current;
+  }
+
+  onFallback(listener: () => void): Disposable {
+    return this.fallback.on(listener);
+  }
+
+  /** The GPU context is lost for good: the terminal is on the DOM renderer again and the listeners are told. */
+  fireFallback(): void {
+    this.current = 'dom';
+    this.fallback.emit();
+  }
+}
+
 export interface FakeInstance extends TerminalInstance {
   terminal: FakeTerminal;
   fit: FakeFit;
+  renderer: FakeRenderer;
   options: TerminalOptions;
   disposed: boolean;
 }
@@ -279,6 +340,10 @@ export interface FakeEngine extends TerminalEngine {
   fitSize: Size | undefined;
   /** The next `create` throws this. */
   failNextCreate: Error | null;
+  /** What `renderer.attach()` of the terminals created from now on answers. */
+  rendererKind: RendererKind;
+  /** The `attach` of the next terminal created throws this (the real one never does). */
+  failNextAttach: Error | null;
 }
 
 export function fakeEngine(initialFit: Size | undefined = { cols: 100, rows: 30 }): FakeEngine {
@@ -287,6 +352,8 @@ export function fakeEngine(initialFit: Size | undefined = { cols: 100, rows: 30 
     instances,
     fitSize: initialFit,
     failNextCreate: null,
+    rendererKind: 'webgl',
+    failNextAttach: null,
     last() {
       const found = instances.at(-1);
       if (found === undefined) throw new Error('no terminal was created yet');
@@ -300,9 +367,13 @@ export function fakeEngine(initialFit: Size | undefined = { cols: 100, rows: 30 
       }
       const terminal = new FakeTerminal(options);
       const fit = new FakeFit(terminal, engine.fitSize);
+      const renderer = new FakeRenderer(terminal, engine.rendererKind);
+      renderer.failNextAttach = engine.failNextAttach;
+      engine.failNextAttach = null;
       const instance: FakeInstance = {
         terminal,
         fit,
+        renderer,
         options,
         disposed: false,
         dispose: () => {
@@ -323,6 +394,8 @@ export interface FakeTerminalSeams {
   sockets: FakeWebSockets;
   /** How many times the view asked for the engine. */
   loadCount: () => number;
+  /** The options of every `loadEngine` call, in order (`gpu` follows the renderer preference). */
+  loadOptions: EngineLoadOptions[];
   /** The next `loadEngine` rejects with this error. */
   failNextLoad(error?: Error): void;
   /** The next `loadEngine` stays pending until the returned function is called. */
@@ -333,11 +406,13 @@ export interface FakeTerminalSeams {
 export function fakeSeams(engine: FakeEngine = fakeEngine()): FakeTerminalSeams {
   const sockets = createFakeWebSockets();
   let loads = 0;
+  const loadOptions: EngineLoadOptions[] = [];
   let failure: Error | null = null;
   let hold: Promise<void> | null = null;
   const seams: TerminalSeams = {
-    async loadEngine() {
+    async loadEngine(options) {
       loads += 1;
+      loadOptions.push(options);
       if (hold !== null) await hold;
       if (failure !== null) {
         const error = failure;
@@ -358,6 +433,7 @@ export function fakeSeams(engine: FakeEngine = fakeEngine()): FakeTerminalSeams 
     engine,
     sockets,
     loadCount: () => loads,
+    loadOptions,
     failNextLoad(error = new Error('chunk failed to load')) {
       failure = error;
     },

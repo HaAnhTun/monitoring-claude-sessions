@@ -13,6 +13,11 @@
 //  connection reconnects by itself and asks the session list whether the session is gone;  12. cleanup disposes everything, so
 //  StrictMode's mount, cleanup, mount leaves one terminal and one socket.
 //
+// Beyond the twelve steps (CAW-144, ADR 0135): the GPU renderer is attached right after `open` and a lost GPU context only costs a
+// fit; plain Ctrl+V is left to the browser's paste event; a right click copies a selection or pastes (the next one opens the
+// browser menu when the clipboard cannot be read, and at once when the page policy forbids reading it); a selection can be copied
+// when the mouse goes up.
+//
 // What a person types and what the process prints are never logged and never kept: they pass from the terminal to the socket and
 // back. React state holds only the status, the sizes and two flags.
 import { clampTerminalSize, TERMINAL_CLOSE_CODES, type TerminalServerMessage } from '@mcs/shared';
@@ -31,7 +36,7 @@ import { useTerminalTheme } from '../state/color-scheme.ts';
 import { usePrefs } from '../state/prefs-store.ts';
 import { useMediaQuery } from '../state/use-media-query.ts';
 import type { Disposable, TerminalEngine, TerminalInstance, TerminalOptions } from './engine.ts';
-import { decideKey } from './keys.ts';
+import { decideKey, platformIsMac } from './keys.ts';
 import { terminalOptionsFor } from './options.ts';
 import { FIT_DEBOUNCE_MS, terminalSocketUrl } from './protocol.ts';
 import { useTerminalSeams, type TerminalSeams } from './seams.ts';
@@ -148,8 +153,21 @@ interface SessionEffects {
   /** The session list says the session is gone. */
   gone(): boolean;
   inputLabel(): string;
-  /** Copies the text, tells the person, and resolves whether it worked. */
-  copy(text: string): Promise<boolean>;
+  /** Copies the text, tells the person (unless `announce` is false: a refusal is told anyway), and resolves whether it worked. */
+  copy(text: string, options?: { announce?: boolean }): Promise<boolean>;
+  /**
+   * Whether the page may read the clipboard at all: false when its permissions policy forbids it (the server sends
+   * `clipboard-read=()`), so that a click does not pretend to paste. True when the browser cannot tell.
+   */
+  clipboardReadable(): boolean;
+  /** The text of the clipboard, or null when the browser cannot or will not give it. */
+  readClipboard(): Promise<string | null>;
+  /** The clipboard cannot be read: tell the person how to paste. */
+  announcePasteBlocked(): void;
+  /** What a right click does now (the preference, read when it happens). */
+  rightClick(): 'smart' | 'menu';
+  /** Whether a selection is copied when the mouse goes up (the preference, read when it happens). */
+  copyOnSelect(): boolean;
   /** A connection was lost: ask the session list whether the session is gone. */
   outage(): void;
   /** The browser lost its session (close 4003). */
@@ -174,7 +192,7 @@ interface Session {
   retryNow(): void;
   /** The session list lacks the session: stop and end the view. */
   endGone(): void;
-  /** The page changed something a live terminal can take (theme, font size, screen reader mode, cursor blink). */
+  /** The page changed something a live terminal can take (theme, font size, screen reader mode, cursor blink and shape). */
   applyOptions(options: TerminalOptions): void;
   applyInputLabel(label: string): void;
   dispose(): void;
@@ -405,10 +423,29 @@ function openSession(env: SessionEnv): Session {
   terminal.textarea?.setAttribute('aria-label', effects.inputLabel());
   ui.setSize({ cols: terminal.cols, rows: terminal.rows });
 
+  // The GPU renderer goes on after `open`, so that a failure can never break the terminal (ADR 0135). When its context is lost for
+  // good the terminal is on the DOM renderer again, whose cells may differ in size: fit, and nothing else (no toast, no reconnect).
+  const fallbackSubscription = instance.renderer.onFallback(scheduleFit);
+  cleanups.push(() => {
+    fallbackSubscription.dispose();
+  });
+  try {
+    instance.renderer.attach();
+  } catch {
+    // the real renderer never throws; whatever happened, the DOM renderer is what is drawing
+  }
+
+  // plain Ctrl+V is a paste outside macOS; on macOS it stays the program's
+  const ctrlVPastes = !platformIsMac(navigator);
+
   terminal.attachCustomKeyEventHandler((event) => {
-    switch (decideKey(event, { hasSelection: terminal.hasSelection() })) {
+    switch (decideKey(event, { hasSelection: terminal.hasSelection(), ctrlVPastes })) {
       case 'pass':
         return true;
+      case 'paste':
+        // xterm 6.0.0 would send 0x16 and cancel the event. Returning false WITHOUT preventing the default makes xterm skip the key
+        // and lets the browser fire `paste` on the text area, which xterm turns into a (bracketed) paste.
+        return false;
       case 'copy': {
         event.preventDefault();
         const text = terminal.getSelection();
@@ -429,7 +466,67 @@ function openSession(env: SessionEnv): Session {
     }
   });
 
+  // right click: with a selection copy it, without one paste; Shift and right click and the "menu" preference are the browser's
+  let nativeMenuOnce = false;
+  const onContextMenu = (event: MouseEvent): void => {
+    if (disposed || effects.rightClick() !== 'smart' || event.shiftKey) return;
+    if (nativeMenuOnce) {
+      // the clipboard could not be read last time: let the browser menu through once, so a person is never locked out
+      nativeMenuOnce = false;
+      return;
+    }
+    const selected = terminal.hasSelection();
+    // nothing to paste with: the page may not read the clipboard, so the browser menu (it has Paste) is the honest answer
+    if (!selected && !effects.clipboardReadable()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (selected) {
+      const text = terminal.getSelection();
+      void effects.copy(text).then((copied) => {
+        if (copied && !disposed && terminal.getSelection() === text) terminal.clearSelection();
+      });
+      return;
+    }
+    void effects.readClipboard().then((text) => {
+      if (disposed) return;
+      if (text === null) {
+        nativeMenuOnce = true;
+        effects.announcePasteBlocked();
+        return;
+      }
+      if (text !== '') terminal.paste(text);
+    });
+  };
+  // the capture phase, so that it runs before xterm's own listener, which would move its text area under the pointer
+  host.addEventListener('contextmenu', onContextMenu, true);
+  cleanups.push(() => {
+    host.removeEventListener('contextmenu', onContextMenu, true);
+  });
+
+  // copy on select: xterm finishes its own mouse up first, then the selection (kept as it is) goes to the clipboard once per gesture
+  let selectionChanged = false;
+  let copyTimer: Timer | null = null;
+  const onMouseUp = (): void => {
+    const changed = selectionChanged;
+    selectionChanged = false;
+    if (!changed || !effects.copyOnSelect()) return;
+    if (copyTimer !== null) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      copyTimer = null;
+      if (disposed || !terminal.hasSelection()) return;
+      void effects.copy(terminal.getSelection(), { announce: false });
+    }, 0);
+  };
+  document.addEventListener('mouseup', onMouseUp);
+  cleanups.push(() => {
+    document.removeEventListener('mouseup', onMouseUp);
+    if (copyTimer !== null) clearTimeout(copyTimer);
+  });
+
   const subscriptions: Disposable[] = [
+    terminal.onSelectionChange(() => {
+      selectionChanged = true;
+    }),
     terminal.onData((data) => {
       // the process sees our size before the first key we type after another window took it
       if (sizeOwner !== 'self') takeSize();
@@ -522,6 +619,7 @@ function openSession(env: SessionEnv): Session {
       live.fontSize = options.fontSize;
       live.screenReaderMode = options.screenReaderMode;
       live.cursorBlink = options.cursorBlink;
+      live.cursorStyle = options.cursorStyle;
       // another cell size means another number of columns and rows
       if (options.fontSize !== appliedFontSize) {
         appliedFontSize = options.fontSize;
@@ -562,6 +660,10 @@ interface Latest {
   theme: TerminalTheme;
   fontSize: number;
   screenReader: boolean;
+  cursor: TerminalOptions['cursorStyle'];
+  renderer: 'auto' | 'dom';
+  rightClick: 'smart' | 'menu';
+  copyOnSelect: boolean;
   reducedMotion: boolean;
   t: TFunction;
   announce: Announce;
@@ -571,7 +673,7 @@ interface Latest {
 function creationOptions(latest: Latest): TerminalOptions {
   return terminalOptionsFor({
     base: { ...readTerminalOptions(), theme: latest.theme, fontSize: latest.fontSize },
-    prefs: { terminalScreenReader: latest.screenReader },
+    prefs: { terminalScreenReader: latest.screenReader, terminalCursor: latest.cursor },
     reducedMotion: latest.reducedMotion,
     windowsHost: latest.windowsHost,
   });
@@ -586,7 +688,7 @@ function liveOptions(latest: Latest): TerminalOptions {
       fontSize: latest.fontSize,
       lineHeight: TERMINAL_FONT.lineHeight,
     },
-    prefs: { terminalScreenReader: latest.screenReader },
+    prefs: { terminalScreenReader: latest.screenReader, terminalCursor: latest.cursor },
     reducedMotion: latest.reducedMotion,
     windowsHost: latest.windowsHost,
   });
@@ -606,6 +708,10 @@ export function useTerminalConnection(o: UseTerminalConnectionOptions): Terminal
   const narrow = useMediaQuery(MQ_TERMINAL_NARROW);
   const reducedMotion = useMediaQuery(MQ_REDUCED_MOTION);
   const screenReader = prefs.terminalScreenReader ?? false;
+  const cursor = prefs.terminalCursor ?? 'block';
+  const renderer = prefs.terminalRenderer ?? 'auto';
+  const rightClick = prefs.terminalRightClick ?? 'smart';
+  const copyOnSelect = prefs.terminalCopyOnSelect ?? false;
   const fontSize = narrow ? TERMINAL_FONT.sizeNarrow : TERMINAL_FONT.size;
 
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -626,6 +732,10 @@ export function useTerminalConnection(o: UseTerminalConnectionOptions): Terminal
     theme,
     fontSize,
     screenReader,
+    cursor,
+    renderer,
+    rightClick,
+    copyOnSelect,
     reducedMotion,
     t,
     announce,
@@ -643,12 +753,41 @@ export function useTerminalConnection(o: UseTerminalConnectionOptions): Terminal
       focusOnLive: () => latest.current.focusOnLive,
       gone: () => latest.current.gone,
       inputLabel: () => latest.current.t('terminal.input'),
-      copy: async (text) => {
+      copy: async (text, copyOptions) => {
         const copied = await copyText(text);
+        // a silent copy (copy on select) says nothing when it worked, and still says so when it did not
+        if (copied && copyOptions?.announce === false) return true;
         const { t: translate, announce: say } = latest.current;
         say(translate(copied ? 'common.copied' : 'common.copyFailed'), { force: true });
         return copied;
       },
+      clipboardReadable: () => {
+        // `document.permissionsPolicy` (older: `featurePolicy`) is Chrome's view of the Permissions-Policy header; not in the DOM typings
+        const policy: unknown = Reflect.get(document, 'permissionsPolicy') ?? Reflect.get(document, 'featurePolicy');
+        if (typeof policy !== 'object' || policy === null) return true;
+        const allows: unknown = Reflect.get(policy, 'allowsFeature');
+        if (typeof allows !== 'function') return true;
+        try {
+          return Reflect.apply(allows, policy, ['clipboard-read']) !== false;
+        } catch {
+          return true;
+        }
+      },
+      readClipboard: async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          return text;
+        } catch {
+          // no clipboard API, an insecure page or a refused permission
+          return null;
+        }
+      },
+      announcePasteBlocked: () => {
+        const { t: translate, announce: say } = latest.current;
+        say(translate('terminal.clipboard.pasteBlocked'), { force: true });
+      },
+      rightClick: () => latest.current.rightClick,
+      copyOnSelect: () => latest.current.copyOnSelect,
       // a lost connection cannot say why: the session list can (design 04 8.2)
       outage: () => {
         void queryClient.invalidateQueries({ queryKey: qk.terminalState(iid) });
@@ -664,7 +803,7 @@ export function useTerminalConnection(o: UseTerminalConnectionOptions): Terminal
     async function start(): Promise<void> {
       let engine: TerminalEngine;
       try {
-        engine = await seams.loadEngine();
+        engine = await seams.loadEngine({ gpu: latest.current.renderer !== 'dom' });
       } catch {
         if (!cancelled) setStatus({ kind: 'engine-failed' });
         return;
@@ -709,10 +848,10 @@ export function useTerminalConnection(o: UseTerminalConnectionOptions): Terminal
     if (gone) sessionRef.current?.endGone();
   }, [gone]);
 
-  // the page changed the theme, the size class, the screen reader preference or the motion preference
+  // the page changed the theme, the size class, the screen reader preference, the cursor or the motion preference
   useEffect(() => {
     sessionRef.current?.applyOptions(liveOptions(latest.current));
-  }, [theme, fontSize, screenReader, reducedMotion, latest]);
+  }, [theme, fontSize, screenReader, cursor, reducedMotion, latest]);
 
   // the language changed
   const inputLabel = t('terminal.input');

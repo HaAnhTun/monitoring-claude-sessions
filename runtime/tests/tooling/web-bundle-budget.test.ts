@@ -1,6 +1,7 @@
-// The bundle budget of the web build (design 04 section 7.1, ADR 0097; ADR 0039 for the first three rows) on a throw-away `dist`
-// with a manifest: every row, the terminal chunk computed from the manifest graph, and the two ways xterm.js could end up in the
-// first load. The script is the one `vite build` runs after every production build.
+// The bundle budget of the web build (design 04 section 7.1, ADR 0097; ADR 0039 for the first three rows; ADR 0135 for the GPU row) on
+// a throw-away `dist` with a manifest: every row, the terminal chunk computed from the manifest graph, the optional GPU chunk
+// partitioned out of it by manifest key, and the ways xterm.js and its WebGL renderer could end up in the first load or in the
+// terminal chunk. The script is the one `vite build` runs after every production build.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -34,9 +35,11 @@ interface Chunk {
   dynamicImports?: string[];
 }
 interface BudgetModule {
-  LIMITS: { initialJs: number; allJs: number; terminalJs: number; css: number };
+  LIMITS: { initialJs: number; allJs: number; terminalJs: number; terminalGpuJs: number; css: number };
   TERMINAL_ENTRIES: string[];
   XTERM_MARKER: string;
+  WEBGL_MARKER: string;
+  GPU_KEY: string;
   auditHtml(html: string): string[];
   checkBudget(dist: string): Result;
 }
@@ -64,6 +67,8 @@ function noise(n: number, seed: number): Buffer {
 }
 
 const gz = (content: Buffer | string): number => gzipSync(content, { level: 9 }).length;
+
+const GPU_FILE = 'assets/addon-webgl-k.js';
 
 const GOOD_HTML = [
   '<!doctype html><html><head>',
@@ -109,6 +114,9 @@ function standardFixture(sizes: Partial<Record<string, number>> = {}, over: Part
     'assets/xterm-f.js': noise(n('xterm', 70 * KB), 6),
     'assets/addon-fit-g.js': noise(n('fit', 1 * KB), 7),
     'assets/addon-web-links-h.js': noise(n('links', 2 * KB), 8),
+    'assets/addon-unicode11-j.js': noise(n('unicode', 3 * KB), 10),
+    // the GPU renderer: its own lazy chunk, which carries the text that only the addon has
+    'assets/addon-webgl-k.js': Buffer.concat([noise(n('gpu', 30 * KB), 14), Buffer.from('webglcontextlost')]),
     'assets/index-a.css': noise(n('css', 12 * KB), 9),
   };
   const manifest: Record<string, Chunk> = {
@@ -136,6 +144,8 @@ function standardFixture(sizes: Partial<Record<string, number>> = {}, over: Part
         'node_modules/@xterm/xterm/lib/xterm.mjs',
         'node_modules/@xterm/addon-fit/lib/addon-fit.mjs',
         'node_modules/@xterm/addon-web-links/lib/addon-web-links.mjs',
+        'node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs',
+        'node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs',
       ],
     },
     'node_modules/@xterm/xterm/lib/xterm.mjs': { file: 'assets/xterm-f.js', isDynamicEntry: true },
@@ -144,6 +154,12 @@ function standardFixture(sizes: Partial<Record<string, number>> = {}, over: Part
       file: 'assets/addon-web-links-h.js',
       isDynamicEntry: true,
     },
+    'node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs': {
+      file: 'assets/addon-unicode11-j.js',
+      isDynamicEntry: true,
+    },
+    // the chunk file does not need to be named after the package: the partition reads the manifest key (the module path)
+    'node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs': { file: 'assets/addon-webgl-k.js', isDynamicEntry: true },
   };
   return { files, manifest, ...over };
 }
@@ -155,12 +171,23 @@ function row(result: Result, name: string): Row {
 }
 
 describe('LIMITS', () => {
-  it('holds the numbers of the plan: initial 200, all JS 420, css 30, and a cap for the terminal chunk', () => {
+  it('holds the numbers of ADR 0135: initial 200, css 30, and the retuned all JS, terminal chunk and GPU chunk', () => {
     expect(budget.LIMITS.initialJs).toBe(200 * KB);
-    expect(budget.LIMITS.allJs).toBe(420 * KB);
     expect(budget.LIMITS.css).toBe(30 * KB);
-    // the terminal chunk: 85.3 kB on a fresh build of xterm 6.0.0, the two addons and the loader, plus ten percent (ADR 0097)
-    expect(budget.LIMITS.terminalJs).toBe(94 * KB);
+    // measured on a fresh build plus ten percent for the two chunks (ADR 0135); all JS leaves the optional GPU chunk out
+    expect(budget.LIMITS.terminalJs).toBe(TERMINAL_LIMIT_KB * KB);
+    expect(budget.LIMITS.terminalGpuJs).toBe(GPU_LIMIT_KB * KB);
+    expect(budget.LIMITS.allJs).toBe(ALL_JS_LIMIT_KB * KB);
+  });
+
+  it('keeps all JS plus the GPU chunk within the sum the owner accepted (ADR 0135, question 1)', () => {
+    expect(budget.LIMITS.allJs).toBeLessThan(450 * KB);
+    expect(budget.LIMITS.allJs + budget.LIMITS.terminalGpuJs).toBeLessThanOrEqual(475 * KB);
+  });
+
+  it('names the module path that marks the GPU chunk, and the text only its code carries', () => {
+    expect(budget.GPU_KEY).toBe('/@xterm/addon-webgl/');
+    expect(budget.WEBGL_MARKER).toBe('webglcontextlost');
   });
 
   it('names the two files that open the terminal chunk', () => {
@@ -168,7 +195,11 @@ describe('LIMITS', () => {
   });
 });
 
-describe('checkBudget: the four rows', () => {
+const ALL_JS_LIMIT_KB = 432;
+const TERMINAL_LIMIT_KB = 105;
+const GPU_LIMIT_KB = 34;
+
+describe('checkBudget: the five rows', () => {
   it('passes a build within budget and prints the rows in order', () => {
     const result = budget.checkBudget(makeDist(standardFixture()));
     expect(result.problems).toEqual([]);
@@ -177,6 +208,7 @@ describe('checkBudget: the four rows', () => {
       'Initial JS (gzip)',
       'All JS (gzip)',
       'Terminal chunk (gzip)',
+      'Terminal GPU chunk (gzip)',
       'CSS total (gzip)',
     ]);
     expect(result.rows.every((r) => r.ok)).toBe(true);
@@ -184,6 +216,7 @@ describe('checkBudget: the four rows', () => {
       budget.LIMITS.initialJs,
       budget.LIMITS.allJs,
       budget.LIMITS.terminalJs,
+      budget.LIMITS.terminalGpuJs,
       budget.LIMITS.css,
     ]);
   });
@@ -195,11 +228,11 @@ describe('checkBudget: the four rows', () => {
     expect(row(result, 'Initial JS (gzip)').size).toBe(expected);
   });
 
-  it('measures all JS as every .js file of the build', () => {
+  it('measures all JS as every .js file of the build except the optional GPU chunk (ADR 0135)', () => {
     const fixture = standardFixture();
     const result = budget.checkBudget(makeDist(fixture));
     const expected = Object.entries(fixture.files)
-      .filter(([file]) => file.endsWith('.js'))
+      .filter(([file]) => file.endsWith('.js') && file !== GPU_FILE)
       .reduce((sum, [, content]) => sum + gz(content), 0);
     expect(row(result, 'All JS (gzip)').size).toBe(expected);
   });
@@ -212,7 +245,7 @@ describe('checkBudget: the four rows', () => {
 
   it.each([
     ['initial JS', { index: 190 * KB }, 'Initial JS (gzip)'],
-    ['all JS', { workspace: 420 * KB }, 'All JS (gzip)'],
+    ['all JS', { workspace: 500 * KB }, 'All JS (gzip)'],
     ['css', { css: 31 * KB }, 'CSS total (gzip)'],
   ])('fails when the %s is over its limit', (_name, sizes, rowName) => {
     const result = budget.checkBudget(makeDist(standardFixture(sizes)));
@@ -233,7 +266,14 @@ describe('checkBudget: the terminal chunk', () => {
   it('sums every file reachable from the terminal page through imports and dynamic imports, minus the initial set', () => {
     const fixture = standardFixture();
     const result = budget.checkBudget(makeDist(fixture));
-    const parts = ['TerminalView-d', 'xterm-loader-e', 'xterm-f', 'addon-fit-g', 'addon-web-links-h'];
+    const parts = [
+      'TerminalView-d',
+      'xterm-loader-e',
+      'xterm-f',
+      'addon-fit-g',
+      'addon-web-links-h',
+      'addon-unicode11-j',
+    ];
     const expected = parts.reduce((sum, p) => sum + gz(fixture.files[`assets/${p}.js`] ?? ''), 0);
     const terminal = row(result, 'Terminal chunk (gzip)');
     expect(terminal.size).toBe(expected);
@@ -294,11 +334,13 @@ describe('checkBudget: the terminal chunk', () => {
     };
     delete fixture.manifest['_xterm-loader-e.js'];
     const result = budget.checkBudget(makeDist(fixture));
-    const expected = ['xterm-loader-e', 'xterm-f', 'addon-fit-g', 'addon-web-links-h'].reduce(
+    const expected = ['xterm-loader-e', 'xterm-f', 'addon-fit-g', 'addon-web-links-h', 'addon-unicode11-j'].reduce(
       (sum, p) => sum + gz(fixture.files[`assets/${p}.js`] ?? ''),
       0,
     );
     expect(row(result, 'Terminal chunk (gzip)').size).toBe(expected);
+    // the GPU chunk is reachable from the loader too, and still is not part of this row
+    expect(row(result, 'Terminal GPU chunk (gzip)').size).toBe(gz(fixture.files[GPU_FILE] ?? ''));
   });
 
   it('is zero, and says why, when the build has no terminal at all', () => {
@@ -306,12 +348,24 @@ describe('checkBudget: the terminal chunk', () => {
     const manifest = Object.fromEntries(
       Object.entries(fixture.manifest).filter(([key]) => !/terminal|xterm|addon/.test(key)),
     );
-    const result = budget.checkBudget(makeDist({ ...fixture, manifest }));
+    // the build has no GPU chunk either, so its file is not there
+    const files = Object.fromEntries(Object.entries(fixture.files).filter(([file]) => file !== GPU_FILE));
+    const result = budget.checkBudget(makeDist({ ...fixture, files, manifest }));
     const terminal = row(result, 'Terminal chunk (gzip)');
     expect(terminal.size).toBe(0);
     expect(terminal.ok).toBe(true);
     expect(terminal.note).toMatch(/no terminal/i);
     expect(result.problems).toEqual([]);
+  });
+
+  it('leaves the GPU chunk out of the terminal row, wherever the manifest lists it', () => {
+    const withGpu = budget.checkBudget(makeDist(standardFixture()));
+    const bigGpu = budget.checkBudget(makeDist(standardFixture({ gpu: 38 * KB })));
+    expect(row(bigGpu, 'Terminal chunk (gzip)').size).toBe(row(withGpu, 'Terminal chunk (gzip)').size);
+    expect(row(bigGpu, 'All JS (gzip)').size).toBe(row(withGpu, 'All JS (gzip)').size);
+    expect(row(bigGpu, 'Terminal GPU chunk (gzip)').size).toBeGreaterThan(
+      row(withGpu, 'Terminal GPU chunk (gzip)').size,
+    );
   });
 
   it('fails when the terminal chunk is over its limit', () => {
@@ -329,6 +383,79 @@ describe('checkBudget: the terminal chunk', () => {
     const terminal = row(fits, 'Terminal chunk (gzip)');
     expect(terminal.size).toBeGreaterThan(budget.LIMITS.terminalJs - 1000);
     expect(terminal.ok).toBe(true);
+  });
+});
+
+describe('checkBudget: the GPU chunk (ADR 0135)', () => {
+  it('weighs the chunks whose manifest key holds the webgl addon, not the file name', () => {
+    const fixture = standardFixture();
+    const result = budget.checkBudget(makeDist(fixture));
+    const gpu = row(result, 'Terminal GPU chunk (gzip)');
+    expect(gpu.size).toBe(gz(fixture.files[GPU_FILE] ?? ''));
+    expect(gpu.limit).toBe(budget.LIMITS.terminalGpuJs);
+    expect(gpu.ok).toBe(true);
+    expect(gpu.note).toBeUndefined();
+  });
+
+  it('fails when the GPU chunk is over its own cap, and only that row', () => {
+    const result = budget.checkBudget(makeDist(standardFixture({ gpu: budget.LIMITS.terminalGpuJs + KB })));
+    expect(row(result, 'Terminal GPU chunk (gzip)').ok).toBe(false);
+    expect(row(result, 'All JS (gzip)').ok).toBe(true);
+    expect(row(result, 'Terminal chunk (gzip)').ok).toBe(true);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('is zero, and says so, in a build with no GPU chunk', () => {
+    const fixture = standardFixture();
+    const manifest = Object.fromEntries(
+      Object.entries(fixture.manifest).filter(([key]) => !key.includes('addon-webgl')),
+    );
+    const loader = manifest['_xterm-loader-e.js'];
+    if (loader === undefined) throw new Error('fixture');
+    loader.dynamicImports = (loader.dynamicImports ?? []).filter((key) => !key.includes('addon-webgl'));
+    const files = Object.fromEntries(Object.entries(fixture.files).filter(([file]) => file !== GPU_FILE));
+    const result = budget.checkBudget(makeDist({ ...fixture, files, manifest }));
+    const gpu = row(result, 'Terminal GPU chunk (gzip)');
+    expect(gpu.size).toBe(0);
+    expect(gpu.ok).toBe(true);
+    expect(gpu.note).toBe('no GPU chunk in this build');
+    expect(result.problems).toEqual([]);
+  });
+
+  it('allows the text of the addon in the GPU chunk itself', () => {
+    const result = budget.checkBudget(makeDist(standardFixture()));
+    expect(result.problems).toEqual([]);
+  });
+
+  it('fails when the renderer is in an initial chunk', () => {
+    const fixture = standardFixture();
+    fixture.files['assets/hooks-b.js'] = Buffer.concat([noise(20 * KB, 2), Buffer.from(budget.WEBGL_MARKER)]);
+    const result = budget.checkBudget(makeDist(fixture));
+    expect(result.problems).toContain('the WebGL renderer is in the initial chunks: assets/hooks-b.js');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('fails when the renderer is in the terminal chunk, outside its own chunk', () => {
+    const fixture = standardFixture();
+    fixture.files['assets/xterm-loader-e.js'] = Buffer.concat([noise(3 * KB, 5), Buffer.from(budget.WEBGL_MARKER)]);
+    const result = budget.checkBudget(makeDist(fixture));
+    expect(result.problems).toContain('the WebGL renderer is in the terminal chunk: assets/xterm-loader-e.js');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('fails when the addon was bundled into a chunk that is not named by its module path', () => {
+    const fixture = standardFixture();
+    const manifest = Object.fromEntries(
+      Object.entries(fixture.manifest).filter(([key]) => !key.includes('addon-webgl')),
+    );
+    const loader = manifest['_xterm-loader-e.js'];
+    if (loader === undefined) throw new Error('fixture');
+    loader.dynamicImports = (loader.dynamicImports ?? []).filter((key) => !key.includes('addon-webgl'));
+    const files = { ...fixture.files };
+    files['assets/xterm-f.js'] = Buffer.concat([noise(70 * KB, 6), Buffer.from(budget.WEBGL_MARKER)]);
+    const result = budget.checkBudget(makeDist({ ...fixture, files, manifest }));
+    expect(result.problems).toContain('the WebGL renderer is in the terminal chunk: assets/xterm-f.js');
+    expect(row(result, 'Terminal GPU chunk (gzip)').note).toBe('no GPU chunk in this build');
   });
 });
 
@@ -450,11 +577,13 @@ describe('the command line', () => {
     expect(status).toBe(0);
     expect(out).toMatch(/^ok {2} Initial JS \(gzip\)/m);
     expect(out).toMatch(/^ok {2} Terminal chunk \(gzip\)/m);
+    expect(out).toMatch(/^ok {2} Terminal GPU chunk \(gzip\)/m);
     const report = JSON.parse(readFileSync(join(dist, 'build-report.json'), 'utf8')) as {
       rows: Row[];
       problems: string[];
     };
     expect(report.rows.map((r) => r.name)).toContain('Terminal chunk (gzip)');
+    expect(report.rows.map((r) => r.name)).toContain('Terminal GPU chunk (gzip)');
     expect(report.problems).toEqual([]);
   });
 

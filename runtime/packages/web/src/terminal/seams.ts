@@ -9,21 +9,24 @@
 import { createContext, useContext } from 'react';
 
 import { createEventsClient, type EventsClient, type EventsClientOptions } from './events-client.ts';
-import type { TerminalEngine } from './engine.ts';
+import type { EngineLoadOptions, TerminalEngine } from './engine.ts';
 import { createTerminalSocket, type TerminalSocket, type TerminalSocketOptions } from './ws-client.ts';
 
 export interface TerminalSeams {
-  /** Resolves to the engine once the xterm chunk is loaded; rejects when a chunk cannot load (the view says so and offers Retry). */
-  loadEngine: () => Promise<TerminalEngine>;
+  /**
+   * Resolves to the engine once the xterm chunk is loaded; rejects when a chunk cannot load (the view says so and offers Retry).
+   * `gpu` is false when the person chose the DOM renderer: the WebGL chunk is then not even fetched.
+   */
+  loadEngine: (options: EngineLoadOptions) => Promise<TerminalEngine>;
   createSocket: (options: TerminalSocketOptions) => TerminalSocket;
   createEventsClient: (options: EventsClientOptions) => EventsClient;
 }
 
 /** The real seams: a lazy import of the loader, the browser `WebSocket` and `EventSource`. */
 export const DEFAULT_TERMINAL_SEAMS: TerminalSeams = {
-  loadEngine: async () => {
+  loadEngine: async (options) => {
     const loader = await import('./xterm-loader.ts');
-    return loader.loadXtermEngine();
+    return loader.loadXtermEngine(options);
   },
   createSocket: createTerminalSocket,
   createEventsClient,

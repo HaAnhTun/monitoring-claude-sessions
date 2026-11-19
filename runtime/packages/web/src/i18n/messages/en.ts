@@ -440,6 +440,26 @@ export const enMessages = {
   'settings.prefs.resetHint':
     'Forgets what this browser stored: theme, density, language, columns and transcript options.',
   'settings.prefs.resetDone': 'Display preferences were reset.',
+  'settings.prefs.terminal': 'Terminal',
+  'settings.prefs.renderer': 'Renderer',
+  'settings.prefs.renderer.auto': 'Automatic (graphics card when available)',
+  'settings.prefs.renderer.dom': 'DOM (text, no graphics card)',
+  'settings.prefs.renderer.hint':
+    'The graphics card draws box borders without gaps and is faster; the DOM renderer has slightly sharper text. It applies to terminals opened from now on.',
+  'settings.prefs.cursor': 'Cursor',
+  'settings.prefs.cursor.block': 'Block',
+  'settings.prefs.cursor.bar': 'Bar',
+  'settings.prefs.cursor.underline': 'Underline',
+  'settings.prefs.rightClick': 'Right click',
+  'settings.prefs.rightClick.smart': 'Copy the selection, or paste',
+  'settings.prefs.rightClick.menu': 'Browser menu',
+  'settings.prefs.rightClick.hint':
+    'Smart: a right click copies the selected text, and pastes when nothing is selected. Shift and right click always opens the browser menu.',
+  'settings.prefs.copyOnSelect': 'Copy on select',
+  'settings.prefs.copyOnSelect.hint':
+    'Selecting text copies it at once, as in Windows Terminal. Ctrl+C with a selection still copies.',
+  'terminal.clipboard.pasteBlocked':
+    'The browser did not allow reading the clipboard. Right click again for the browser menu, or press Ctrl+V.',
   'settings.data.lead':
     'What the monitor keeps and how long. This page never changes data; run the commands in a terminal.',
   'settings.data.storage': 'Storage',

@@ -21,11 +21,23 @@ export const TERMINAL_SCROLLBACK = 20_000;
  */
 export const DOM_RENDERER_MIN_CONTRAST = 1;
 
+/**
+ * The characters a double click stops at (CAW-144, ADR 0135): space, the brackets, the quotes, the comma, the back quote and U+2502
+ * (the vertical line of a box border, so a double click inside a Claude Code box does not take the border). It leaves the backslash,
+ * the slash, the dot, the hyphen, the colon and the semicolon out on purpose, so that a double click selects a whole Windows path, a
+ * URL or a file name.
+ */
+export const WORD_SEPARATOR = ' ()[]{}\',"`\u2502';
+
 export interface TerminalOptionsInput {
   /** What the visual system decides (`readTerminalOptions(root, viewportWidth)`, with the theme of the scheme in force). */
   base: TerminalLook;
   /** The stored preferences that matter here; a missing one is off. */
-  prefs: { readonly terminalScreenReader?: boolean | undefined };
+  prefs: {
+    readonly terminalScreenReader?: boolean | undefined;
+    /** The cursor shape; a missing one is the block. */
+    readonly terminalCursor?: TerminalOptions['cursorStyle'] | undefined;
+  };
   /** `prefers-reduced-motion: reduce`: the cursor does not blink. */
   reducedMotion: boolean;
   /**
@@ -44,6 +56,8 @@ export function terminalOptionsFor(input: TerminalOptionsInput): TerminalOptions
     lineHeight: base.lineHeight,
     scrollback: TERMINAL_SCROLLBACK,
     cursorBlink: !reducedMotion,
+    cursorStyle: prefs.terminalCursor ?? 'block',
+    wordSeparator: WORD_SEPARATOR,
     screenReaderMode: prefs.terminalScreenReader ?? false,
     minimumContrastRatio: DOM_RENDERER_MIN_CONTRAST,
     ...(windowsHost === true ? { windowsPty: { backend: 'conpty' as const } } : {}),

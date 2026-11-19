@@ -3,10 +3,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TerminalOptions } from './engine.ts';
 import {
   createEngine,
+  createGpuSlots,
+  type GpuSlots,
   installCspShims,
   loadXtermEngine,
+  MAX_GPU_TERMINALS,
   openExternalLink,
   type OpenWindow,
+  webgl2Available,
+  type XtermImporters,
   type XtermModules,
 } from './xterm-loader.ts';
 
@@ -93,6 +98,8 @@ const OPTIONS: TerminalOptions = {
   lineHeight: 1.2,
   scrollback: 20000,
   cursorBlink: false,
+  cursorStyle: 'block',
+  wordSeparator: ' ()[]{}',
   theme: {
     background: '#141414',
     foreground: '#d4d4d4',
@@ -123,6 +130,74 @@ const OPTIONS: TerminalOptions = {
   minimumContrastRatio: 1,
   windowsPty: { backend: 'conpty' },
 };
+
+/** What a fake addon does when the terminal activates or builds it. */
+interface AddonBehavior {
+  /** `activate` of the addon throws (a blocklisted GPU, an old xterm). */
+  throwOnActivate: boolean;
+  /** The constructor throws. */
+  throwOnConstruct: boolean;
+}
+
+class FakeUnicodeAddon {
+  static behavior: AddonBehavior = { throwOnActivate: false, throwOnConstruct: false };
+  static instances: FakeUnicodeAddon[] = [];
+  constructor() {
+    if (FakeUnicodeAddon.behavior.throwOnConstruct) throw new Error('unicode addon failed to build');
+    FakeUnicodeAddon.instances.push(this);
+  }
+  activate(terminal: FakeTerminal): void {
+    if (FakeUnicodeAddon.behavior.throwOnActivate) throw new Error('unicode addon failed to activate');
+    terminal.unicodeVersions.push('11');
+  }
+}
+
+class FakeWebglAddon {
+  static behavior: AddonBehavior = { throwOnActivate: false, throwOnConstruct: false };
+  static instances: FakeWebglAddon[] = [];
+  disposed = 0;
+  private lossListener: (() => void) | undefined;
+  constructor() {
+    if (FakeWebglAddon.behavior.throwOnConstruct) throw new Error('webgl addon failed to build');
+    FakeWebglAddon.instances.push(this);
+  }
+  activate(): void {
+    if (FakeWebglAddon.behavior.throwOnActivate) throw new Error('webgl addon failed to activate');
+  }
+  onContextLoss(listener: () => void): { dispose(): void } {
+    this.lossListener = listener;
+    return {
+      dispose: () => {
+        this.lossListener = undefined;
+      },
+    };
+  }
+  dispose(): void {
+    this.disposed += 1;
+  }
+  /** The browser did not restore the context: xterm's addon fires this about three seconds after `webglcontextlost`. */
+  loseContext(): void {
+    this.lossListener?.();
+  }
+}
+
+function resetAddonFakes(): void {
+  FakeUnicodeAddon.behavior = { throwOnActivate: false, throwOnConstruct: false };
+  FakeUnicodeAddon.instances = [];
+  FakeWebglAddon.behavior = { throwOnActivate: false, throwOnConstruct: false };
+  FakeWebglAddon.instances = [];
+}
+
+/** The two optional addons as fake classes, for `createEngine`. */
+function withAddons(modules: XtermModules, which: { unicode?: boolean; webgl?: boolean } = {}): XtermModules {
+  return {
+    ...modules,
+    ...(which.unicode === false
+      ? {}
+      : { Unicode11Addon: FakeUnicodeAddon as unknown as XtermModules['Unicode11Addon'] }),
+    ...(which.webgl === false ? {} : { WebglAddon: FakeWebglAddon as unknown as XtermModules['WebglAddon'] }),
+  };
+}
 
 /** Fake xterm classes that record what the engine does to them. */
 function fakeModules(): {
@@ -182,14 +257,26 @@ class FakeTerminal {
   listeners: Record<string, ((...args: never[]) => void) | undefined> = {};
   disposed = 0;
   selection = '';
+  /** What happened in order, by name, for the order of `open` and the addons. */
+  log: string[] = [];
+  /** The Unicode versions that were registered and the one in force (xterm starts on 6). */
+  unicodeVersions: string[] = [];
+  unicode = { activeVersion: '6' };
   constructor(options: Record<string, unknown>) {
     this.options = { ...options };
   }
-  loadAddon(addon: unknown): void {
+  loadAddon(addon: { activate?: (terminal: FakeTerminal) => void }): void {
+    this.log.push(`loadAddon:${addon.constructor.name}`);
+    // as xterm does: the addon is activated inside the call, and a throw reaches the caller
+    addon.activate?.(this);
     this.addons.push(addon);
   }
   open(host: HTMLElement): void {
+    this.log.push('open');
     this.calls.push(['open', host]);
+  }
+  paste(data: string): void {
+    this.calls.push(['paste', data]);
   }
   write(data: Uint8Array | string, callback?: () => void): void {
     this.calls.push(['write', data, callback]);
@@ -240,6 +327,9 @@ class FakeTerminal {
   }
   onScroll(listener: (position: number) => void): { dispose(): void } {
     return this.on('scroll', listener);
+  }
+  onSelectionChange(listener: () => void): { dispose(): void } {
+    return this.on('selection', listener);
   }
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
     this.calls.push(['attachCustomKeyEventHandler', handler]);
@@ -305,6 +395,7 @@ describe('createEngine over fake classes', () => {
     terminal.focus();
     terminal.blur();
     terminal.scrollToBottom();
+    terminal.paste('pasted text');
     const handler = vi.fn(() => true);
     terminal.attachCustomKeyEventHandler(handler);
     expect(fake.calls).toEqual([
@@ -316,6 +407,7 @@ describe('createEngine over fake classes', () => {
       ['focus'],
       ['blur'],
       ['scrollToBottom'],
+      ['paste', 'pasted text'],
       ['attachCustomKeyEventHandler', handler],
     ]);
 
@@ -346,11 +438,13 @@ describe('createEngine over fake classes', () => {
     const onBinary = vi.fn();
     const onResize = vi.fn();
     const onScroll = vi.fn();
+    const onSelectionChange = vi.fn();
     const subscriptions = [
       terminal.onData(onData),
       terminal.onBinary(onBinary),
       terminal.onResize(onResize),
       terminal.onScroll(onScroll),
+      terminal.onSelectionChange(onSelectionChange),
     ];
     (fake.listeners['data'] as ((data: string) => void) | undefined)?.('typed');
     (fake.listeners['binary'] as ((data: string) => void) | undefined)?.('\u0001');
@@ -359,11 +453,13 @@ describe('createEngine over fake classes', () => {
       rows: 20,
     });
     (fake.listeners['scroll'] as ((position: number) => void) | undefined)?.(42);
+    (fake.listeners['selection'] as (() => void) | undefined)?.();
     expect(onData).toHaveBeenCalledWith('typed');
     expect(onBinary).toHaveBeenCalledWith('\u0001');
     expect(onResize).toHaveBeenCalledWith({ cols: 90, rows: 20 });
     // the position of the scroll is not passed on: the app reads the buffer
     expect(onScroll).toHaveBeenCalledExactlyOnceWith();
+    expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith();
     for (const subscription of subscriptions) subscription.dispose();
     expect(Object.values(fake.listeners).every((l) => l === undefined)).toBe(true);
   });
@@ -398,6 +494,356 @@ describe('createEngine over fake classes', () => {
     const instance = createEngine(modules).create(OPTIONS);
     instance.dispose();
     expect(terminals[0]?.disposed).toBe(1);
+  });
+});
+
+describe('createEngine: Unicode 11 (CAW-144, ADR 0135)', () => {
+  afterEach(resetAddonFakes);
+
+  it('loads the addon after fit and links, turns proposed API on and activates version 11', () => {
+    const { modules, terminals, fits } = fakeModules();
+    createEngine(withAddons(modules, { webgl: false })).create(OPTIONS);
+    const terminal = terminals[0];
+    expect(terminal?.options['allowProposedApi']).toBe(true);
+    expect(terminal?.addons).toHaveLength(3);
+    expect(terminal?.addons[0]).toBe(fits[0]);
+    expect(terminal?.addons[2]).toBe(FakeUnicodeAddon.instances[0]);
+    expect(terminal?.unicodeVersions).toEqual(['11']);
+    expect(terminal?.unicode.activeVersion).toBe('11');
+  });
+
+  it('keeps proposed API off and Unicode 6 while the module is absent', () => {
+    const { modules, terminals } = fakeModules();
+    createEngine(modules).create(OPTIONS);
+    expect(terminals[0]?.options['allowProposedApi']).toBe(false);
+    expect(terminals[0]?.unicode.activeVersion).toBe('6');
+    expect(FakeUnicodeAddon.instances).toHaveLength(0);
+  });
+
+  it.each([
+    ['activate throws', { throwOnActivate: true, throwOnConstruct: false }],
+    ['the constructor throws', { throwOnActivate: false, throwOnConstruct: true }],
+  ])('leaves a working terminal on Unicode 6 when %s', (_name, behavior) => {
+    FakeUnicodeAddon.behavior = behavior;
+    const { modules, terminals } = fakeModules();
+    const instance = createEngine(withAddons(modules, { webgl: false })).create(OPTIONS);
+    expect(instance.terminal.cols).toBe(80);
+    expect(terminals[0]?.unicode.activeVersion).toBe('6');
+    expect(terminals[0]?.addons).toHaveLength(2);
+  });
+});
+
+/** A document whose canvas answers `getContext` as the test says; `created` counts the canvases. */
+function fakeDocument(getContext: (kind: string) => unknown): {
+  doc: Pick<Document, 'createElement'>;
+  created: number;
+} {
+  const state = { doc: undefined as unknown as Pick<Document, 'createElement'>, created: 0 };
+  state.doc = {
+    createElement: (() => {
+      state.created += 1;
+      return { getContext };
+    }) as unknown as Document['createElement'],
+  };
+  return state;
+}
+
+describe('webgl2Available', () => {
+  it('is true when a WebGL2 context exists, and frees that context at once', () => {
+    const lose = vi.fn();
+    const getExtension = vi.fn((name: string) => (name === 'WEBGL_lose_context' ? { loseContext: lose } : null));
+    const fake = fakeDocument((kind) => (kind === 'webgl2' ? { getExtension } : null));
+    expect(webgl2Available(fake.doc)).toBe(true);
+    expect(getExtension).toHaveBeenCalledWith('WEBGL_lose_context');
+    expect(lose).toHaveBeenCalledOnce();
+  });
+
+  it('is true when the context has no lose extension', () => {
+    const fake = fakeDocument(() => ({ getExtension: () => null }));
+    expect(webgl2Available(fake.doc)).toBe(true);
+  });
+
+  it('is false when there is no context', () => {
+    expect(webgl2Available(fakeDocument(() => null).doc)).toBe(false);
+  });
+
+  it('is false when anything throws, the context lookup or the release', () => {
+    const lookup = fakeDocument(() => {
+      throw new Error('blocked');
+    });
+    expect(webgl2Available(lookup.doc)).toBe(false);
+    const release = fakeDocument(() => ({
+      getExtension: () => {
+        throw new Error('lost');
+      },
+    }));
+    expect(webgl2Available(release.doc)).toBe(false);
+  });
+
+  it('asks once per document and remembers the answer', () => {
+    const fake = fakeDocument(() => ({ getExtension: () => null }));
+    expect(webgl2Available(fake.doc)).toBe(true);
+    expect(webgl2Available(fake.doc)).toBe(true);
+    expect(fake.created).toBe(1);
+  });
+
+  it('is false in happy-dom, which has no canvas context, so unit tests never import the addon', () => {
+    expect(webgl2Available()).toBe(false);
+  });
+});
+
+describe('createEngine: the GPU renderer (CAW-144, ADR 0135)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetAddonFakes();
+  });
+
+  const gpu = (over: { gpu?: boolean; probe?: () => boolean; slots?: GpuSlots } = {}) => ({
+    gpu: true,
+    probe: () => true,
+    slots: createGpuSlots(),
+    ...over,
+  });
+
+  it('allows four GPU terminals at a time', () => {
+    expect(MAX_GPU_TERMINALS).toBe(4);
+  });
+
+  it('is not loaded by create: attach builds it, after open, in one loadAddon call', () => {
+    const { modules, terminals } = fakeModules();
+    const instance = createEngine(withAddons(modules, { unicode: false }), gpu()).create(OPTIONS);
+    expect(FakeWebglAddon.instances).toHaveLength(0);
+    expect(instance.renderer.kind()).toBe('dom');
+    instance.terminal.open(document.createElement('div'));
+    expect(instance.renderer.attach()).toBe('webgl');
+    expect(instance.renderer.kind()).toBe('webgl');
+    expect(terminals[0]?.log.slice(-2)).toEqual(['open', 'loadAddon:FakeWebglAddon']);
+    expect(FakeWebglAddon.instances).toHaveLength(1);
+  });
+
+  it.each([
+    ['the preference is dom', { gpu: false }],
+    ['the WebGL2 probe says no', { probe: () => false }],
+  ])('never constructs the addon when %s', (_name, over) => {
+    const { modules } = fakeModules();
+    const slots = createGpuSlots();
+    const instance = createEngine(withAddons(modules), gpu({ ...over, slots })).create(OPTIONS);
+    expect(instance.renderer.attach()).toBe('dom');
+    expect(instance.renderer.kind()).toBe('dom');
+    expect(FakeWebglAddon.instances).toHaveLength(0);
+    expect(slots.used()).toBe(0);
+  });
+
+  it('answers dom when the module did not load', () => {
+    const { modules } = fakeModules();
+    const instance = createEngine(withAddons(modules, { webgl: false }), gpu()).create(OPTIONS);
+    expect(instance.renderer.attach()).toBe('dom');
+    expect(instance.renderer.kind()).toBe('dom');
+  });
+
+  it.each([
+    ['the constructor throws', { throwOnActivate: false, throwOnConstruct: true }, 0],
+    ['activate throws', { throwOnActivate: true, throwOnConstruct: false }, 1],
+  ])('answers dom, disposes the addon and frees the slot when %s', (_name, behavior, disposed) => {
+    FakeWebglAddon.behavior = behavior;
+    const { modules } = fakeModules();
+    const slots = createGpuSlots();
+    const instance = createEngine(withAddons(modules), gpu({ slots })).create(OPTIONS);
+    expect(instance.renderer.attach()).toBe('dom');
+    expect(instance.renderer.kind()).toBe('dom');
+    expect(FakeWebglAddon.instances[0]?.disposed ?? 0).toBe(disposed);
+    expect(slots.used()).toBe(0);
+  });
+
+  it('survives an addon that throws again while it is disposed', () => {
+    FakeWebglAddon.behavior = { throwOnActivate: true, throwOnConstruct: false };
+    const { modules } = fakeModules();
+    const instance = createEngine(withAddons(modules), gpu()).create(OPTIONS);
+    vi.spyOn(FakeWebglAddon.prototype, 'dispose').mockImplementation(() => {
+      throw new Error('already gone');
+    });
+    expect(instance.renderer.attach()).toBe('dom');
+  });
+
+  it('goes back to the DOM renderer once when the context is lost for good', () => {
+    const { modules } = fakeModules();
+    const slots = createGpuSlots();
+    const instance = createEngine(withAddons(modules), gpu({ slots })).create(OPTIONS);
+    const fallback = vi.fn();
+    instance.renderer.onFallback(fallback);
+    expect(instance.renderer.attach()).toBe('webgl');
+    expect(slots.used()).toBe(1);
+    const addon = FakeWebglAddon.instances[0];
+    addon?.loseContext();
+    addon?.loseContext();
+    expect(addon?.disposed).toBe(1);
+    expect(instance.renderer.kind()).toBe('dom');
+    expect(slots.used()).toBe(0);
+    expect(fallback).toHaveBeenCalledOnce();
+    // disposing the terminal later neither disposes the addon again nor frees a second slot
+    instance.dispose();
+    expect(addon?.disposed).toBe(1);
+    expect(slots.used()).toBe(0);
+  });
+
+  it('never throws out of a fallback listener or a failing dispose', () => {
+    const { modules } = fakeModules();
+    const instance = createEngine(withAddons(modules), gpu()).create(OPTIONS);
+    const later = vi.fn();
+    instance.renderer.onFallback(() => {
+      throw new Error('listener failed');
+    });
+    instance.renderer.onFallback(later);
+    instance.renderer.attach();
+    vi.spyOn(FakeWebglAddon.prototype, 'dispose').mockImplementation(() => {
+      throw new Error('dispose failed');
+    });
+    expect(() => {
+      FakeWebglAddon.instances[0]?.loseContext();
+    }).not.toThrow();
+    expect(instance.renderer.kind()).toBe('dom');
+    expect(later).toHaveBeenCalledOnce();
+  });
+
+  it('stops notifying a listener that was disposed', () => {
+    const { modules } = fakeModules();
+    const instance = createEngine(withAddons(modules), gpu()).create(OPTIONS);
+    const fallback = vi.fn();
+    instance.renderer.onFallback(fallback).dispose();
+    instance.renderer.attach();
+    FakeWebglAddon.instances[0]?.loseContext();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('gives the fifth terminal the DOM renderer and frees a slot when a GPU terminal is disposed', () => {
+    const { modules } = fakeModules();
+    const slots = createGpuSlots();
+    const engine = createEngine(withAddons(modules), gpu({ slots }));
+    const instances = Array.from({ length: 5 }, () => engine.create(OPTIONS));
+    const kinds = instances.map((instance) => instance.renderer.attach());
+    expect(kinds).toEqual(['webgl', 'webgl', 'webgl', 'webgl', 'dom']);
+    expect(FakeWebglAddon.instances).toHaveLength(4);
+    expect(slots.used()).toBe(4);
+    instances[0]?.dispose();
+    instances[0]?.dispose();
+    expect(slots.used()).toBe(3);
+    const sixth = engine.create(OPTIONS);
+    expect(sixth.renderer.attach()).toBe('webgl');
+    expect(slots.used()).toBe(4);
+  });
+
+  it('attaches only once per terminal', () => {
+    const { modules } = fakeModules();
+    const instance = createEngine(withAddons(modules), gpu()).create(OPTIONS);
+    expect(instance.renderer.attach()).toBe('webgl');
+    expect(instance.renderer.attach()).toBe('webgl');
+    expect(FakeWebglAddon.instances).toHaveLength(1);
+    instance.dispose();
+  });
+});
+
+describe('loadXtermEngine: optional chunks', () => {
+  afterEach(() => {
+    installCspShims()();
+    resetAddonFakes();
+  });
+
+  /** Importers that resolve fake modules and count how often each one is asked. */
+  function importers(over: Partial<XtermImporters> = {}): { importers: XtermImporters; asked: Record<string, number> } {
+    const { modules } = fakeModules();
+    const asked: Record<string, number> = { xterm: 0, fit: 0, links: 0, unicode11: 0, webgl: 0 };
+    const count =
+      <T>(name: string, value: T) =>
+      () => {
+        asked[name] = (asked[name] ?? 0) + 1;
+        return Promise.resolve(value);
+      };
+    return {
+      asked,
+      importers: {
+        xterm: count('xterm', { Terminal: modules.Terminal }),
+        fit: count('fit', { FitAddon: modules.FitAddon }),
+        links: count('links', { WebLinksAddon: modules.WebLinksAddon }),
+        unicode11: count('unicode11', {
+          Unicode11Addon: FakeUnicodeAddon as unknown as XtermModules['Unicode11Addon'],
+        }),
+        webgl: count('webgl', { WebglAddon: FakeWebglAddon as unknown as XtermModules['WebglAddon'] }),
+        ...over,
+      } as XtermImporters,
+    };
+  }
+
+  it('does not import the WebGL chunk when gpu is false', async () => {
+    const { importers: deps, asked } = importers();
+    await loadXtermEngine({ gpu: false }, { importers: deps, webgl2Available: () => true });
+    expect(asked['webgl']).toBe(0);
+    expect(asked['unicode11']).toBe(1);
+  });
+
+  it('does not import the WebGL chunk when the probe says no', async () => {
+    const { importers: deps, asked } = importers();
+    await loadXtermEngine({ gpu: true }, { importers: deps, webgl2Available: () => false });
+    expect(asked['webgl']).toBe(0);
+  });
+
+  it('imports the WebGL chunk once when gpu is true and the probe says yes', async () => {
+    const { importers: deps, asked } = importers();
+    const engine = await loadXtermEngine({ gpu: true }, { importers: deps, webgl2Available: () => true });
+    expect(asked).toEqual({ xterm: 1, fit: 1, links: 1, unicode11: 1, webgl: 1 });
+    const instance = engine.create(OPTIONS);
+    expect(instance.renderer.attach()).toBe('webgl');
+    instance.dispose();
+  });
+
+  it('never fails the engine because an optional import failed', async () => {
+    const { importers: deps } = importers({
+      unicode11: () => Promise.reject(new Error('chunk 404')),
+      webgl: () => Promise.reject(new Error('chunk 404')),
+    });
+    const engine = await loadXtermEngine({ gpu: true }, { importers: deps, webgl2Available: () => true });
+    const instance = engine.create(OPTIONS);
+    expect(instance.terminal.cols).toBe(80);
+    expect(instance.renderer.attach()).toBe('dom');
+  });
+
+  it.each(['xterm', 'fit', 'links'] as const)('still rejects when the required %s import fails', async (name) => {
+    const { importers: deps } = importers({ [name]: () => Promise.reject(new Error('chunk 404')) });
+    await expect(loadXtermEngine({ gpu: true }, { importers: deps, webgl2Available: () => true })).rejects.toThrow(
+      'chunk 404',
+    );
+  });
+});
+
+describe('the optional addons (the real packages)', () => {
+  it('resolve and fit the adapter: Unicode 11 registers and activates, which needs proposed API', async () => {
+    const xterm = await import('@xterm/xterm');
+    const unicode = await import('@xterm/addon-unicode11');
+    const webgl = await import('@xterm/addon-webgl');
+    expect(typeof webgl.WebglAddon).toBe('function');
+    expect(typeof unicode.Unicode11Addon).toBe('function');
+
+    class Capture extends xterm.Terminal {
+      static last: InstanceType<typeof xterm.Terminal> | undefined;
+      constructor(options?: ConstructorParameters<typeof xterm.Terminal>[0]) {
+        super(options);
+        Capture.last = this;
+      }
+    }
+    const instance = createEngine({
+      Terminal: Capture,
+      FitAddon: (await import('@xterm/addon-fit')).FitAddon,
+      WebLinksAddon: (await import('@xterm/addon-web-links')).WebLinksAddon,
+      Unicode11Addon: unicode.Unicode11Addon,
+      WebglAddon: webgl.WebglAddon,
+    }).create(OPTIONS);
+    try {
+      expect(Capture.last?.unicode.versions).toContain('11');
+      expect(Capture.last?.unicode.activeVersion).toBe('11');
+      expect(typeof instance.terminal.paste).toBe('function');
+      expect(instance.renderer.kind()).toBe('dom');
+    } finally {
+      instance.dispose();
+    }
   });
 });
 

@@ -324,6 +324,57 @@ describe('the Workspace preferences (design 04 sections 2.2, 2.4, 6.2 and 6.5)',
     }
   });
 
+  it('the four terminal preferences of CAW-144 take only their own values', () => {
+    expect(
+      sanitize({
+        terminalRenderer: 'dom',
+        terminalCursor: 'bar',
+        terminalRightClick: 'menu',
+        terminalCopyOnSelect: true,
+      }),
+    ).toEqual({
+      terminalRenderer: 'dom',
+      terminalCursor: 'bar',
+      terminalRightClick: 'menu',
+      terminalCopyOnSelect: true,
+    });
+    for (const value of ['auto', 'dom']) expect(sanitize({ terminalRenderer: value }).terminalRenderer).toBe(value);
+    for (const value of ['block', 'bar', 'underline'])
+      expect(sanitize({ terminalCursor: value }).terminalCursor).toBe(value);
+    for (const value of ['smart', 'menu'])
+      expect(sanitize({ terminalRightClick: value }).terminalRightClick).toBe(value);
+    for (const value of ['webgl', 'gpu', 'AUTO', '', 1, true, null, [], {}]) {
+      expect(sanitize({ terminalRenderer: value }).terminalRenderer, JSON.stringify(value)).toBeUndefined();
+    }
+    for (const value of ['beam', 'Block', '', 1, true, null, [], {}]) {
+      expect(sanitize({ terminalCursor: value }).terminalCursor, JSON.stringify(value)).toBeUndefined();
+    }
+    for (const value of ['copy', 'paste', 'Smart', '', 1, true, null, [], {}]) {
+      expect(sanitize({ terminalRightClick: value }).terminalRightClick, JSON.stringify(value)).toBeUndefined();
+    }
+    for (const value of ['true', 1, 0, null, [], {}]) {
+      expect(sanitize({ terminalCopyOnSelect: value }).terminalCopyOnSelect, JSON.stringify(value)).toBeUndefined();
+    }
+    expect(sanitize({ terminalRendererX: 'dom', terminalCursors: 'bar' })).toEqual({});
+  });
+
+  it('keeps the four terminal preferences through set and a reload, and rejects a wrong value', () => {
+    const st = new MemStorage();
+    const p = createPrefs(st);
+    expect(p.set('terminalRenderer', 'dom')).toBe(true);
+    expect(p.set('terminalCursor', 'underline')).toBe(true);
+    expect(p.set('terminalRightClick', 'menu')).toBe(true);
+    expect(p.set('terminalCopyOnSelect', true)).toBe(true);
+    // the type forbids these; callers may still pass anything at run time
+    expect(p.set('terminalRenderer', 'webgl' as never)).toBe(false);
+    expect(p.set('terminalCursor', 'beam' as never)).toBe(false);
+    const again = createPrefs(st);
+    expect(again.get('terminalRenderer', 'auto')).toBe('dom');
+    expect(again.get('terminalCursor', 'block')).toBe('underline');
+    expect(again.get('terminalRightClick', 'smart')).toBe('menu');
+    expect(again.get('terminalCopyOnSelect', false)).toBe(true);
+  });
+
   it('are stored and read back through set, and a rejected value changes nothing', () => {
     const st = new MemStorage();
     const p = createPrefs(st);

@@ -1,14 +1,17 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { decideKey, type KeyContext, type KeyDecision, type KeyEventLike } from './keys.ts';
+import { decideKey, platformIsMac, type KeyContext, type KeyDecision, type KeyEventLike } from './keys.ts';
 import { RELEASE_CHORD } from './protocol.ts';
 
 // Every row of the table in design 04 section 7.5 (keyboard ownership, copy and paste), with and without a selection and with the
 // modifier combinations that must NOT trigger a row. The function is pure: the view performs the effect of the answer.
 
-const NO_SELECTION: KeyContext = { hasSelection: false };
-const SELECTION: KeyContext = { hasSelection: true };
+const NO_SELECTION: KeyContext = { hasSelection: false, ctrlVPastes: true };
+const SELECTION: KeyContext = { hasSelection: true, ctrlVPastes: true };
+/** macOS: Ctrl+V stays the program's (Meta+V pastes there, and is the browser's). */
+const MAC_NO_SELECTION: KeyContext = { hasSelection: false, ctrlVPastes: false };
+const MAC_SELECTION: KeyContext = { hasSelection: true, ctrlVPastes: false };
 
 function key(over: Partial<KeyEventLike> & { key: string }): KeyEventLike {
   return {
@@ -120,16 +123,71 @@ describe('decideKey: Ctrl+Shift+C (never an interrupt, never DevTools)', () => {
   });
 });
 
-describe('decideKey: paste and everything else', () => {
+describe('decideKey: paste (CAW-144: plain Ctrl+V does not paste in xterm 6.0.0, it sends 0x16)', () => {
   it.each([
-    ['Ctrl+V', ctrl('v')],
+    ['without a selection', NO_SELECTION],
+    ['with a selection', SELECTION],
+  ])('answers paste for Ctrl+V %s, in either letter case', (_name, ctx) => {
+    expect(decideKey(ctrl('v'), ctx)).toBe('paste');
+    expect(decideKey(ctrl('V'), ctx)).toBe('paste');
+  });
+
+  it.each([
+    ['without a selection', MAC_NO_SELECTION],
+    ['with a selection', MAC_SELECTION],
+  ])('passes Ctrl+V on macOS %s, where it stays with the program', (_name, ctx) => {
+    expect(decideKey(ctrl('v'), ctx)).toBe('pass');
+  });
+
+  it.each([
+    ['Meta+V', key({ key: 'v', metaKey: true })],
+    ['Ctrl+Meta+V', ctrl('v', { metaKey: true })],
+    ['Ctrl+Alt+V (AltGr on some layouts)', ctrl('v', { altKey: true })],
+    ['Alt+V (the image paste of Claude Code on Windows)', key({ key: 'v', altKey: true })],
     ['Ctrl+Shift+V', ctrl('V', { shiftKey: true })],
     ['Shift+Insert', key({ key: 'Insert', shiftKey: true })],
-  ])('passes %s to the browser, which pastes into the text area of the terminal', (_name, event) => {
+    ['Ctrl+Insert (xterm copies through its own listener)', key({ key: 'Insert', ctrlKey: true })],
+    ['a plain V', key({ key: 'v' })],
+  ])('passes %s to xterm and the browser', (_name, event) => {
     expect(decideKey(event, NO_SELECTION)).toBe('pass');
     expect(decideKey(event, SELECTION)).toBe('pass');
   });
 
+  it('leaves Ctrl+V alone during an input method composition and on keyup', () => {
+    expect(decideKey(ctrl('v', { isComposing: true }), NO_SELECTION)).toBe('pass');
+    expect(decideKey(ctrl('v', { keyCode: 229 }), NO_SELECTION)).toBe('pass');
+    expect(decideKey({ ...ctrl('v'), type: 'keyup' }, NO_SELECTION)).toBe('pass');
+    expect(decideKey({ ...ctrl('v'), type: 'keypress' }, NO_SELECTION)).toBe('pass');
+  });
+});
+
+describe('platformIsMac', () => {
+  it('reads userAgentData.platform first', () => {
+    expect(platformIsMac({ userAgentData: { platform: 'macOS' }, platform: 'Win32' })).toBe(true);
+    expect(platformIsMac({ userAgentData: { platform: 'Windows' }, platform: 'MacIntel' })).toBe(false);
+  });
+
+  it.each([
+    ['MacIntel', true],
+    ['MacPPC', true],
+    ['iPhone', true],
+    ['iPad', true],
+    ['Win32', false],
+    ['Linux x86_64', false],
+    ['', false],
+  ])('falls back to platform %j (%s)', (platform, expected) => {
+    expect(platformIsMac({ platform })).toBe(expected);
+    expect(platformIsMac({ userAgentData: {}, platform })).toBe(expected);
+    expect(platformIsMac({ userAgentData: { platform: '' }, platform })).toBe(expected);
+  });
+
+  it('is false when the browser tells nothing', () => {
+    expect(platformIsMac({})).toBe(false);
+    expect(platformIsMac(undefined)).toBe(false);
+  });
+});
+
+describe('decideKey: everything else', () => {
   it.each([
     ['Tab', key({ key: 'Tab', code: 'Tab' })],
     ['Shift+Tab', key({ key: 'Tab', code: 'Tab', shiftKey: true })],
@@ -179,9 +237,11 @@ describe('decideKey: the table, as one list', () => {
     ['Meta+C with a selection', key({ key: 'c', metaKey: true }), SELECTION, 'copy'],
     ['Ctrl+Shift+C with a selection', ctrl('C', { shiftKey: true }), SELECTION, 'copy'],
     ['Ctrl+Shift+C without a selection', ctrl('C', { shiftKey: true }), NO_SELECTION, 'swallow'],
-    ['Ctrl+V', ctrl('v'), NO_SELECTION, 'pass'],
+    ['Ctrl+V', ctrl('v'), NO_SELECTION, 'paste'],
+    ['Ctrl+V on macOS', ctrl('v'), MAC_NO_SELECTION, 'pass'],
     ['Ctrl+Shift+V', ctrl('V', { shiftKey: true }), NO_SELECTION, 'pass'],
     ['Shift+Insert', key({ key: 'Insert', shiftKey: true }), NO_SELECTION, 'pass'],
+    ['Ctrl+Insert', key({ key: 'Insert', ctrlKey: true }), NO_SELECTION, 'pass'],
     ['everything else', key({ key: 'q' }), SELECTION, 'pass'],
   ];
 

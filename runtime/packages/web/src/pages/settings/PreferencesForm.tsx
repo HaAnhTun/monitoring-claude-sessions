@@ -1,5 +1,5 @@
 // Display preferences (04-ui.md 4.4.7, ADR 0073 decision 6): the same theme, density and language as the user menu, and the
-// transcript options the menu does not have, and the screen reader mode of the terminal. Every choice is applied at once and kept in this browser (`mcs.ui.v3`); nothing is
+// transcript options the menu does not have, and the Terminal card (renderer, cursor, right click, copy on select, screen reader mode). Every choice is applied at once and kept in this browser (`mcs.ui.v3`); nothing is
 // sent anywhere. "Reset display preferences" forgets what this browser stored and touches nothing else.
 import { ENTRY_KINDS, type EntryKind } from '@mcs/shared';
 import { useId, type ReactNode } from 'react';
@@ -16,6 +16,9 @@ import { SettingsCard } from './SettingsParts.tsx';
 
 type Theme = PrefsData['theme'];
 type Density = PrefsData['density'];
+type Renderer = PrefsData['terminalRenderer'];
+type Cursor = PrefsData['terminalCursor'];
+type RightClick = PrefsData['terminalRightClick'];
 
 const THEMES = [
   { value: 'auto', labelKey: 'menu.theme.auto' },
@@ -27,6 +30,22 @@ const DENSITIES = [
   { value: 'comfortable', labelKey: 'menu.density.comfortable' },
   { value: 'compact', labelKey: 'menu.density.compact' },
 ] as const satisfies readonly { value: Density; labelKey: MessageKey }[];
+
+const RENDERERS = [
+  { value: 'auto', labelKey: 'settings.prefs.renderer.auto' },
+  { value: 'dom', labelKey: 'settings.prefs.renderer.dom' },
+] as const satisfies readonly { value: Renderer; labelKey: MessageKey }[];
+
+const CURSORS = [
+  { value: 'block', labelKey: 'settings.prefs.cursor.block' },
+  { value: 'bar', labelKey: 'settings.prefs.cursor.bar' },
+  { value: 'underline', labelKey: 'settings.prefs.cursor.underline' },
+] as const satisfies readonly { value: Cursor; labelKey: MessageKey }[];
+
+const RIGHT_CLICKS = [
+  { value: 'smart', labelKey: 'settings.prefs.rightClick.smart' },
+  { value: 'menu', labelKey: 'settings.prefs.rightClick.menu' },
+] as const satisfies readonly { value: RightClick; labelKey: MessageKey }[];
 
 const KIND_LABELS = {
   prompt: 'transcript.toolbar.kind.prompt',
@@ -50,6 +69,12 @@ const DEFAULT_NEWEST_FIRST = true;
 
 /** The terminal is drawn for sighted use until a person asks xterm for its screen reader mode (slower on large outputs). */
 const DEFAULT_SCREEN_READER = false;
+
+/** What a terminal does before a person chooses: the graphics card when it can, a block cursor, smart right click, no copy on select. */
+const DEFAULT_RENDERER: Renderer = 'auto';
+const DEFAULT_CURSOR: Cursor = 'block';
+const DEFAULT_RIGHT_CLICK: RightClick = 'smart';
+const DEFAULT_COPY_ON_SELECT = false;
 
 interface ChoiceProps {
   name: string;
@@ -77,6 +102,10 @@ export function PreferencesForm() {
   const { theme, density } = resolveDisplay(prefs, useInstance().data?.ui);
   const newestFirst = prefs.newestFirst ?? DEFAULT_NEWEST_FIRST;
   const screenReader = prefs.terminalScreenReader ?? DEFAULT_SCREEN_READER;
+  const renderer = prefs.terminalRenderer ?? DEFAULT_RENDERER;
+  const cursor = prefs.terminalCursor ?? DEFAULT_CURSOR;
+  const rightClick = prefs.terminalRightClick ?? DEFAULT_RIGHT_CLICK;
+  const copyOnSelect = prefs.terminalCopyOnSelect ?? DEFAULT_COPY_ON_SELECT;
   const kinds = { ...DEFAULT_KINDS, ...prefs.kinds };
 
   const languages: readonly { value: LocalePreference; label: string }[] = [
@@ -157,6 +186,77 @@ export function PreferencesForm() {
             <span>
               {t('settings.prefs.screenReader')}
               <span className="settings-check__hint muted small">{t('settings.prefs.screenReaderHint')}</span>
+            </span>
+          </label>
+        </SettingsCard>
+        <SettingsCard title={t('settings.prefs.terminal')}>
+          <fieldset className="settings-fieldset">
+            <legend>{t('settings.prefs.renderer')}</legend>
+            <div className="settings-choices">
+              {RENDERERS.map((option) => (
+                <Choice
+                  key={option.value}
+                  name={`${groupId}-renderer`}
+                  value={option.value}
+                  checked={renderer === option.value}
+                  onChoose={() => {
+                    setPref('terminalRenderer', option.value);
+                  }}
+                >
+                  {t(option.labelKey)}
+                </Choice>
+              ))}
+            </div>
+            <p className="muted small">{t('settings.prefs.renderer.hint')}</p>
+          </fieldset>
+          <fieldset className="settings-fieldset">
+            <legend>{t('settings.prefs.cursor')}</legend>
+            <div className="settings-choices">
+              {CURSORS.map((option) => (
+                <Choice
+                  key={option.value}
+                  name={`${groupId}-cursor`}
+                  value={option.value}
+                  checked={cursor === option.value}
+                  onChoose={() => {
+                    setPref('terminalCursor', option.value);
+                  }}
+                >
+                  {t(option.labelKey)}
+                </Choice>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="settings-fieldset">
+            <legend>{t('settings.prefs.rightClick')}</legend>
+            <div className="settings-choices">
+              {RIGHT_CLICKS.map((option) => (
+                <Choice
+                  key={option.value}
+                  name={`${groupId}-right-click`}
+                  value={option.value}
+                  checked={rightClick === option.value}
+                  onChoose={() => {
+                    setPref('terminalRightClick', option.value);
+                  }}
+                >
+                  {t(option.labelKey)}
+                </Choice>
+              ))}
+            </div>
+            <p className="muted small">{t('settings.prefs.rightClick.hint')}</p>
+          </fieldset>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={copyOnSelect}
+              onChange={(event) => {
+                setPref('terminalCopyOnSelect', event.target.checked);
+              }}
+            />
+            <span>
+              {t('settings.prefs.copyOnSelect')}
+              <span className="settings-check__hint muted small">{t('settings.prefs.copyOnSelect.hint')}</span>
             </span>
           </label>
         </SettingsCard>
