@@ -103,6 +103,29 @@ export {
   type PtySupportResult,
 } from './terminal/pty-support.ts';
 export { MIN_MARKER_LENGTH, findProcesses, type FoundProcess } from './terminal/process-scan.ts';
+export { fakeLogOf, readFakeLog, type FakeLog } from './terminal/fake-log.ts';
+export {
+  HERMETIC_PATH_VARIABLES,
+  PRODUCT_DEFAULT_PORT,
+  USER_INSTANCE_PORTS,
+  assertHermeticEnv,
+  assertSafeCliArgs,
+  assertTempRoot,
+  assertTestPort,
+  createUserSandbox,
+  mentionsProductPort,
+  proveHermetic,
+  realPerUserFolders,
+  startUserInstance,
+  type ApiReply,
+  type CliCallOptions,
+  type CliJsonResult,
+  type UserApi,
+  type UserInstance,
+  type UserInstanceOptions,
+  type UserInstancePaths,
+  type UserSandbox,
+} from './terminal/user-instance.ts';
 
 // @wp-begin WP-55
 // @wp-end WP-55

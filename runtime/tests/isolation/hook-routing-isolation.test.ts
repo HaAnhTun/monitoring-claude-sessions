@@ -2,7 +2,8 @@
 // of two real instances and routes by the route files that the instances wrote themselves.
 //   - two routes that match one transcript folder give two spool lines with one event_uid and two instance ids;
 //   - with two live instances, an event of the transcript folder of A reaches A only, and an event of B reaches B only;
-//   - an instance whose hooks are off, and an event of a folder nobody watches, receive nothing.
+//   - an instance whose hooks are off, and an event of a folder nobody watches, receive nothing;
+//   - with the user instance running in the same per-user folder, an event of a task's session reaches the task only.
 // Reception is proved twice: by the spool file of the workspace (what the handler wrote) and by the ingest health of the
 // instance (what its drainer and writer committed).
 import { existsSync, realpathSync } from 'node:fs';
@@ -13,7 +14,7 @@ import { routeKey } from '@mcs/shared/protocol';
 import { waitFor } from '@mcs/testkit';
 import { describe, expect, it } from 'vitest';
 
-import { twoWorkspaces, type RunningInstance } from './_setup.ts';
+import { twoWorkspaces, userInstance, type RunningInstance } from './_setup.ts';
 import {
   enableHooks,
   forward,
@@ -140,4 +141,41 @@ describe('hook routing isolation (T-HK-05 spawn part)', () => {
     expect(await timelineEvents(runningA.port, SESSION_A)).toBe(0);
     expect(await timelineEvents(runningB.port, SESSION_B)).toBe(0);
   }, 180_000);
+
+  // Case 7 of the user-instance isolation list (06 section 6): the app shares the per-user folder with the tasks, so the handler
+  // reads its route beside theirs. The hooks of the app are off unless a person installs them: it publishes no enabled route.
+  it('with the user instance running, an event of a session of a task reaches the task and never the user instance', async () => {
+    const fixture = await userInstance('iso-user-hook');
+    const a = await fixture.task('a');
+    const dirA = transcriptsFolder(a.env, 'a');
+    enableHooks(a);
+    await watchTranscriptsIn(a, dirA);
+    const app = await fixture.start();
+    const runningA = await a.start();
+    expectRoute(fixture.mcsHome, runningA, dirA);
+    const userRoute = readRouteFile(fixture.mcsHome, fixture.instanceId);
+    expect(userRoute?.enabled ?? false, 'the route of the app is not enabled').toBe(false);
+    const userSpool = join(app.paths.instanceDir, 'data', 'spool');
+
+    const source = hookSource(a.env, dirA, SESSION_A);
+    await source.fire('SessionStart');
+    expect(spoolEnvelopes(a).map((e) => e.instance_id)).toEqual([a.instanceId]);
+    expect(spoolEnvelopes({ dir: app.paths.instanceDir })).toEqual([]);
+    expect(existsSync(userSpool)).toBe(false);
+    await waitFor(async () => (await timelineEvents(runningA.port, SESSION_A)) === 1, {
+      what: 'the task to commit the event of its folder',
+      timeoutMs: 30_000,
+    });
+
+    // a second event still goes to the task alone, and the app is the process it was
+    await source.fire('UserPromptSubmit');
+    await waitFor(async () => (await timelineEvents(runningA.port, SESSION_A)) === 2, {
+      what: 'the task to commit its second line',
+      timeoutMs: 30_000,
+    });
+    expect(spoolEnvelopes(a).map((e) => e.instance_id)).toEqual([a.instanceId, a.instanceId]);
+    expect(existsSync(userSpool)).toBe(false);
+    expect(app.statePid()).toBe(app.pid);
+    expect((await app.api().get('/api/v3/health')).json).toMatchObject({ instanceId: fixture.instanceId });
+  }, 240_000);
 });

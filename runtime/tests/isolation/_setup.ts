@@ -16,6 +16,7 @@ import {
   allocatePort,
   assertPortClosed,
   buildRepo,
+  createUserSandbox,
   hermeticEnv,
   httpRequest,
   killAllTracked,
@@ -23,6 +24,8 @@ import {
   startInstance,
   useTempDirs,
   type StartedInstance,
+  type UserInstance,
+  type UserSandbox,
 } from '@mcs/testkit';
 import { afterEach } from 'vitest';
 
@@ -264,6 +267,43 @@ export async function twoInstances(opts: Pick<PairOptions, 'sameRepo'> = {}): Pr
       }
       if (failures.length > 0) throw new Error(`teardown of the two instances failed: ${failures.join('; ')}`);
     },
+  };
+}
+
+// ---- the user instance beside tasks (06 section 6, isolation) ----------------------------------------------------------------------
+
+/** The app instance of one temp per-user folder, with tasks that share its environment. */
+export interface UserFixture {
+  /** The hermetic root of the app (the testkit harness): its CLI, its paths, its port. Not started. */
+  readonly sandbox: UserSandbox;
+  /** `MCS_HOME` of the root. */
+  readonly mcsHome: string;
+  /** The `instanceId` of the app's `instance.json`. */
+  readonly instanceId: string;
+  /** Starts the app (`start --user --no-open`); the harness stops it after the test. */
+  start(): Promise<UserInstance>;
+  /**
+   * A task of a repository inside the same root, initialised with the environment of the app: one `MCS_HOME`, one Claude home,
+   * so the two kinds of instance can meet. `repo` names the repository folder (default `repo`).
+   */
+  task(slug: string, repo?: string): Promise<IsolatedWorkspace>;
+}
+
+/**
+ * The `userInstance` fixture: a sandbox of the user-instance harness (temp root, the hermetic environment with the Windows
+ * folders, a port of the test range, the proof that the CLI resolves the app inside the root) that is configured and not started.
+ * Its cleanup is registered with `killAllTracked`, which the `afterEach` of this file runs after the tasks were stopped.
+ */
+export async function userInstance(purpose = 'iso-user'): Promise<UserFixture> {
+  const sandbox = await createUserSandbox({ purpose });
+  const env = { ...sandbox.env };
+  return {
+    sandbox,
+    mcsHome: sandbox.paths.mcsHome,
+    instanceId: readInstanceId(sandbox.paths.instanceDir),
+    start: () => sandbox.start(),
+    task: async (slug, repo = 'repo') =>
+      initWorkspace(sandbox.root, buildRepo(join(sandbox.root, repo)).repo, slug, env, await allocatePort()),
   };
 }
 
