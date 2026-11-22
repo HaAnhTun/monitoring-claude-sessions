@@ -1,6 +1,11 @@
 // The one error type of the database layer (03 4.3, registry 2.6 and 7.4). Messages are built from the code alone:
 // a SQLite message can name a column or an expression of a CHECK, and a driver message can echo a statement, so
 // neither is ever copied into a DbError (DA-I2, rule "never SQL text with data").
+//
+// A constraint error also says where it failed, in two fields of their own (CAW-146): `table`, the table name at the head
+// of the failing statement, and `constraintTarget`, what the SQLite message named. Both are names of the schema (a table,
+// columns, an index, a CHECK by its name or by the expression the migration wrote), kept only when the text has the exact
+// form SQLite gives it; a value of a row is never part of either (driver.ts, `constraintTargetOf`).
 
 /** Closed set of codes, in the order of registry 7.4. HTTP mapping: `db_busy` 503, `db_full` 503 `disk_full`, others 500. */
 export const DB_ERROR_CODES = [
@@ -39,6 +44,13 @@ export interface DbErrorDetails {
   version?: number;
   /** The SQLite result code name (for example `SQLITE_BUSY`), kept for diagnosis. */
   sqliteCode?: string;
+  /** Only for `db_constraint`: the table the failing statement writes (an identifier of the schema). */
+  table?: string;
+  /**
+   * Only for `db_constraint`: what SQLite named, as the schema writes it (`agents.session_id, agents.agent_uid`, an index,
+   * the name or the expression of a CHECK). Never a value of a row.
+   */
+  constraintTarget?: string;
   /** The original error, when it carries no data worth hiding (a non-SQLite error). */
   cause?: unknown;
 }
@@ -48,6 +60,8 @@ export class DbError extends Error {
   readonly constraint: DbConstraintKind | undefined;
   readonly version: number | undefined;
   readonly sqliteCode: string | undefined;
+  readonly table: string | undefined;
+  readonly constraintTarget: string | undefined;
 
   constructor(code: DbErrorCode, message: string, details: DbErrorDetails = {}) {
     super(message, details.cause === undefined ? undefined : { cause: details.cause });
@@ -56,6 +70,8 @@ export class DbError extends Error {
     this.constraint = details.constraint;
     this.version = details.version;
     this.sqliteCode = details.sqliteCode;
+    this.table = details.table;
+    this.constraintTarget = details.constraintTarget;
   }
 }
 

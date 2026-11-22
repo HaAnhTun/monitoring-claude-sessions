@@ -3,7 +3,7 @@
 // and `test/hook-to-db.int.test.ts`.
 import { join } from 'node:path';
 
-import type { HookEnvelopeV1 } from '@mcs/shared/protocol';
+import { summarizeToolInput, type HookEnvelopeV1 } from '@mcs/shared/protocol';
 import { FakeClock, useTempDirs } from '@mcs/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -28,6 +28,7 @@ import {
 } from '../../test/fixtures/hook-sequences.ts';
 import { fixtureEnvelope } from '../../test/fixtures/hooks.ts';
 import { INSTANCE_KEY, createActivityThrottle } from '../db/change-sink.ts';
+import { LOG_FIELD_NAMES, type Logger } from '../log/logger.ts';
 import { eventRow } from './event-row.ts';
 import {
   createIngestWriter,
@@ -423,6 +424,402 @@ describe('malformed input (T-PL-07) and poison items (T-PL-08)', () => {
     expect(dumpDatabase(r.db)['ingest_errors']).toEqual([{ code: 'PERSIST_FAILED', n: 1 }]);
     expect(new SpoolCursorsRepo(r.db).get(CTX, SEG)?.offsetBytes).toBe(500);
     expect(r.writer.stats.failures).toBeGreaterThan(0);
+  });
+
+  it('stores a tool call whose summary carries the clip marker: the row keeps its first 160 code points (CAW-146)', async () => {
+    const r = rig();
+    // what the handler sends for an input line of 394 code points: 160 of them and the marker of 02 2.5.1
+    const summary = summarizeToolInput({ command: `echo ${'fixture-word '.repeat(30)}`.trimEnd() });
+    expect(Array.from(summary).length).toBeGreaterThan(160);
+    await ingest(r, [
+      fixtureEnvelope('PreToolUse', {
+        top: { tool_use_id: TOOL_BASH, prompt_id: PROMPT_ID },
+        data: { tool_name: 'Bash', tool_summary: summary, tool_input_hash: 'a'.repeat(32) },
+      }),
+    ]);
+    expect(r.db.driver.prepare<{ summary: string | null }>('SELECT summary FROM tool_calls').all()).toEqual([
+      { summary: Array.from(summary).slice(0, 160).join('') },
+    ]);
+    expect(count(r.db, 'events')).toBe(1);
+    expect(dumpDatabase(r.db)['ingest_errors']).toEqual([]);
+    expect(r.writer.stats.failures).toBe(0);
+  });
+
+  it('says which table, constraint and item failed, and keeps the reference of the line (CAW-146)', async () => {
+    const logged: { event: string; fields: unknown }[] = [];
+    const log = (event: string, fields?: unknown): void => {
+      logged.push({ event, fields });
+    };
+    const r = rig({
+      logger: {
+        debug: log,
+        info: log,
+        warn: log,
+        error: log,
+        stats: { droppedFields: 0, rotations: 0, rotateFailures: 0, writeFailures: 0 },
+        close: () => Promise.resolve(),
+      },
+    });
+    const fileId = registerFile(r.db, 'main', FIXTURE_SESSION_ID);
+    const record = (offset: number, summary: string): IngestItem => {
+      const stamp = { at: NOW - 5000 + offset, rank: 20, tie: `t:${String(offset)}` };
+      const row = eventRow({
+        sessionUid: FIXTURE_SESSION_ID,
+        agentUid: 'main',
+        kind: 'tool.call',
+        entryKind: 'tool',
+        sources: 2,
+        stamp,
+        tsSource: 'record',
+        receivedAt: NOW,
+        recordUuid: `f${String(fileId)}:${String(offset)}`,
+        fileId,
+        byteOffset: offset,
+        byteLength: 100,
+        lineNo: 1 + offset / 100,
+        recordType: 'assistant',
+      });
+      return {
+        kind: 'record',
+        events: [{ k: 'activity', sessionId: FIXTURE_SESSION_ID, agentId: null, stamp, via: 'assistant' }],
+        // the summary goes around the builder, which would have cut it to the column
+        rows: [{ t: 'event', row: { ...row, summary } }],
+      };
+    };
+    r.writer.submit({
+      source: 'transcript',
+      items: [
+        seenItem(FIXTURE_SESSION_ID, fileId),
+        record(100, 'ok'),
+        record(200, 'x'.repeat(300)),
+        record(300, 'ok'),
+        record(400, 'ok'),
+      ],
+      bytes: 1000,
+      cursor: { kind: 'transcript', fileId, cursor: { tailOffset: 500, sizeSeen: 500 } },
+    });
+    await r.writer.flushNow();
+    expect(count(r.db, 'events')).toBe(3);
+    expect(tailOffsetOf(r.db, fileId)).toBe(500);
+    // the last failure is the one of the single item that is then dropped
+    expect(logged.filter((line) => line.event === 'ingest_commit_failed').at(-1)?.fields).toEqual({
+      code: 'db_constraint',
+      status: 'SQLITE_CONSTRAINT_CHECK',
+      phase: 'events/summary_IS_NULL_OR_length_summary_240',
+      kind: 'transcript/record/activity',
+      count: 1,
+    });
+    // the first is the whole batch
+    expect(logged.find((line) => line.event === 'ingest_commit_failed')?.fields).toMatchObject({
+      code: 'db_constraint',
+      kind: 'transcript',
+      count: 5,
+    });
+    expect(
+      r.db.driver
+        .prepare('SELECT code, source, file_id, byte_offset, session_uid, segment, detail FROM ingest_errors')
+        .all(),
+    ).toEqual([
+      {
+        code: 'PERSIST_FAILED',
+        source: 'writer',
+        file_id: fileId,
+        byte_offset: 200,
+        session_uid: FIXTURE_SESSION_ID,
+        segment: null,
+        detail:
+          'item could not be stored (db_constraint check; events; summary IS NULL OR length(summary) <= 240; transcript record: activity)',
+      },
+    ]);
+  });
+
+  it('keeps the segment of a dropped spool item after the batch was split (CAW-146)', async () => {
+    const r = rig();
+    const items: IngestItem[] = labSequence()
+      .slice(0, 5)
+      .map((env) => envelopeItem(env));
+    const target = items[1];
+    if (target === undefined || target.rows[0]?.t !== 'event') throw new Error('fixture');
+    // the second of five items: the split puts it into a half that carries no cursor
+    items[1] = { ...target, rows: [{ t: 'event', row: eventRow({ ...target.rows[0].row, fileId: 999_999 }) }] };
+    r.writer.submit({
+      source: 'spool',
+      items,
+      bytes: 500,
+      cursor: { kind: 'spool', segment: SEG, cursor: cursor(500, 5) },
+    });
+    await r.writer.flushNow();
+    expect(
+      r.db.driver.prepare('SELECT code, file_id, byte_offset, session_uid, segment, detail FROM ingest_errors').all(),
+    ).toEqual([
+      {
+        code: 'PERSIST_FAILED',
+        file_id: null,
+        byte_offset: null,
+        session_uid: FIXTURE_SESSION_ID,
+        segment: SEG,
+        detail: expect.stringMatching(
+          /^item could not be stored \(db_constraint foreignkey; the transcript file does not exist; spool envelope: /,
+        ) as unknown,
+      },
+    ]);
+  });
+});
+
+// ---- what a failed commit says, for every kind of constraint, and that it says no value (CAW-146) ---------------------------
+
+describe('the names of a failed commit (CAW-146)', () => {
+  /** A value the failing statement is given: it must never reach the log line or the record. */
+  const SECRET = 'secret-value-0123456789';
+  const SAFE_STRING = /^[\w.:/@-]{0,128}$/;
+  const PROJECT = 'INSERT INTO projects (project_key, dir_name, first_seen_at, last_activity_at) VALUES (?, ?, ?, ?)';
+
+  interface Line {
+    readonly event: string;
+    readonly fields: Record<string, unknown>;
+  }
+
+  function capturing(lines: Line[]): Logger {
+    const log = (event: string, fields: Record<string, unknown> = {}): void => {
+      lines.push({ event, fields });
+    };
+    return {
+      debug: log,
+      info: log,
+      warn: log,
+      error: log,
+      stats: { droppedFields: 0, rotations: 0, rotateFailures: 0, writeFailures: 0 },
+      close: () => Promise.resolve(),
+    };
+  }
+
+  // [kind, the statement that fails inside the transaction, status, phase, the middle of the detail]
+  const cases: readonly (readonly [string, (db: InstanceDb) => void, string, string, string])[] = [
+    [
+      'unique',
+      (db) => {
+        db.driver.prepare(PROJECT).run([SECRET, SECRET, 1, 1]);
+        db.driver.prepare(PROJECT).run([SECRET, SECRET, 1, 1]);
+      },
+      'SQLITE_CONSTRAINT_UNIQUE',
+      'projects/projects.project_key',
+      'db_constraint unique; projects; projects.project_key',
+    ],
+    [
+      'check',
+      (db) => {
+        db.driver.prepare(PROJECT).run([SECRET.toUpperCase(), SECRET, 1, 1]);
+      },
+      'SQLITE_CONSTRAINT_CHECK',
+      'projects/length_project_key_BETWEEN_1_AND_255_AND_project_key_lower_project_key',
+      'db_constraint check; projects; length(project_key) BETWEEN 1 AND 255 AND project_key = lower(project_key)',
+    ],
+    [
+      'notnull',
+      (db) => {
+        db.driver.prepare(PROJECT).run([SECRET, null, 1, 1]);
+      },
+      'SQLITE_CONSTRAINT_NOTNULL',
+      'projects/projects.dir_name',
+      'db_constraint notnull; projects; projects.dir_name',
+    ],
+    [
+      'datatype',
+      (db) => {
+        db.driver.prepare(PROJECT).run([SECRET, SECRET, SECRET, 1]);
+      },
+      'SQLITE_CONSTRAINT_DATATYPE',
+      'projects/projects.first_seen_at',
+      'db_constraint datatype; projects; projects.first_seen_at',
+    ],
+    [
+      'foreignkey',
+      (db) => {
+        db.driver
+          .prepare(
+            `INSERT INTO agents (session_id, agent_uid, parent_agent_id, kind, depth, first_seen_at, started_at,
+               last_activity_at, updated_at) VALUES (424242, ?, 1, 'subagent', 1, 1, 1, 1, 1)`,
+          )
+          .run([SECRET]);
+      },
+      'SQLITE_CONSTRAINT_FOREIGNKEY',
+      'agents',
+      'db_constraint foreignkey; agents',
+    ],
+  ];
+
+  for (const [kind, fail, status, phase, middle] of cases) {
+    it(`names the table and the ${kind} constraint, and no value of the statement`, async () => {
+      const lines: Line[] = [];
+      let db: InstanceDb | null = null;
+      const r = rig({
+        logger: capturing(lines),
+        beforeCommit: () => {
+          if (db !== null) fail(db);
+        },
+      });
+      db = r.db;
+      const [first] = labSequence();
+      if (first === undefined) throw new Error('fixture');
+      const kinds = [...new Set(envelopeItem(first).events.map((event) => event.k))].join(':') || 'none';
+      await ingest(r, [first]);
+
+      const failures = lines.filter((line) => line.event === 'ingest_commit_failed');
+      // three attempts of the one item, then it is dropped
+      expect(failures).toHaveLength(3);
+      expect(r.writer.stats.failures).toBe(3);
+      for (const line of failures) {
+        expect(line.fields).toEqual({
+          code: 'db_constraint',
+          status,
+          phase,
+          kind: `spool/envelope/${kinds}`,
+          count: 1,
+        });
+        for (const [name, value] of Object.entries(line.fields)) {
+          expect(LOG_FIELD_NAMES, name).toContain(name);
+          if (typeof value === 'string') expect(value, name).toMatch(SAFE_STRING);
+        }
+      }
+      const records = r.db.driver.prepare<{ code: string; detail: string }>('SELECT * FROM ingest_errors').all();
+      expect(records).toHaveLength(1);
+      const detail = records[0]?.detail ?? '';
+      expect(detail.startsWith(`item could not be stored (${middle}; spool envelope`)).toBe(true);
+      expect(Array.from(detail).length).toBeLessThanOrEqual(200);
+      // nothing of the statement's value in what leaves the writer
+      const said = JSON.stringify([lines, records, r.writer.stats]).toLowerCase();
+      expect(said).not.toContain(SECRET);
+      expect(count(r.db, 'events')).toBe(0);
+      expect(count(r.db, 'projects')).toBe(0);
+    });
+  }
+
+  it('says only the class of an error that is not from the database, never its message', async () => {
+    const lines: Line[] = [];
+    const r = rig({
+      logger: capturing(lines),
+      beforeCommit: () => {
+        throw new TypeError(`cannot read ${SECRET}`);
+      },
+    });
+    const [first] = labSequence();
+    if (first === undefined) throw new Error('fixture');
+    await ingest(r, [first]);
+    const records = r.db.driver.prepare<{ detail: string }>('SELECT * FROM ingest_errors').all();
+    expect(records.map((row) => row.detail)).toEqual([
+      expect.stringMatching(/^item could not be stored \(TypeError; spool envelope/) as unknown,
+    ]);
+    expect(lines.at(-1)?.fields).toMatchObject({ code: 'TypeError', count: 1 });
+    expect(lines.at(-1)?.fields).not.toHaveProperty('phase');
+    expect(JSON.stringify([lines, records, r.writer.stats])).not.toContain(SECRET);
+  });
+
+  it('cuts a detail to the 200 code points of the column, whatever the item holds', async () => {
+    const r = rig({
+      beforeCommit: () => {
+        r.db.driver.prepare(PROJECT).run([SECRET.toUpperCase(), SECRET, 1, 1]);
+      },
+    });
+    const stamp = { at: NOW - 1000, rank: 20, tie: 't:long' };
+    // more kinds of events than a detail has room for
+    const item: IngestItem = {
+      kind: 'record',
+      events: [
+        { k: 'session.seen', sessionId: FIXTURE_SESSION_ID, stamp, transcriptPath: '/transcripts/long.jsonl' },
+        { k: 'activity', sessionId: FIXTURE_SESSION_ID, agentId: null, stamp, via: 'assistant' },
+        { k: 'assistant.ok', sessionId: FIXTURE_SESSION_ID, agentId: null, stamp },
+        { k: 'interrupt', sessionId: FIXTURE_SESSION_ID, agentId: null, stamp, via: 'aborted_mid_stream' },
+        { k: 'api_error', sessionId: FIXTURE_SESSION_ID, agentId: null, stamp },
+        { k: 'external.pid', sessionId: FIXTURE_SESSION_ID, pid: 4242, alive: true, checkedAt: NOW },
+        { k: 'external.job', sessionId: FIXTURE_SESSION_ID, jobId: 'job', state: 'running', observedAt: NOW },
+      ],
+      rows: [],
+    };
+    r.writer.submit({ source: 'transcript', items: [item], bytes: 100 });
+    await r.writer.flushNow();
+    const details = r.db.driver
+      .prepare<{ detail: string }>('SELECT detail FROM ingest_errors')
+      .all()
+      .map((row) => row.detail);
+    expect(details).toHaveLength(1);
+    expect(Array.from(details[0] ?? '')).toHaveLength(200);
+    expect(details[0]).toContain('db_constraint check; projects; length(project_key) BETWEEN 1 AND 255');
+  });
+});
+
+describe('a poison item of a producer without a cursor (CAW-146)', () => {
+  const POISON_PID = 666;
+  const observation = (pid: number): IngestItem => ({
+    kind: 'external',
+    events: [
+      {
+        k: 'external.registry',
+        sessionId: FIXTURE_SESSION_ID,
+        status: 'busy',
+        pid,
+        pidAlive: true,
+        observedAt: NOW,
+      },
+    ],
+    rows: [],
+  });
+  const poisoned = (batches: readonly IngestBatch[]): boolean =>
+    batches.some((b) =>
+      b.items.some((item) => item.events.some((e) => e.k === 'external.registry' && e.pid === POISON_PID)),
+    );
+
+  it('is recorded once per submission, the items beside it commit, and the writer keeps nothing to try again', async () => {
+    let commits = 0;
+    const r = rig({
+      beforeCommit: (_tx, batches) => {
+        commits += 1;
+        if (poisoned(batches)) throw new Error('injected failure before COMMIT');
+      },
+    });
+    await ingest(r, labSequence().slice(0, 1));
+    const sessionsBefore = count(r.db, 'sessions');
+    const failed = (): number => readCounters(r.db).persistFailed;
+
+    // one poll of a producer without a cursor: a storable item and one that can never be stored
+    expect(
+      r.writer.submit({ source: 'external', items: [observation(4242), observation(POISON_PID)], bytes: 200 }),
+    ).toBe(true);
+    await r.writer.flushNow();
+    expect(failed()).toBe(1);
+    expect(r.writer.stats.queued).toBe(0);
+    expect(count(r.db, 'sessions')).toBe(sessionsBefore);
+    expect(
+      r.db.driver.prepare('SELECT code, source, file_id, segment, session_uid, detail FROM ingest_errors').all(),
+    ).toEqual([
+      {
+        code: 'PERSIST_FAILED',
+        source: 'writer',
+        file_id: null,
+        segment: null,
+        session_uid: FIXTURE_SESSION_ID,
+        detail: 'item could not be stored (Error; external external: external.registry)',
+      },
+    ]);
+    // the batch of two: three attempts, then each half once; nothing is left that would be tried again
+    const failuresAfterFirst = r.writer.stats.failures;
+    expect(failuresAfterFirst).toBe(4);
+    const commitsAfterFirst = commits;
+    await r.writer.flushNow();
+    expect(commits).toBe(commitsAfterFirst);
+    expect(r.writer.stats.failures).toBe(failuresAfterFirst);
+
+    // work that comes later is not held up by the dropped item
+    r.writer.submit({ source: 'external', items: [observation(4243)], bytes: 100 });
+    await r.writer.flushNow();
+    expect(failed()).toBe(1);
+    expect(r.writer.stats.failures).toBe(failuresAfterFirst);
+
+    // the producer hands the same observation over again (its next report): one more record, not a loop
+    r.writer.submit({ source: 'external', items: [observation(POISON_PID)], bytes: 100 });
+    await r.writer.flushNow();
+    expect(failed()).toBe(2);
+    expect(r.writer.stats.failures).toBe(failuresAfterFirst + 3);
+    expect(r.writer.stats.queued).toBe(0);
   });
 });
 

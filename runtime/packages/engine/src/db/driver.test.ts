@@ -175,6 +175,88 @@ describe('toDbError: real SQLite errors', () => {
     db.close();
   });
 
+  it('names the table of the statement and what SQLite named, and never a value of the row (CAW-146)', () => {
+    const db = memory();
+    db.exec(`CREATE TABLE parent (id INTEGER PRIMARY KEY) STRICT;
+      CREATE TABLE t (
+        id INTEGER PRIMARY KEY,
+        u TEXT UNIQUE,
+        n TEXT NOT NULL DEFAULT 'x',
+        c INTEGER CHECK (c IS NULL OR c > 0),
+        named INTEGER CONSTRAINT named_is_positive CHECK (named IS NULL OR named > 0),
+        p INTEGER REFERENCES parent(id),
+        a TEXT,
+        b TEXT,
+        UNIQUE (a, b)
+      ) STRICT;`);
+    db.exec('PRAGMA foreign_keys = ON');
+    db.prepare('INSERT INTO t (id, u, a, b) VALUES (1, ?, ?, ?)').run(['SECRET-VALUE', 'SECRET-A', 'SECRET-B']);
+    // [statement, parameters, table, what SQLite named]
+    const probes: readonly (readonly [string, readonly SqlValue[], string | undefined, string | undefined])[] = [
+      ['INSERT INTO t (id, u) VALUES (2, ?)', ['SECRET-VALUE'], 't', 't.u'],
+      ['INSERT OR ABORT INTO t (id, a, b) VALUES (3, ?, ?)', ['SECRET-A', 'SECRET-B'], 't', 't.a, t.b'],
+      ['INSERT INTO t (id) VALUES (?)', [1], 't', 't.id'],
+      ['INSERT INTO t (id, n) VALUES (4, ?)', [null], 't', 't.n'],
+      ['  insert into t (id, c) VALUES (5, ?)', [-7], 't', 'c IS NULL OR c > 0'],
+      ['UPDATE t SET named = ? WHERE id = 1', [-7], 't', 'named_is_positive'],
+      ['INSERT INTO t (id, p) VALUES (6, ?)', [99], 't', undefined],
+      ['INSERT INTO t (id, c) VALUES (7, ?)', ['SECRET-VALUE'], 't', 't.c'],
+      ['WITH v(x) AS (SELECT ?) INSERT INTO t (id, c) SELECT 8, x FROM v', [-7], undefined, 'c IS NULL OR c > 0'],
+    ];
+    for (const [sql, params, table, target] of probes) {
+      const error = failure(() => db.prepare(sql).run(params));
+      expect(error.code, sql).toBe('db_constraint');
+      expect(error.table, sql).toBe(table);
+      expect(error.constraintTarget, sql).toBe(target);
+      expect(JSON.stringify([error.message, error.table, error.constraintTarget]), sql).not.toContain('SECRET');
+      expect(error.cause, sql).toBeUndefined();
+    }
+    db.close();
+  });
+
+  it('keeps what a constraint message names only in the exact form SQLite writes it', () => {
+    const statement = 'INSERT INTO events (event_uid) VALUES (?)';
+    // [errcode, message, what is kept]
+    const probes: readonly (readonly [number, string, string | undefined])[] = [
+      [2067, 'UNIQUE constraint failed: events.event_uid', 'events.event_uid'],
+      [2067, "UNIQUE constraint failed: index 'ux_events_key'", "index 'ux_events_key'"],
+      [2067, 'UNIQUE constraint failed: events.event_uid SECRET-VALUE', undefined],
+      [2067, 'UNIQUE constraint failed: SECRET-VALUE', undefined],
+      [1299, 'NOT NULL constraint failed: events.kind', 'events.kind'],
+      [1299, 'NOT NULL constraint failed: SECRET VALUE', undefined],
+      [3091, 'cannot store TEXT value in INTEGER column events.ts', 'events.ts'],
+      [3091, 'cannot store TEXT value in INTEGER column events.ts SECRET-VALUE', undefined],
+      [275, 'CHECK constraint failed: length(summary) <= 240', 'length(summary) <= 240'],
+      [275, `CHECK constraint failed: ${'x'.repeat(300)}`, 'x'.repeat(120)],
+      [275, 'CHECK constraint failed: two\nlines', undefined],
+      // the kind of the result code and the words of the message must agree
+      [275, 'UNIQUE constraint failed: events.event_uid', undefined],
+      [787, 'FOREIGN KEY constraint failed', undefined],
+      [1811, 'SECRET-VALUE raised by a trigger', undefined],
+    ];
+    for (const [errcode, message, kept] of probes) {
+      const mapped = toDbError(sqliteError(errcode, message), statement);
+      expect(mapped.constraintTarget, message).toBe(kept);
+      expect(mapped.table, message).toBe('events');
+      expect(mapped.message, message).not.toContain('SECRET');
+    }
+  });
+
+  it('reads the table only from the head of a statement that changes one table', () => {
+    const named = (statement: string | undefined): string | undefined =>
+      toDbError(sqliteError(787, 'FOREIGN KEY constraint failed'), statement).table;
+    expect(named('INSERT INTO tool_calls (a) VALUES (?)')).toBe('tool_calls');
+    expect(named('INSERT OR IGNORE INTO agents (a) VALUES (?)')).toBe('agents');
+    expect(named('REPLACE INTO meta (k, v) VALUES (?, ?)')).toBe('meta');
+    expect(named('UPDATE sessions SET label = ? WHERE id = ?')).toBe('sessions');
+    expect(named('DELETE FROM events WHERE id = ?')).toBe('events');
+    expect(named('SELECT 1 FROM events')).toBeUndefined();
+    expect(named('INSERT INTO "SECRET VALUE" (a) VALUES (?)')).toBeUndefined();
+    expect(named(undefined)).toBeUndefined();
+    // an error that is no constraint names nothing
+    expect(toDbError(sqliteError(5, 'database is locked'), 'UPDATE sessions SET label = ?').table).toBeUndefined();
+  });
+
   it('maps a busy database to db_busy', () => {
     const holder = fileDb().open();
     holder.exec('CREATE TABLE t (x INTEGER) STRICT');

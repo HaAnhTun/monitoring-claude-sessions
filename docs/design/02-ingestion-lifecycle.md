@@ -382,7 +382,9 @@ ElicitationResult, FileChanged, Setup, ConfigChange, InstructionsLoaded, UserPro
    input.script` (legacy order, CS:C.2), then `input.url, input.query, input.path, input.notebook_path, input.skill,
    input.subject` (new, after the legacy keys).
 3. Non-string `key` -> `JSON.stringify(key)` (documented deviation: Python used `str()`).
-4. Take the first line (split on LF), `redact()` it, `clip(..., 160)`.
+4. Take the first line (split on LF), `redact()` it, `clip(..., 160)`. For a longer line the result is 160 code points plus
+   the marker of 2.5.1: `events.summary` (<= 240) keeps the marker, `tool_calls.summary` (<= 160) stores the 160 code
+   points without it (the writer cuts it; CAW-146).
 
 #### 2.5.3 `redact(text)` - applied to every preview and summary; never to ids
 
@@ -1033,7 +1035,10 @@ do every write; no code of this design calls `driver.transaction` or `BEGIN` dir
 7. On a throw: `withWriteTx` rolls back and publishes nothing; the working copies are dropped (the LRU still holds the committed
    facts); keep the batch, retry with backoff 100 ms, 200 ms, 400 ms ... max 5 s. After 3 failures of the same batch: split it in
    halves recursively; a single item that still fails is recorded as `ingest_error PERSIST_FAILED` (reference only, in its own
-   `withWriteTx`) and dropped while its cursor advances, so the pipeline never wedges. `DbError` `db_full` / `ENOSPC` sets
+   `withWriteTx`) and dropped while its cursor advances, so the pipeline never wedges. The record and the log line
+   `ingest_commit_failed` name what failed and never a value: the constraint and the table SQLite named, the source of the
+   batch, the kind of the item and its event kinds; the record also keeps the file and the offset of the line (or the spool
+   segment) and the session, also for an item of a half that carries no cursor (CAW-146). `DbError` `db_full` / `ENOSPC` sets
    `persisted.status = "db_error"` and pauses ingestion (retry every 30 s).
 No file I/O happens inside the transaction (reads happen before `submit`).
 

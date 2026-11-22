@@ -470,3 +470,48 @@ describe('the ingest service in scope all', () => {
     });
   });
 });
+
+// ---- a tool call whose input line is longer than the summary column is stored (CAW-146) ---------------------------------------
+
+describe('a tool call with a long input line', () => {
+  const LONG = '66666666-6666-4666-8666-666666666666';
+  // one line of 394 code points: the summary of 02 2.5.2 is its first 160 code points plus the clip marker of 02 2.5.1
+  const COMMAND = `echo ${'fixture-word '.repeat(30)}`.trimEnd();
+
+  it('is stored with the first 160 code points of its summary, and no record is dropped', async () => {
+    const { ctx, clock, service } = await instance(
+      {},
+      {
+        sessions: (repo) => [
+          {
+            id: LONG,
+            project: sanitizeProjectName(repo),
+            cwd: repo,
+            mtimeAgeMs: 3_600_000,
+            build: (b) => {
+              b.user('run it');
+              b.toolResult(b.toolUse('Bash', { command: COMMAND }));
+              b.assistant({ messageId: 'msg_done' });
+            },
+          },
+        ],
+      },
+    );
+    await service.start();
+    await service.untilIdle({ timeoutMs: 20_000 });
+    const calls = ctx.db.driver
+      .prepare<{ summary: string | null; ended: number }>(
+        'SELECT summary, ended_at IS NOT NULL AS ended FROM tool_calls',
+      )
+      .all();
+    expect(calls).toEqual([{ summary: COMMAND.slice(0, 160), ended: 1 }]);
+    // the row of the timeline keeps the marker: its column has room for it (03 3.1)
+    const rows = ctx.db.driver
+      .prepare<{ summary: string | null }>("SELECT summary FROM events WHERE kind = 'tool.call'")
+      .all();
+    expect(rows).toEqual([{ summary: `${COMMAND.slice(0, 160)} ... [truncated 234 chars]` }]);
+    expect(ctx.db.driver.prepare<{ n: number }>('SELECT count(*) AS n FROM ingest_errors').get()?.n).toBe(0);
+    expect(service.writer.stats.failures).toBe(0);
+    await service.stop(clock.now() + 2000);
+  });
+});

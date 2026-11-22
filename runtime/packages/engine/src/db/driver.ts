@@ -224,12 +224,72 @@ function classify(errcode: number): { code: DbErrorCode; text: string; constrain
   }
 }
 
-function fromErrcode(errcode: number): DbError {
+// ---- where a constraint failed (CAW-146): names of the schema only
+
+const IDENT = '[A-Za-z_][A-Za-z0-9_]*';
+const COLUMN = `${IDENT}[.]${IDENT}`;
+/** `t.a, t.b` (UNIQUE, PRIMARY KEY, NOT NULL) or `index 'name'` (a unique index over expressions). */
+const COLUMNS_OR_INDEX = new RegExp(`^(?:${COLUMN}(?:, ${COLUMN})*|index '${IDENT}')$`);
+const DATATYPE_COLUMN = new RegExp(`^cannot store [A-Z]+ value in [A-Z]+ column (${COLUMN})$`);
+/** The statements that write one table, with the name of the table right after their first keywords. */
+const WS = '[ \t\r\n]';
+const WRITTEN_TABLE = new RegExp(
+  `^${WS}*(?:INSERT(?:${WS}+OR${WS}+[A-Za-z]+)?${WS}+INTO|REPLACE${WS}+INTO|UPDATE(?:${WS}+OR${WS}+[A-Za-z]+)?|DELETE${WS}+FROM)` +
+    `${WS}+(${IDENT})(?=${WS}|[(]|$)`,
+  'i',
+);
+/** One line of printable ASCII: the name or the expression of a CHECK as a migration writes it. */
+const CHECK_TEXT = /^[ -~]+$/;
+const CHECK_TEXT_MAX = 120;
+
+/**
+ * What the message of a constraint failure names, kept only in the exact form SQLite builds it from the schema:
+ * `UNIQUE constraint failed: t.a, t.b`, `NOT NULL constraint failed: t.c`, `CHECK constraint failed: <the name or the
+ * expression of the CREATE TABLE>`, `cannot store TEXT value in INTEGER column t.c`. SQLite puts no value of the row into
+ * these texts. A message of any other form gives nothing: the text a trigger raises, a foreign key failure (which names
+ * nothing), or words that do not belong to the kind of the result code.
+ */
+function constraintTargetOf(kind: DbConstraintKind, message: string): string | undefined {
+  const after = (prefix: string): string | undefined =>
+    message.startsWith(prefix) ? message.slice(prefix.length) : undefined;
+  switch (kind) {
+    case 'unique': {
+      const rest = after('UNIQUE constraint failed: ');
+      return rest !== undefined && COLUMNS_OR_INDEX.test(rest) ? rest : undefined;
+    }
+    case 'notnull': {
+      const rest = after('NOT NULL constraint failed: ');
+      return rest !== undefined && COLUMNS_OR_INDEX.test(rest) ? rest : undefined;
+    }
+    case 'check': {
+      const rest = after('CHECK constraint failed: ');
+      return rest !== undefined && CHECK_TEXT.test(rest) ? rest.slice(0, CHECK_TEXT_MAX) : undefined;
+    }
+    case 'datatype':
+      return DATATYPE_COLUMN.exec(message)?.[1];
+    case 'foreignkey':
+    case 'other':
+      return undefined;
+  }
+}
+
+/** The table a statement writes, from its first keywords; undefined for any other statement (a WITH, a script, a quoted name). */
+function writtenTableOf(statement: string | undefined): string | undefined {
+  return statement === undefined ? undefined : WRITTEN_TABLE.exec(statement)?.[1];
+}
+
+function fromErrcode(errcode: number, message?: string, statement?: string): DbError {
   const sqliteCode = sqliteName(errcode);
   const mapped = classify(errcode);
-  return new DbError(mapped.code, `${mapped.text} (${sqliteCode})`, {
+  const text = `${mapped.text} (${sqliteCode})`;
+  if (mapped.constraint === undefined) return new DbError(mapped.code, text, { sqliteCode });
+  const table = writtenTableOf(statement);
+  const constraintTarget = message === undefined ? undefined : constraintTargetOf(mapped.constraint, message);
+  return new DbError(mapped.code, text, {
     sqliteCode,
-    ...(mapped.constraint === undefined ? {} : { constraint: mapped.constraint }),
+    constraint: mapped.constraint,
+    ...(table === undefined ? {} : { table }),
+    ...(constraintTarget === undefined ? {} : { constraintTarget }),
   });
 }
 
@@ -237,26 +297,31 @@ function fromErrcode(errcode: number): DbError {
  * Maps a `node:sqlite` error (`code: 'ERR_SQLITE_ERROR'`, numeric `errcode`) to a DbError. The message is built from the
  * code only: the SQLite message can name a column or echo a CHECK expression. A SQLite error without a usable `errcode`
  * becomes `db_io` without a cause (its message can still hold data); any other error becomes `db_io` and keeps the cause.
+ * A constraint error also carries the table of `statement` (the text of the statement that failed, when the caller has it)
+ * and what the SQLite message named, as names of the schema (`DbError.table`, `DbError.constraintTarget`).
  */
-export function toDbError(error: unknown): DbError {
+export function toDbError(error: unknown, statement?: string): DbError {
   if (error instanceof DbError) return error;
   const errcode = errcodeOf(error);
-  if (errcode !== undefined) return fromErrcode(errcode);
+  if (errcode !== undefined) return fromErrcode(errcode, error instanceof Error ? error.message : undefined, statement);
   if (isSqliteError(error)) return new DbError('db_io', 'database operation failed');
   return new DbError('db_io', 'database operation failed', { cause: error });
 }
 
 /** A SQLite failure becomes a DbError; any other error (a programming error: closed database, out of range) is kept. */
-function mapError(error: unknown): unknown {
-  return isSqliteError(error) ? toDbError(error) : error;
+function mapError(error: unknown, statement?: string): unknown {
+  return isSqliteError(error) ? toDbError(error, statement) : error;
 }
 
-/** Runs `fn`; a SQLite failure becomes a DbError, any other error (a programming error) passes through untouched. */
-function guard<T>(fn: () => T): T {
+/**
+ * Runs `fn`; a SQLite failure becomes a DbError, any other error (a programming error) passes through untouched.
+ * `statement` is the text of the prepared statement that `fn` runs: a constraint error then names its table.
+ */
+function guard<T>(fn: () => T, statement?: string): T {
   try {
     return fn();
   } catch (error) {
-    throw mapError(error);
+    throw mapError(error, statement);
   }
 }
 
@@ -279,18 +344,25 @@ function noop(): void {
   // intentionally empty: swallows the outcome of an abandoned promise
 }
 
-function wrapStatement(raw: NodeSqlite.StatementSync): Stmt<unknown> {
+function wrapStatement(raw: NodeSqlite.StatementSync, sql: string): Stmt<unknown> {
   return {
     run: (params) => {
-      const result = guard(() =>
-        params === undefined ? raw.run() : isPositional(params) ? raw.run(...params) : raw.run(params),
+      const result = guard(
+        () => (params === undefined ? raw.run() : isPositional(params) ? raw.run(...params) : raw.run(params)),
+        sql,
       );
       return { changes: Number(result.changes), lastInsertRowid: Number(result.lastInsertRowid) };
     },
     get: (params) =>
-      guard(() => (params === undefined ? raw.get() : isPositional(params) ? raw.get(...params) : raw.get(params))),
+      guard(
+        () => (params === undefined ? raw.get() : isPositional(params) ? raw.get(...params) : raw.get(params)),
+        sql,
+      ),
     all: (params) =>
-      guard(() => (params === undefined ? raw.all() : isPositional(params) ? raw.all(...params) : raw.all(params))),
+      guard(
+        () => (params === undefined ? raw.all() : isPositional(params) ? raw.all(...params) : raw.all(params)),
+        sql,
+      ),
   };
 }
 
@@ -376,7 +448,10 @@ export function openSqlite(
         // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- R is the row type the caller declares (03 4.5); this module never validates rows
         return cached as Stmt<R>;
       }
-      const statement = wrapStatement(guard(() => raw.prepare(sql)));
+      const statement = wrapStatement(
+        guard(() => raw.prepare(sql)),
+        sql,
+      );
       if (cache.size >= STATEMENT_CACHE_SIZE) {
         const oldest = cache.keys().next();
         if (oldest.done !== true) cache.delete(oldest.value);

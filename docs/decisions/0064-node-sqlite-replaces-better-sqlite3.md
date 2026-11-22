@@ -36,6 +36,10 @@ A native addon cannot be bundled, needs prebuilds for eight platform/libc pairs 
    11 CORRUPT, 13 FULL, 14 CANTOPEN, 19 CONSTRAINT, 26 NOTADB, everything else `db_io`) and, for 19, the extended code: 275 CHECK, 787 FOREIGNKEY,
    1299 NOTNULL, 1555 PRIMARYKEY, 2067 UNIQUE, 2579 ROWID, 3091 DATATYPE (others `other`). `DbError.sqliteCode` keeps a `SQLITE_*` name derived from the
    code so diagnostics and tests read as before. Errors from `ERR_INVALID_STATE` (closed database) and `ERR_OUT_OF_RANGE` are programming errors and pass through.
+   Addition (CAW-146): a constraint error also carries `DbError.table` (the table name at the head of the failing statement) and
+   `DbError.constraintTarget` (what the SQLite message named: columns, an index, the name or the expression of a CHECK). Both are
+   names of the schema, kept only when the text has the exact form SQLite builds from the schema; the message as a whole is
+   still never copied, and a value of a row is part of neither.
 9. **Close** is idempotent (the driver tracks it; the native close of a closed database throws); `prepare` after `close` throws.
 10. Removal: after the driver work package is verified, the lead removes `better-sqlite3` and `@types/better-sqlite3` from
     `packages/engine/package.json` and the lockfile at an npm barrier. No native production dependency remains.

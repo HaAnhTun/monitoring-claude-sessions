@@ -20,7 +20,7 @@
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleepFor } from 'node:timers/promises';
 
-import { AGENT_RE, canonicalJsonHash, type HookEnvelopeV1 } from '@mcs/shared/protocol';
+import { AGENT_RE, SUMMARY_MAX_CP, canonicalJsonHash, type HookEnvelopeV1 } from '@mcs/shared/protocol';
 import { z } from 'zod';
 
 import {
@@ -68,6 +68,7 @@ import { agentFactsOf, applyEvent, emptyModel, workflowFactsOf, type LifecycleMo
 import type { Logger } from '../log/logger.ts';
 import { clipCodePoints } from '../platform/fsx.ts';
 import { projectOfSeen, type SeenProject } from '../projects/folder-key.ts';
+import { commitFailureLogFields, describeFailure, persistFailedDetail } from './commit-failure.ts';
 import {
   CONTENT_WINDOW_MS,
   emptyDuplicateCounts,
@@ -405,6 +406,33 @@ interface ViewAnnouncement {
 
 interface Queued {
   readonly batch: IngestBatch;
+  /**
+   * The cursor of the batch this one was split from: a half carries no cursor of its own (only the last one moves it), but an
+   * item of it that is dropped is still recorded with the file or the segment it was read from.
+   */
+  readonly origin?: CursorUpdate;
+}
+
+/** Where a dropped item was read: the transcript file and the offset of its line, or the spool segment; and its session. */
+function referenceOf(
+  item: IngestItem | undefined,
+  origin: CursorUpdate | undefined,
+): Pick<IngestErrorRecord, 'fileId' | 'byteOffset' | 'segment' | 'sessionUid'> {
+  const row = item?.rows.find((r) => r.t === 'event');
+  const eventRow = row?.t === 'event' ? row.row : undefined;
+  const event = item?.events.find((e) => 'sessionId' in e);
+  const sessionUid = eventRow?.sessionUid ?? item?.derive?.sessionId ?? (event === undefined ? null : event.sessionId);
+  const fileId = origin?.kind === 'transcript' ? origin.fileId : null;
+  return {
+    ...(fileId === null ? {} : { fileId }),
+    // the offset of the line, when the row of the item is a line of that file
+    ...(fileId !== null && eventRow?.fileId === fileId && eventRow.byteOffset !== null
+      ? { byteOffset: eventRow.byteOffset }
+      : {}),
+    ...(origin?.kind === 'spool' ? { segment: origin.segment } : {}),
+    // `ingest_errors.session_uid` takes a session id only (36 characters)
+    ...(typeof sessionUid === 'string' && sessionUid.length === 36 ? { sessionUid } : {}),
+  };
 }
 
 interface Job {
@@ -724,7 +752,10 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
       toolUseId,
       name: modelRow.name ?? nameRow?.toolName ?? 'unknown',
       mcpServer: null,
-      summary: event.k === 'tool.start' ? (event.summary ?? null) : null,
+      // the summary of 02 2.5.2 is 160 code points plus, for a longer input line, the clip marker of 02 2.5.1: the column
+      // holds the 160 code points (03 3.1), the marker stays with the row of the timeline, whose column has room for it
+      summary:
+        event.k === 'tool.start' && event.summary !== undefined ? clipCodePoints(event.summary, SUMMARY_MAX_CP) : null,
       inputHash: modelRow.inputHash,
       inputBytes: null,
       startedAt: modelRow.startedAt,
@@ -1508,9 +1539,13 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     }
   }
 
-  /** The one item that cannot be stored: recorded by reference, its cursor advances, the pipeline goes on (02 4.6 step 7). */
-  function dropPoison(batch: IngestBatch, error: unknown): void {
-    const code = isDbError(error) ? error.code : 'unknown';
+  /**
+   * The one item that cannot be stored: recorded by reference, its cursor advances, the pipeline goes on (02 4.6 step 7). The
+   * record names what failed (the constraint and the table SQLite named, the kind of the item) and where the item was read
+   * (`origin` is the cursor of the batch it was split from), never a value of the item.
+   */
+  function dropPoison(batch: IngestBatch, error: unknown, origin: CursorUpdate | undefined): void {
+    const [item] = batch.items;
     try {
       withWriteTx(db, scope, (tx) => {
         const c: TxState = {
@@ -1534,26 +1569,39 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         recordError(c, {
           code: 'PERSIST_FAILED',
           source: 'writer',
-          ...(batch.cursor?.kind === 'spool' ? { segment: batch.cursor.segment } : {}),
-          ...(batch.cursor?.kind === 'transcript' ? { fileId: batch.cursor.fileId } : {}),
-          detail: `item could not be stored (${code})`,
+          ...referenceOf(item, batch.cursor ?? origin),
+          detail: persistFailedDetail(describeFailure(error), batch.source, item),
         });
         if (batch.cursor !== undefined) applyCursor(c, batch.cursor);
         finalizeHealth(c, [batch.source]);
       });
     } catch (second) {
       // even the record could not be written: keep going, the next tick tries the next batch
-      options.logger?.error('ingest_drop_failed', { code: isDbError(second) ? second.code : 'unknown' });
+      options.logger?.error(
+        'ingest_drop_failed',
+        commitFailureLogFields(describeFailure(second), { source: batch.source, items: batch.items }),
+      );
     }
   }
 
-  function noteFailure(error: unknown): { diskFull: boolean } {
+  /**
+   * Counts the failure and logs what failed in names only (`commitFailureLogFields`): the error, the constraint and the table
+   * SQLite named, the source of the batches and, when the transaction held one item, the kind of that item.
+   */
+  function noteFailure(error: unknown, group: readonly Queued[]): { diskFull: boolean } {
     stats.failures += 1;
-    const code = isDbError(error) ? error.code : error instanceof Error ? error.name : 'unknown';
-    stats.lastError = { code, at: db.clock.now() };
+    const failure = describeFailure(error);
+    stats.lastError = { code: failure.code, at: db.clock.now() };
     const diskFull =
       (isDbError(error) && error.code === 'db_full') || (error instanceof Error && error.message.includes('ENOSPC'));
-    options.logger?.warn('ingest_commit_failed', { code });
+    const sources = [...new Set(group.map(({ batch }) => batch.source))];
+    options.logger?.warn(
+      'ingest_commit_failed',
+      commitFailureLogFields(failure, {
+        source: sources.length === 1 && sources[0] !== undefined ? sources[0] : 'mixed',
+        items: group.flatMap(({ batch }) => batch.items),
+      }),
+    );
     return { diskFull };
   }
 
@@ -1573,7 +1621,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         stats.paused = false;
         return true;
       } catch (error) {
-        const { diskFull } = noteFailure(error);
+        const { diskFull } = noteFailure(error, group);
         if (diskFull) {
           stats.paused = true;
           pausedUntil = Date.now() + dbErrorPauseMs;
@@ -1588,6 +1636,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
         const [only] = group;
         if (group.length === 1 && only !== undefined) {
           const { batch } = only;
+          const origin = batch.cursor ?? only.origin;
           if (batch.items.length > 1) {
             const half = Math.ceil(batch.items.length / 2);
             const first: IngestBatch = {
@@ -1601,10 +1650,11 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
               bytes: batch.bytes / 2,
               ...(batch.cursor === undefined ? {} : { cursor: batch.cursor }),
             };
-            const done = await process([{ batch: first }], 1);
-            return done && (await process([{ batch: second }], 1));
+            const from = origin === undefined ? {} : { origin };
+            const done = await process([{ batch: first, ...from }], 1);
+            return done && (await process([{ batch: second, ...from }], 1));
           }
-          dropPoison(batch, error);
+          dropPoison(batch, error, origin);
           return true;
         }
         for (const part of group) {
