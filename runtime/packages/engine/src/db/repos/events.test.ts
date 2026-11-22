@@ -521,6 +521,7 @@ describe('EventsRepo: references and scope', () => {
       () => withWriteTx(db, CTX, (tx) => repo.insert(FOREIGN, tx, hookRow(1))),
       () => repo.findByNaturalKey(FOREIGN, 'tool.call:x'),
       () => repo.findByContent(FOREIGN, content),
+      () => repo.newestActivityAt(FOREIGN, 1),
       () => withWriteTx(db, CTX, (tx) => repo.deleteTranscriptOnly(FOREIGN, tx, 1)),
       () => withWriteTx(db, CTX, (tx) => repo.detachTranscript(FOREIGN, tx, 1)),
       () => withWriteTx(db, CTX, (tx) => repo.deleteOccurrences(FOREIGN, tx, 1)),
@@ -594,6 +595,52 @@ describe('EventsRepo reads', () => {
       .map((row) => row.detail)
       .join(' | ');
     expect(plan).toContain('idx_events_content');
+  });
+});
+
+describe('EventsRepo.newestActivityAt (CAW-147)', () => {
+  it('is null for a session without a row', () => {
+    const { repo, sessionId } = fixture();
+    expect(repo.newestActivityAt(CTX, sessionId)).toBeNull();
+  });
+
+  it('is the newest time over the hook and the transcript rows of every agent of the session, whatever the order of arrival', () => {
+    const { db, repo, sessionId, files } = fixture();
+    const file = files[0] ?? 0;
+    withWriteTx(db, CTX, (tx) => {
+      repo.insert(CTX, tx, recordRow(900, file, 0, { agentUid: 'agent-a1b2c3' }));
+      repo.insert(CTX, tx, hookRow(700));
+      repo.insert(CTX, tx, recordRow(100, file, 100, { agentUid: null }));
+      // another session never counts
+      repo.insert(CTX, tx, hookRow(5000, { sessionUid: S2 }));
+    });
+    expect(repo.newestActivityAt(CTX, sessionId)).toBe(T0 + 900);
+    withWriteTx(db, CTX, (tx) => repo.insert(CTX, tx, hookRow(950)));
+    expect(repo.newestActivityAt(CTX, sessionId)).toBe(T0 + 950);
+  });
+
+  it('skips a note of the monitor, also the newest row of the session', () => {
+    const { db, repo, sessionId } = fixture();
+    withWriteTx(db, CTX, (tx) => repo.insert(CTX, tx, hookRow(10)));
+    db.driver
+      .prepare(
+        "INSERT INTO events (session_id, kind, severity, sources, ts, ts_source, received_at, natural_key) VALUES (?, 'monitor.gap', 1, 4, ?, 'derived', ?, 'recon:1')",
+      )
+      .run([sessionId, T0 + 99_000, T0 + 99_000]);
+    expect(repo.newestActivityAt(CTX, sessionId)).toBe(T0 + 10);
+  });
+
+  it('reads the newest row through the index of the session timeline', () => {
+    const { db } = fixture();
+    const plan = db.driver
+      .prepare<{ detail: string }>(
+        'EXPLAIN QUERY PLAN SELECT ts FROM events WHERE session_id = 1 AND (sources & 3) != 0 ORDER BY ts DESC, id DESC LIMIT 1',
+      )
+      .all()
+      .map((row) => row.detail)
+      .join(' | ');
+    expect(plan).toContain('idx_events_session_ts');
+    expect(plan).not.toContain('TEMP B-TREE');
   });
 });
 

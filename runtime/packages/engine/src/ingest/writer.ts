@@ -1219,6 +1219,26 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     };
   }
 
+  /**
+   * `sessions.last_activity_at` (02 7.3; CAW-147, UI review R-36): the newest of the activity of the main agent, the hook
+   * events of the session, the activity of every agent of the session (a subagent or a workflow agent that still writes
+   * after the last record of its parent) and the newest record or hook event stored for the session (a record that closes
+   * a turn is no activity fact, but a timeline that shows it after the "last activity" contradicts itself). So no stored
+   * record or hook event of a session is later than its last activity, in whatever order its files arrive.
+   *
+   * The value is derived from this evidence every time and not accumulated: the time a row was created with is only a
+   * stand-in while nothing is known (the first thing seen of a session may carry no time of its own, as the meta file of a
+   * subagent, and then that time is the clock of the ingest), and a row that an earlier version stored too early or too
+   * late is put right the next time its session is derived. A note of the monitor, the mtime of a file and the time of a
+   * poll or of the ingest are bookkeeping and never count.
+   */
+  function lastActivityOf(w: Working, startedAt: number, stored: number): number {
+    const facts = w.model.session;
+    let newest = maxOf(facts.lastActivity?.at, facts.lastHookAt, events.newestActivityAt(scope, w.rowId));
+    for (const agent of Object.values(w.model.agents)) newest = maxOf(newest, agent.lastActivity?.at);
+    return Math.max(startedAt, Number.isFinite(newest) ? newest : stored);
+  }
+
   function finalizeSession(c: TxState, w: Working): void {
     const now = c.tx.now;
     // whether the main transcript file still ends in a cost-state record is a row of its own, read after this transaction wrote
@@ -1269,7 +1289,7 @@ export function createIngestWriter(options: IngestWriterOptions): IngestWriterHa
     if (row !== undefined) {
       const startedAt = Math.min(row.startedAt, w.startedAt);
       const pid = facts.claudePid?.value;
-      const lastActivityAt = Math.max(startedAt, maxOf(row.lastActivityAt, facts.lastActivity?.at, facts.lastHookAt));
+      const lastActivityAt = lastActivityOf(w, startedAt, row.lastActivityAt);
       // the first assignment wins: a session that has a project never asks for another (CAW design 03 2.5)
       const projectId =
         row.projectId === null && w.project !== undefined

@@ -225,6 +225,21 @@ export class EventsRepo {
     );
   }
 
+  /**
+   * The time of the newest record or hook event stored for the session, of any of its agents; `null` when it has none
+   * (`idx_events_session_ts`). A note of the monitor (`sources` 4 alone) is not activity of the session and is skipped.
+   */
+  newestActivityAt(ctx: RepoContext, sessionId: number): number | null {
+    this.#db.assertScope(ctx);
+    return (
+      this.#db.driver
+        .prepare<{ ts: number }>(
+          'SELECT ts FROM events WHERE session_id = ? AND (sources & 3) != 0 ORDER BY ts DESC, id DESC LIMIT 1',
+        )
+        .get([sessionId])?.ts ?? null
+    );
+  }
+
   /** Identity reset of a file (02 5.3): deletes the rows that only the transcript knew about, and returns how many. */
   deleteTranscriptOnly(ctx: RepoContext, _tx: WriteTx, fileId: number): number {
     this.#db.assertScope(ctx);
