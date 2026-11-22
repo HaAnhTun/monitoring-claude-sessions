@@ -24,12 +24,30 @@ export const DEFAULT_VIEWPORTS: readonly Viewport[] = [
 ];
 export const MIN_VIEWPORT_WIDTH = 500;
 
+/**
+ * The two extra window sizes of the views marked `wide` (the workspace, the terminal and the style guide; design 05 section 7.1):
+ * a large desktop window and a small laptop one.
+ */
+export const WIDE_VIEWPORTS: readonly Viewport[] = [
+  { width: 1920, height: 1080 },
+  { width: 1280, height: 720 },
+];
+
+/** The one forced-colours column of the matrix: this window size and theme, for the views marked `forcedColors`. */
+export const FORCED_COLORS_VIEWPORT: Viewport = { width: 1440, height: 900 };
+export const FORCED_COLORS_THEME: Theme = 'light';
+
 export interface ShotsConfig {
   /** Absolute, outside the repository, real path of the nearest existing folder resolved. */
   readonly dir: string;
   /** `all` or the ids named. */
   readonly views: 'all' | readonly string[];
   readonly viewports: readonly Viewport[];
+  /**
+   * The extra sizes of the views marked `wide`: `WIDE_VIEWPORTS`, or none when `MCS_SHOTS_VIEWPORTS` names the sizes (that list is
+   * then the whole matrix of every view).
+   */
+  readonly wideViewports: readonly Viewport[];
   readonly themes: readonly Theme[];
   readonly locales: readonly Locale[];
   /** `live` or `fixture` forces the mode of every view that can run in it; `null` keeps the mode of each view. */
@@ -132,10 +150,90 @@ export function readShotsConfig(
     dir: resolveShotsDir(env['MCS_SHOTS_DIR'], repoRoot),
     views: views.length === 0 || views.includes('all') ? 'all' : views,
     viewports: parseViewports(env['MCS_SHOTS_VIEWPORTS']),
+    wideViewports: listOf(env['MCS_SHOTS_VIEWPORTS']).length === 0 ? WIDE_VIEWPORTS : [],
     themes: parseChoice('MCS_SHOTS_THEMES', env['MCS_SHOTS_THEMES'], THEMES),
     locales: parseChoice('MCS_SHOTS_LOCALES', env['MCS_SHOTS_LOCALES'], LOCALES),
     mode: mode === 'live' || mode === 'fixture' ? mode : null,
   };
+}
+
+// ---- the matrix: which view is shot in which column (CAW-49) ----------------------------------------------------------------------
+
+/** What the matrix reads of a view (`ViewSpec` of `views.ts` has both). */
+export interface MatrixView {
+  /** Also shot at `WIDE_VIEWPORTS`. */
+  readonly wide?: boolean;
+  /** Also shot in the forced-colours column. */
+  readonly forcedColors?: boolean;
+}
+
+/** One column of the matrix: one browser context, and one test of `shots.spec.ts`. */
+export interface ShotColumn {
+  readonly viewport: Viewport;
+  readonly theme: Theme;
+  readonly locale: Locale;
+  /** The browser emulates `forced-colors: active` (the high-contrast mode of the system). */
+  readonly forcedColors: boolean;
+}
+
+type MatrixConfig = Pick<ShotsConfig, 'viewports' | 'wideViewports' | 'themes' | 'locales'>;
+
+const sameViewport = (a: Viewport, b: Viewport): boolean => a.width === b.width && a.height === b.height;
+
+/** The window sizes a view is shot at: the selected ones, and the wide ones after them for a view marked `wide`. */
+export function viewportsOf(view: MatrixView, config: Pick<ShotsConfig, 'viewports' | 'wideViewports'>): Viewport[] {
+  const extra = view.wide === true ? config.wideViewports : [];
+  return [
+    ...config.viewports,
+    ...extra.filter((wide) => !config.viewports.some((viewport) => sameViewport(viewport, wide))),
+  ];
+}
+
+/** The forced-colours column runs when the selection still holds its window size and its theme. */
+function forcedColorsColumn(config: MatrixConfig): ShotColumn | null {
+  const locale = config.locales[0];
+  if (locale === undefined || !config.themes.includes(FORCED_COLORS_THEME)) return null;
+  if (!config.viewports.some((viewport) => sameViewport(viewport, FORCED_COLORS_VIEWPORT))) return null;
+  return { viewport: FORCED_COLORS_VIEWPORT, theme: FORCED_COLORS_THEME, locale, forcedColors: true };
+}
+
+/**
+ * Every column in which at least one of `views` is shot, in a fixed order: the selected window sizes, then the wide ones (when a
+ * view is marked `wide`), each in every theme and language, and the forced-colours column last (when a view is marked for it).
+ */
+export function columnsOf(views: readonly MatrixView[], config: MatrixConfig): ShotColumn[] {
+  const viewports = viewportsOf({ wide: views.some((view) => view.wide === true) }, config);
+  const columns: ShotColumn[] = viewports.flatMap((viewport) =>
+    config.themes.flatMap((theme) =>
+      config.locales.map((locale): ShotColumn => ({ viewport, theme, locale, forcedColors: false })),
+    ),
+  );
+  const forced = views.some((view) => view.forcedColors === true) ? forcedColorsColumn(config) : null;
+  return forced === null ? columns : [...columns, forced];
+}
+
+/** Whether a view is shot in a column. */
+export function inColumn(
+  view: MatrixView,
+  column: ShotColumn,
+  config: Pick<ShotsConfig, 'viewports' | 'wideViewports'>,
+): boolean {
+  if (column.forcedColors) return view.forcedColors === true;
+  return viewportsOf(view, config).some((viewport) => sameViewport(viewport, column.viewport));
+}
+
+/** `1440x900 light en`, with `forced-colors` after it for that column: the title of the test and the key of a column. */
+export function columnTitle(column: ShotColumn): string {
+  const { width, height } = column.viewport;
+  const base = `${String(width)}x${String(height)} ${column.theme} ${column.locale}`;
+  return column.forcedColors ? `${base} forced-colors` : base;
+}
+
+/** The file of one picture: `<view>__<width>x<height>__<theme>__<language>.png`; the forced-colours column says so after the theme. */
+export function shotFileName(viewId: string, column: ShotColumn): string {
+  const { width, height } = column.viewport;
+  const theme = column.forcedColors ? `${column.theme}-forced` : column.theme;
+  return `${viewId}__${String(width)}x${String(height)}__${theme}__${column.locale}.png`;
 }
 
 /** Runs once before the tests: the output folder is checked and created before any instance is started. */

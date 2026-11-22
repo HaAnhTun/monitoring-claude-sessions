@@ -1,7 +1,8 @@
 // The visual QA capture (WP-122): every selected view at every window size, theme and language, written as PNG files below
 // `MCS_SHOTS_DIR` together with `index.json` (one record per picture with the layout facts of `measure`). One test shoots one
 // column of the matrix (one window size, theme and language) over all selected views; a view that fails is recorded in
-// `index.json` and the test fails at the end, so one broken page never hides the others.
+// `index.json` and the test fails at the end, so one broken page never hides the others. A view marked `wide` is also shot at
+// the two wide window sizes, and a view marked `forcedColors` in the one forced-colours column (CAW-49, design 05 section 7.1).
 // The instance of live mode starts once per worker and is stopped, with its port closed and its temp tree removed, when the
 // worker ends. Run it inside the `run` lock (plan section 3).
 import { join, sep } from 'node:path';
@@ -9,7 +10,7 @@ import { join, sep } from 'node:path';
 import { expect, test as base, type Browser, type BrowserContext } from '@playwright/test';
 
 import { fixtureApi, type FixtureApi } from './fixture-api.ts';
-import { readShotsConfig, type Locale, type Theme, type Viewport } from './global-setup.ts';
+import { columnTitle, columnsOf, inColumn, readShotsConfig, shotFileName, type ShotColumn } from './global-setup.ts';
 import { measure, scrubPaths, writeIndex, type ShotRecord } from './measure.ts';
 import { startQaInstance, type QaInstance } from './qa-instance.ts';
 import {
@@ -63,30 +64,26 @@ function modeOf(view: ViewSpec): ViewMode | null {
 const views = selectedViews();
 const needsInstance = views.some((view) => modeOf(view) !== null);
 
-interface Column {
-  readonly viewport: Viewport;
-  readonly theme: Theme;
-  readonly locale: Locale;
+const shootable = views.filter((view) => modeOf(view) !== null);
+const columns: ShotColumn[] = columnsOf(shootable, config);
+
+/** A record of the index that also says whether the picture was taken with forced colours. */
+interface ColumnRecord extends ShotRecord {
+  readonly forcedColors: boolean;
 }
 
-const columns: Column[] = config.viewports.flatMap((viewport) =>
-  config.themes.flatMap((theme) => config.locales.map((locale): Column => ({ viewport, theme, locale }))),
-);
-
-function fileName(view: ViewSpec, column: Column): string {
-  const { width, height } = column.viewport;
-  return `${view.id}__${String(width)}x${String(height)}__${column.theme}__${column.locale}.png`;
-}
+/** The time one column may take: the default of the configuration, and more for a column with many views. */
+const columnTimeoutMs = (count: number): number => Math.max(300_000, 60_000 + count * 6_000);
 
 async function shoot(
   context: BrowserContext,
   qa: QaInstance,
   view: ViewSpec,
   mode: ViewMode,
-  column: Column,
-): Promise<ShotRecord> {
+  column: ShotColumn,
+): Promise<ColumnRecord> {
   const { width, height } = column.viewport;
-  const file = fileName(view, column);
+  const file = shotFileName(view.id, column);
   const page = await context.newPage();
   let consoleErrors = 0;
   page.on('console', (message) => {
@@ -103,6 +100,7 @@ async function shoot(
     viewport: `${String(width)}x${String(height)}`,
     theme: column.theme,
     locale: column.locale,
+    forcedColors: column.forcedColors,
   } as const;
   let fixture: FixtureApi | null = null;
   let url = '';
@@ -111,7 +109,7 @@ async function shoot(
     url = resolveViewUrl(view, data);
     if (mode === 'fixture') {
       const state = view.state ?? 'ok';
-      fixture = await fixtureApi(page, state === 'disconnected' ? 'ok' : state);
+      fixture = await fixtureApi(page, state === 'disconnected' ? 'ok' : state, view.terminal ?? null);
     }
     await page.goto(`${qa.baseUrl}${url}`, { waitUntil: 'domcontentloaded' });
     await page.locator(view.wait).first().waitFor({ state: 'visible', timeout: 30_000 });
@@ -142,13 +140,14 @@ async function shoot(
   }
 }
 
-async function openContext(browser: Browser, column: Column): Promise<BrowserContext> {
+async function openContext(browser: Browser, column: ShotColumn): Promise<BrowserContext> {
   const context = await browser.newContext({
     viewport: column.viewport,
     colorScheme: column.theme,
     locale: browserLocaleOf(column.locale),
     timezoneId: 'UTC',
     reducedMotion: 'reduce',
+    forcedColors: column.forcedColors ? 'active' : 'none',
     deviceScaleFactor: 1,
   });
   await context.addInitScript(presetScript(column.theme, column.locale));
@@ -158,12 +157,13 @@ async function openContext(browser: Browser, column: Column): Promise<BrowserCon
 test.describe('shots', () => {
   test.skip(!needsInstance, 'no selected view can run in the selected mode');
   for (const column of columns) {
-    const { width, height } = column.viewport;
-    test(`${String(width)}x${String(height)} ${column.theme} ${column.locale}`, async ({ browser, qa }) => {
+    const inThisColumn = shootable.filter((view) => inColumn(view, column, config));
+    test(columnTitle(column), async ({ browser, qa }) => {
+      test.setTimeout(columnTimeoutMs(inThisColumn.length));
       const context = await openContext(browser, column);
-      const records: ShotRecord[] = [];
+      const records: ColumnRecord[] = [];
       try {
-        for (const view of views) {
+        for (const view of inThisColumn) {
           const mode = modeOf(view);
           if (mode === null) continue;
           records.push(await shoot(context, qa, view, mode, column));

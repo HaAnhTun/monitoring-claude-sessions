@@ -28,7 +28,14 @@ import {
   makeWorkItemBoard,
   toolUseId,
 } from '../../src/test/fixtures/index.ts';
-import { fixtureId, type FixtureApi, type FixtureState } from './fixture-api.ts';
+import {
+  FIXTURE_RECENT_FOLDER,
+  FIXTURE_TERMINALS,
+  fixtureId,
+  type FixtureApi,
+  type FixtureState,
+  type TerminalFixtureState,
+} from './fixture-api.ts';
 import type { QaInstance } from './qa-instance.ts';
 import { focusStyleguideTarget, injectStyleguide } from './styleguide.ts';
 
@@ -60,6 +67,16 @@ export interface ViewSpec {
   readonly mode: ViewMode;
   /** The state of the fake server (fixture mode only); the default is `ok`. */
   readonly state?: FixtureState;
+  /**
+   * The terminal side of the fake server (fixture mode only). A view that names one gets a user instance, whose first page is the
+   * Workspace, with the access, terminal and folder routes and the canned terminal socket; a view that names none keeps the task
+   * instance, which has no terminals.
+   */
+  readonly terminal?: TerminalFixtureState;
+  /** Also shot at the wide window sizes (1920x1080 and 1280x720): the workspace, the terminal and the style guide. */
+  readonly wide?: boolean;
+  /** Also shot in the forced-colours column (1440x900, light, `forced-colors: active`). */
+  readonly forcedColors?: boolean;
   /** CSS selector that must be visible before the shot (a view says what it is waiting for). */
   readonly wait: string;
   /** Values for the `:name` and `*` parts of `path`. */
@@ -386,10 +403,90 @@ function detailEvents(): ActivityEvent[] {
 /** The page heading: every page has one, so it is the generic sign that the page is drawn. */
 const HEADING = 'main h1';
 
+// ---- the Workspace and its terminals (CAW-49) --------------------------------------------------------------------------------------
+
+/** The terminal pane with nothing selected: its notice is the heading of the page. */
+const NONE_SELECTED = '.workspace-pane[data-pane="none-selected"] h1';
+
+/** The host of an open terminal once xterm exists in it (the host then says its size). */
+const TERMINAL_HOST = '.workspace-pane[data-pane="terminal"] [data-terminal][data-cols][data-rows]';
+
+/** Below this width the project list of the Workspace is an overlay that a button opens (`MQ_LIST_OVERLAY` of the app). */
+const LIST_OVERLAY_BELOW_PX = 1024;
+
+const listIsOverlay = (page: BrowserPage): boolean => (page.viewportSize()?.width ?? 0) < LIST_OVERLAY_BELOW_PX;
+
+const sessionQuery = (name: string): string => `session=${encodeURIComponent(name)}`;
+
+/** The project list shows its folders, the monitor state of a linked terminal and the recent sessions of the first folder. */
+async function projectListDrawn(page: BrowserPage): Promise<void> {
+  const column = page.locator('.workspace-sidebar');
+  await column
+    .locator('.workspace-session [data-state="working"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 20_000 });
+  await column.locator('.workspace-recent__row').first().waitFor({ state: 'visible', timeout: 20_000 });
+}
+
+/** Waits for the project column where it is a column. Below 1024 px it is not drawn until it is opened: nothing to wait for. */
+async function projectColumnDrawn({ page }: ViewContext): Promise<void> {
+  if (!listIsOverlay(page)) await projectListDrawn(page);
+}
+
+/** Opens the project list where it is an overlay (the button of the pane), and waits for its content at every width. */
+async function openProjectList(page: BrowserPage): Promise<void> {
+  if (listIsOverlay(page)) {
+    await page
+      .locator('.workspace-pane [aria-controls="project-list"], .workspace-pane .state__actions .btn-quiet')
+      .first()
+      .click();
+    await page.locator('.workspace-sidebar[data-open="true"]').waitFor({ state: 'visible', timeout: 20_000 });
+  }
+  await projectListDrawn(page);
+}
+
+/** Fixture mode: the canned terminal of `name` has drawn its screen, for the size the terminal has on the page now. */
+async function terminalDrawn({ page, fixture }: ViewContext, name: string): Promise<void> {
+  const terminal = fixture?.terminal ?? null;
+  if (terminal === null) throw new Error('this view needs the terminal side of the fixture API');
+  await terminal.socket.settle(page, name);
+}
+
+/** An open terminal of the fixture: the address selects it and the shot waits for its screen. */
+function terminalView(id: string, name: string, more: Partial<ViewSpec> = {}): ViewSpec {
+  return {
+    id,
+    path: '/',
+    mode: 'fixture',
+    terminal: 'ok',
+    query: sessionQuery(name),
+    wait: TERMINAL_HOST,
+    setup: (context) => terminalDrawn(context, name),
+    ...more,
+  };
+}
+
+/** A state of the terminal side in which the pane shows a notice instead of a terminal. */
+function noticeView(id: string, terminal: TerminalFixtureState, pane: string, what = 'h1'): ViewSpec {
+  return { id, path: '/', mode: 'fixture', terminal, wait: `.workspace-pane[data-pane="${pane}"] ${what}` };
+}
+
 export const VIEWS: readonly ViewSpec[] = [
   // ---- base views: one per route, defined by WP-122 (live mode) ----
-  { id: 'overview', path: '/', mode: 'live', wait: HEADING },
-  { id: 'sessions', path: '/sessions', mode: 'live', wait: HEADING },
+  // The Workspace is the page of `/` (CAW-49). Only a user instance has it, and its terminals need the access session and a
+  // socket, so its base view is the one fixture view of this list: the project column and nothing selected.
+  {
+    id: 'workspace',
+    path: '/',
+    mode: 'fixture',
+    terminal: 'ok',
+    wide: true,
+    forcedColors: true,
+    wait: NONE_SELECTED,
+    setup: projectColumnDrawn,
+  },
+  { id: 'overview', path: '/overview', mode: 'live', wait: HEADING },
+  { id: 'sessions', path: '/sessions', mode: 'live', wait: HEADING, forcedColors: true },
   { id: 'session-detail-transcript', path: '/sessions/:sessionId', mode: 'live', wait: HEADING, params: detail },
   { id: 'activity', path: '/activity', mode: 'live', wait: HEADING },
   { id: 'tasks', path: '/tasks', mode: 'live', wait: HEADING },
@@ -525,12 +622,12 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   // @wp-end WP-53
   // @wp-begin WP-54
-  // The base view `overview` (live mode) is WP-122's. These are the variants of the landing page.
-  { id: 'overview-empty', path: '/', mode: 'fixture', state: 'empty', wait: 'main .state--empty' },
+  // The base view `overview` (live mode) is WP-122's. These are the variants of the Overview (`/overview` since CAW-49).
+  { id: 'overview-empty', path: '/overview', mode: 'fixture', state: 'empty', wait: 'main .state--empty' },
   {
     // Only the overview route answers 500: the sessions, the ingestion summary and the feed stay usable.
     id: 'overview-error',
-    path: '/',
+    path: '/overview',
     mode: 'fixture',
     wait: HEADING,
     setup: async ({ page, fixture }) => {
@@ -543,13 +640,19 @@ export const VIEWS: readonly ViewSpec[] = [
     },
   },
   // Every route answers 500: the sessions and the figures each say so, the strip shows dashes.
-  { id: 'overview-total-error', path: '/', mode: 'fixture', state: 'error', wait: 'main .state--error' },
-  { id: 'overview-loading', path: '/', mode: 'fixture', state: 'loading', wait: 'main .skeleton--tiles' },
-  { id: 'overview-disconnected', path: '/', mode: 'fixture', state: 'disconnected', wait: 'main .overview-tile' },
+  { id: 'overview-total-error', path: '/overview', mode: 'fixture', state: 'error', wait: 'main .state--error' },
+  { id: 'overview-loading', path: '/overview', mode: 'fixture', state: 'loading', wait: 'main .skeleton--tiles' },
+  {
+    id: 'overview-disconnected',
+    path: '/overview',
+    mode: 'fixture',
+    state: 'disconnected',
+    wait: 'main .overview-tile',
+  },
   {
     // The info tip of the first token tile open: source and rule as the server wrote them.
     id: 'overview-tip',
-    path: '/',
+    path: '/overview',
     mode: 'fixture',
     wait: 'main .overview-tile',
     setup: async ({ page }) => {
@@ -565,7 +668,7 @@ export const VIEWS: readonly ViewSpec[] = [
     // The live instance enables Machine, Git and Ledger, so the machine, the repository and the ledger are the real ones of the QA
     // folder. Below 900 px the panels start collapsed, which is the state this view shows there.
     id: 'overview-panels',
-    path: '/',
+    path: '/overview',
     mode: 'live',
     wait: 'main .workspace-panels .panel[data-panel="git"]',
     setup: async ({ page }) => {
@@ -586,7 +689,7 @@ export const VIEWS: readonly ViewSpec[] = [
   {
     // The same panels with every one of them open, whatever the width: the small-window view of their bodies.
     id: 'overview-panels-open',
-    path: '/',
+    path: '/overview',
     mode: 'live',
     wait: 'main .workspace-panels .panel[data-panel="git"]',
     setup: async ({ page }) => {
@@ -612,7 +715,7 @@ export const VIEWS: readonly ViewSpec[] = [
     // supported, Docker unavailable), Attempts with every result, Ledger with PASS and FAIL cells, a chain log that holds a hostile
     // line, Logs with one file being written and one idle, one of them stale. All panels are open.
     id: 'overview-panels-partial',
-    path: '/',
+    path: '/overview',
     mode: 'fixture',
     wait: 'main .workspace-panels .panel[data-panel="git"]',
     setup: async ({ page, fixture }) => {
@@ -1650,6 +1753,8 @@ export const VIEWS: readonly ViewSpec[] = [
     id: 'styleguide',
     path: '*',
     mode: 'live',
+    wide: true,
+    forcedColors: true,
     wait: HEADING,
     params: () => ({ '*': 'qa-style-guide' }),
     setup: async ({ page, locale }) => {
@@ -1660,6 +1765,7 @@ export const VIEWS: readonly ViewSpec[] = [
     id: 'styleguide-focus',
     path: '*',
     mode: 'live',
+    wide: true,
     wait: HEADING,
     params: () => ({ '*': 'qa-style-guide' }),
     setup: async ({ page, locale }) => {
@@ -1668,6 +1774,131 @@ export const VIEWS: readonly ViewSpec[] = [
     },
   },
   // @wp-end CAW-35
+  // @wp-begin CAW-49
+  // The Workspace and its terminals (design 05 section 7.2, design 04 section 12.4, last paragraph). Every one is a fixture view with
+  // a terminal state: the fake instance is a user instance and `terminal-fixture.ts` answers the socket. The base view `workspace`
+  // is with the base views above. The views with a terminal and the project list are also shot at the wide sizes.
+  {
+    // The project list as the subject: three open folders with their live rows in every row state (linked with tokens, starting,
+    // not linked, waiting for a permission, several candidates), the recent sessions with Resume and the native-terminal button.
+    // Below 1024 px the list is an overlay, opened here with the button of the pane.
+    id: 'workspace-projects',
+    path: '/',
+    mode: 'fixture',
+    terminal: 'ok',
+    wide: true,
+    wait: NONE_SELECTED,
+    setup: ({ page }) => openProjectList(page),
+  },
+  {
+    // The end of the same list: a folder with a long name, one whose path is unknown (it cannot start a session) and one that was
+    // moved, above the footer. Two of the last folders are opened first, then the list is scrolled to its last folder.
+    id: 'workspace-projects-end',
+    path: '/',
+    mode: 'fixture',
+    terminal: 'ok',
+    wait: NONE_SELECTED,
+    setup: async ({ page }) => {
+      await openProjectList(page);
+      for (const name of ['archived-notes', 'a-project-folder-with-a-rather-long-name']) {
+        await page.locator('.workspace-folder__head', { hasText: name }).click();
+        await page
+          .locator('.workspace-folder[data-open="true"]', { hasText: name })
+          .waitFor({ state: 'visible', timeout: 20_000 });
+      }
+      await page.locator('.workspace-folder').last().scrollIntoViewIfNeeded();
+    },
+  },
+  // An open session that the monitor follows: the header with its state, tokens and viewers, and a screen like a real session.
+  terminalView('workspace-session', FIXTURE_TERMINALS.session, {
+    wide: true,
+    setup: async (context) => {
+      await terminalDrawn(context, FIXTURE_TERMINALS.session);
+      await context.page
+        .locator('.workspace-header [data-state="working"]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  }),
+  // The 16 ANSI colours as text and background, bold, dim, inverse, the colour ramps, the glyphs and the box drawing, in a frame.
+  terminalView('terminal-colors', FIXTURE_TERMINALS.colors, { wide: true }),
+  // The 134 Vietnamese letters outside ASCII in each of the 16 colours: the stacked marks must not be cut between two rows.
+  terminalView('terminal-vi', FIXTURE_TERMINALS.vietnamese, { wide: true }),
+  // The process exits with code 0 while the page shows it: the banner, the two ways on, and the last screen under them.
+  terminalView('terminal-ended', FIXTURE_TERMINALS.waiting, {
+    setup: async (context) => {
+      await terminalDrawn(context, FIXTURE_TERMINALS.waiting);
+      context.fixture?.terminal?.socket.end(FIXTURE_TERMINALS.waiting, 0);
+      await context.page.locator('.workspace-ended').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  }),
+  // "Stop session" was pressed: the danger dialog over the terminal, nothing confirmed.
+  terminalView('workspace-kill-dialog', FIXTURE_TERMINALS.session, {
+    setup: async (context) => {
+      await terminalDrawn(context, FIXTURE_TERMINALS.session);
+      await context.page.locator('.workspace-header__actions [data-tone="danger"]').click();
+      await context.page.locator('dialog.dialog--danger[open]').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  }),
+  {
+    // Resume of a recent session: the server was asked first and said yes, so the dialog names the folder and offers Resume.
+    id: 'workspace-resume-dialog',
+    path: '/',
+    mode: 'fixture',
+    terminal: 'ok',
+    wait: NONE_SELECTED,
+    setup: async ({ page }) => {
+      await openProjectList(page);
+      await page
+        .locator('.workspace-folder', { hasText: FIXTURE_RECENT_FOLDER })
+        .locator('.workspace-recent__row [data-nav-id^="resume:"]')
+        .first()
+        .click();
+      await page.locator('dialog.dialog[open] .dialog__path').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  {
+    // "Other folder" while a folder dialog is already open on the computer (409 picker_busy): the error toast.
+    id: 'workspace-folder-picker-busy',
+    path: '/',
+    mode: 'fixture',
+    terminal: 'ok',
+    wait: NONE_SELECTED,
+    setup: async (context) => {
+      const { page, fixture } = context;
+      if (fixture === null) return;
+      await projectColumnDrawn(context);
+      const { errorResponse } = await import('../../src/test/fake-api.ts');
+      fixture.fake.handlers.terminalPickFolder = () => errorResponse('picker_busy');
+      // where the column is hidden the notice of the pane carries the button, else the footer of the column does
+      const button = listIsOverlay(page)
+        ? page.locator('.workspace-pane .state__actions .btn-primary')
+        : page.locator('.workspace-sidebar [data-nav-id="other-folder"]');
+      await button.click();
+      await page.locator('.toast--error').first().waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  // This browser holds no session of the terminal side: the pane asks for the access link, and there is no project column.
+  noticeView('workspace-no-access', 'locked', 'locked'),
+  // Terminals cannot run on this system, for each of the three reasons the capabilities carry.
+  noticeView('workspace-unsupported-os', 'unsupported_os', 'unavailable'),
+  noticeView('workspace-claude-missing', 'claude_not_found', 'unavailable'),
+  noticeView('workspace-addon-missing', 'addon_missing', 'unavailable'),
+  {
+    // No folder and no terminal yet: the empty state of the column with its one button, and nothing selected.
+    ...noticeView('workspace-empty', 'empty', 'none-selected'),
+    setup: async ({ page }) => {
+      if (listIsOverlay(page)) return;
+      await page.locator('.workspace-sidebar .state--empty').waitFor({ state: 'visible', timeout: 20_000 });
+    },
+  },
+  // The terminal state and the folders never answer: the pane and the column wait.
+  noticeView('workspace-loading', 'loading', 'loading'),
+  // Both answer 500: the pane says so with Retry (the column too, where it is drawn).
+  noticeView('workspace-error', 'error', 'error', '.state--error'),
+  // The address names a session that is not running.
+  { ...noticeView('workspace-not-found', 'ok', 'not-found'), query: sessionQuery('gone-1') },
+  // @wp-end CAW-49
 ];
 
 /** `/sessions/:sessionId` and `{ sessionId }` give `/sessions/<id>`; the id is encoded; a missing value is an error. */

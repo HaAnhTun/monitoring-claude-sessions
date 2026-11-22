@@ -1,11 +1,14 @@
-// LF-2: the walking skeleton in a real browser. The instance (started by global-setup.ts through the LF-5 harness) holds two
+// LF-2, rewritten by CAW-49: the walking skeleton in a real browser. The instance (started by global-setup.ts through the LF-5 harness) holds two
 // FIXTURE sessions. The spec reads the list page and one detail page and compares what they show with `expected`, a naive
 // calculation over the fixture files. The first test reads the pages as they are at start-up and uses no page outside the
 // skeleton (overview, activity, settings). The second and third (LF-7) keep a page open while the harness changes the running
 // instance (a new session, one more turn, then the instance stops): the built app must follow the event stream without a
-// reload. Every phase is a named step so a failure names the step.
-import { expect, test, type Page } from '@playwright/test';
+// reload. Every phase is a named step so a failure names the step. Locators are roles, accessible names and data attributes
+// (`data-state`, `data-connection`, `data-row-key`), never a class name and never the Tab order; every text a user reads comes
+// from the catalogue (`msg`), so a reworded label or a restyled page does not touch the spec.
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { msg } from '../../src/test/msg.ts';
 // eslint-disable-next-line no-restricted-imports -- the LF-7 live helpers are test code of @mcs/server that its exports map does not publish; the spec reuses them by relative path like the global setup
 import {
   addFixtureSession,
@@ -16,10 +19,10 @@ import { readSkeletonEnv, type EnvSession } from '../fixture-env.ts';
 
 const env = readSkeletonEnv();
 
-/** The state badge texts of the UI (lib/lifecycle-display.ts), spelled here on purpose: a changed label must fail the spec. */
+/** The state badge word of each fixture state, from the catalogue. */
 const STATE_TEXT: Readonly<Record<EnvSession['state'], string>> = {
-  turn_ended: 'Turn ended',
-  waiting_tool: 'Waiting for tool',
+  turn_ended: msg('state.turn_ended.label'),
+  waiting_tool: msg('state.waiting_tool.label'),
 };
 
 /** The UI shortens a token count ("999", "12k", "2.5M"); the same rule, written down again for the check. */
@@ -29,10 +32,15 @@ function shortCount(n: number): string {
   return String(Math.round(n));
 }
 
-/** "out X · new input Y · cache read Z": output, input + cache creation, cache read. */
-function tokenLineOf(session: EnvSession): string {
+/** The exact number of a figure as its title spells it (the English grouping of the catalogue's language). */
+function exact(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+/** Output, and Input (new) = input + cache creation: the two figures of the list, the header tiles and the Tokens tab. */
+function figuresOf(session: EnvSession): { output: number; inputNew: number } {
   const u = session.inclSubagents;
-  return `out ${shortCount(u.output)} · new input ${shortCount(u.input + u.cacheCreation)} · cache read ${shortCount(u.cacheRead)}`;
+  return { output: u.output, inputNew: u.input + u.cacheCreation };
 }
 
 function sessionById(id: string): EnvSession {
@@ -52,20 +60,66 @@ function watchConsole(page: Page): string[] {
   return problems;
 }
 
-/** Tool rows (`li.tr--tool`) of the transcript tab, compared with the fixture calls of one agent. */
+/** The table of the Sessions page, found by its caption. */
+function sessionsTable(page: Page): Locator {
+  return page.getByRole('table', { name: msg('sessions.table.caption') });
+}
+
+/** Rows of the body of the table (the header row is not one of them). */
+function liveRows(page: Page): Locator {
+  return sessionsTable(page).locator('tbody').getByRole('row');
+}
+
+/** The cell of a row under the column whose header starts with `header`. */
+async function cellOf(table: Locator, row: Locator, header: string): Promise<Locator> {
+  const headers = await table.getByRole('columnheader').allInnerTexts();
+  const index = headers.findIndex((text) => text.trim().startsWith(header));
+  if (index < 0) throw new Error(`the table has no column '${header}' (columns: ${headers.join(' | ')})`);
+  return row.getByRole('cell').nth(index);
+}
+
+/**
+ * The text of a token cell starts with the figure; a "lower bound" tag may follow it while the monitor has not read a whole transcript
+ * yet. The figure ends at a character that cannot belong to a number.
+ */
+function startsWithFigure(n: number): RegExp {
+  return new RegExp(`^${shortCount(n).replaceAll('.', '[.]')}(?![0-9.,kM])`);
+}
+
+/** The two token cells of a list row hold the figures of the session, including its subagents. */
+async function expectTokenCells(table: Locator, row: Locator, session: EnvSession): Promise<void> {
+  const { output, inputNew } = figuresOf(session);
+  await expect(await cellOf(table, row, msg('sessions.col.output'))).toHaveText(startsWithFigure(output));
+  await expect(await cellOf(table, row, msg('sessions.col.input'))).toHaveText(startsWithFigure(inputNew));
+}
+
+/**
+ * The Live control of the top bar (04 5.6, ADR 0033, ADR 0073 decision 5): one control that carries what the client observes of its
+ * link (`data-connection`) and what the server says of ingestion (`data-ingestion`) as two separate signals.
+ */
+function liveControl(page: Page): Locator {
+  return page.getByRole('banner').locator('[data-connection]');
+}
+
+/** Tool rows of the transcript tab (a list item with a disclosure), compared with the fixture calls of one agent. */
 async function expectToolCalls(page: Page, calls: readonly EnvSession['toolCalls'][number][]): Promise<void> {
   expect(calls.length, 'the fixture has tool calls for this agent').toBeGreaterThan(0);
-  const units = page.locator('li.tr--tool');
+  const units = page.locator('li[data-row-key]').filter({ has: page.locator('summary') });
   await expect(units).toHaveCount(calls.length);
   // The viewer lists the newest entry first, so the rows are matched by tool name (unique per agent in the fixture).
   for (const call of calls) {
-    const unit = units.filter({ has: page.locator('.tu-name', { hasText: new RegExp(`^${call.name}$`) }) });
+    const unit = units.filter({ has: page.getByText(call.name, { exact: true }) });
     await expect(unit, `one row for the ${call.name} call`).toHaveCount(1);
-    const pill = call.resultText === null ? 'running' : call.isError === true ? 'failed' : 'ok';
-    await expect(unit.locator('.tu-summary .badge')).toContainText(pill);
+    const status =
+      call.resultText === null
+        ? msg('transcript.tool.status.active')
+        : call.isError === true
+          ? msg('transcript.tool.status.failed')
+          : msg('transcript.tool.status.completed');
+    await expect(unit.locator('summary')).toContainText(status);
     if (call.resultText !== null) {
       await unit.locator('summary').click();
-      await expect(unit.locator('.tu-output')).toHaveText(call.resultText);
+      await expect(unit.getByText(call.resultText, { exact: true })).toBeVisible();
     }
   }
 }
@@ -75,26 +129,45 @@ async function checkDetailPage(page: Page, baseUrl: string, session: EnvSession)
 
   await test.step(name('title, state and metadata'), async () => {
     await expect(page.getByRole('heading', { level: 1, name: session.label })).toBeVisible();
-    const header = page.locator('header.session-header');
-    await expect(header.locator('.session-header__state')).toContainText(STATE_TEXT[session.state]);
+    const header = page
+      .getByRole('main')
+      .locator('header')
+      .filter({ has: page.getByRole('heading', { level: 1 }) });
+    await expect(header.locator('[data-state]').first()).toHaveAttribute('data-state', session.state);
+    await expect(header).toContainText(STATE_TEXT[session.state]);
     // the whole id is not in the header: it is in the Details section, which is closed until asked for
     await expect(header).not.toContainText(session.id);
-    await expect(page.locator('.session-stats')).toContainText('Active span');
-    await page.getByRole('button', { name: 'Details' }).click();
-    const details = page.locator('dl.session-details');
-    await expect(details).toContainText(session.id);
-    await expect(details.locator('.session-details__field', { hasText: 'Provider' })).toContainText(/\S/);
-    await expect(details.locator('.session-details__field', { hasText: 'Started' })).toContainText(/\S/);
+    await expect(page.getByRole('group', { name: msg('detail.stats.label') })).toContainText(
+      msg('detail.stats.activeSpan'),
+    );
+    await page.getByRole('button', { name: msg('detail.details') }).click();
+    const details = page.getByRole('main').locator('dl', { hasText: session.id });
+    await expect(details).toBeVisible();
+    // The terms and definitions of the list pair up one to one.
+    const terms = await details.getByRole('term').allInnerTexts();
+    const definitions = await details.getByRole('definition').allInnerTexts();
+    expect(definitions.length, 'every term has a definition').toBe(terms.length);
+    for (const label of [msg('detail.details.provider'), msg('detail.details.started')]) {
+      const at = terms.map((term) => term.trim()).indexOf(label);
+      expect(at, `the Details list has a '${label}' field`).toBeGreaterThanOrEqual(0);
+      expect((definitions[at] ?? '').trim(), `the '${label}' field has a value`).not.toBe('');
+    }
   });
 
   await test.step(name('token figures in the tiles under the header'), async () => {
     const u = session.inclSubagents;
-    const tokens = page.locator('.session-stat--tokens');
-    await expect(tokens).toContainText('Output');
-    await expect(tokens).toContainText('Input (new)');
+    const { output, inputNew } = figuresOf(session);
+    const stats = page.getByRole('group', { name: msg('detail.stats.label') });
+    await expect(stats).toContainText(msg('tokens.output'));
+    await expect(stats).toContainText(msg('tokens.inputNew'));
     // the exact numbers are in the titles of the figures; Input (new) says its sum
-    await expect(tokens.locator(`[title="${u.output.toLocaleString('en-US')}"]`)).toHaveCount(1);
-    await expect(tokens.locator(`[title*="= ${(u.input + u.cacheCreation).toLocaleString('en-US')}"]`)).toHaveCount(1);
+    await expect(stats.getByTitle(exact(output), { exact: true })).toHaveCount(1);
+    const sumTip = msg('tokens.inputNewTip', {
+      input: exact(u.input),
+      cacheWrite: exact(u.cacheCreation),
+      sum: exact(inputNew),
+    });
+    await expect(stats.getByTitle(sumTip, { exact: true })).toHaveCount(1);
   });
 
   await test.step(name('tool calls of the main agent with their results'), async () => {
@@ -114,19 +187,20 @@ async function checkDetailPage(page: Page, baseUrl: string, session: EnvSession)
   }
 
   await test.step(name('exact token figures on the Tokens tab'), async () => {
-    await page.getByRole('navigation', { name: 'Session views' }).getByRole('link', { name: 'Tokens' }).click();
+    const tabs = page.getByRole('navigation', { name: msg('detail.tabs.label') });
+    await tabs.getByRole('link', { name: new RegExp(`^${msg('detail.tab.tokens')}`) }).click();
+    const region = page.getByRole('region', { name: msg('tabs.tokens.region') });
+    const total = region.getByRole('row').filter({ hasText: msg('tabs.tokens.total') });
+    await expect(total).toHaveCount(1);
     const u = session.inclSubagents;
-    const figures = page.locator('.token-summary--grid .token-summary__figure');
-    const exact = {
-      Input: u.input,
-      Output: u.output,
-      'Cache creation': u.cacheCreation,
-      'Cache read': u.cacheRead,
-      Turns: u.turns,
+    const exactFigures = {
+      [msg('tokens.output')]: u.output,
+      [msg('tokens.input')]: u.input,
+      [msg('tokens.cacheWrite')]: u.cacheCreation,
+      [msg('tokens.cacheRead')]: u.cacheRead,
     };
-    for (const [label, value] of Object.entries(exact)) {
-      const figure = figures.filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) });
-      await expect(figure.locator('dd'), `figure '${label}'`).toHaveAttribute('title', String(value));
+    for (const [label, value] of Object.entries(exactFigures)) {
+      await expect(total.getByTitle(exact(value), { exact: true }).first(), `figure '${label}'`).toBeVisible();
     }
   });
 }
@@ -136,12 +210,12 @@ test('list page and detail page show the fixture sessions', async ({ page }) => 
 
   await test.step('list page: open /sessions', async () => {
     await page.goto(`${env.baseUrl}/sessions`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: msg('route.sessions.title') })).toBeVisible();
   });
 
-  const table = page.getByRole('table', { name: 'Sessions' });
+  const table = sessionsTable(page);
   await test.step('list page: the app connected to the monitor', async () => {
-    const waiting = page.getByText('Waiting for the connection to the monitor.');
+    const waiting = page.getByText(msg('sessions.waiting'));
     await expect(table.or(waiting)).toBeVisible();
     await expect(
       waiting,
@@ -149,14 +223,15 @@ test('list page and detail page show the fixture sessions', async ({ page }) => 
     ).toHaveCount(0);
   });
 
-  const rows = table.locator('tbody tr');
+  const rows = liveRows(page);
   await test.step('list page: both fixture sessions with label, state and tokens', async () => {
     await expect(rows).toHaveCount(env.expected.sessions.length);
     for (const session of env.expected.sessions) {
       const row = rows.filter({ hasText: session.label });
       await expect(row, `row of '${session.label}'`).toHaveCount(1);
+      await expect(row.locator('[data-state]').first()).toHaveAttribute('data-state', session.state);
       await expect(row).toContainText(STATE_TEXT[session.state]);
-      await expect(row).toContainText(tokenLineOf(session));
+      await expectTokenCells(table, row, session);
       await expect(row).toContainText(session.id.slice(0, 8));
     }
   });
@@ -189,21 +264,9 @@ test.describe.configure({ mode: 'serial' });
 /** The longest the instance may take to import appended transcript data and push it to the page (no sleeps: polled). */
 const LIVE_TIMEOUT_MS = 40_000;
 
-function liveRows(page: Page) {
-  return page.getByRole('table', { name: 'Sessions' }).locator('tbody tr');
-}
-
-/**
- * The Live control of the top bar (04 5.6, ADR 0033, ADR 0073 decision 5): one control that carries what the client observes of its
- * link (`data-connection`) and what the server says of ingestion (`data-ingestion`) as two separate signals.
- */
-function liveControl(page: Page) {
-  return page.getByRole('banner').locator('.live-control');
-}
-
 /** Rows (their text) of the list page; polled with `expect.poll`. */
 async function rowTexts(page: Page): Promise<string[]> {
-  return page.getByRole('table', { name: 'Sessions' }).locator('tbody tr').allInnerTexts();
+  return liveRows(page).allInnerTexts();
 }
 
 test('the open list page follows the event stream: a new session and a new turn appear without a reload', async ({
@@ -235,10 +298,10 @@ test('the open list page follows the event stream: a new session and a new turn 
       'live',
       { timeout: LIVE_TIMEOUT_MS },
     );
-    await expect(liveControl(page)).toContainText('Live');
+    await expect(liveControl(page)).toContainText(msg('live.bar.live'));
     await expect(liveControl(page)).toBeVisible();
     await expect(liveControl(page)).toHaveAttribute('data-ingestion', /^(ok|degraded|stalled|down|disabled)$/);
-    await expect(page.locator('.live-control')).toHaveCount(1);
+    await expect(page.locator('[data-connection]')).toHaveCount(1);
   });
 
   // Everything after this marker happens in the same document: a reload or a navigation would erase it.
@@ -261,7 +324,7 @@ test('the open list page follows the event stream: a new session and a new turn 
       inclSubagents: updated.inclSubagents,
       toolCalls: before.toolCalls,
     };
-    expect(tokenLineOf(grown), 'the appended turn changes the token line').not.toBe(tokenLineOf(before));
+    expect(figuresOf(grown), 'the appended turn changes the token figures').not.toEqual(figuresOf(before));
   });
 
   await test.step('a new session appears in the list without a reload', async () => {
@@ -274,8 +337,9 @@ test('the open list page follows the event stream: a new session and a new turn 
       .toBe(env.expected.sessions.length + 1);
     const row = liveRows(page).filter({ hasText: added.label });
     await expect(row, `row of '${added.label}'`).toHaveCount(1);
+    await expect(row.locator('[data-state]').first()).toHaveAttribute('data-state', added.state);
     await expect(row).toContainText(STATE_TEXT[added.state]);
-    await expect(row).toContainText(tokenLineOf({ ...added, toolCalls: [] }));
+    await expectTokenCells(sessionsTable(page), row, { ...added, toolCalls: [] });
     await expect(row).toContainText(added.id.slice(0, 8));
     for (const session of env.expected.sessions) {
       await expect(liveRows(page).filter({ hasText: session.label })).toHaveCount(1);
@@ -284,13 +348,14 @@ test('the open list page follows the event stream: a new session and a new turn 
 
   await test.step('the grown token total of the existing session shows too', async () => {
     if (grown === undefined) throw new Error('the turn was not appended');
-    const expectedLine = tokenLineOf(grown);
-    await expect
-      .poll(async () => (await rowTexts(page)).some((text) => text.includes(expectedLine)), {
-        message: `row of '${before.label}' shows '${expectedLine}'`,
-        timeout: LIVE_TIMEOUT_MS,
-      })
-      .toBe(true);
+    const grownSession = grown;
+    const row = liveRows(page).filter({ hasText: before.label });
+    const outputCell = await cellOf(sessionsTable(page), row, msg('sessions.col.output'));
+    await expect(outputCell, `row of '${before.label}' shows the grown output`).toHaveText(
+      startsWithFigure(figuresOf(grownSession).output),
+      { timeout: LIVE_TIMEOUT_MS },
+    );
+    await expectTokenCells(sessionsTable(page), row, grownSession);
   });
 
   await test.step('the page was never reloaded', async () => {
@@ -304,8 +369,9 @@ test('the open list page follows the event stream: a new session and a new turn 
 });
 
 test('after the instance stops the open page keeps its rows and its connections fail', async ({ page }) => {
-  // Three polled windows (live before the stop, the chip leaving live, the failed calls) may each take up to LIVE_TIMEOUT_MS.
-  test.setTimeout(3 * LIVE_TIMEOUT_MS);
+  // Four polled windows (live before the stop, the control leaving live, the first failed call, the failed poll of the list) may
+  // each take up to LIVE_TIMEOUT_MS.
+  test.setTimeout(4 * LIVE_TIMEOUT_MS);
   const failedCalls: string[] = [];
   page.on('requestfailed', (request) => {
     const { pathname } = new URL(request.url());
@@ -330,12 +396,20 @@ test('after the instance stops the open page keeps its rows and its connections 
       timeout: LIVE_TIMEOUT_MS,
     });
     await expect(liveControl(page)).toHaveAttribute('data-ingestion', 'unknown');
-    await expect(liveControl(page)).not.toContainText('Live');
+    await expect(liveControl(page)).not.toContainText(msg('live.bar.live'));
   });
 
   await test.step('the stream and the polls fail, and the rows stay (UI-I5)', async () => {
     await expect
       .poll(() => failedCalls.length, { message: 'a request to the stopped instance failed', timeout: LIVE_TIMEOUT_MS })
+      .toBeGreaterThan(0);
+    // The list itself is asked again without the stream, and that request fails too: only then do the rows on the page prove that
+    // a failed refresh keeps what was shown (a page that empties its list on the next answer would pass an earlier look).
+    await expect
+      .poll(() => failedCalls.filter((path) => path === '/api/v3/sessions').length, {
+        message: 'the list was asked again after the stop and the request failed',
+        timeout: LIVE_TIMEOUT_MS,
+      })
       .toBeGreaterThan(0);
     await expect(liveRows(page)).toHaveCount(env.expected.sessions.length + 1);
   });

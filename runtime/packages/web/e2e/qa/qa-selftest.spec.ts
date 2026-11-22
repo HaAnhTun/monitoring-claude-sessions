@@ -8,16 +8,51 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test as base } from '@playwright/test';
 
-import { routes } from '@mcs/shared';
+import { TerminalServerMessageSchema, routes } from '@mcs/shared';
 import { assertPortClosed, httpRequest, makeJunction, makeTempDir } from '@mcs/testkit';
 
 import { enMessages } from '../../src/i18n/messages/en.ts';
 import { viMessages } from '../../src/i18n/messages/vi.ts';
-import { FIXTURE_STATES, fixtureApi, fixtureStates } from './fixture-api.ts';
-import { DEFAULT_VIEWPORTS, readShotsConfig, repositoryRootOf, resolveShotsDir } from './global-setup.ts';
+import { accessCode } from '../../src/test/fixtures/index.ts';
+import {
+  FIXTURE_RECENT_FOLDER,
+  FIXTURE_STATES,
+  FIXTURE_TERMINALS,
+  TERMINAL_FIXTURE_STATES,
+  fixtureApi,
+  fixtureId,
+  fixtureStates,
+  type TerminalFixtureState,
+} from './fixture-api.ts';
+import {
+  DEFAULT_VIEWPORTS,
+  FORCED_COLORS_VIEWPORT,
+  WIDE_VIEWPORTS,
+  columnTitle,
+  columnsOf,
+  inColumn,
+  readShotsConfig,
+  repositoryRootOf,
+  resolveShotsDir,
+  shotFileName,
+  viewportsOf,
+} from './global-setup.ts';
 import { countRows, measure, readIndex, scrubPaths, writeIndex, type ShotRecord } from './measure.ts';
 import { QA_PORT_RANGE, startQaInstance, type QaInstance } from './qa-instance.ts';
 import { buildStyleguideHtml, vietnameseStressLine } from './styleguide.ts';
+import { routeTerminalSocket, terminalNameOf } from './terminal-fixture.ts';
+import {
+  ANSI_FOREGROUND_CODES,
+  CURSOR_REPORT_REQUEST,
+  SAMPLE_NAMES,
+  TERMINAL_GLYPH_CODE_POINTS,
+  sampleLines,
+  sampleText,
+  sgr,
+  splitCursorReports,
+  vietnameseLetters,
+  visibleText,
+} from './terminal-sample.ts';
 import {
   PLANNED_ROUTE_PATHS,
   PREFS_STORAGE_KEY,
@@ -161,6 +196,7 @@ function routePaths(): string[] {
 }
 
 const BASE_VIEW_IDS = [
+  'workspace',
   'overview',
   'sessions',
   'session-detail-transcript',
@@ -243,6 +279,344 @@ test.describe('the view list', () => {
     } finally {
       temp.remove();
     }
+  });
+});
+
+// ---- the matrix: the window sizes of a view and the forced-colours column (CAW-49) --------------------------------------------------
+
+/** The views design 05 section 7.1 marks: wide (the workspace, the terminal, the style guide) and forced colours. */
+const WIDE_VIEW_IDS = [
+  'workspace',
+  'workspace-projects',
+  'workspace-session',
+  'terminal-colors',
+  'terminal-vi',
+  'styleguide',
+  'styleguide-focus',
+];
+const FORCED_COLORS_VIEW_IDS = ['workspace', 'sessions', 'styleguide'];
+
+/** The views the plan of CAW-49 names, and the notice states of design 04 section 12.4. */
+const WORKSPACE_VIEW_IDS = [
+  'workspace',
+  'workspace-projects',
+  'workspace-session',
+  'terminal-colors',
+  'terminal-vi',
+  'terminal-ended',
+  'workspace-kill-dialog',
+  'workspace-folder-picker-busy',
+  'workspace-no-access',
+  'workspace-unsupported-os',
+  'workspace-claude-missing',
+  'workspace-addon-missing',
+  'workspace-empty',
+  'workspace-loading',
+  'workspace-error',
+];
+
+test.describe('the matrix', () => {
+  const defaults = readShotsConfig({ MCS_SHOTS_DIR: join(tmpdir(), 'mcs-qa-config-never-created', 'out') });
+  const size = (viewport: { width: number; height: number }): string =>
+    `${String(viewport.width)}x${String(viewport.height)}`;
+
+  test('gives every view its window sizes: three, and the two wide ones for a view marked wide', () => {
+    expect(defaults.wideViewports).toEqual(WIDE_VIEWPORTS);
+    expect(WIDE_VIEWPORTS.map(size)).toEqual(['1920x1080', '1280x720']);
+    for (const view of VIEWS) {
+      const sizes = viewportsOf(view, defaults).map(size);
+      const expected = WIDE_VIEW_IDS.includes(view.id)
+        ? ['1440x900', '1024x768', '600x900', '1920x1080', '1280x720']
+        : ['1440x900', '1024x768', '600x900'];
+      expect(sizes, view.id).toEqual(expected);
+    }
+    expect(VIEWS.filter((view) => view.wide === true).map((view) => view.id)).toEqual(
+      VIEWS.filter((view) => WIDE_VIEW_IDS.includes(view.id)).map((view) => view.id),
+    );
+  });
+
+  test('named window sizes are the whole matrix of every view, and one of them is not shot twice', () => {
+    const base = { MCS_SHOTS_DIR: join(tmpdir(), 'mcs-qa-config-never-created', 'out') };
+    const narrowed = readShotsConfig({ ...base, MCS_SHOTS_VIEWPORTS: '1024x768' });
+    expect(narrowed.wideViewports).toEqual([]);
+    expect(viewportsOf({ wide: true }, narrowed).map(size)).toEqual(['1024x768']);
+    const overlap = { viewports: [{ width: 1280, height: 720 }], wideViewports: WIDE_VIEWPORTS };
+    expect(viewportsOf({ wide: true }, overlap).map(size)).toEqual(['1280x720', '1920x1080']);
+    expect(viewportsOf({}, overlap).map(size)).toEqual(['1280x720']);
+  });
+
+  test('has one forced-colours column, at 1440x900 in the light theme, for the three views of the design', () => {
+    expect(VIEWS.filter((view) => view.forcedColors === true).map((view) => view.id)).toEqual(
+      VIEWS.filter((view) => FORCED_COLORS_VIEW_IDS.includes(view.id)).map((view) => view.id),
+    );
+    const columns = columnsOf(VIEWS, defaults);
+    // five window sizes in two themes and two languages, and the forced-colours column
+    expect(columns.length).toBe(5 * 2 * 2 + 1);
+    const forced = columns.filter((column) => column.forcedColors);
+    expect(forced).toEqual([{ viewport: FORCED_COLORS_VIEWPORT, theme: 'light', locale: 'en', forcedColors: true }]);
+    expect(columns.at(-1)?.forcedColors).toBe(true);
+    const titles = columns.map(columnTitle);
+    expect(new Set(titles).size, 'every column has its own title').toBe(titles.length);
+    expect(titles.at(-1)).toBe('1440x900 light en forced-colors');
+    const column = forced[0];
+    if (column === undefined) throw new Error('no forced-colours column');
+    expect(
+      VIEWS.filter((view) => inColumn(view, column, defaults))
+        .map((view) => view.id)
+        .sort(),
+    ).toEqual([...FORCED_COLORS_VIEW_IDS].sort());
+    expect(shotFileName('workspace', column)).toBe('workspace__1440x900__light-forced__en.png');
+    const plain = columns[0];
+    if (plain === undefined) throw new Error('no column');
+    expect(shotFileName('workspace', plain)).toBe('workspace__1440x900__light__en.png');
+  });
+
+  test('a column holds only the views that are shot in it, and a selection without them has no such column', () => {
+    const columns = columnsOf(VIEWS, defaults);
+    const wideColumn = columns.find((column) => column.viewport.width === 1920);
+    if (wideColumn === undefined) throw new Error('no wide column');
+    expect(
+      VIEWS.filter((view) => inColumn(view, wideColumn, defaults))
+        .map((view) => view.id)
+        .sort(),
+    ).toEqual([...WIDE_VIEW_IDS].sort());
+    const plain = VIEWS.filter((view) => view.wide !== true && view.forcedColors !== true);
+    expect(columnsOf(plain, defaults).length).toBe(3 * 2 * 2);
+    const base = { MCS_SHOTS_DIR: join(tmpdir(), 'mcs-qa-config-never-created', 'out') };
+    const dark = readShotsConfig({ ...base, MCS_SHOTS_THEMES: 'dark' });
+    expect(columnsOf(VIEWS, dark).some((column) => column.forcedColors)).toBe(false);
+    const small = readShotsConfig({ ...base, MCS_SHOTS_VIEWPORTS: '600x900' });
+    expect(columnsOf(VIEWS, small).map(columnTitle)).toEqual([
+      '600x900 light en',
+      '600x900 light vi',
+      '600x900 dark en',
+      '600x900 dark vi',
+    ]);
+    const vietnamese = readShotsConfig({ ...base, MCS_SHOTS_LOCALES: 'vi' });
+    expect(columnsOf(VIEWS, vietnamese).at(-1)).toMatchObject({ locale: 'vi', forcedColors: true });
+  });
+
+  test('the Overview is at /overview, and the page of / is the Workspace of a user instance', () => {
+    for (const view of VIEWS) {
+      if (view.id === 'overview' || view.id.startsWith('overview-')) expect(view.path, view.id).toBe('/overview');
+      if (view.path === '/') {
+        expect(view.mode, `${view.id}: only the fake server has a user instance`).toBe('fixture');
+        expect(view.terminal, `${view.id} names its terminal state`).toBeDefined();
+      }
+      if (view.terminal !== undefined) expect(view.mode, view.id).toBe('fixture');
+    }
+    const ids = VIEWS.map((view) => view.id);
+    for (const id of WORKSPACE_VIEW_IDS) expect(ids, id).toContain(id);
+    const states = new Set(VIEWS.flatMap((view) => (view.terminal === undefined ? [] : [view.terminal])));
+    expect([...states].sort(), 'every terminal state of the fake server has a view').toEqual(
+      [...TERMINAL_FIXTURE_STATES].sort(),
+    );
+    const session = VIEWS.find((view) => view.id === 'terminal-colors');
+    if (session === undefined) throw new Error('no terminal view');
+    expect(resolveViewUrl(session, { detailSessionId: 'x' })).toBe(`/?session=${FIXTURE_TERMINALS.colors}`);
+  });
+});
+
+// ---- the canned terminal: the screens and the socket (CAW-49) -----------------------------------------------------------------------
+
+/** The cells a line takes: its characters without the escape sequences, the one wide glyph of the samples counted twice. */
+function cellsOf(line: string): number {
+  const wide = String.fromCodePoint(0x26a1);
+  const text = visibleText(line);
+  return Array.from(text).length + text.split(wide).length - 1;
+}
+
+test.describe('the terminal sample', () => {
+  test('has the 134 Vietnamese letters outside ASCII, each one precomposed (NFC) and one cell wide', () => {
+    const letters = vietnameseLetters();
+    expect(letters.length).toBe(134);
+    expect(new Set(letters).size).toBe(134);
+    for (const letter of letters) {
+      expect(letter, 'NFC').toBe(letter.normalize('NFC'));
+      expect(letter.length, `one code unit: ${letter}`).toBe(1);
+      expect(letter.charCodeAt(0), 'not ASCII').toBeGreaterThan(0x7f);
+      // no combining mark is left on its own
+      expect(letter.charCodeAt(0) < 0x300 || letter.charCodeAt(0) > 0x36f).toBe(true);
+    }
+    const lower = letters.slice(0, 67);
+    expect(letters.slice(67)).toEqual(lower.map((letter) => letter.toUpperCase()));
+    // the stroked d, a letter with two marks (circumflex and dot below) and its capital
+    for (const code of [0x111, 0x110, 0x1ec7, 0x1ec6, 0x1edd, 0x1eb2]) {
+      expect(letters, code.toString(16)).toContain(String.fromCodePoint(code));
+    }
+  });
+
+  test('the Vietnamese screen draws every letter in each of the 16 colours, and fits the width it is given', () => {
+    const letters = vietnameseLetters();
+    expect(ANSI_FOREGROUND_CODES).toEqual([30, 31, 32, 33, 34, 35, 36, 37, 90, 91, 92, 93, 94, 95, 96, 97]);
+    for (const size of [
+      { cols: 80, rows: 24 },
+      { cols: 80, rows: 40 },
+      { cols: 120, rows: 30 },
+      { cols: 200, rows: 50 },
+    ]) {
+      const lines = sampleLines('vietnamese', size);
+      const text = lines.join('');
+      for (const code of ANSI_FOREGROUND_CODES) expect(text, `colour ${String(code)}`).toContain(sgr(code));
+      const drawn = visibleText(text);
+      for (const letter of letters) expect(drawn.split(letter).length - 1, letter).toBe(16);
+      for (const line of lines)
+        expect(cellsOf(line), 'a row is not wider than the terminal').toBeLessThanOrEqual(size.cols);
+      // a whole alphabet per row when the window is wide enough, else the lower case and the capitals on a row each
+      expect(lines.filter((line) => line.includes(sgr(31))).length).toBe(size.cols >= 134 ? 1 : 2);
+    }
+  });
+
+  test('the colours screen has the 16 colours, bold, dim and inverse, the glyphs and a box-drawing frame', () => {
+    const text = sampleText('colors', { cols: 120, rows: 30 });
+    for (const code of ANSI_FOREGROUND_CODES) expect(text, `text colour ${String(code)}`).toContain(sgr(code));
+    for (const code of [40, 41, 42, 43, 44, 45, 46, 47]) {
+      expect(text, `background ${String(code)}`).toContain(sgr(code, code === 40 || code === 44 ? 97 : 30));
+      expect(text, `bright background ${String(code + 60)}`).toContain(sgr(code + 60, 30));
+    }
+    for (const attribute of [1, 2, 3, 4, 7, 9])
+      expect(text, `attribute ${String(attribute)}`).toContain(sgr(attribute));
+    expect(text, 'bold red').toContain(sgr(1, 31));
+    expect(text, 'dim red').toContain(sgr(2, 31));
+    expect(text, 'inverse red').toContain(sgr(7, 31));
+    expect(text, 'a 256-colour cell').toContain(sgr(48, 5, 16));
+    expect(text, 'a true-colour cell').toContain(`${sgr(48, 2, 255, 60, 0)} `);
+    expect(TERMINAL_GLYPH_CODE_POINTS.length).toBe(13);
+    for (const code of TERMINAL_GLYPH_CODE_POINTS)
+      expect(text, code.toString(16)).toContain(String.fromCodePoint(code));
+    // the corners and both lines of the frame, and the rounded corners of the box line
+    for (const code of [0x250c, 0x2510, 0x2514, 0x2518, 0x2500, 0x2502, 0x256d, 0x256e, 0x2570, 0x256f]) {
+      expect(text, code.toString(16)).toContain(String.fromCodePoint(code));
+    }
+  });
+
+  test('every screen fits 80 columns and 24 rows, except the Vietnamese one, which needs a row per colour', () => {
+    expect([...SAMPLE_NAMES]).toEqual(['colors', 'vietnamese', 'session']);
+    for (const name of ['colors', 'session'] as const) {
+      for (const cols of [80, 97, 120, 200]) {
+        const lines = sampleLines(name, { cols, rows: 24 });
+        expect(lines.length, `${name} rows`).toBeLessThanOrEqual(24);
+        for (const line of lines) expect(cellsOf(line), `${name} at ${String(cols)}`).toBeLessThan(80);
+      }
+    }
+    expect(sampleLines('vietnamese', { cols: 80, rows: 40 }).length).toBe(33);
+    expect(sampleLines('vietnamese', { cols: 80, rows: 32 }).length, 'no title where it has no room').toBe(32);
+    expect(sampleLines('vietnamese', { cols: 134, rows: 24 }).length).toBe(17);
+  });
+
+  test('tells the answers to the cursor request from typed input', () => {
+    const escape = String.fromCharCode(27);
+    expect(CURSOR_REPORT_REQUEST).toBe(`${escape}[6n`);
+    expect(splitCursorReports(`${escape}[12;1R`)).toEqual({ reports: 1, rest: '' });
+    expect(splitCursorReports(`ab${escape}[3;40Rcd${escape}[30;120R`)).toEqual({ reports: 2, rest: 'abcd' });
+    // an arrow key and a name that ends in R are input, not reports
+    expect(splitCursorReports(`${escape}[A`)).toEqual({ reports: 0, rest: `${escape}[A` });
+    expect(splitCursorReports(`${escape}[1;5A then R`)).toEqual({ reports: 0, rest: `${escape}[1;5A then R` });
+    expect(splitCursorReports('plain')).toEqual({ reports: 0, rest: 'plain' });
+  });
+});
+
+interface SocketTrace {
+  frames: (string | number)[];
+  closeCode: number | null;
+  /** The binary frames, decoded as UTF-8. */
+  text: string;
+}
+
+/**
+ * The page side of one terminal socket, as a script: it opens the socket with the subprotocol, records every frame (a text frame
+ * as its text, a binary frame as its byte count) and the close code, and offers `send` for text and for bytes.
+ */
+const SOCKET_PROBE = `(() => {
+  globalThis.__probe = (name) => {
+    const trace = { frames: [], closeCode: null, text: '' };
+    const ws = new WebSocket('ws://qa.invalid/api/v3/terminal/sessions/' + name + '/socket', ['caw.terminal.v1']);
+    ws.binaryType = 'arraybuffer';
+    ws.onmessage = (event) => {
+      if (typeof event.data === 'string') trace.frames.push(event.data);
+      else {
+        trace.frames.push(event.data.byteLength);
+        trace.text += new TextDecoder().decode(event.data);
+      }
+    };
+    ws.onclose = (event) => { trace.closeCode = event.code; };
+    trace.sendText = (text) => ws.send(text);
+    trace.sendBytes = (codes) => ws.send(new Uint8Array(codes));
+    return trace;
+  };
+  globalThis.__sockets = {};
+})()`;
+
+test.describe('the canned terminal socket', () => {
+  test('reads the session name from the address of a socket and from nothing else', () => {
+    expect(terminalNameOf(new URL('ws://127.0.0.1:18500/api/v3/terminal/sessions/app-1/socket'))).toBe('app-1');
+    expect(terminalNameOf(new URL('ws://127.0.0.1:18500/api/v3/terminal/sessions/app-1/kill'))).toBeNull();
+    expect(terminalNameOf(new URL('ws://127.0.0.1:18500/api/v3/terminal/sessions/a%20b/socket'))).toBeNull();
+    expect(terminalNameOf(new URL('ws://127.0.0.1:18500/api/v3/stream'))).toBeNull();
+  });
+
+  test('answers a socket with ready, the replay and live, a resize with size and a new screen, and echoes input', async ({
+    page,
+  }) => {
+    await page.route('http://qa.invalid/**', (route) => route.fulfill({ contentType: 'text/html', body: '<p>ok</p>' }));
+    const fixture = await routeTerminalSocket(page);
+    fixture.samples.set('demo-1', 'colors');
+    await page.goto('http://qa.invalid/');
+    await page.evaluate(SOCKET_PROBE);
+    await page.evaluate("globalThis.__sockets.a = globalThis.__probe('demo-1')");
+    const read = (key: string): Promise<SocketTrace> =>
+      page.evaluate<SocketTrace>(`JSON.parse(JSON.stringify(globalThis.__sockets.${key}))`);
+
+    await expect.poll(async () => (await read('a')).frames.includes('{"type":"live"}')).toBe(true);
+    const first = await read('a');
+    const ready = TerminalServerMessageSchema.parse(JSON.parse(String(first.frames[0])));
+    expect(ready).toMatchObject({ type: 'ready', v: 1, cols: 120, rows: 30, viewers: 1 });
+    expect(first.frames[1], 'the replay is as long as ready said').toBe(
+      ready.type === 'ready' ? ready.replayBytes : -1,
+    );
+    expect(first.frames[2]).toBe('{"type":"live"}');
+    expect(first.text).toContain('FIXTURE terminal colours');
+    expect(first.text.endsWith(CURSOR_REPORT_REQUEST), 'the screen ends with the cursor request').toBe(true);
+    const connection = fixture.latest('demo-1');
+    expect(connection).toMatchObject({ sample: 'colors', draws: 1, reports: 0, drawnFor: { cols: 120, rows: 30 } });
+
+    // the page asks for a size: the answer is the size frame and the screen drawn again for it
+    await page.evaluate(`globalThis.__sockets.a.sendText('{"type":"resize","cols":100,"rows":40}')`);
+    await expect.poll(async () => (await read('a')).frames.length).toBe(5);
+    const resized = await read('a');
+    expect(TerminalServerMessageSchema.parse(JSON.parse(String(resized.frames[3])))).toEqual({
+      type: 'size',
+      cols: 100,
+      rows: 40,
+    });
+    expect(connection?.resizes).toEqual([{ cols: 100, rows: 40 }]);
+    expect(connection).toMatchObject({ draws: 2, drawnFor: { cols: 100, rows: 40 } });
+
+    // two cursor reports (one per screen) and typed input in one frame: the reports are counted, the input is echoed
+    const typed = [27, 91, 49, 59, 49, 82, 104, 105, 13, 27, 91, 50, 59, 51, 82];
+    await page.evaluate(`globalThis.__sockets.a.sendBytes(${JSON.stringify(typed)})`);
+    await expect.poll(async () => (await read('a')).frames.length).toBe(6);
+    expect((await read('a')).frames[5], 'h, i, carriage return and the line feed of the echo').toBe(4);
+    expect(connection).toMatchObject({ reports: 2, inputs: [`hi${String.fromCharCode(13)}`] });
+
+    // the process exits: the exit frame, then close code 4000; a later socket to it is closed the same way
+    fixture.end('demo-1', 3);
+    await expect.poll(async () => (await read('a')).closeCode).toBe(4000);
+    expect((await read('a')).frames.at(-1)).toBe('{"type":"exit","code":3,"signal":null}');
+    expect(fixture.latest('demo-1')).toBeNull();
+    await page.evaluate("globalThis.__sockets.b = globalThis.__probe('demo-1')");
+    await expect.poll(async () => (await read('b')).closeCode).toBe(4000);
+
+    // a stop closes with 4001, and a frame that is no resize closes the socket as a bad message (1008)
+    await page.evaluate("globalThis.__sockets.c = globalThis.__probe('demo-2')");
+    await expect.poll(async () => (await read('c')).frames.includes('{"type":"live"}')).toBe(true);
+    expect(fixture.latest('demo-2')?.sample, 'a name without a screen of its own shows the session').toBe('session');
+    fixture.kill('demo-2');
+    await expect.poll(async () => (await read('c')).closeCode).toBe(4001);
+    await page.evaluate("globalThis.__sockets.d = globalThis.__probe('demo-3')");
+    await expect.poll(async () => (await read('d')).frames.includes('{"type":"live"}')).toBe(true);
+    await page.evaluate(`globalThis.__sockets.d.sendText('{"type":"resize","cols":"wide"}')`);
+    await expect.poll(async () => (await read('d')).closeCode).toBe(1008);
   });
 });
 
@@ -701,6 +1075,225 @@ test.describe('fixture mode', () => {
         `Promise.race([fetch('${qa.baseUrl}${routes.listSessions.path}').then(() => 'answered'), new Promise((r) => globalThis.setTimeout(() => r('pending'), 800))])`,
       );
       expect(slow).toBe('pending');
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+// ---- fixture mode, the terminal side (CAW-49) -------------------------------------------------------------------------------------
+
+/** What the terminal pane of the Workspace shows (`data-pane`) for each state of the terminal side. */
+const PANE_OF_STATE: Readonly<Record<TerminalFixtureState, string>> = {
+  ok: 'none-selected',
+  locked: 'locked',
+  unsupported_os: 'unavailable',
+  addon_missing: 'unavailable',
+  claude_not_found: 'unavailable',
+  empty: 'none-selected',
+  loading: 'loading',
+  error: 'error',
+};
+
+interface Answer {
+  status: number;
+  body: unknown;
+}
+
+test.describe('fixture mode, the terminal side', () => {
+  test('lists the eight states, and a page without one keeps the task instance that has no terminal routes', async ({
+    browser,
+    qa,
+  }) => {
+    expect([...TERMINAL_FIXTURE_STATES]).toEqual([
+      'ok',
+      'locked',
+      'unsupported_os',
+      'addon_missing',
+      'claude_not_found',
+      'empty',
+      'loading',
+      'error',
+    ]);
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, timezoneId: 'UTC' });
+    try {
+      const page = await context.newPage();
+      const fixture = await fixtureApi(page, 'ok');
+      expect(fixture.terminal).toBeNull();
+      await page.goto(`${qa.baseUrl}/sessions`);
+      const get = (path: string): Promise<Answer> =>
+        page.evaluate<Answer>(
+          `fetch('${qa.baseUrl}${path}').then(async (r) => ({ status: r.status, body: await r.json() }))`,
+        );
+      expect((await get(routes.instance.path)).body).toMatchObject({ kind: 'task', app: null });
+      expect((await get(routes.authSession.path)).status).toBe(404);
+      expect((await get(routes.terminalState.path)).status).toBe(404);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('answers every route of the Workspace with a body of its contract, and a write with its method and body', async ({
+    browser,
+    qa,
+  }) => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, timezoneId: 'UTC' });
+    try {
+      const page = await context.newPage();
+      const fixture = await fixtureApi(page, 'ok', 'ok');
+      await page.route(`${qa.baseUrl}/blank`, (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<p>ok</p>' }),
+      );
+      await page.goto(`${qa.baseUrl}/blank`);
+      const call = (method: 'GET' | 'POST', path: string, body?: unknown, header = true): Promise<Answer> =>
+        page.evaluate<Answer>(
+          `fetch(${JSON.stringify(path)}, {
+             method: ${JSON.stringify(method)},
+             headers: ${JSON.stringify(method === 'POST' ? { 'Content-Type': 'application/json', ...(header ? { 'X-MCS-Request': '1' } : {}) } : {})},
+             ${method === 'POST' ? `body: ${JSON.stringify(JSON.stringify(body ?? {}))},` : ''}
+           }).then(async (r) => ({ status: r.status, body: await r.json() }))`,
+        );
+
+      const instance = routes.instance.response.parse((await call('GET', routes.instance.path)).body);
+      expect(instance.kind).toBe('user');
+      expect(instance.app?.name ?? '').not.toBe('');
+      expect((await call('GET', routes.authSession.path)).body).toEqual({ authenticated: true });
+
+      const state = routes.terminalState.response.parse((await call('GET', routes.terminalState.path)).body);
+      expect(state.capabilities).toMatchObject({ available: true, reason: null, folderPicker: true, nativeOpen: true });
+      expect(state.sessions.map((session) => session.name).sort()).toEqual(Object.values(FIXTURE_TERMINALS).sort());
+      expect(state.sessions.length).toBeLessThanOrEqual(state.capabilities.maxSessions);
+      const folders = routes.listFolders.response.parse((await call('GET', routes.listFolders.path)).body);
+      expect(folders.folders.length).toBeGreaterThanOrEqual(6);
+      const keys = new Set(folders.folders.map((folder) => folder.key));
+      for (const session of state.sessions) expect(keys.has(session.folderKey ?? ''), session.name).toBe(true);
+      expect(folders.folders.some((folder) => !folder.canStart && folder.path === null)).toBe(true);
+      expect(folders.folders.some((folder) => folder.da === null)).toBe(true);
+
+      // the monitor rows of the linked terminals by id, and the recent sessions of a folder by its project key
+      const linked = state.sessions.flatMap((session) =>
+        session.link.transcript === 'tracked' && session.link.sessionId !== null ? [session.link.sessionId] : [],
+      );
+      expect(linked.length).toBe(2);
+      const rows = routes.listSessions.response.parse(
+        (await call('GET', `${routes.listSessions.path}?session=${linked.join(',')}&range=all`)).body,
+      );
+      expect(rows.items.map((item) => item.id).sort()).toEqual([...linked].sort());
+      const recentKey = folders.folders.find((folder) => folder.name === FIXTURE_RECENT_FOLDER)?.key ?? '';
+      const recent = routes.listSessions.response.parse(
+        (await call('GET', `${routes.listSessions.path}?project=${recentKey}&limit=6`)).body,
+      );
+      expect(recent.items.length, 'six rows, so the list offers "All sessions"').toBe(6);
+      const all = routes.listSessions.response.parse((await call('GET', routes.listSessions.path)).body);
+      expect(all.items.length).toBe(12);
+
+      // the eligibility of a resume: yes, only a copy, refused, and already open in a terminal of the app
+      const resume = async (n: number): Promise<unknown> =>
+        routes.sessionResume.response.parse((await call('GET', `/api/v3/sessions/${fixtureId(n)}/resume`)).body);
+      expect(await resume(3)).toMatchObject({ allowed: true, forkAllowed: true, liveElsewhere: false });
+      expect(await resume(7)).toMatchObject({ allowed: false, forkAllowed: true, liveElsewhere: true });
+      expect(await resume(8)).toMatchObject({ allowed: false, forkAllowed: false, reason: 'folder_missing' });
+      expect(await resume(1)).toMatchObject({ reason: 'live_in_terminal', liveTerminal: FIXTURE_TERMINALS.session });
+
+      // writes: without the request header the fake server refuses as the real one does; with it the handler gets the body
+      const unsigned = await call('POST', routes.terminalOpenNative.path, { sessionId: fixtureId(3) }, false);
+      expect(unsigned.status).toBe(403);
+      const native = await call('POST', routes.terminalOpenNative.path, { sessionId: fixtureId(3), fork: true });
+      expect(routes.terminalOpenNative.response.parse(native.body)).toEqual({ via: 'windows-terminal', fork: true });
+      const picked = routes.terminalPickFolder.response.parse(
+        (await call('POST', routes.terminalPickFolder.path)).body,
+      );
+      const created = routes.terminalCreateSession.response.parse(
+        (await call('POST', routes.terminalCreateSession.path, { path: picked.path })).body,
+      );
+      expect(created.session.name).toBe('picked-folder-1');
+      const resumed = routes.terminalResume.response.parse(
+        (await call('POST', routes.terminalResume.path, { sessionId: fixtureId(3) })).body,
+      );
+      expect(resumed.session.link).toMatchObject({ status: 'linked', sessionId: fixtureId(3), transcript: 'tracked' });
+      const after = routes.terminalState.response.parse((await call('GET', routes.terminalState.path)).body);
+      expect(after.sessions.map((session) => session.name)).toContain(created.session.name);
+      expect(after.sessions.map((session) => session.name)).toContain(resumed.session.name);
+      const killed = await call('POST', `/api/v3/terminal/sessions/${created.session.name}/kill`);
+      expect(killed.body).toEqual({ name: created.session.name });
+      expect((await call('POST', '/api/v3/terminal/sessions/no-such-1/kill')).status).toBe(404);
+      expect(fixture.terminal?.socket.ended.has(created.session.name)).toBe(true);
+
+      // a logout locks the terminal routes, a redeemed code opens them again
+      expect((await call('POST', routes.authLogout.path)).body).toEqual({ authenticated: false });
+      expect((await call('GET', routes.terminalState.path)).status).toBe(401);
+      expect((await call('GET', routes.listFolders.path)).status).toBe(401);
+      const exchanged = await call('POST', routes.authExchange.path, { code: accessCode() });
+      expect(exchanged.body).toEqual({ authenticated: true });
+      expect((await call('GET', routes.terminalState.path)).status).toBe(200);
+      expect(fixture.fake.violations, 'the fake bodies keep to the contract').toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('shows the pane of each terminal state in the page', async ({ browser, qa }) => {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'UTC' });
+    try {
+      for (const state of TERMINAL_FIXTURE_STATES) {
+        const page = await context.newPage();
+        const fixture = await fixtureApi(page, 'ok', state);
+        await page.goto(`${qa.baseUrl}/`);
+        const pane = page.locator('.workspace-pane');
+        await expect(pane, state).toHaveAttribute('data-pane', PANE_OF_STATE[state], { timeout: 30_000 });
+        // the project column exists only with the session and where terminals can run
+        const column = state === 'ok' || state === 'empty' || state === 'loading' || state === 'error';
+        await expect(page.locator('.workspace-sidebar'), state).toHaveCount(column ? 1 : 0);
+        expect(fixture.fake.violations, state).toEqual([]);
+        await page.close();
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('the canned socket answers the terminal of the app: the screen is drawn for the size the page gave it', async ({
+    browser,
+    qa,
+  }) => {
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      locale: 'en-US',
+      timezoneId: 'UTC',
+    });
+    try {
+      // the DOM renderer keeps the text of the rows in the page, so the screen can be read back
+      const prefs = JSON.stringify(JSON.stringify({ theme: 'dark', locale: 'en', terminalRenderer: 'dom' }));
+      await context.addInitScript(`globalThis.localStorage.setItem('${PREFS_STORAGE_KEY}', ${prefs});`);
+      const page = await context.newPage();
+      const fixture = await fixtureApi(page, 'ok', 'ok');
+      const name = FIXTURE_TERMINALS.colors;
+      await page.goto(`${qa.baseUrl}/?session=${name}`);
+      const host = page.locator('[data-terminal][data-cols][data-rows]');
+      await host.waitFor({ state: 'visible', timeout: 30_000 });
+      const socket = fixture.terminal?.socket;
+      if (socket === undefined) throw new Error('the fixture has no terminal side');
+      const size = await socket.settle(page, name);
+      expect(Number(await host.getAttribute('data-cols'))).toBe(size.cols);
+      expect(Number(await host.getAttribute('data-rows'))).toBe(size.rows);
+      const connection = socket.latest(name);
+      expect(connection).toMatchObject({ sample: 'colors', drawnFor: size });
+      expect(connection?.reports, 'the terminal answered the cursor request of every screen').toBe(connection?.draws);
+      expect(connection?.inputs, 'a cursor report is not typed input').toEqual([]);
+      await expect(page.locator('.xterm-rows')).toContainText('FIXTURE terminal colours');
+      await expect(page.locator('.xterm-rows')).toContainText('214 tests passed');
+      // the measurement of the QA tool reads the same size from the page
+      expect((await measure(page)).terminal).toMatchObject({ cols: size.cols, rows: size.rows });
+
+      // the process exits: the pane keeps the screen under the banner, and the session leaves the list of the fake server
+      socket.end(name, 0);
+      await expect(page.locator('.workspace-ended')).toBeVisible();
+      await expect(page.locator('.xterm-rows')).toContainText('FIXTURE terminal colours');
+      const state = routes.terminalState.response.parse(
+        await page.evaluate(`fetch('${routes.terminalState.path}').then((r) => r.json())`),
+      );
+      expect(state.sessions.map((session) => session.name)).not.toContain(name);
+      expect(fixture.fake.violations).toEqual([]);
     } finally {
       await context.close();
     }
