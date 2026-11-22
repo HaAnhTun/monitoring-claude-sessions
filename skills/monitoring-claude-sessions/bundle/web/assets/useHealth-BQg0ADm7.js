@@ -1,0 +1,1 @@
+import{M as e,c as t,h as n,p as r}from"./useInstance-DYrojiS4.js";function i(){let{api:i,iid:a,poll:o}=t();return e({queryKey:r.health(a),queryFn:({signal:e})=>i.get(`health`,n.health.path,n.health.response,{signal:e}),staleTime:0,refetchInterval:o.healthMs})}export{i as t};

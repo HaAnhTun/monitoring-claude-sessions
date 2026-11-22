@@ -12751,7 +12751,7 @@ var init_legacy_health = __esmMin((() => {
 
 //#endregion
 //#region packages/shared/src/api/terminal.ts
-var TERMINAL_NAME_RE, TerminalNameSchema, TerminalNameParamsSchema, AccessCodeSchema, CONTROL_CHARACTER$2, FolderPathSchema, EmptyBodySchema, AuthSessionResponseSchema, ExchangeBodySchema, ExchangeResponseSchema, LogoutResponseSchema, TERMINAL_UNAVAILABLE_REASONS, TerminalUnavailableReasonSchema, TerminalCapabilitiesSchema, MAX_LISTED_SESSIONS, TerminalSessionInfoSchema, TerminalStateSchema, CreateSessionBodySchema, CreateSessionResponseSchema, KillSessionResponseSchema, PickFolderResponseSchema, ResumeBodySchema, ResumeResponseSchema, DimensionSchema, TerminalClientMessageSchema, TerminalServerMessageSchema, TerminalHelloEventSchema, TerminalSessionsEventSchema, TerminalHeartbeatEventSchema;
+var TERMINAL_NAME_RE, TerminalNameSchema, TerminalNameParamsSchema, AccessCodeSchema, CONTROL_CHARACTER$2, FolderPathSchema, EmptyBodySchema, AuthSessionResponseSchema, ExchangeBodySchema, ExchangeResponseSchema, LogoutResponseSchema, TERMINAL_UNAVAILABLE_REASONS, TerminalUnavailableReasonSchema, TerminalCapabilitiesSchema, MAX_LISTED_SESSIONS, TerminalSessionInfoSchema, TerminalStateSchema, CreateSessionBodySchema, CreateSessionResponseSchema, KillSessionResponseSchema, PickFolderResponseSchema, ResumeBodySchema, ResumeResponseSchema, NATIVE_OPEN_VIAS, NativeOpenViaSchema, OpenNativeResponseSchema, DimensionSchema, TerminalClientMessageSchema, TerminalServerMessageSchema, TerminalHelloEventSchema, TerminalSessionsEventSchema, TerminalHeartbeatEventSchema;
 var init_terminal$1 = __esmMin((() => {
 	init_zod();
 	init_folders$1();
@@ -12785,7 +12785,9 @@ var init_terminal$1 = __esmMin((() => {
 		reason: TerminalUnavailableReasonSchema.nullable(),
 		folderPicker: boolean(),
 		resume: boolean(),
-		maxSessions: CountSchema$1
+		maxSessions: CountSchema$1,
+		/** The host can open a monitored session in a window of the person's own terminal (CAW-145). Absent means false. */
+		nativeOpen: boolean().optional()
 	});
 	MAX_LISTED_SESSIONS = 64;
 	TerminalSessionInfoSchema = strictObject({
@@ -12813,6 +12815,12 @@ var init_terminal$1 = __esmMin((() => {
 		fork: boolean().optional()
 	});
 	ResumeResponseSchema = strictObject({ session: TerminalSessionInfoSchema });
+	NATIVE_OPEN_VIAS = ["windows-terminal", "console"];
+	NativeOpenViaSchema = _enum(NATIVE_OPEN_VIAS);
+	OpenNativeResponseSchema = strictObject({
+		via: NativeOpenViaSchema,
+		fork: boolean()
+	});
 	DimensionSchema = number$1().int().min(1).max(1e3);
 	TerminalClientMessageSchema = strictObject({
 		type: literal("resize"),
@@ -13843,6 +13851,27 @@ var init_routes = __esmMin((() => {
 				"terminal_limit"
 			],
 			summary: "Resumes a monitored session in a new terminal (claude --resume), or a copy of it with fork; the engine plans the folder and the arguments.",
+			contentType: "application/json",
+			access: "session"
+		}),
+		terminalOpenNative: defineRoute({
+			id: "terminalOpenNative",
+			method: "POST",
+			path: "/api/v3/terminal/open-native",
+			params: null,
+			query: null,
+			body: ResumeBodySchema,
+			response: OpenNativeResponseSchema,
+			successStatus: 200,
+			errors: [
+				"session_not_found",
+				"resume_unavailable",
+				"folder_invalid",
+				"claude_not_found",
+				"terminal_unavailable",
+				"terminal_limit"
+			],
+			summary: "Opens a monitored session in a new window of the person's own terminal (claude --resume); the engine plans the folder and the arguments.",
 			contentType: "application/json",
 			access: "session"
 		}),
@@ -42543,7 +42572,7 @@ function createSeriesQueries(db, deps) {
 	return { series: (ctx, q) => snapshot(db, ctx, (asOfSeq) => {
 		const window = resolveWindow(deps, q, DEFAULT_RANGE$1, null);
 		const sizeMs = q.bucket === "hour" ? HOUR_MS$5 : DAY_MS$1;
-		const offsetMs = q.tzOffsetMinutes * MINUTE_MS$2;
+		const offsetMs = q.tzOffsetMinutes * MINUTE_MS$3;
 		const scope = resolveUsageScope(db, q);
 		const filter = usageFilterOf(window, scope);
 		let fromMs = window.fromMs;
@@ -42586,7 +42615,7 @@ function createSeriesQueries(db, deps) {
 		})));
 	}) };
 }
-var HOUR_MS$5, DAY_MS$1, MINUTE_MS$2, MAX_BUCKETS, DEFAULT_RANGE$1;
+var HOUR_MS$5, DAY_MS$1, MINUTE_MS$3, MAX_BUCKETS, DEFAULT_RANGE$1;
 var init_series = __esmMin((() => {
 	init_src$1();
 	init_transitions();
@@ -42594,7 +42623,7 @@ var init_series = __esmMin((() => {
 	init_usage$1();
 	HOUR_MS$5 = 36e5;
 	DAY_MS$1 = 864e5;
-	MINUTE_MS$2 = 6e4;
+	MINUTE_MS$3 = 6e4;
 	MAX_BUCKETS = 2e3;
 	DEFAULT_RANGE$1 = "7d";
 }));
@@ -46513,12 +46542,12 @@ function plural$2(n, one, many) {
 	return n === 1 ? one : many;
 }
 function inactivity(rule, facts) {
-	const threshold = rule.minutes * MINUTE_MS$1;
+	const threshold = rule.minutes * MINUTE_MS$2;
 	const out = [];
 	for (const session of facts.activeSessions) {
 		const idle = facts.now - session.lastActivityAt;
 		if (idle < threshold) continue;
-		const minutes = Math.floor(idle / MINUTE_MS$1);
+		const minutes = Math.floor(idle / MINUTE_MS$2);
 		const severity = idle >= INACTIVITY_CRITICAL_FACTOR * threshold ? "critical" : "warning";
 		out.push(held(session.uid, severity, minutes, `No activity for ${String(minutes)} min`, {
 			idleMinutes: minutes,
@@ -46548,7 +46577,7 @@ function runtimeUnavailable(rule, facts) {
 		source: "handler",
 		count: downtime.count
 	})];
-	const minutes = Math.max(0, Math.round((downtime.to - downtime.from) / MINUTE_MS$1));
+	const minutes = Math.max(0, Math.round((downtime.to - downtime.from) / MINUTE_MS$2));
 	const events = plural$2(downtime.envelopes, "event", "events");
 	return [held(INSTANCE_SCOPE_KEY, "warning", minutes, `Monitor was not running for ${String(minutes)} min while ${String(downtime.envelopes)} hook ${events} arrived`, {
 		source: "reconciliation",
@@ -46659,10 +46688,10 @@ function evaluate(rule, facts) {
 		case "hook_failing": return hookFailing(rule, facts);
 	}
 }
-var MINUTE_MS$1, HOUR_MS$3, SECOND_MS, TITLE_MAX, DISK_CODES, FULL_SPOOL_CODES, CODE_ALPHABET, LAG_CRITICAL_FACTOR, INACTIVITY_CRITICAL_FACTOR, TOKEN_CRITICAL_FACTOR;
+var MINUTE_MS$2, HOUR_MS$3, SECOND_MS, TITLE_MAX, DISK_CODES, FULL_SPOOL_CODES, CODE_ALPHABET, LAG_CRITICAL_FACTOR, INACTIVITY_CRITICAL_FACTOR, TOKEN_CRITICAL_FACTOR;
 var init_evaluator = __esmMin((() => {
 	init_rules$1();
-	MINUTE_MS$1 = 6e4;
+	MINUTE_MS$2 = 6e4;
 	HOUR_MS$3 = 36e5;
 	SECOND_MS = 1e3;
 	TITLE_MAX = 200;
@@ -48925,16 +48954,14 @@ function envValue(env, name, platform) {
 	for (const key of Object.keys(env)) if (key.toUpperCase() === wanted) return env[key];
 }
 /**
-* The environment for a new `claude` session. Removed, unless named in `keep`: `CLAUDE_CODE_*`, `CLAUDECODE`,
-* `CLAUDE_SESSION_ID`, `NO_COLOR`, `FORCE_COLOR` and `MCS_HOOK_DISABLE` (case-insensitive on win32, exact elsewhere). Dropped
-* because no child can receive them: an undefined value, a NUL, a name that is empty or holds `=`. On win32 the first spelling
-* of two keys that differ only in case wins, because node-pty builds the environment block from the keys and would pass both.
-* Everything else passes through. The input is not changed.
+* The one loop of both builders. Removed, unless named in `keep`: the `CLAUDE_CODE_*` family, `STRIPPED_NAMES` and `extraStripped`
+* (case-insensitive on win32). Dropped because no child can receive them: an undefined value, a NUL, a name that is empty or holds
+* `=`. On win32 the first spelling of two keys that differ only in case wins. `fixed` is set last over any value of the same name.
 */
-function buildTerminalEnv(source, o) {
+function buildEnv(source, o) {
 	const fold = foldsCase(o.platform) ? (name) => name.toUpperCase() : (name) => name;
 	const keep = new Set(o.keep.map(fold));
-	const fixed = new Set(FIXED.map(([name]) => fold(name)));
+	const fixed = new Set(o.fixed.map(([name]) => fold(name)));
 	const seen = /* @__PURE__ */ new Set();
 	const entries = /* @__PURE__ */ new Map();
 	for (const name of Object.keys(source)) {
@@ -48944,14 +48971,41 @@ function buildTerminalEnv(source, o) {
 		const key = fold(name);
 		if (seen.has(key)) continue;
 		seen.add(key);
-		if ((key.startsWith(STRIPPED_PREFIX) || STRIPPED_NAMES.has(key)) && !keep.has(key)) continue;
+		if ((key.startsWith(STRIPPED_PREFIX) || STRIPPED_NAMES.has(key) || o.extraStripped.has(key)) && !keep.has(key)) continue;
 		if (fixed.has(key)) continue;
 		entries.set(name, value);
 	}
-	for (const [name, value] of FIXED) entries.set(name, value);
+	for (const [name, value] of o.fixed) entries.set(name, value);
 	return Object.fromEntries(entries);
 }
-var foldsCase, STRIPPED_PREFIX, STRIPPED_NAMES, FIXED;
+/**
+* The environment for a new `claude` session in the in-app terminal. Removed, unless named in `keep`: `CLAUDE_CODE_*`, `CLAUDECODE`,
+* `CLAUDE_SESSION_ID`, `NO_COLOR`, `FORCE_COLOR` and `MCS_HOOK_DISABLE` (case-insensitive on win32, exact elsewhere). Dropped
+* because no child can receive them: an undefined value, a NUL, a name that is empty or holds `=`. On win32 the first spelling
+* of two keys that differ only in case wins, because node-pty builds the environment block from the keys and would pass both.
+* Everything else passes through. The input is not changed.
+*/
+function buildTerminalEnv(source, o) {
+	return buildEnv(source, {
+		...o,
+		extraStripped: TERMINAL_ONLY_STRIPPED,
+		fixed: FIXED
+	});
+}
+/**
+* The environment of a window of the person's own terminal (CAW-145, ADR 0136): the same strip of the Claude markers as the
+* terminal (`CLAUDE_CODE_*`, `CLAUDECODE`, `CLAUDE_SESSION_ID`, `MCS_HOOK_DISABLE`, unless named in `keep`), but the colour
+* variables stay as the person set them and `TERM`, `COLORTERM` and `TERM_PROGRAM` are not set (the terminal of the person sets
+* its own). Everything else, `PATH` first, passes through. `NoDefaultCurrentDirectoryInExePath` is set like in the terminal.
+*/
+function buildNativeEnv(source, o) {
+	return buildEnv(source, {
+		...o,
+		extraStripped: /* @__PURE__ */ new Set(),
+		fixed: [NO_DEFAULT_CWD]
+	});
+}
+var foldsCase, STRIPPED_PREFIX, STRIPPED_NAMES, TERMINAL_ONLY_STRIPPED, NO_DEFAULT_CWD, FIXED;
 var init_env = __esmMin((() => {
 	init_limits();
 	foldsCase = (platform) => platform === "win32";
@@ -48959,15 +49013,15 @@ var init_env = __esmMin((() => {
 	STRIPPED_NAMES = /* @__PURE__ */ new Set([
 		"CLAUDECODE",
 		"CLAUDE_SESSION_ID",
-		"NO_COLOR",
-		"FORCE_COLOR",
 		"MCS_HOOK_DISABLE"
 	]);
+	TERMINAL_ONLY_STRIPPED = /* @__PURE__ */ new Set(["NO_COLOR", "FORCE_COLOR"]);
+	NO_DEFAULT_CWD = ["NoDefaultCurrentDirectoryInExePath", "1"];
 	FIXED = [
 		["TERM", "xterm-256color"],
 		["COLORTERM", "truecolor"],
 		["TERM_PROGRAM", "CAW"],
-		["NoDefaultCurrentDirectoryInExePath", "1"]
+		NO_DEFAULT_CWD
 	];
 }));
 
@@ -51174,7 +51228,8 @@ function capabilitiesOf(facts, o) {
 		reason: null,
 		folderPicker: o.folderPicker,
 		resume: true,
-		maxSessions: o.maxSessions
+		maxSessions: o.maxSessions,
+		...o.nativeOpen === true ? { nativeOpen: true } : {}
 	};
 }
 /** The link of a terminal that the linker does not know (yet): the state `track` starts in. */
@@ -51208,6 +51263,7 @@ function isoOf(ms) {
 }
 function createTerminalHost(deps) {
 	const { service, linker, picker, clock } = deps;
+	const native = deps.native ?? null;
 	/** The viewers of each live session, for the size changes. */
 	const attached = /* @__PURE__ */ new Map();
 	const listeners = /* @__PURE__ */ new Set();
@@ -51352,7 +51408,8 @@ function createTerminalHost(deps) {
 			const status = service.status();
 			return capabilitiesOf(status, {
 				folderPicker: picker !== null,
-				maxSessions: status.maxSessions
+				maxSessions: status.maxSessions,
+				nativeOpen: native?.capabilities().available === true
 			});
 		},
 		sessions,
@@ -51364,6 +51421,18 @@ function createTerminalHost(deps) {
 				resume: plan.sessionId,
 				...fork ? { fork: true } : {}
 			});
+		},
+		openNative: async ({ sessionId, fork }) => {
+			if (native?.capabilities().available !== true) throw new TerminalApiError("terminal_unavailable");
+			const plan = await planOf(sessionId, fork);
+			return {
+				via: await native.open({
+					folder: plan.folderPath,
+					sessionId: plan.sessionId,
+					fork
+				}),
+				fork
+			};
 		},
 		census: {
 			count: () => service.liveCount(),
@@ -51526,6 +51595,204 @@ var init_folder_picker = __esmMin((() => {
 		"$owner.Dispose()"
 	].join("\n");
 	BYTE_ORDER_MARK = "﻿";
+}));
+
+//#endregion
+//#region packages/engine/src/terminal/native-terminal.ts
+/**
+* The spawner of production: `spawnDetachedVisible` (detached, no stdio, `unref`), the `error` event attached in the same tick,
+* resolved on the `spawn` event, rejected on an `error` or when nothing is heard within `NATIVE_SPAWN_TIMEOUT_MS`.
+*/
+function realNativeSpawner(launch = spawnDetachedVisible) {
+	return (file, args, o) => new Promise((resolve, reject) => {
+		let child;
+		try {
+			child = launch(file, args, {
+				cwd: o.cwd,
+				env: o.env
+			});
+		} catch (error) {
+			reject(error instanceof Error ? error : /* @__PURE__ */ new Error("spawn failed"));
+			return;
+		}
+		const timer = setTimeout(() => {
+			reject(/* @__PURE__ */ new Error("spawn timed out"));
+		}, NATIVE_SPAWN_TIMEOUT_MS);
+		child.once("error", (error) => {
+			clearTimeout(timer);
+			reject(error);
+		});
+		child.once("spawn", () => {
+			clearTimeout(timer);
+			resolve();
+		});
+	});
+}
+function stripQuotes(text) {
+	return text.replace(/^"+|"+$/gu, "");
+}
+function createNativeTerminal(deps) {
+	const { platform, fs, config, clock, logger } = deps;
+	const supported = platform === "win32";
+	let cache = null;
+	let busy = false;
+	let lastAt = Number.NEGATIVE_INFINITY;
+	let recent = [];
+	/** `wt.exe` of an absolute PATH entry, else the one of the Store alias folder; each tested with an `lstat`. */
+	function findWindowsTerminal() {
+		const now = clock.now();
+		if (cache !== null && now - cache.at >= 0 && now - cache.at < 6e4) return cache.wt;
+		const env = deps.env();
+		const candidates = [];
+		for (const entry of (envValue(env, "PATH", platform) ?? "").split(";")) {
+			const dir = stripQuotes(entry.trim()).trim();
+			if (dir !== "" && DRIVE_ABSOLUTE.test(dir)) candidates.push(path.win32.join(dir, "wt.exe"));
+		}
+		const local = envValue(env, "LOCALAPPDATA", platform);
+		if (local !== void 0 && DRIVE_ABSOLUTE.test(local)) candidates.push(path.win32.join(local, "Microsoft", "WindowsApps", "wt.exe"));
+		const wt = candidates.find((candidate) => fs.hasEntry(candidate)) ?? null;
+		cache = {
+			at: now,
+			wt
+		};
+		return wt;
+	}
+	function checkLimits(now) {
+		recent = recent.filter((at) => now - at < MINUTE_MS$1);
+		if (busy || now - lastAt < 1500 || recent.length >= 12) throw new TerminalError("SESSION_LIMIT");
+	}
+	async function open(input) {
+		if (!supported) throw new TerminalError("UNSUPPORTED_OS");
+		checkLimits(clock.now());
+		const env = deps.env();
+		const resolved = resolveClaudeCommand({
+			command: config.command,
+			env,
+			platform,
+			fs
+		});
+		if (resolved === null) throw new TerminalError("CLAUDE_NOT_FOUND");
+		const launch = buildLaunch(resolved, config.args, {
+			env,
+			platform,
+			fs,
+			resume: input.sessionId,
+			...input.fork ? { fork: true } : {}
+		});
+		const folder = normalizeFolder(input.folder, platform);
+		if (folder === null) throw new TerminalError("FOLDER_INVALID");
+		if (!fs.isDirectory(folder)) throw new TerminalError("FOLDER_NOT_FOUND");
+		const allArgs = [
+			...config.args,
+			"--resume",
+			input.sessionId,
+			...input.fork ? ["--fork-session"] : []
+		];
+		let program;
+		let programArgs;
+		if (launch.kind === "exe") {
+			program = launch.file;
+			programArgs = launch.args;
+		} else {
+			if (!isCmdSafeArg(resolved.path)) throw new TerminalError("ARGS_UNSAFE");
+			program = launch.file;
+			programArgs = [
+				"/d",
+				"/k",
+				resolved.path,
+				...allArgs
+			];
+		}
+		const wt = findWindowsTerminal();
+		if (wt !== null && folder.includes(";")) throw new TerminalError("FOLDER_INVALID");
+		const via = wt === null ? "console" : "windows-terminal";
+		const file = wt ?? program;
+		const args = wt === null ? programArgs : [
+			...WT_PREFIX,
+			folder,
+			"--",
+			program,
+			...programArgs
+		];
+		const nativeEnv = buildNativeEnv(env, {
+			keep: config.envKeep,
+			platform
+		});
+		const started = clock.now();
+		busy = true;
+		lastAt = started;
+		recent.push(started);
+		try {
+			await deps.launch(file, args, {
+				cwd: folder,
+				env: nativeEnv
+			});
+		} catch (error) {
+			logger.warn("terminal.native_open_failed", { code: "SPAWN_FAILED" });
+			throw new TerminalError("SPAWN_FAILED", { cause: error });
+		} finally {
+			busy = false;
+		}
+		logger.info("terminal.native_open", {
+			kind: via,
+			phase: input.fork ? "fork" : "resume"
+		});
+		return via;
+	}
+	return {
+		capabilities: () => {
+			if (!supported) return {
+				available: false,
+				via: null
+			};
+			return {
+				available: true,
+				via: findWindowsTerminal() === null ? "console" : "windows-terminal"
+			};
+		},
+		open
+	};
+}
+/** The launcher of production over the real file system, the real spawner and the environment of the process. */
+function createRealNativeTerminal(o) {
+	return createNativeTerminal({
+		platform: o.platform,
+		env: o.env ?? (() => process.env),
+		fs: realNativeFs,
+		launch: realNativeSpawner(),
+		config: o.config,
+		clock: o.clock,
+		logger: o.logger
+	});
+}
+var WT_PREFIX, WT_SEPARATOR, WT_CACHE_MS, NATIVE_SPAWN_TIMEOUT_MS, NATIVE_MIN_GAP_MS, NATIVE_PER_MINUTE, MINUTE_MS$1, realNativeFs, DRIVE_ABSOLUTE;
+var init_native_terminal = __esmMin((() => {
+	init_exec();
+	init_command();
+	init_default$1();
+	init_env();
+	init_errors$2();
+	init_folder();
+	WT_PREFIX = ["new-tab", "-d"];
+	WT_SEPARATOR = "--";
+	WT_CACHE_MS = 6e4;
+	NATIVE_SPAWN_TIMEOUT_MS = 2e3;
+	NATIVE_MIN_GAP_MS = 1500;
+	NATIVE_PER_MINUTE = 12;
+	MINUTE_MS$1 = 6e4;
+	realNativeFs = {
+		isFile: (target) => realTerminalFs.isFile(target),
+		isDirectory: (target) => realTerminalFs.isDirectory(target),
+		hasEntry: (target) => {
+			try {
+				const stat = lstatSync(target, { throwIfNoEntry: false });
+				return stat !== void 0 && (stat.isFile() || stat.isSymbolicLink());
+			} catch {
+				return false;
+			}
+		}
+	};
+	DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/u;
 }));
 
 //#endregion
@@ -51784,11 +52051,19 @@ function createUserServices(ctx, services, options = {}) {
 		...options.folders
 	});
 	const picker = options.picker !== void 0 ? options.picker : createFolderPicker(options.env === void 0 ? {} : { env: options.env });
+	const native = options.native !== void 0 ? options.native : createRealNativeTerminal({
+		config: ctx.config.runtime.terminal,
+		logger: ctx.logger,
+		clock: ctx.clock,
+		platform: options.terminal?.platform ?? hostPlatform,
+		...options.terminal?.env === void 0 ? {} : { env: options.terminal.env }
+	});
 	const host = createTerminalHost({
 		service: terminal,
 		folders,
 		linker,
 		picker,
+		native,
 		clock: ctx.clock
 	});
 	const access = createAccessService({
@@ -51858,10 +52133,12 @@ var init_create_user_services = __esmMin((() => {
 	init_registry$1();
 	init_service();
 	init_linker();
+	init_host$1();
 	init_process();
 	init_default$1();
 	init_folder_picker();
 	init_host();
+	init_native_terminal();
 	init_fsio();
 	init_access_service();
 	SWEEP_BUDGET_MS = 1e4;

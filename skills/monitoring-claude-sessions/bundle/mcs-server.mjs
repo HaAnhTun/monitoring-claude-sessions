@@ -12226,7 +12226,9 @@ const TerminalCapabilitiesSchema = strictObject({
 	reason: TerminalUnavailableReasonSchema.nullable(),
 	folderPicker: boolean(),
 	resume: boolean(),
-	maxSessions: CountSchema$1
+	maxSessions: CountSchema$1,
+	/** The host can open a monitored session in a window of the person's own terminal (CAW-145). Absent means false. */
+	nativeOpen: boolean().optional()
 });
 /** The most sessions a list carries (the largest value of `terminal.maxSessions`). */
 const MAX_LISTED_SESSIONS = 64;
@@ -12268,6 +12270,17 @@ const ResumeBodySchema = strictObject({
 	fork: boolean().optional()
 });
 const ResumeResponseSchema = strictObject({ session: TerminalSessionInfoSchema });
+/** How the window of `POST /terminal/open-native` was started: Windows Terminal, or a plain console window. */
+const NATIVE_OPEN_VIAS = ["windows-terminal", "console"];
+const NativeOpenViaSchema = _enum(NATIVE_OPEN_VIAS);
+/**
+* `POST /terminal/open-native`: the body is `ResumeBodySchema` (no path, command or argument; the engine plans the folder). The
+* answer says how the window was started and whether it resumes a copy. It names no folder, program or process.
+*/
+const OpenNativeResponseSchema = strictObject({
+	via: NativeOpenViaSchema,
+	fork: boolean()
+});
 /** The clamps and the default of a terminal, in character cells (the values of MTOP). */
 const TERMINAL_SIZE_LIMITS = {
 	minCols: 20,
@@ -13327,6 +13340,27 @@ const routes = {
 		contentType: "application/json",
 		access: "session"
 	}),
+	terminalOpenNative: defineRoute({
+		id: "terminalOpenNative",
+		method: "POST",
+		path: "/api/v3/terminal/open-native",
+		params: null,
+		query: null,
+		body: ResumeBodySchema,
+		response: OpenNativeResponseSchema,
+		successStatus: 200,
+		errors: [
+			"session_not_found",
+			"resume_unavailable",
+			"folder_invalid",
+			"claude_not_found",
+			"terminal_unavailable",
+			"terminal_limit"
+		],
+		summary: "Opens a monitored session in a new window of the person's own terminal (claude --resume); the engine plans the folder and the arguments.",
+		contentType: "application/json",
+		access: "session"
+	}),
 	explainCompletion: defineRoute({
 		id: "explainCompletion",
 		method: "GET",
@@ -13736,6 +13770,29 @@ function runChild(spec, signal) {
 			finish(null);
 		}
 	});
+}
+function assertSpawnable(file) {
+	const problem = spawnRefusal(file);
+	if (problem !== null) throw new TypeError(`cannot spawn ${JSON.stringify(file)}: ${problem}`);
+}
+/**
+* Starts `file` detached and with a visible window (`windowsHide: false`: the one spawn that shows its window), no stdio,
+* then `unref()`s it. For the Edge or Chrome app window of the login (06 2.5), nothing else: the caller has validated every
+* argument. Same refusals and same missing-file behavior as `spawnDetached`: the caller must attach `child.on('error', ...)`
+* in the same tick. Not counted in the statistics.
+*/
+function spawnDetachedVisible(file, args, o) {
+	assertSpawnable(file);
+	const child = spawn(file, [...args], {
+		shell: false,
+		windowsHide: false,
+		detached: true,
+		env: o.env,
+		stdio: "ignore",
+		...o.cwd === void 0 ? {} : { cwd: o.cwd }
+	});
+	child.unref();
+	return child;
 }
 /** The argument list of a constant PowerShell script (never built from config or transcript text): `-EncodedCommand`. */
 function powershellEncodedArgs(script) {
@@ -37191,7 +37248,7 @@ function createSearchQueryPart(db, deps) {
 //#region packages/engine/src/analytics/series.ts
 const HOUR_MS$3 = 36e5;
 const DAY_MS$1 = 864e5;
-const MINUTE_MS$2 = 6e4;
+const MINUTE_MS$3 = 6e4;
 /** The most buckets one request may span (03 8.2). */
 const MAX_BUCKETS = 2e3;
 const DEFAULT_RANGE$1 = "7d";
@@ -37221,7 +37278,7 @@ function createSeriesQueries(db, deps) {
 	return { series: (ctx, q) => snapshot(db, ctx, (asOfSeq) => {
 		const window = resolveWindow(deps, q, DEFAULT_RANGE$1, null);
 		const sizeMs = q.bucket === "hour" ? HOUR_MS$3 : DAY_MS$1;
-		const offsetMs = q.tzOffsetMinutes * MINUTE_MS$2;
+		const offsetMs = q.tzOffsetMinutes * MINUTE_MS$3;
 		const scope = resolveUsageScope(db, q);
 		const filter = usageFilterOf(window, scope);
 		let fromMs = window.fromMs;
@@ -40991,7 +41048,7 @@ function cooldownMs(rule) {
 
 //#endregion
 //#region packages/engine/src/alerts/evaluator.ts
-const MINUTE_MS$1 = 6e4;
+const MINUTE_MS$2 = 6e4;
 const HOUR_MS$1 = 36e5;
 const SECOND_MS = 1e3;
 const TITLE_MAX = 200;
@@ -41051,12 +41108,12 @@ function plural(n, one, many) {
 	return n === 1 ? one : many;
 }
 function inactivity(rule, facts) {
-	const threshold = rule.minutes * MINUTE_MS$1;
+	const threshold = rule.minutes * MINUTE_MS$2;
 	const out = [];
 	for (const session of facts.activeSessions) {
 		const idle = facts.now - session.lastActivityAt;
 		if (idle < threshold) continue;
-		const minutes = Math.floor(idle / MINUTE_MS$1);
+		const minutes = Math.floor(idle / MINUTE_MS$2);
 		const severity = idle >= INACTIVITY_CRITICAL_FACTOR * threshold ? "critical" : "warning";
 		out.push(held(session.uid, severity, minutes, `No activity for ${String(minutes)} min`, {
 			idleMinutes: minutes,
@@ -41086,7 +41143,7 @@ function runtimeUnavailable(rule, facts) {
 		source: "handler",
 		count: downtime.count
 	})];
-	const minutes = Math.max(0, Math.round((downtime.to - downtime.from) / MINUTE_MS$1));
+	const minutes = Math.max(0, Math.round((downtime.to - downtime.from) / MINUTE_MS$2));
 	const events = plural(downtime.envelopes, "event", "events");
 	return [held(INSTANCE_SCOPE_KEY, "warning", minutes, `Monitor was not running for ${String(minutes)} min while ${String(downtime.envelopes)} hook ${events} arrived`, {
 		source: "reconciliation",
@@ -43398,16 +43455,17 @@ const STRIPPED_PREFIX = "CLAUDE_CODE_";
 const STRIPPED_NAMES = /* @__PURE__ */ new Set([
 	"CLAUDECODE",
 	"CLAUDE_SESSION_ID",
-	"NO_COLOR",
-	"FORCE_COLOR",
 	"MCS_HOOK_DISABLE"
 ]);
+/** Removed from the in-app terminal only (MTOP: it is xterm.js, colour must be on whatever the parent set). A native window keeps them. */
+const TERMINAL_ONLY_STRIPPED = /* @__PURE__ */ new Set(["NO_COLOR", "FORCE_COLOR"]);
 /** Set last, replacing a value of the same name (any case on win32). */
+const NO_DEFAULT_CWD = ["NoDefaultCurrentDirectoryInExePath", "1"];
 const FIXED = [
 	["TERM", "xterm-256color"],
 	["COLORTERM", "truecolor"],
 	["TERM_PROGRAM", "CAW"],
-	["NoDefaultCurrentDirectoryInExePath", "1"]
+	NO_DEFAULT_CWD
 ];
 /** The value of `name` in `env`: on win32 under any case of the key (the exact spelling first), elsewhere exact. */
 function envValue(env, name, platform) {
@@ -43417,16 +43475,14 @@ function envValue(env, name, platform) {
 	for (const key of Object.keys(env)) if (key.toUpperCase() === wanted) return env[key];
 }
 /**
-* The environment for a new `claude` session. Removed, unless named in `keep`: `CLAUDE_CODE_*`, `CLAUDECODE`,
-* `CLAUDE_SESSION_ID`, `NO_COLOR`, `FORCE_COLOR` and `MCS_HOOK_DISABLE` (case-insensitive on win32, exact elsewhere). Dropped
-* because no child can receive them: an undefined value, a NUL, a name that is empty or holds `=`. On win32 the first spelling
-* of two keys that differ only in case wins, because node-pty builds the environment block from the keys and would pass both.
-* Everything else passes through. The input is not changed.
+* The one loop of both builders. Removed, unless named in `keep`: the `CLAUDE_CODE_*` family, `STRIPPED_NAMES` and `extraStripped`
+* (case-insensitive on win32). Dropped because no child can receive them: an undefined value, a NUL, a name that is empty or holds
+* `=`. On win32 the first spelling of two keys that differ only in case wins. `fixed` is set last over any value of the same name.
 */
-function buildTerminalEnv(source, o) {
+function buildEnv(source, o) {
 	const fold = foldsCase(o.platform) ? (name) => name.toUpperCase() : (name) => name;
 	const keep = new Set(o.keep.map(fold));
-	const fixed = new Set(FIXED.map(([name]) => fold(name)));
+	const fixed = new Set(o.fixed.map(([name]) => fold(name)));
 	const seen = /* @__PURE__ */ new Set();
 	const entries = /* @__PURE__ */ new Map();
 	for (const name of Object.keys(source)) {
@@ -43436,12 +43492,39 @@ function buildTerminalEnv(source, o) {
 		const key = fold(name);
 		if (seen.has(key)) continue;
 		seen.add(key);
-		if ((key.startsWith(STRIPPED_PREFIX) || STRIPPED_NAMES.has(key)) && !keep.has(key)) continue;
+		if ((key.startsWith(STRIPPED_PREFIX) || STRIPPED_NAMES.has(key) || o.extraStripped.has(key)) && !keep.has(key)) continue;
 		if (fixed.has(key)) continue;
 		entries.set(name, value);
 	}
-	for (const [name, value] of FIXED) entries.set(name, value);
+	for (const [name, value] of o.fixed) entries.set(name, value);
 	return Object.fromEntries(entries);
+}
+/**
+* The environment for a new `claude` session in the in-app terminal. Removed, unless named in `keep`: `CLAUDE_CODE_*`, `CLAUDECODE`,
+* `CLAUDE_SESSION_ID`, `NO_COLOR`, `FORCE_COLOR` and `MCS_HOOK_DISABLE` (case-insensitive on win32, exact elsewhere). Dropped
+* because no child can receive them: an undefined value, a NUL, a name that is empty or holds `=`. On win32 the first spelling
+* of two keys that differ only in case wins, because node-pty builds the environment block from the keys and would pass both.
+* Everything else passes through. The input is not changed.
+*/
+function buildTerminalEnv(source, o) {
+	return buildEnv(source, {
+		...o,
+		extraStripped: TERMINAL_ONLY_STRIPPED,
+		fixed: FIXED
+	});
+}
+/**
+* The environment of a window of the person's own terminal (CAW-145, ADR 0136): the same strip of the Claude markers as the
+* terminal (`CLAUDE_CODE_*`, `CLAUDECODE`, `CLAUDE_SESSION_ID`, `MCS_HOOK_DISABLE`, unless named in `keep`), but the colour
+* variables stay as the person set them and `TERM`, `COLORTERM` and `TERM_PROGRAM` are not set (the terminal of the person sets
+* its own). Everything else, `PATH` first, passes through. `NoDefaultCurrentDirectoryInExePath` is set like in the terminal.
+*/
+function buildNativeEnv(source, o) {
+	return buildEnv(source, {
+		...o,
+		extraStripped: /* @__PURE__ */ new Set(),
+		fixed: [NO_DEFAULT_CWD]
+	});
 }
 
 //#endregion
@@ -45652,7 +45735,8 @@ function capabilitiesOf(facts, o) {
 		reason: null,
 		folderPicker: o.folderPicker,
 		resume: true,
-		maxSessions: o.maxSessions
+		maxSessions: o.maxSessions,
+		...o.nativeOpen === true ? { nativeOpen: true } : {}
 	};
 }
 /** The link of a terminal that the linker does not know (yet): the state `track` starts in. */
@@ -45686,6 +45770,7 @@ function isoOf(ms) {
 }
 function createTerminalHost(deps) {
 	const { service, linker, picker, clock } = deps;
+	const native = deps.native ?? null;
 	/** The viewers of each live session, for the size changes. */
 	const attached = /* @__PURE__ */ new Map();
 	const listeners = /* @__PURE__ */ new Set();
@@ -45830,7 +45915,8 @@ function createTerminalHost(deps) {
 			const status = service.status();
 			return capabilitiesOf(status, {
 				folderPicker: picker !== null,
-				maxSessions: status.maxSessions
+				maxSessions: status.maxSessions,
+				nativeOpen: native?.capabilities().available === true
 			});
 		},
 		sessions,
@@ -45842,6 +45928,18 @@ function createTerminalHost(deps) {
 				resume: plan.sessionId,
 				...fork ? { fork: true } : {}
 			});
+		},
+		openNative: async ({ sessionId, fork }) => {
+			if (native?.capabilities().available !== true) throw new TerminalApiError("terminal_unavailable");
+			const plan = await planOf(sessionId, fork);
+			return {
+				via: await native.open({
+					folder: plan.folderPath,
+					sessionId: plan.sessionId,
+					fork
+				}),
+				fork
+			};
 		},
 		census: {
 			count: () => service.liveCount(),
@@ -45970,6 +46068,203 @@ function createFolderPicker(deps = {}) {
 			open = false;
 		}
 	} };
+}
+
+//#endregion
+//#region packages/engine/src/terminal/native-terminal.ts
+/** The start of Windows Terminal's command line: a new tab in a folder. One constant, so a change of its parser is one line. */
+const WT_PREFIX = ["new-tab", "-d"];
+/** Ends the options of Windows Terminal: what follows is the program and its arguments, whatever they start with. */
+const WT_SEPARATOR = "--";
+/** How long the answer about `wt.exe` is kept (the capability is polled with every state of the terminal). */
+const WT_CACHE_MS = 6e4;
+/** The process must report its start within this time, or the open fails. */
+const NATIVE_SPAWN_TIMEOUT_MS = 2e3;
+/** Least time between two opens. */
+const NATIVE_MIN_GAP_MS = 1500;
+/** Most opens in a rolling minute. */
+const NATIVE_PER_MINUTE = 12;
+const MINUTE_MS$1 = 6e4;
+/** The real file system: the answers of the terminal service, and an `lstat` for the Store alias of `wt.exe`. */
+const realNativeFs = {
+	isFile: (target) => realTerminalFs.isFile(target),
+	isDirectory: (target) => realTerminalFs.isDirectory(target),
+	hasEntry: (target) => {
+		try {
+			const stat = lstatSync(target, { throwIfNoEntry: false });
+			return stat !== void 0 && (stat.isFile() || stat.isSymbolicLink());
+		} catch {
+			return false;
+		}
+	}
+};
+/**
+* The spawner of production: `spawnDetachedVisible` (detached, no stdio, `unref`), the `error` event attached in the same tick,
+* resolved on the `spawn` event, rejected on an `error` or when nothing is heard within `NATIVE_SPAWN_TIMEOUT_MS`.
+*/
+function realNativeSpawner(launch = spawnDetachedVisible) {
+	return (file, args, o) => new Promise((resolve, reject) => {
+		let child;
+		try {
+			child = launch(file, args, {
+				cwd: o.cwd,
+				env: o.env
+			});
+		} catch (error) {
+			reject(error instanceof Error ? error : /* @__PURE__ */ new Error("spawn failed"));
+			return;
+		}
+		const timer = setTimeout(() => {
+			reject(/* @__PURE__ */ new Error("spawn timed out"));
+		}, NATIVE_SPAWN_TIMEOUT_MS);
+		child.once("error", (error) => {
+			clearTimeout(timer);
+			reject(error);
+		});
+		child.once("spawn", () => {
+			clearTimeout(timer);
+			resolve();
+		});
+	});
+}
+/** A drive-absolute directory: a relative PATH entry would mean the folder of the server. */
+const DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/u;
+function stripQuotes(text) {
+	return text.replace(/^"+|"+$/gu, "");
+}
+function createNativeTerminal(deps) {
+	const { platform, fs, config, clock, logger } = deps;
+	const supported = platform === "win32";
+	let cache = null;
+	let busy = false;
+	let lastAt = Number.NEGATIVE_INFINITY;
+	let recent = [];
+	/** `wt.exe` of an absolute PATH entry, else the one of the Store alias folder; each tested with an `lstat`. */
+	function findWindowsTerminal() {
+		const now = clock.now();
+		if (cache !== null && now - cache.at >= 0 && now - cache.at < 6e4) return cache.wt;
+		const env = deps.env();
+		const candidates = [];
+		for (const entry of (envValue(env, "PATH", platform) ?? "").split(";")) {
+			const dir = stripQuotes(entry.trim()).trim();
+			if (dir !== "" && DRIVE_ABSOLUTE.test(dir)) candidates.push(path.win32.join(dir, "wt.exe"));
+		}
+		const local = envValue(env, "LOCALAPPDATA", platform);
+		if (local !== void 0 && DRIVE_ABSOLUTE.test(local)) candidates.push(path.win32.join(local, "Microsoft", "WindowsApps", "wt.exe"));
+		const wt = candidates.find((candidate) => fs.hasEntry(candidate)) ?? null;
+		cache = {
+			at: now,
+			wt
+		};
+		return wt;
+	}
+	function checkLimits(now) {
+		recent = recent.filter((at) => now - at < MINUTE_MS$1);
+		if (busy || now - lastAt < 1500 || recent.length >= 12) throw new TerminalError("SESSION_LIMIT");
+	}
+	async function open(input) {
+		if (!supported) throw new TerminalError("UNSUPPORTED_OS");
+		checkLimits(clock.now());
+		const env = deps.env();
+		const resolved = resolveClaudeCommand({
+			command: config.command,
+			env,
+			platform,
+			fs
+		});
+		if (resolved === null) throw new TerminalError("CLAUDE_NOT_FOUND");
+		const launch = buildLaunch(resolved, config.args, {
+			env,
+			platform,
+			fs,
+			resume: input.sessionId,
+			...input.fork ? { fork: true } : {}
+		});
+		const folder = normalizeFolder(input.folder, platform);
+		if (folder === null) throw new TerminalError("FOLDER_INVALID");
+		if (!fs.isDirectory(folder)) throw new TerminalError("FOLDER_NOT_FOUND");
+		const allArgs = [
+			...config.args,
+			"--resume",
+			input.sessionId,
+			...input.fork ? ["--fork-session"] : []
+		];
+		let program;
+		let programArgs;
+		if (launch.kind === "exe") {
+			program = launch.file;
+			programArgs = launch.args;
+		} else {
+			if (!isCmdSafeArg(resolved.path)) throw new TerminalError("ARGS_UNSAFE");
+			program = launch.file;
+			programArgs = [
+				"/d",
+				"/k",
+				resolved.path,
+				...allArgs
+			];
+		}
+		const wt = findWindowsTerminal();
+		if (wt !== null && folder.includes(";")) throw new TerminalError("FOLDER_INVALID");
+		const via = wt === null ? "console" : "windows-terminal";
+		const file = wt ?? program;
+		const args = wt === null ? programArgs : [
+			...WT_PREFIX,
+			folder,
+			"--",
+			program,
+			...programArgs
+		];
+		const nativeEnv = buildNativeEnv(env, {
+			keep: config.envKeep,
+			platform
+		});
+		const started = clock.now();
+		busy = true;
+		lastAt = started;
+		recent.push(started);
+		try {
+			await deps.launch(file, args, {
+				cwd: folder,
+				env: nativeEnv
+			});
+		} catch (error) {
+			logger.warn("terminal.native_open_failed", { code: "SPAWN_FAILED" });
+			throw new TerminalError("SPAWN_FAILED", { cause: error });
+		} finally {
+			busy = false;
+		}
+		logger.info("terminal.native_open", {
+			kind: via,
+			phase: input.fork ? "fork" : "resume"
+		});
+		return via;
+	}
+	return {
+		capabilities: () => {
+			if (!supported) return {
+				available: false,
+				via: null
+			};
+			return {
+				available: true,
+				via: findWindowsTerminal() === null ? "console" : "windows-terminal"
+			};
+		},
+		open
+	};
+}
+/** The launcher of production over the real file system, the real spawner and the environment of the process. */
+function createRealNativeTerminal(o) {
+	return createNativeTerminal({
+		platform: o.platform,
+		env: o.env ?? (() => process.env),
+		fs: realNativeFs,
+		launch: realNativeSpawner(),
+		config: o.config,
+		clock: o.clock,
+		logger: o.logger
+	});
 }
 
 //#endregion
@@ -46232,11 +46527,19 @@ function createUserServices(ctx, services, options = {}) {
 		...options.folders
 	});
 	const picker = options.picker !== void 0 ? options.picker : createFolderPicker(options.env === void 0 ? {} : { env: options.env });
+	const native = options.native !== void 0 ? options.native : createRealNativeTerminal({
+		config: ctx.config.runtime.terminal,
+		logger: ctx.logger,
+		clock: ctx.clock,
+		platform: options.terminal?.platform ?? hostPlatform,
+		...options.terminal?.env === void 0 ? {} : { env: options.terminal.env }
+	});
 	const host = createTerminalHost({
 		service: terminal,
 		folders,
 		linker,
 		picker,
+		native,
 		clock: ctx.clock
 	});
 	const access = createAccessService({
@@ -79319,7 +79622,7 @@ const NO_HOST = {
 	resume: false,
 	maxSessions: 0
 };
-/** The module that mounts the five terminal routes; the access chain of `registerRoute` guards every one of them. */
+/** The module that mounts the six terminal routes; the access chain of `registerRoute` guards every one of them. */
 function createTerminalRoutes(options) {
 	const { ports, epoch, now } = options;
 	/** The host when it can run a terminal; otherwise `terminal_unavailable`. */
@@ -79354,6 +79657,12 @@ function createTerminalRoutes(options) {
 				sessionId: body.sessionId,
 				fork: body.fork === true
 			}) };
+		});
+		registerRoute(app, routes.terminalOpenNative, async ({ body }) => {
+			return usable().openNative({
+				sessionId: body.sessionId,
+				fork: body.fork === true
+			});
 		});
 	};
 }
