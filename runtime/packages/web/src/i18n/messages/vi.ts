@@ -767,7 +767,7 @@ export const viMessages: Record<MessageKey, string> = {
   'shortcuts.group.search': 'Tìm kiếm',
   'shortcuts.group.transcript': 'Bản ghi hội thoại',
   'shortcuts.fixed.escape': 'Đóng hộp thoại, hoặc xóa ô tìm kiếm khi đang chọn ô đó',
-  'shortcuts.fixed.sidebar': 'Di chuyển trong danh sách phiên ở thanh bên',
+  'shortcuts.fixed.sidebar': 'Di chuyển giữa các trang và trong danh sách phiên ở thanh bên',
   'shortcuts.key.esc': 'Esc',
   'shortcuts.key.up': 'Lên',
   'shortcuts.key.down': 'Xuống',

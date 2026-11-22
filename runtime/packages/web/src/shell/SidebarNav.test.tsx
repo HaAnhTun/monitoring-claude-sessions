@@ -1,5 +1,7 @@
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { Link } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { navItems, PageRegistryContext, type PageRegistry } from '../app/routes.tsx';
@@ -177,6 +179,161 @@ describe('SidebarNav (ADR 0073 decision 3)', () => {
     view.unmount();
     renderNav({ counts: { sessions: 3 } });
     expect(within(nav()).getByRole('link', { name: new RegExp('^' + sessions) })).not.toHaveAttribute('title');
+  });
+});
+
+describe('SidebarNav keyboard (design 05 section 6: one Tab stop for the whole navigation)', () => {
+  const stops = (): (string | null)[] =>
+    within(nav())
+      .getAllByRole('link')
+      .filter((a) => a.getAttribute('tabindex') !== '-1')
+      .map((a) => a.getAttribute('href'));
+  const link = (name: string | RegExp): HTMLElement => within(nav()).getByRole('link', { name });
+  const workspace = msg('route.workspace.title');
+  const overview = msg('route.overview.title');
+  const sessions = new RegExp(`^${msg('route.sessions.title')}`);
+  const settings = msg('route.settings.title');
+
+  /** A link in the page, outside the navigation, that goes to another page. */
+  function renderNavWithPageLink(route: string, to: string) {
+    const items = navItems(ALL, makeInstance().features, 'user');
+    return renderWithIntl(
+      <>
+        <SidebarNav items={items} counts={null} />
+        <Link to={to}>elsewhere</Link>
+      </>,
+      { route },
+    );
+  }
+
+  it('makes the current page the one Tab stop', () => {
+    renderNav({ route: '/activity' });
+    expect(stops()).toEqual(['/activity']);
+  });
+
+  it('keeps every entry a link, the ones without the Tab stop too', () => {
+    renderNav({ route: '/activity' });
+    expect(hrefs()).toEqual(['/', '/overview', '/sessions', '/activity', '/tasks', '/analytics', '/settings']);
+    expect(
+      within(nav())
+        .getAllByRole('link')
+        .filter((a) => a.getAttribute('tabindex') === '-1'),
+    ).toHaveLength(6);
+  });
+
+  it('keeps Sessions as the stop on a session page', () => {
+    renderNav({ route: '/sessions/abc' });
+    expect(stops()).toEqual(['/sessions']);
+  });
+
+  it('makes the Workspace the stop on "/" only', () => {
+    renderNav({ route: '/?session=fixture-term-1' });
+    expect(stops()).toEqual(['/']);
+  });
+
+  it('makes the first entry the stop when no page is current', () => {
+    renderNav({ route: '/no/such/page' });
+    expect(stops()).toEqual(['/']);
+  });
+
+  it('reaches the navigation with one Tab and leaves it with the next', async () => {
+    const user = userEvent.setup();
+    renderNavWithPageLink('/tasks', '/analytics');
+    await user.tab();
+    expect(link(msg('route.tasks.title'))).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('link', { name: 'elsewhere' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(link(msg('route.tasks.title'))).toHaveFocus();
+  });
+
+  it('moves between the entries with the arrow keys and wraps at both ends', async () => {
+    const user = userEvent.setup();
+    renderNav({ route: '/' });
+    link(workspace).focus();
+    await user.keyboard('{ArrowDown}');
+    expect(link(overview)).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(link(sessions)).toHaveFocus();
+    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}');
+    expect(link(settings)).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(link(workspace)).toHaveFocus();
+  });
+
+  it('jumps to the ends with Home and End', async () => {
+    const user = userEvent.setup();
+    renderNav({ route: '/tasks' });
+    link(msg('route.tasks.title')).focus();
+    await user.keyboard('{End}');
+    expect(link(settings)).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(link(workspace)).toHaveFocus();
+  });
+
+  it('leaves an arrow key with a modifier to the browser', async () => {
+    const user = userEvent.setup();
+    renderNav({ route: '/tasks' });
+    const tasks = link(msg('route.tasks.title'));
+    tasks.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}{Control>}{End}{/Control}{Shift>}{Home}{/Shift}');
+    expect(tasks).toHaveFocus();
+  });
+
+  it('keeps the Tab stop on the entry the focus left', async () => {
+    const user = userEvent.setup();
+    renderNavWithPageLink('/', '/analytics');
+    link(workspace).focus();
+    await user.keyboard('{ArrowDown}{ArrowDown}');
+    expect(stops()).toEqual(['/sessions']);
+    await user.tab();
+    expect(screen.getByRole('link', { name: 'elsewhere' })).toHaveFocus();
+    expect(stops()).toEqual(['/sessions']);
+    await user.tab({ shift: true });
+    expect(link(sessions)).toHaveFocus();
+  });
+
+  it('gives the Tab stop to the current page again after a navigation from elsewhere', async () => {
+    const user = userEvent.setup();
+    renderNavWithPageLink('/', '/analytics');
+    link(workspace).focus();
+    await user.keyboard('{ArrowDown}');
+    expect(stops()).toEqual(['/overview']);
+    await user.click(screen.getByRole('link', { name: 'elsewhere' }));
+    expect(stops()).toEqual(['/analytics']);
+  });
+
+  it('does not bring a remembered entry back when the earlier page is shown again', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(
+      <>
+        <SidebarNav items={navItems(ALL, makeInstance().features, 'user')} counts={null} />
+        <Link to="/analytics">away</Link>
+        <Link to="/overview">back</Link>
+      </>,
+      { route: '/overview' },
+    );
+    link(overview).focus();
+    await user.keyboard('{ArrowDown}');
+    expect(stops()).toEqual(['/sessions']);
+    await user.click(screen.getByRole('link', { name: 'away' }));
+    expect(stops()).toEqual(['/analytics']);
+    await user.click(screen.getByRole('link', { name: 'back' }));
+    expect(stops()).toEqual(['/overview']);
+  });
+
+  it('follows a link with Enter', async () => {
+    const user = userEvent.setup();
+    renderNav({ route: '/' });
+    link(workspace).focus();
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(link(sessions)).toHaveAttribute('aria-current', 'page');
+    expect(stops()).toEqual(['/sessions']);
+  });
+
+  it('keeps one Tab stop in the rail, where the labels are tooltips', () => {
+    renderNav({ route: '/overview', tooltips: true });
+    expect(stops()).toEqual(['/overview']);
   });
 });
 

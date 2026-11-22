@@ -417,14 +417,36 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       );
     });
 
-    it('adds one tab stop for the switcher and one per page to the sidebar', async () => {
+    // Was one stop per page (6 + 1): the navigation is one Tab stop now (design 05 section 6), so the count is 1 + 1.
+    it('adds one tab stop for the switcher and one for the whole navigation to the sidebar', async () => {
       renderShell({ route: `/sessions/${sessionId(1)}` });
       const sidebar = await screen.findByRole('complementary');
       await screen.findByRole('link', { name: /Alpha build/ });
       const stops = [...sidebar.querySelectorAll<HTMLElement>('a[href], button')].filter(
         (el) => el.getAttribute('tabindex') !== '-1',
       );
-      expect(stops).toHaveLength(6 + 1);
+      expect(stops).toHaveLength(1 + 1);
+    });
+
+    it('puts at most ten Tab stops before the main content at 1440 px, the navigation being one of them', async () => {
+      const user = userEvent.setup();
+      // The longest walk: a user instance (the Workspace entry) on the session page (the second skip link and the switcher).
+      renderShell({ route: `/sessions/${sessionId(1)}`, instance: makeInstance({ kind: 'user' }) });
+      await screen.findByRole('link', { name: /Alpha build/ });
+      const main = screen.getByRole('main');
+      const nav = screen.getByRole('navigation', { name: msg('nav.label') });
+      const stops: Element[] = [];
+      for (let i = 0; i < 40; i += 1) {
+        await user.tab();
+        const at = document.activeElement;
+        if (at === null || at === document.body || main.contains(at)) break;
+        if (main.compareDocumentPosition(at) === Node.DOCUMENT_POSITION_FOLLOWING) break;
+        stops.push(at);
+      }
+      expect(stops.length).toBeGreaterThan(2);
+      expect(stops.length).toBeLessThanOrEqual(10);
+      expect(new Set(stops).size).toBe(stops.length);
+      expect(stops.filter((el) => nav.contains(el)).map((el) => el.getAttribute('href'))).toEqual(['/sessions']);
     });
 
     it('moves focus to the page heading after a navigation but not on the first load', async () => {
@@ -555,6 +577,24 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
           await user.tab();
           expect(dialog.contains(document.activeElement)).toBe(true);
         }
+      });
+
+      it('keeps the focus inside when Tab leaves the one stop of the navigation', async () => {
+        stubWidth(600);
+        const user = userEvent.setup();
+        renderShell({ route: '/sessions' });
+        await user.click(await screen.findByRole('button', { name: msg('shell.menu.open') }));
+        const dialog = await screen.findByRole('dialog');
+        const current = within(dialog).getByRole('link', { name: new RegExp(`^${msg('route.sessions.title')}`) });
+        expect(current).toHaveFocus();
+        await user.tab();
+        expect(within(dialog).getByRole('button', { name: msg('shell.menu.close') })).toHaveFocus();
+        await user.tab({ shift: true });
+        expect(current).toHaveFocus();
+        await user.keyboard('{End}');
+        expect(within(dialog).getByRole('link', { name: msg('route.settings.title') })).toHaveFocus();
+        await user.tab();
+        expect(within(dialog).getByRole('button', { name: msg('shell.menu.close') })).toHaveFocus();
       });
 
       it('closes after a navigation and leaves the focus to the new page', async () => {

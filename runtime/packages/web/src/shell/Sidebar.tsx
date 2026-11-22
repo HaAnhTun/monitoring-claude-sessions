@@ -18,7 +18,9 @@ export const SIDEBAR_ID = 'sidebar';
  */
 export const FORCE_RAIL: Readonly<Record<RouteLayout, boolean>> = { page: false, bleed: true };
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+/** What Tab reaches: an entry of the navigation without the Tab stop (`tabindex="-1"`, SidebarNav) is not one of them. */
+const FOCUSABLE =
+  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
 
 function focusableIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(

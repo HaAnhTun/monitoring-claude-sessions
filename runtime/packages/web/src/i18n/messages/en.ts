@@ -749,7 +749,7 @@ export const enMessages = {
   'shortcuts.group.search': 'Search',
   'shortcuts.group.transcript': 'Transcript',
   'shortcuts.fixed.escape': 'Close a dialog, or clear the search box when it has focus',
-  'shortcuts.fixed.sidebar': 'Move through the session list in the sidebar',
+  'shortcuts.fixed.sidebar': 'Move through the pages and the session list in the sidebar',
   'shortcuts.key.esc': 'Esc',
   'shortcuts.key.up': 'Up',
   'shortcuts.key.down': 'Down',

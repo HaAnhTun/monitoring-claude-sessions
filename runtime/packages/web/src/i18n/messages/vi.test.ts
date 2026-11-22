@@ -87,6 +87,12 @@ describe('messages/vi.ts (the values)', () => {
   });
 });
 
+describe('messages/vi.ts (the sidebar row of the shortcuts dialog, design 05 section 6)', () => {
+  it('names the pages and the session list: the arrow keys, Home and End move through both', () => {
+    expect(viMessages['shortcuts.fixed.sidebar']).toBe('Di chuyển giữa các trang và trong danh sách phiên ở thanh bên');
+  });
+});
+
 describe('messages/vi.ts (the Workspace block, WP-136)', () => {
   const keysOf = (text: string): string[] => {
     const begin = text.indexOf('// @wp-begin WP-136');

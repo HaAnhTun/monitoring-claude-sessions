@@ -85,6 +85,12 @@ describe('messages/en.ts', () => {
   });
 });
 
+describe('the sidebar row of the shortcuts dialog (design 05 section 6)', () => {
+  it('names the pages and the session list: the arrow keys, Home and End move through both', () => {
+    expect(enMessages['shortcuts.fixed.sidebar']).toBe('Move through the pages and the session list in the sidebar');
+  });
+});
+
 /** The keys written between the markers of one work package. */
 function keysOfBlock(text: string, wp: string): string[] {
   const begin = text.indexOf(`// @wp-begin ${wp}`);
