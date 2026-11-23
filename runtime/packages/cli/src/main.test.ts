@@ -27,6 +27,8 @@ const probe = vi.hoisted(() => ({
   contexts: [] as CommandContext[],
   /** What `status` and `inspect` answer instead of their default: a result, or a failure (an engine error with its own hint). */
   answer: null as { result?: CommandResult; failure?: Error } | null,
+  /** What the fake stream command saw after the reader of its output went away: the signal, and what `emit` answered. */
+  afterClose: null as { aborted: boolean; emitted: boolean } | null,
 }));
 
 function listenersAddedSince(): NodeJS.SignalsListener[] {
@@ -123,6 +125,39 @@ vi.mock('./commands/open.ts', () => ({
   } satisfies CommandDefinition,
 }));
 
+// A stream command (ADR 0108): it writes its lines through the kernel while it runs. `--follow` loses the reader of its output
+// after the first line, `--since` fails after it.
+vi.mock('./commands/events.ts', async () => {
+  const { McsError } = await import('@mcs/shared');
+  return {
+    command: {
+      name: 'events',
+      summary: 'fake events',
+      synopsis: '',
+      defaultScope: 'user',
+      stream: 'ndjson',
+      options: {
+        task: { type: 'string', valueName: 'SLUG', required: true, description: 'the task' },
+        follow: { type: 'boolean', description: 'lose the reader' },
+        since: { type: 'string', description: 'fail' },
+      },
+      run: (ctx) => {
+        ctx.emit?.('{"line":1}');
+        if (ctx.args.string('since') !== undefined) {
+          return Promise.reject(new McsError('API_ERROR', 'every live stream of the instance is taken'));
+        }
+        if (ctx.args.flag('follow')) {
+          process.stdout.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+          probe.afterClose = { aborted: ctx.signal?.aborted === true, emitted: ctx.emit?.('{"line":2}') === true };
+        } else {
+          ctx.emit?.('{"line":2}');
+        }
+        return Promise.resolve({ data: null, text: [] });
+      },
+    } satisfies CommandDefinition,
+  };
+});
+
 // A command whose operation refuses because terminals are live (06 3.3), the way the guarded stop does.
 vi.mock('./commands/restart.ts', async () => {
   const { McsError } = await import('@mcs/shared');
@@ -173,6 +208,7 @@ afterEach(() => {
   probe.inside.clear();
   probe.contexts.length = 0;
   probe.answer = null;
+  probe.afterClose = null;
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
@@ -677,5 +713,54 @@ describe('main: the wording of an app call', () => {
     const ran = await run(['status', '--user', '--task', 'demo']);
     expect(ran.code).toBe(2);
     expect(ran.lines[1]).toMatch(/^hint: usage: /);
+  });
+});
+
+// ---- stream commands and the exit codes of a wait (ADR 0108) ---------------------------------------------------------------------
+
+describe('main: a stream command', () => {
+  it('prints its lines and no envelope, with --json and without', async () => {
+    for (const argv of [['events', '--json'], ['events']]) {
+      const ran = await run(argv);
+      expect(ran.code).toBe(0);
+      expect(ran.out).toBe('{"line":1}\n{"line":2}\n');
+    }
+  });
+
+  it('ends a failure with one error envelope on one line', async () => {
+    const ran = await run(['events', '--since', '5', '--json']);
+    expect(ran.code).toBe(1);
+    const lines = ran.out.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('{"line":1}');
+    expect(lines[2]).toBe('');
+    expect(JSON.parse(lines[1] ?? '')).toMatchObject({
+      schema: 'mcs.cli/1',
+      command: 'events',
+      ok: false,
+      exitCode: 1,
+      error: { code: 'API_ERROR' },
+    });
+  });
+
+  it('aborts the signal and writes nothing more once stdout fails (the reader of the pipe went away)', async () => {
+    const ran = await run(['events', '--follow', '--json']);
+    expect(ran.code).toBe(0);
+    expect(ran.out).toBe('{"line":1}\n');
+    expect(probe.afterClose).toEqual({ aborted: true, emitted: false });
+  });
+});
+
+describe('main: the exit codes of a wait', () => {
+  it('passes 4, 5 and 6 through, with the data and no error in the envelope', async () => {
+    for (const exitCode of [4, 5, 6] as const) {
+      probe.answer = { result: { data: { outcome: 'x' }, text: ['not met'], exitCode } };
+      const text = await run(['status', '--user']);
+      expect(text.code).toBe(exitCode);
+      expect(text.out).toBe('not met\n');
+      const json = await run(['status', '--user', '--json']);
+      expect(json.code).toBe(exitCode);
+      expect(JSON.parse(json.out)).toMatchObject({ ok: false, exitCode, error: null, data: { outcome: 'x' } });
+    }
   });
 });

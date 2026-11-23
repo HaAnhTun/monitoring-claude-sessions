@@ -266,6 +266,11 @@ const LIFECYCLE_FAMILY: readonly string[] = [
   'check',
 ];
 
+/** The two readers of the change stream (ADR 0108): without a selector they follow the app, like the lifecycle family. */
+const WATCH_COMMANDS: readonly string[] = ['events', 'wait'];
+
+const APP_BY_DEFAULT: readonly string[] = [...LIFECYCLE_FAMILY, ...WATCH_COMMANDS];
+
 /**
  * The commands that exist only for the app (06 2.2, the commands package adds them): they may default to the app and are never
  * required to. Every other command is a task command.
@@ -306,14 +311,14 @@ async function allCommands(): Promise<readonly Found[]> {
 }
 
 describe('the default scope of the commands', () => {
-  it('the lifecycle family defaults to the app; every other command stays a task command (the commands of the app apart)', async () => {
+  it('the lifecycle family and the two watching commands default to the app; every other command stays a task command (the commands of the app apart)', async () => {
     const commands = await allCommands();
     const names = commands.map((c) => c.name);
-    for (const name of LIFECYCLE_FAMILY) expect(names, `the command ${name} exists`).toContain(name);
-    expect(commands.length).toBeGreaterThan(LIFECYCLE_FAMILY.length);
+    for (const name of APP_BY_DEFAULT) expect(names, `the command ${name} exists`).toContain(name);
+    expect(commands.length).toBeGreaterThan(APP_BY_DEFAULT.length);
     for (const command of commands) {
       const actual = command.defaultScope === 'task' ? undefined : command.defaultScope;
-      if (LIFECYCLE_FAMILY.includes(command.name)) {
+      if (APP_BY_DEFAULT.includes(command.name)) {
         expect(actual, `the default scope of ${command.name}`).toBe('user');
       } else if (!isAppOnly(command.name)) {
         expect(actual, `the default scope of ${command.name}`).toBeUndefined();

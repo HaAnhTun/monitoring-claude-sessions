@@ -4,7 +4,10 @@
 // builds the `OpContext`, runs the command and renders its result: legacy text, legacy JSON or the `mcs.cli/1` envelope.
 // Commands (`commands/<name>.ts`) hold an option table and call one engine operation; they print nothing themselves. Every
 // byte of output goes through `io/terminal.ts`. Exit codes: 0 success, 1 failure or problems found, 2 usage error, 3 refused because
-// terminals are live (06 3), 130 Ctrl+C.
+// terminals are live (06 3), 4, 5 and 6 the outcomes of `wait` (ADR 0108), 130 Ctrl+C.
+//
+// A stream command (`stream: 'ndjson'`, `events`) writes its output line by line while it runs, through `ctx.emit`; the kernel
+// prints no envelope after it and aborts `ctx.signal` when the reader of stdout goes away.
 //
 // The scope rule (06 2.2, ADR 0092, `scope.ts`): a call acts on the app instance (`--user`) or on a task (`--task`, `--repo`, `--root`);
 // a command that is given neither uses its `defaultScope`. For the app the kernel hands the command the user root as its context and
@@ -49,7 +52,7 @@ import {
   type CliError,
 } from '@mcs/shared';
 
-import { printErrorLine, printLine } from './io/terminal.ts';
+import { printErrorLine, printLine, watchStdoutClosed } from './io/terminal.ts';
 import { buildInfoOf, buildState, mainPathsOf } from './paths.ts';
 import { describeCommand, errorEnvelope, renderEnvelope, resultEnvelope } from './render/json.ts';
 import { renderLegacy } from './render/legacy.ts';
@@ -139,6 +142,13 @@ export interface CommandContext {
   /** The options every command takes (`--repo`, `--root`, `--user`, `--json`, `--help`). */
   readonly globalOptions: OptionTable;
   readonly catalog: CommandCatalog;
+  /**
+   * Only for a stream command (`stream: 'ndjson'`): writes one line of output now. `false` means the reader of the output went
+   * away and the command should end. A context built by hand (a unit test) passes its own.
+   */
+  readonly emit?: (line: string) => boolean;
+  /** Only for a stream command: aborted when the reader of the output went away (EPIPE of `events --follow | head`). */
+  readonly signal?: AbortSignal;
 }
 
 /** What a command returns; the kernel renders it (nothing is printed by the command). */
@@ -149,8 +159,11 @@ export interface CommandResult {
   readonly text?: readonly string[];
   /** Default output of the five legacy-JSON commands: the legacy object, pretty printed (instead of `text`). */
   readonly legacy?: unknown;
-  /** 1 when the command found problems (exit 1 without an error object). Default 0. */
-  readonly exitCode?: 0 | 1;
+  /**
+   * 1 when the command found problems (exit 1 without an error object); 4, 5 and 6 are the outcomes of `wait` that are not
+   * `met` (timeout, ended another way, no such session; ADR 0108). Default 0.
+   */
+  readonly exitCode?: 0 | 1 | 4 | 5 | 6;
   /** `warning: ...` lines on stderr, and `warnings` of the envelope. */
   readonly warnings?: readonly string[];
 }
@@ -182,6 +195,11 @@ export interface CommandDefinition {
    * with `defaultScope: 'user'`.
    */
   readonly userOnly?: boolean;
+  /**
+   * The command writes its output while it runs, one line per `ctx.emit` (NDJSON with `--json`, text lines without). The kernel
+   * prints no envelope for its result; a failure still ends the output with one error envelope, on one line.
+   */
+  readonly stream?: 'ndjson';
   run(ctx: CommandContext): Promise<CommandResult>;
 }
 
@@ -411,6 +429,12 @@ const REGISTRY: readonly RegistryEntry[] = [
   { names: ['config get'], load: async () => ({ command: (await import('./commands/config-user.ts')).getCommand }) },
   { names: ['config set'], load: async () => ({ command: (await import('./commands/config-user.ts')).setCommand }) },
   // @wp-end CAW-34
+
+  // @wp-begin CAW-81
+  // the two readers of the durable change stream (ADR 0108): they never write and never touch a terminal
+  { names: ['events'], load: () => import('./commands/events.ts') },
+  { names: ['wait'], load: () => import('./commands/wait.ts') },
+  // @wp-end CAW-81
 ];
 
 /** The options of every command (01 6.2). `--config FILE` is not here: it is the legacy flat-config flag, or `init`'s seed. */
@@ -423,7 +447,7 @@ export const GLOBAL_OPTIONS: OptionTable = {
   },
   user: {
     type: 'boolean',
-    description: `act on the ${PRODUCT_NAME} app instance (the default of start, stop, restart, status, serve, verify, doctor and check)`,
+    description: `act on the ${PRODUCT_NAME} app instance (the default of start, stop, restart, status, serve, verify, doctor, check, events and wait)`,
   },
   json: { type: 'boolean', description: 'print one mcs.cli/1 JSON document instead of the default output' },
   help: { type: 'boolean', short: 'h', description: 'show this help' },
@@ -729,6 +753,8 @@ interface RunState {
   /** The command name for the envelope: the typed word until the command is known, then the canonical name. */
   command: string;
   json: boolean;
+  /** The command is a stream command: its error envelope is one line. */
+  stream: boolean;
   log: Logger | null;
   /** The scope of the call once it is known (`null` before: a usage error is worded for no scope). */
   scope: Scope | null;
@@ -740,7 +766,7 @@ function reportFailure(run: RunState, error: unknown): number {
   const raw = cliErrorOf(error);
   const cli = run.scope === 'user' ? appErrorOf(raw) : raw;
   if (run.json) {
-    renderEnvelope(errorEnvelope(run.command === '' ? 'mcs' : run.command, cli));
+    renderEnvelope(errorEnvelope(run.command === '' ? 'mcs' : run.command, cli), run.stream);
   } else {
     renderError(cli);
     if (process.env['MCS_DEBUG'] === '1' && error instanceof Error && error.stack !== undefined) {
@@ -763,13 +789,33 @@ function appResultOf(result: CommandResult): CommandResult {
 
 function renderResult(def: CommandDefinition, json: boolean, result: CommandResult): number {
   if (json) {
-    renderEnvelope(resultEnvelope(def.name, result));
+    // the lines of a stream command were its output
+    if (def.stream === undefined) renderEnvelope(resultEnvelope(def.name, result));
   } else {
     renderWarnings(result.warnings ?? []);
     if (result.legacy !== undefined) renderLegacy(result.legacy);
     else renderLines(result.text ?? []);
   }
   return result.exitCode ?? 0;
+}
+
+/**
+ * The output of a stream command: `emit` writes one line at once, and the signal aborts when stdout fails (the reader of the
+ * pipe went away), after which `emit` writes nothing and answers `false`.
+ */
+function streamOutput(): { readonly emit: (line: string) => boolean; readonly signal: AbortSignal } {
+  const closed = new AbortController();
+  watchStdoutClosed(() => {
+    closed.abort();
+  });
+  return {
+    signal: closed.signal,
+    emit: (line) => {
+      if (closed.signal.aborted) return false;
+      printLine(line);
+      return !closed.signal.aborted;
+    },
+  };
 }
 
 // ---- dispatch
@@ -817,6 +863,7 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
   }
   const def = await loadCommand(found.entry);
   run.command = def.name;
+  run.stream = def.stream !== undefined;
   if (def.interruptible === 'command') run.releaseInterrupt();
   const parsed = parseCommandArgs(def, argv.slice(found.consumed));
   const { args } = parsed;
@@ -830,6 +877,7 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
   run.scope = resolution.scope;
   const op = opContextOf(args, paths, resolution.scope);
   run.log = op.log;
+  const output = def.stream === undefined ? null : streamOutput();
   const result = await def.run({
     op,
     args,
@@ -838,7 +886,10 @@ async function dispatch(argv: readonly string[], paths: MainPaths, run: RunState
     json: run.json,
     globalOptions: GLOBAL_OPTIONS,
     catalog,
+    ...(output === null ? {} : { emit: output.emit, signal: output.signal }),
   });
+  // nobody reads the output any more: nothing is left to say, and writing again would fail again
+  if (output?.signal.aborted === true) return result.exitCode ?? 0;
   const worded = resolution.scope === 'user' ? appResultOf(result) : result;
   return renderResult(def, run.json, withScopeNote(worded, resolution, paths));
 }
@@ -854,6 +905,7 @@ export async function main(argv: readonly string[], paths: MainPaths): Promise<n
   const run: RunState = {
     command: leadingWords(argv)[0] ?? '',
     json: wantsJson(argv),
+    stream: false,
     log: null,
     scope: null,
     releaseInterrupt: () => {

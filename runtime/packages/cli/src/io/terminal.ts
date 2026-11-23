@@ -102,6 +102,23 @@ export function printErrorLine(text: string, style?: TextStyle): void {
   process.stderr.write(`${styled(text, process.stderr, style)}\n`);
 }
 
+let stdoutClosed: (() => void) | null = null;
+let stdoutWatched = false;
+
+/**
+ * Names who is told when writing to stdout fails (EPIPE: the reader of the pipe went away, `events --follow | head`); a later
+ * call names another. The one listener stays for the life of the process, so a failure that arrives after the command
+ * returned is not an uncaught error.
+ */
+export function watchStdoutClosed(onClosed: () => void): void {
+  stdoutClosed = onClosed;
+  if (stdoutWatched) return;
+  stdoutWatched = true;
+  process.stdout.on('error', () => {
+    stdoutClosed?.();
+  });
+}
+
 /** One JSON document on stdout (`--json`, and the commands whose legacy output was JSON), safe for a terminal. */
 export function printJson(value: unknown, space?: number): void {
   process.stdout.write(`${safeJsonStringify(value, space)}\n`);

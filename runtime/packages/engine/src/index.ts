@@ -967,6 +967,15 @@ export { createControlTokenSource } from './ops/probe.ts';
 export type { ControlTokenSource } from './ops/probe.ts';
 // @wp-end CAW-18
 
+// @wp-begin CAW-81
+export { SSE_MAX_FRAME_BYTES, createSseParser } from './reader/sse.ts';
+export type { SseFrame, SseParser } from './reader/sse.ts';
+export { abortableSleep, openChangeFeed } from './reader/change-feed.ts';
+export type { ChangeFeedDeps, ChangeFeedEvent, ChangeFeedOptions, FeedSleep } from './reader/change-feed.ts';
+export * as opsWatch from './ops/watch.ts';
+export type { FollowInput, WaitInput, WatchDeps } from './ops/watch.ts';
+// @wp-end CAW-81
+
 // @wp-begin CAW-21
 export { spawnDetachedVisible } from './platform/exec.ts';
 export { appWindowArgs, findAppBrowser, openLoginUrl } from './platform/browser.ts';

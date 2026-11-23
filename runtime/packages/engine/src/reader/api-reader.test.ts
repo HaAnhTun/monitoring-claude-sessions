@@ -424,6 +424,7 @@ interface WireRequest {
   readonly bytes: number;
   readonly host: string | undefined;
   readonly authorization: string | undefined;
+  readonly accept: string | undefined;
 }
 
 async function serve(
@@ -443,6 +444,7 @@ async function serve(
         bytes,
         host: req.headers.host,
         authorization: req.headers.authorization,
+        accept: req.headers.accept,
       });
       const answer = handler(req);
       res.writeHead(answer.status, { 'Content-Type': 'application/json', ...answer.headers });
@@ -518,6 +520,16 @@ describe('ApiReader over a real loopback connection', () => {
     expect(o.text()).toBe(good.text);
     expect(summary.sha256).toBe(good.sha256);
     expect(live.requests[0]).toMatchObject({ method: 'GET', bytes: 0, url: '/api/v3/export' });
+  });
+
+  it('the streaming client asks for NDJSON unless the caller names another type (the change feed)', async () => {
+    const live = await serve(() => ({ status: 200, headers: { 'X-MCS-Instance': ID }, body: '' }));
+    for (const o of [{ idleTimeoutMs: 2000 }, { idleTimeoutMs: 2000, accept: 'text/event-stream' }]) {
+      const attempt = await loopbackStream(`${live.base}/api/v3/stream`, o);
+      if (!attempt.ok) throw new Error('expected an answer');
+      attempt.reply.abort();
+    }
+    expect(live.requests.map((r) => r.accept)).toEqual(['application/x-ndjson', 'text/event-stream']);
   });
 
   it('the streaming client refuses an address that is not loopback', async () => {

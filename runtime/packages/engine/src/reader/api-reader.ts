@@ -52,10 +52,14 @@ export type StreamAttempt =
   | { readonly ok: true; readonly reply: StreamedReply }
   | { readonly ok: false; readonly reason: 'refused' | 'timeout' | 'error' };
 
-/** The streaming GET of `exportTo`; a test passes a scripted one. `o.bearer` is the control token of the export route. */
+/**
+ * The streaming GET of `exportTo` and of the change feed; a test passes a scripted one. `o.bearer` is the control token of the
+ * export route. `o.accept` is the `Accept` header (default `application/x-ndjson`, the export; the change feed asks for
+ * `text/event-stream`).
+ */
 export type ApiStreamOpen = (
   url: string,
-  o: { readonly idleTimeoutMs: number; readonly bearer?: string },
+  o: { readonly idleTimeoutMs: number; readonly bearer?: string; readonly accept?: string },
 ) => Promise<StreamAttempt>;
 
 export interface ApiReaderOptions {
@@ -138,7 +142,7 @@ export const loopbackStream: ApiStreamOpen = (url, o) =>
         agent: false,
         headers: {
           Host: `127.0.0.1:${String(port)}`,
-          Accept: 'application/x-ndjson',
+          Accept: o.accept ?? 'application/x-ndjson',
           Connection: 'close',
           ...authorization,
         },

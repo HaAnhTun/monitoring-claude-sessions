@@ -1,25 +1,31 @@
 // `--json` renderer (01 6.2, ADR 0008): exactly one `mcs.cli/1` document on stdout. A command that found problems (a failed
-// `audit`) is `ok: false` with exit code 1, its findings in `data` and no error object; a failure that raised an error carries
-// the error and no data.
+// `audit`) is `ok: false` with exit code 1, its findings in `data` and no error object; a `wait` that was not met is the same
+// with exit code 4, 5 or 6; a failure that raised an error carries the error and no data.
 import { failureEnvelope, successEnvelope, type CliEnvelope, type CliError } from '@mcs/shared';
 
 import { printJson } from '../io/terminal.ts';
 import type { CommandDefinition, CommandResult, OptionTable } from '../main.ts';
 import { usageLine } from './text.ts';
 
-export function renderEnvelope(envelope: CliEnvelope<unknown>): void {
-  printJson(envelope, 2);
+/** `oneLine`: the envelope that ends the NDJSON output of a stream command is a line like the lines before it. */
+export function renderEnvelope(envelope: CliEnvelope<unknown>, oneLine = false): void {
+  if (oneLine) printJson(envelope);
+  else printJson(envelope, 2);
 }
 
-/** The envelope of a command that ran: ok at exit 0, otherwise `ok: false`, exit code 1, `data` kept and `error: null`. */
+/**
+ * The envelope of a command that ran: ok at exit 0, otherwise `ok: false`, the exit code of the result (1 for problems found;
+ * 4, 5 and 6 are the outcomes of `wait`, ADR 0108), `data` kept and `error: null`.
+ */
 export function resultEnvelope(command: string, result: CommandResult): CliEnvelope<unknown> {
   const warnings = result.warnings ?? [];
-  if ((result.exitCode ?? 0) === 0) return successEnvelope(command, result.data, warnings);
+  const exitCode = result.exitCode ?? 0;
+  if (exitCode === 0) return successEnvelope(command, result.data, warnings);
   return {
     schema: 'mcs.cli/1',
     command,
     ok: false,
-    exitCode: 1,
+    exitCode,
     data: result.data,
     error: null,
     warnings: [...warnings],
