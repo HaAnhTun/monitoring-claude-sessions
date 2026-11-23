@@ -57,6 +57,62 @@ describe('StateBadge', () => {
     expect(badgeOf(container)).toHaveAttribute('title', msg(`state.${state}.description`, undefined, 'vi'));
   });
 
+  it.each([
+    ['S-6a', 'permission', 'needsYou', 'Needs you', 'waiting', 'ring'],
+    ['S-6b', 'user', 'needsYou', 'Needs you', 'waiting', 'ring'],
+    ['S-8b', 'user', 'ready', 'Ready for prompt', 'idle', 'solid'],
+    ['S-8f', null, 'ready', 'Ready for prompt', 'idle', 'solid'],
+  ] as const)(
+    'waiting_input decided by %s reads its own word, tone and dot',
+    (rule, waitReason, word, text, tone, dot) => {
+      const assessment = makeState('waiting_input', { rule, waitReason });
+      const { container } = renderWithIntl(<StateBadge state="waiting_input" assessment={assessment} />);
+      const badge = badgeOf(container);
+      expect(badge).toHaveTextContent(text);
+      expect(badge).toHaveClass(`tone-${tone}`);
+      expect(badge.querySelector('.state-dot')).toHaveClass(`state-dot--${dot}`);
+      expect(badge).toHaveAttribute('title', msg(`state.waiting_input.${word}.description`));
+      expect(badge).toHaveAttribute('data-state', 'waiting_input');
+      expect(badge).toHaveAttribute('data-attention', word);
+    },
+  );
+
+  it('says the two words in Vietnamese', () => {
+    for (const [rule, word] of [
+      ['S-6a', 'needsYou'],
+      ['S-8b', 'ready'],
+    ] as const) {
+      const assessment = makeState('waiting_input', { rule });
+      const { container, unmount } = renderWithIntl(<StateBadge state="waiting_input" assessment={assessment} />, {
+        locale: 'vi',
+      });
+      expect(badgeOf(container)).toHaveTextContent(msg(`state.waiting_input.${word}.label`, undefined, 'vi'));
+      expect(msg(`state.waiting_input.${word}.label`, undefined, 'vi')).not.toBe(
+        msg(`state.waiting_input.${word}.label`),
+      );
+      unmount();
+    }
+  });
+
+  it('keeps the old word of waiting_input without a rule, with a rule the classifier cannot place and for every other state', () => {
+    const old = msg('state.waiting_input.label');
+    for (const assessment of [
+      undefined,
+      makeState('waiting_input', { rule: 'S-1' }),
+      makeState('waiting_input', { rule: 'X-99' }),
+    ]) {
+      const { container, unmount } = renderWithIntl(<StateBadge state="waiting_input" assessment={assessment} />);
+      expect(badgeOf(container)).toHaveTextContent(old);
+      expect(badgeOf(container)).toHaveClass('tone-waiting');
+      expect(badgeOf(container)).not.toHaveAttribute('data-attention');
+      unmount();
+    }
+    const { container } = renderWithIntl(
+      <StateBadge state="turn_ended" assessment={makeState('turn_ended', { rule: 'S-8b' })} />,
+    );
+    expect(badgeOf(container)).toHaveTextContent(msg('state.turn_ended.label'));
+  });
+
   it('shows an unknown string as the unknown state', () => {
     const { container } = renderWithIntl(<StateBadge state="something_new" />);
     const badge = badgeOf(container);

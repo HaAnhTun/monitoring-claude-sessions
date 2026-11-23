@@ -1369,4 +1369,14 @@ export const viMessages: Record<MessageKey, string> = {
   'settings.prefs.screenReader': 'Chế độ trình đọc màn hình cho terminal',
   'settings.prefs.screenReaderHint': 'Giúp trình đọc màn hình đọc được kết quả của terminal. Chậm hơn với kết quả lớn.',
   // @wp-end WP-136
+  // @wp-begin CAW-83
+  'state.waiting_input.needsYou.label': 'Cần bạn',
+  'state.waiting_input.needsYou.description': 'Cần có người quyết định hoặc trả lời thì phiên này mới chạy tiếp.',
+  'state.waiting_input.ready.label': 'Sẵn sàng nhận lệnh',
+  'state.waiting_input.ready.description': 'Lượt đã xong và ô nhập đang trống.',
+  'attention.needs': 'Cần bạn',
+  'attention.needs.tip': 'Các phiên chưa thể chạy tiếp cho đến khi bạn quyết định hoặc trả lời.',
+  'attention.ready': 'Sẵn sàng nhận lệnh',
+  'attention.ready.tip': 'Các phiên đã xong lượt: ô nhập đang trống và không có gì bị chặn.',
+  // @wp-end CAW-83
 };

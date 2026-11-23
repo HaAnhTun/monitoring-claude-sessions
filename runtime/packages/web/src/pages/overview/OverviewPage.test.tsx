@@ -154,13 +154,15 @@ describe('OverviewPage', () => {
       '/sessions?state=active',
       '/sessions?state=running,working',
       '/sessions?errors=1',
-      '/sessions?state=waiting_input',
+      '/sessions?state=waiting_input&attn=needs',
+      '/sessions?state=waiting_input&attn=ready',
     ]);
-    // Working and waiting come from the metrics; quiet and errors are counted in the rows (all of them are loaded).
+    // Working comes from the metrics; quiet, errors and the two halves of waiting_input are counted in the rows (all loaded).
     expect(links[0]).toHaveTextContent(/^2/);
     expect(links[1]).toHaveTextContent(/^1/);
     expect(links[2]).toHaveTextContent(/^1/);
     expect(links[3]).toHaveTextContent(/^1/);
+    expect(links[4]).toHaveTextContent(/^0/);
   });
 
   it('asks for the same first page of sessions as the Sessions page does without a filter', async () => {
@@ -204,11 +206,15 @@ describe('OverviewPage', () => {
           metrics: METRICS.filter((metric) => !metric.key.startsWith('tokens.') && !metric.key.startsWith('cost.')),
         }),
     });
-    await screen.findByText(msg('metric.sessions.waiting_input'));
+    // the tile of the metric: the badge of a waiting session carries the same words
+    await screen.findByRole('link', { name: msg('metric.sessions.waiting_input') });
     expect(document.querySelector('[data-metric^="tokens."]')).toBeNull();
     expect(document.querySelector('[data-metric^="cost."]')).toBeNull();
     expect(screen.queryByRole('region', { name: msg('overview.figures.usage') })).toBeNull();
-    expect(screen.queryByText(msg('metric.tokens.output'))).toBeNull();
+    // among the metric tiles only: the table of running sessions has a column with the same word
+    const tiles = [...document.querySelectorAll('[data-metric]')].map((tile) => tile.textContent);
+    expect(tiles.length).toBeGreaterThan(0);
+    expect(tiles.filter((text) => text.includes(msg('metric.tokens.output')))).toEqual([]);
   });
 
   it('says that the monitor has no figures yet when it returns no metric at all', async () => {

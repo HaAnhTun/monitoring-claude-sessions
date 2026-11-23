@@ -535,14 +535,15 @@ describe('SessionExplorerPage: paging', () => {
 });
 
 describe('SessionExplorerPage: the attention strip', () => {
-  it('counts the four tiles from the rows, and the counts equal the rows they stand for', async () => {
+  it('counts the five tiles from the rows, and the counts equal the rows they stand for', async () => {
     renderExplorer({ sessions: filteringServer(MIXED) });
     await screen.findByRole('table');
     expect(bodyRows()).toHaveLength(6);
     expect(figureOf(msg('attention.working'))).toBe('3');
     expect(figureOf(msg('attention.quiet'))).toBe('1');
     expect(figureOf(msg('attention.errors'))).toBe('2');
-    expect(figureOf(msg('attention.waiting'))).toBe('1');
+    expect(figureOf(msg('attention.needs'))).toBe('1');
+    expect(figureOf(msg('attention.ready'))).toBe('0');
     const states = bodyRows().map((r) => r.querySelector('[data-state]')?.getAttribute('data-state'));
     expect(states.filter((s) => s === 'working' || s === 'running')).toHaveLength(3);
   });
@@ -568,14 +569,15 @@ describe('SessionExplorerPage: the attention strip', () => {
     });
     expect(figureOf(msg('attention.working'))).toBe('3');
 
-    await user.click(tile(msg('attention.waiting')));
-    expect(screen.getByTestId('location')).toHaveTextContent('/sessions?state=waiting_input');
+    await user.click(tile(msg('attention.needs')));
+    expect(screen.getByTestId('location')).toHaveTextContent('/sessions?state=waiting_input&attn=needs');
+    expect(tile(msg('attention.needs'))).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => {
       expect(bodyRows()).toHaveLength(1);
     });
-    expect(figureOf(msg('attention.waiting'))).toBe('1');
+    expect(figureOf(msg('attention.needs'))).toBe('1');
 
-    await user.click(tile(msg('attention.waiting')));
+    await user.click(tile(msg('attention.needs')));
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/sessions$/);
     await waitFor(() => {
       expect(bodyRows()).toHaveLength(6);

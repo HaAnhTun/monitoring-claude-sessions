@@ -249,6 +249,21 @@ describe('route specs (04 3.2)', () => {
     return canonical;
   }
 
+  it('/sessions: attn is any by default and left out of the address; needs and ready round trip', () => {
+    const spec = sessionsSpec(24);
+    expect(parseUrlState(spec, sp('')).value.attn).toBe('any');
+    expect(parseUrlState(spec, sp('attn=any')).value.attn).toBe('any');
+    expect(formatUrlState(spec, parseUrlState(spec, sp('state=waiting_input&attn=any')).value).toString()).toBe(
+      'state=waiting_input',
+    );
+    for (const attn of ['needs', 'ready']) {
+      expect(roundTrip(spec, `state=waiting_input&attn=${attn}`)).toBe(`state=waiting_input&attn=${attn}`);
+    }
+    const odd = parseUrlState(spec, sp('attn=NEEDS'));
+    expect(odd.value.attn).toBe('any');
+    expect(odd.ignored).toEqual(['attn']);
+  });
+
   it('/sessions: every key round trips and defaults are omitted', () => {
     const spec = sessionsSpec(24);
     expect(formatUrlState(spec, parseUrlState(spec, sp('')).value).toString()).toBe('');

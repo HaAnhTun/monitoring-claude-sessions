@@ -1,28 +1,40 @@
 // What needs attention in a list of sessions (ADR 0073 decision 7, ADR 0074 decision 8, review R-11 and R-34): the counts of the
-// four tiles of the attention strip, where each count comes from, the "attention first" order and the way a tile maps to the
+// five tiles of the attention strip, where each count comes from, the "attention first" order and the way a tile maps to the
 // address. Pure: no clock, no React.
 //
 // The tiles overlap on purpose. "Working" is every active session (what the server metric `sessions.active` and the filter
-// `state=active` mean); "Quiet (inferred)" is the part of it that the engine only inferred from silence; "With errors" and
-// "Waiting for input" cut across the states.
-import { ACTIVE_STATES, type LifecycleState, type Overview } from '@mcs/shared';
+// `state=active` mean); "Quiet (inferred)" is the part of it that the engine only inferred from silence; "With errors" cuts
+// across the states. "Needs you" and "Ready for prompt" are the two halves of `waiting_input` (ADR 0107): the shared
+// classifier reads the rule that decided the state, and a row it cannot place counts as "Needs you", so nothing that may
+// block a person is ever filed under "ready".
+import { ACTIVE_STATES, attentionOf, type AttentionInput, type LifecycleState, type Overview } from '@mcs/shared';
 
 import { hasQuestionMark } from './state-evidence.ts';
 import type { SessionsUrlState } from './url-state.ts';
 
 /** The fields of a session that this module reads; a `SessionSummary` satisfies it. */
 export interface AttentionRow {
-  state: { state: string; basis: string };
+  /** `rule`, `waitReason` and `turnOutcome` are what the classifier reads; a row without a rule is never "ready". */
+  state: { state: string; basis: string } & Partial<Pick<AttentionInput, 'rule' | 'waitReason' | 'turnOutcome'>>;
   errorCount: number;
   lastActivityAt?: string | null;
 }
 
-export const ATTENTION_TILES = ['working', 'quiet', 'errors', 'waiting'] as const;
+export const ATTENTION_TILES = ['working', 'quiet', 'errors', 'needs', 'ready'] as const;
 export type AttentionTile = (typeof ATTENTION_TILES)[number];
 /** The tile that is pressed, or none. */
 export type AttentionFilter = AttentionTile | null;
 
 const ACTIVE: ReadonlySet<string> = new Set(ACTIVE_STATES);
+
+/** A `waiting_input` row whose rule says that the turn is over and the prompt is empty. */
+function isReady(row: AttentionRow): boolean {
+  const { state, rule, waitReason, turnOutcome } = row.state;
+  if (state !== 'waiting_input' || rule === undefined || rule === '') return false;
+  return (
+    attentionOf({ state, rule, waitReason: waitReason ?? null, turnOutcome: turnOutcome ?? null }).posture === 'ready'
+  );
+}
 
 export function matchesAttention(row: AttentionRow, tile: AttentionTile): boolean {
   switch (tile) {
@@ -32,8 +44,10 @@ export function matchesAttention(row: AttentionRow, tile: AttentionTile): boolea
       return hasQuestionMark(row.state.state, row.state.basis);
     case 'errors':
       return row.errorCount > 0;
-    case 'waiting':
-      return row.state.state === 'waiting_input';
+    case 'needs':
+      return row.state.state === 'waiting_input' && !isReady(row);
+    case 'ready':
+      return isReady(row);
   }
 }
 
@@ -44,13 +58,14 @@ export interface AttentionCounts extends Record<AttentionTile, number> {
   exact: boolean;
 }
 
-/** The counts of the four tiles over the rows that are loaded; `complete` says that no page is left on the server. */
+/** The counts of the five tiles over the rows that are loaded; `complete` says that no page is left on the server. */
 export function sessionsAttention(rows: readonly AttentionRow[], options: { complete: boolean }): AttentionCounts {
   const counts: AttentionCounts = {
     working: 0,
     quiet: 0,
     errors: 0,
-    waiting: 0,
+    needs: 0,
+    ready: 0,
     loaded: rows.length,
     exact: options.complete,
   };
@@ -63,13 +78,13 @@ export function sessionsAttention(rows: readonly AttentionRow[], options: { comp
 // ---- where a figure comes from --------------------------------------------------------------------------------------------
 
 /**
- * The overview metric that answers a tile, when the server has one. At the V3 head the server counts the active and the waiting
- * sessions only; "quiet" and "with errors" are counted from the rows until it learns to (ADR 0074 consequences). A key added here
- * is all it takes to switch a tile to the server.
+ * The overview metric that answers a tile, when the server has one. The server counts the active sessions; its metric
+ * `sessions.waiting_input` counts "needs you" and "ready" together, so neither tile uses it. "Quiet", "with errors" and the two
+ * halves of `waiting_input` are counted from the rows until the server learns to (ADR 0074 consequences, ADR 0107). A key added
+ * here is all it takes to switch a tile to the server.
  */
 export const ATTENTION_METRIC_KEYS: Readonly<Partial<Record<AttentionTile, string>>> = {
   working: 'sessions.active',
-  waiting: 'sessions.waiting_input',
 };
 
 export interface AttentionFigure {
@@ -109,17 +124,24 @@ export function attentionFigures(
     if (!known) return { value: null, lowerBound: false, source: 'none', loaded: counts.loaded };
     return { value: counts[tile], lowerBound: !counts.exact, source: 'loaded', loaded: counts.loaded };
   };
-  return { working: figure('working'), quiet: figure('quiet'), errors: figure('errors'), waiting: figure('waiting') };
+  return {
+    working: figure('working'),
+    quiet: figure('quiet'),
+    errors: figure('errors'),
+    needs: figure('needs'),
+    ready: figure('ready'),
+  };
 }
 
 // ---- the "attention first" order --------------------------------------------------------------------------------------------
 
 /**
- * 0 errors (or failed), 1 waiting for input, 2 quiet (inferred), 3 working, 4 everything else. A lower rank is read first.
+ * 0 errors (or failed), 1 needs you, 2 quiet (inferred), 3 working, 4 everything else. A session that is ready for the next
+ * prompt blocks nobody: it is 4. A lower rank is read first.
  */
 export function attentionRank(row: AttentionRow): 0 | 1 | 2 | 3 | 4 {
   if (row.errorCount > 0 || row.state.state === 'failed') return 0;
-  if (row.state.state === 'waiting_input') return 1;
+  if (matchesAttention(row, 'needs')) return 1;
   if (matchesAttention(row, 'quiet')) return 2;
   if (matchesAttention(row, 'working')) return 3;
   return 4;
@@ -148,26 +170,29 @@ export function sortByAttention<R extends AttentionRow>(rows: readonly R[]): R[]
 
 // ---- tile and address ---------------------------------------------------------------------------------------------------------
 
-export type AttentionUrl = Pick<SessionsUrlState, 'state' | 'errors'>;
+export type AttentionUrl = Pick<SessionsUrlState, 'state' | 'errors' | 'attn'>;
 
 const QUIET_STATES: readonly LifecycleState[] = ['running', 'working'];
 
 /**
  * The filter of the address that a tile stands for (`null` clears it). "Quiet" can only be a `running` or `working` session, so it
  * narrows the address to those two states; the page narrows the loaded rows further with `matchesAttention(row, 'quiet')`.
+ * "Needs you" and "Ready for prompt" ask the server for `waiting_input` and carry `attn`, which the page narrows by.
  */
 export function attentionPatch(tile: AttentionFilter): AttentionUrl {
   switch (tile) {
     case null:
-      return { state: [], errors: false };
+      return { state: [], errors: false, attn: 'any' };
     case 'working':
-      return { state: [...ACTIVE_STATES], errors: false };
+      return { state: [...ACTIVE_STATES], errors: false, attn: 'any' };
     case 'quiet':
-      return { state: [...QUIET_STATES], errors: false };
+      return { state: [...QUIET_STATES], errors: false, attn: 'any' };
     case 'errors':
-      return { state: [], errors: true };
-    case 'waiting':
-      return { state: ['waiting_input'], errors: false };
+      return { state: [], errors: true, attn: 'any' };
+    case 'needs':
+      return { state: ['waiting_input'], errors: false, attn: 'needs' };
+    case 'ready':
+      return { state: ['waiting_input'], errors: false, attn: 'ready' };
   }
 }
 
@@ -175,11 +200,14 @@ function sameStates(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((state) => b.includes(state));
 }
 
-/** The tile that the address presses, or null when the filter is something else. */
+/**
+ * The tile that the address presses, or null when the filter is something else. `state=waiting_input` alone (the state filter,
+ * an address from before the two tiles) presses none: it lists both halves.
+ */
 export function attentionFilterOf(url: AttentionUrl): AttentionFilter {
   for (const tile of ATTENTION_TILES) {
     const patch = attentionPatch(tile);
-    if (patch.errors === url.errors && sameStates(patch.state, url.state)) return tile;
+    if (patch.errors === url.errors && patch.attn === url.attn && sameStates(patch.state, url.state)) return tile;
   }
   return null;
 }

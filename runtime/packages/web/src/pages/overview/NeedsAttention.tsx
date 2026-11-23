@@ -22,13 +22,14 @@ export interface AttentionSelection {
 }
 
 /**
- * The sessions to read first: those with an error, those that wait for input and those that are only inferred to be working
- * (quiet), ordered as the Sessions page orders "Attention first" (errors, waiting for input, quiet, then the newest activity).
+ * The sessions to read first: those with an error, those that need the person and those that are only inferred to be working
+ * (quiet), ordered as the Sessions page orders "Attention first" (errors, needs you, quiet, then the newest activity). A session
+ * that is ready for the next prompt blocks nobody and is not listed (ADR 0107).
  */
 export function selectNeedsAttention(sessions: readonly SessionSummary[], cap = ATTENTION_CAP): AttentionSelection {
   const matching = sessions.filter(
     (session) =>
-      matchesAttention(session, 'errors') || matchesAttention(session, 'waiting') || matchesAttention(session, 'quiet'),
+      matchesAttention(session, 'errors') || matchesAttention(session, 'needs') || matchesAttention(session, 'quiet'),
   );
   return { items: sortByAttention(matching).slice(0, cap), total: matching.length };
 }
@@ -74,7 +75,7 @@ function Item({ session }: { session: SessionSummary }) {
 }
 
 /**
- * "Needs attention" (ADR 0073 decision 9): at most five sessions with an error, waiting for input or quiet (inferred), each with
+ * "Needs attention" (ADR 0073 decision 9): at most five sessions with an error, needing the person or quiet (inferred), each with
  * its state, the evidence line that says how the state was decided, and a link to the session.
  */
 export function NeedsAttention({ sessions, complete, loading = false }: NeedsAttentionProps) {

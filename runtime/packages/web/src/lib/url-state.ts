@@ -329,6 +329,13 @@ export function apiSortOf(state: Pick<SessionsUrlState, 'sort' | 'dir'>): {
   return { sort: state.sort, dir: state.dir };
 }
 
+/**
+ * Which part of `waiting_input` the list shows (ADR 0107): `needs` is a session that waits for a decision or an answer,
+ * `ready` one whose turn is over with an empty prompt. UI only: the server knows the state, the page narrows the loaded rows.
+ */
+export const SESSION_ATTN = ['any', 'needs', 'ready'] as const;
+export type SessionAttn = (typeof SESSION_ATTN)[number];
+
 export interface SessionsUrlState {
   q: string;
   state: LifecycleState[];
@@ -337,6 +344,8 @@ export interface SessionsUrlState {
   task: number | null;
   model: string;
   errors: boolean;
+  /** Set by the tiles "Needs you" and "Ready for prompt"; `any` is left out of the address. */
+  attn: SessionAttn;
   range: TimeRange;
   tokMin: number | null;
   tokMax: number | null;
@@ -353,6 +362,7 @@ export function sessionsSpec(windowHours: number): Spec<SessionsUrlState> {
     task: intRange('task', 1, Number.MAX_SAFE_INTEGER),
     model: idText('model'),
     errors: flag('errors'),
+    attn: oneOf('attn', SESSION_ATTN, 'any'),
     ...timeRange(defaultPresetForWindow(windowHours)),
     tokMin: intRange('tokMin', 0, 1e12),
     tokMax: intRange('tokMax', 0, 1e12),

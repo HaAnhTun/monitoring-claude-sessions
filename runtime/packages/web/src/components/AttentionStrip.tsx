@@ -35,28 +35,32 @@ const TONES: Readonly<Record<AttentionTile, SummaryTone>> = {
   working: 'running',
   quiet: 'quiet',
   errors: 'failed',
-  waiting: 'waiting',
+  needs: 'waiting',
+  ready: 'neutral',
 };
 
 const LABEL_KEYS = {
   working: 'attention.working',
   quiet: 'attention.quiet',
   errors: 'attention.errors',
-  waiting: 'attention.waiting',
+  needs: 'attention.needs',
+  ready: 'attention.ready',
 } as const satisfies Readonly<Record<AttentionTile, MessageKey>>;
 
 const TIP_KEYS = {
   working: 'attention.working.tip',
   quiet: 'attention.quiet.tip',
   errors: 'attention.errors.tip',
-  waiting: 'attention.waiting.tip',
+  needs: 'attention.needs.tip',
+  ready: 'attention.ready.tip',
 } as const satisfies Readonly<Record<AttentionTile, MessageKey>>;
 
 /**
- * The four toggle tiles above the session list (ADR 0073 decision 7, review R-11): Working, Quiet (inferred), With errors and
- * Waiting for input. A tile shows the server metric when the overview returns one, else the count of the loaded rows: exact when
- * the whole list is loaded, `N+` with an explanation when more pages exist (deviation D-30 of ADR 0074 decision 8). The strip is
- * drawn as soon as the page renders it: a figure that is not known yet is a dash, never 0.
+ * The five toggle tiles above the session list (ADR 0073 decision 7, review R-11, ADR 0107): Working, Quiet (inferred), With
+ * errors, Needs you and Ready for prompt (the two halves of "waiting for input"). A tile shows the server metric when the overview
+ * returns one, else the count of the loaded rows: exact when the whole list is loaded, `N+` with an explanation when more pages
+ * exist (deviation D-30 of ADR 0074 decision 8). The strip is drawn as soon as the page renders it: a figure that is not known yet
+ * is a dash, never 0.
  */
 export function AttentionStrip({
   overview,

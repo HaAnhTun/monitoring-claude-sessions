@@ -1352,4 +1352,14 @@ export const enMessages = {
   'settings.prefs.screenReaderHint':
     'Makes terminal output readable by screen readers. It is slower for large outputs.',
   // @wp-end WP-136
+  // @wp-begin CAW-83
+  'state.waiting_input.needsYou.label': 'Needs you',
+  'state.waiting_input.needsYou.description': 'A person has to decide or answer before this session can go on.',
+  'state.waiting_input.ready.label': 'Ready for prompt',
+  'state.waiting_input.ready.description': 'The turn is over and the prompt is empty.',
+  'attention.needs': 'Needs you',
+  'attention.needs.tip': 'Sessions that cannot go on until you decide or answer something.',
+  'attention.ready': 'Ready for prompt',
+  'attention.ready.tip': 'Sessions whose turn is over: the prompt is empty and nothing is blocked.',
+  // @wp-end CAW-83
 } as const;

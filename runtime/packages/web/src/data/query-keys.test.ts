@@ -47,6 +47,7 @@ function defaultSessionsState(): SessionsUrlState {
     task: null,
     model: '',
     errors: false,
+    attn: 'any',
     range: { kind: 'preset', preset: '24h' },
     tokMin: null,
     tokMax: null,

@@ -219,8 +219,9 @@ function Explorer() {
   const listKey = qk.sessions(useIid(), query);
   const overview = useOverview();
 
-  const activeCount = countActive(spec, state);
-  const attention = attentionFilterOf({ state: state.state, errors: state.errors });
+  const attention = attentionFilterOf({ state: state.state, errors: state.errors, attn: state.attn });
+  // A pressed tile is one filter: `attn` belongs to the state it narrows and is not counted a second time.
+  const activeCount = countActive(spec, state) - (state.attn === 'any' ? 0 : 1);
   // The monitor's own counts describe the whole window; they stand in for the rows only while no filter narrows the list.
   const unfiltered = attention === null && countActive(spec, state) === 0;
   const complete = result.data !== undefined && !result.hasNextPage;
@@ -233,10 +234,11 @@ function Explorer() {
     DEFAULT_SESSION_COLUMNS,
   );
 
-  const quiet = attention === 'quiet';
+  // The server filters by state; these three tiles are a part of a state, so the page narrows the loaded rows.
+  const narrowBy = attention === 'quiet' || attention === 'needs' || attention === 'ready' ? attention : null;
   const narrowed = useMemo(
-    () => (quiet ? items.filter((row) => matchesAttention(row, 'quiet')) : items),
-    [quiet, items],
+    () => (narrowBy === null ? items : items.filter((row) => matchesAttention(row, narrowBy))),
+    [narrowBy, items],
   );
   const rows = useAttentionOrder(narrowed, state.sort === 'attention');
   const tableRows = useMemo(() => [...rows], [rows]);
@@ -259,6 +261,13 @@ function Explorer() {
     },
     [setState],
   );
+  // A state or error filter chosen by hand replaces the tile, so the half of `waiting_input` it stood for goes with it.
+  const onFilterChange = useCallback(
+    (patch: Partial<SessionsUrlState>) => {
+      setState('state' in patch || 'errors' in patch ? { attn: 'any', ...patch } : patch);
+    },
+    [setState],
+  );
   const clearAll = useCallback(() => {
     setState({
       q: '',
@@ -267,6 +276,7 @@ function Explorer() {
       task: null,
       model: '',
       errors: false,
+      attn: 'any',
       range: spec.range.default,
       tokMin: null,
       tokMax: null,
@@ -336,7 +346,7 @@ function Explorer() {
             void result.fetchNextPage();
           }}
           shown={tableRows.length}
-          total={quiet ? null : (lastPage?.total ?? null)}
+          total={narrowBy === null ? (lastPage?.total ?? null) : null}
           totalIsLowerBound={lastPage?.totalIsLowerBound ?? false}
           nounKey="common.noun.sessions"
           capped={capped}
@@ -354,7 +364,7 @@ function Explorer() {
 
   let summary: string | null = null;
   if (result.data !== undefined && tableRows.length > 0) {
-    const total = quiet ? null : (lastPage?.total ?? null);
+    const total = narrowBy === null ? (lastPage?.total ?? null) : null;
     if (total !== null) {
       summary =
         lastPage?.totalIsLowerBound === true
@@ -404,7 +414,7 @@ function Explorer() {
       />
       <SessionFilterBar
         state={state}
-        onChange={setState}
+        onChange={onFilterChange}
         rangeDefault={spec.range.default}
         ignoredKeys={ignored.length > 0 && dismissed !== ignored ? ignored : []}
         onDismissIgnored={() => {

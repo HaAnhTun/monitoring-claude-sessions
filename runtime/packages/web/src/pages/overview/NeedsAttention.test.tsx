@@ -69,6 +69,27 @@ describe('selectNeedsAttention', () => {
   });
 });
 
+describe('the two halves of waiting_input (ADR 0107)', () => {
+  const needs = row(1, 'waiting_input', {
+    state: makeState('waiting_input', { rule: 'S-6a', waitReason: 'permission' }),
+  });
+  const ready = row(2, 'waiting_input', { state: makeState('waiting_input', { rule: 'S-8b', waitReason: 'user' }) });
+
+  it('lists a session that needs the person and leaves out one that is ready for the next prompt', () => {
+    expect(selectNeedsAttention([ready, needs])).toEqual({ items: [needs], total: 1 });
+    // a ready session with an error is listed for its error
+    const failing = { ...ready, errorCount: 1 };
+    expect(selectNeedsAttention([failing]).items).toEqual([failing]);
+  });
+
+  it('draws the badge with the word "Needs you"', () => {
+    renderWithIntl(<NeedsAttention sessions={[ready, needs]} complete />);
+    expect(titles()).toEqual(['FIXTURE session 1']);
+    expect(screen.getByText('Needs you')).toHaveClass('badge__word');
+    expect(screen.queryByText(msg('state.waiting_input.label'))).toBeNull();
+  });
+});
+
 describe('NeedsAttention', () => {
   it('lists the sessions as links to their detail page with a state badge', () => {
     renderWithIntl(

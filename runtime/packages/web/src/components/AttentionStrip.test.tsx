@@ -20,8 +20,9 @@ const ROWS: SessionSummary[] = [
   quiet(2),
   quiet(3),
   row(4, 'turn_ended', { errorCount: 1 }),
-  row(5, 'waiting_input'),
-  row(6, 'completed'),
+  // the two halves of waiting_input: a permission prompt (S-6) and a finished turn with an empty prompt (S-8)
+  row(5, 'waiting_input', { state: makeState('waiting_input', { rule: 'S-6a', waitReason: 'permission' }) }),
+  row(6, 'waiting_input', { state: makeState('waiting_input', { rule: 'S-8b', waitReason: 'user' }) }),
 ];
 
 function renderStrip(props: Partial<AttentionStripProps> = {}, locale: 'en' | 'vi' = 'en') {
@@ -36,24 +37,25 @@ function renderStrip(props: Partial<AttentionStripProps> = {}, locale: 'en' | 'v
   return { props: all, ...renderWithIntl(<AttentionStrip {...all} />, { locale }) };
 }
 
-function tile(name: 'working' | 'quiet' | 'errors' | 'waiting', locale: 'en' | 'vi' = 'en'): HTMLElement {
+function tile(name: 'working' | 'quiet' | 'errors' | 'needs' | 'ready', locale: 'en' | 'vi' = 'en'): HTMLElement {
   return screen.getByRole('button', {
     name: new RegExp(msg(`attention.${name}`, undefined, locale).replace(/[()]/g, '\\$&')),
   });
 }
 
 describe('AttentionStrip', () => {
-  it('has the four tiles in order, in a list named "Needs attention"', () => {
+  it('has the five tiles in order, in a list named "Needs attention"', () => {
     renderStrip();
     const list = screen.getByRole('list', { name: msg('attention.label') });
     const labels = within(list)
       .getAllByRole('button')
       .map((button) => button.textContent);
-    expect(labels).toHaveLength(4);
+    expect(labels).toHaveLength(5);
     expect(labels[0]).toContain(msg('attention.working'));
     expect(labels[1]).toContain(msg('attention.quiet'));
     expect(labels[2]).toContain(msg('attention.errors'));
-    expect(labels[3]).toContain(msg('attention.waiting'));
+    expect(labels[3]).toContain('Needs you');
+    expect(labels[4]).toContain('Ready for prompt');
   });
 
   it('counts the loaded rows when the whole list is loaded: exact figures, no plus sign', () => {
@@ -61,7 +63,8 @@ describe('AttentionStrip', () => {
     expect(tile('working')).toHaveTextContent(/^3/);
     expect(tile('quiet')).toHaveTextContent(/^2/);
     expect(tile('errors')).toHaveTextContent(/^1/);
-    expect(tile('waiting')).toHaveTextContent(/^1/);
+    expect(tile('needs')).toHaveTextContent(/^1/);
+    expect(tile('ready')).toHaveTextContent(/^1/);
     expect(screen.queryByText(/\d\+/)).toBeNull();
   });
 
@@ -85,16 +88,24 @@ describe('AttentionStrip', () => {
     });
     renderStrip({ overview });
     expect(tile('working')).toHaveTextContent(/^41/);
-    expect(tile('waiting')).toHaveTextContent(/^9/);
+    // the server metric counts both halves of waiting_input: the two tiles count the rows instead
+    expect(tile('needs')).toHaveTextContent(/^1/);
+    expect(tile('ready')).toHaveTextContent(/^1/);
+    expect(tile('needs')).toHaveAttribute(
+      'title',
+      expect.stringContaining(msg('attention.source.loaded', { loaded: 6 })),
+    );
     expect(tile('quiet')).toHaveTextContent(/^2/);
     expect(tile('working')).toHaveAttribute('title', expect.stringContaining(msg('attention.source.server')));
   });
 
-  it('shows N+ with the explanation when more pages exist, and keeps all four tiles', () => {
+  it('shows N+ with the explanation when more pages exist, and keeps all five tiles', () => {
     renderStrip({ complete: false });
     expect(screen.getByRole('list', { name: msg('attention.label') })).toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(4);
+    expect(screen.getAllByRole('button')).toHaveLength(5);
     expect(within(tile('errors')).getByText('1+')).toBeInTheDocument();
+    expect(tile('needs')).toHaveTextContent(/^1\+/);
+    expect(tile('ready')).toHaveTextContent(/^1\+/);
     expect(tile('errors')).toHaveAttribute(
       'title',
       expect.stringContaining(msg('attention.source.atLeast', { count: 1, loaded: 6 })),
@@ -105,7 +116,7 @@ describe('AttentionStrip', () => {
   it('shows dashes, not zeros, before any page is loaded', () => {
     renderStrip({ loadedRows: [], complete: false });
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(4);
+    expect(buttons).toHaveLength(5);
     for (const button of buttons) {
       expect(button).toHaveTextContent('–');
       expect(button).not.toHaveTextContent(/^0/);
@@ -121,7 +132,7 @@ describe('AttentionStrip', () => {
     const user = userEvent.setup();
     const onFilter = vi.fn();
     const { rerender, props } = renderStrip({ onFilter });
-    for (const name of ['working', 'quiet', 'errors', 'waiting'] as const) {
+    for (const name of ['working', 'quiet', 'errors', 'needs', 'ready'] as const) {
       expect(tile(name)).toHaveAttribute('aria-pressed', 'false');
     }
     await user.click(tile('errors'));
@@ -133,6 +144,8 @@ describe('AttentionStrip', () => {
     expect(onFilter).toHaveBeenLastCalledWith(null);
     await user.click(tile('quiet'));
     expect(onFilter).toHaveBeenLastCalledWith('quiet');
+    await user.click(tile('ready'));
+    expect(onFilter).toHaveBeenLastCalledWith('ready');
   });
 
   it('draws links instead of toggles when it is given an address for each tile', () => {
@@ -145,7 +158,8 @@ describe('AttentionStrip', () => {
       '/sessions?tile=working',
       '/sessions?tile=quiet',
       '/sessions?tile=errors',
-      '/sessions?tile=waiting',
+      '/sessions?tile=needs',
+      '/sessions?tile=ready',
     ]);
     expect(links[2]).toHaveTextContent(/^1/);
   });
@@ -153,6 +167,8 @@ describe('AttentionStrip', () => {
   it('describes each tile in its title', () => {
     renderStrip();
     expect(tile('quiet')).toHaveAttribute('title', expect.stringContaining(msg('attention.quiet.tip')));
+    expect(tile('needs')).toHaveAttribute('title', expect.stringContaining(msg('attention.needs.tip')));
+    expect(tile('ready')).toHaveAttribute('title', expect.stringContaining(msg('attention.ready.tip')));
     expect(tile('working')).toHaveAttribute(
       'title',
       expect.stringContaining(msg('attention.source.loaded', { loaded: 6 })),
@@ -165,5 +181,8 @@ describe('AttentionStrip', () => {
     expect(screen.getByRole('list', { name: msg('attention.label', undefined, 'vi') })).toBeInTheDocument();
     expect(tile('working', 'vi')).toHaveTextContent(/^1\.200/);
     expect(msg('attention.working', undefined, 'vi')).not.toBe(msg('attention.working'));
+    expect(tile('needs', 'vi')).toHaveTextContent(/^0/);
+    expect(tile('ready', 'vi')).toHaveTextContent(/^0/);
+    expect(msg('attention.needs', undefined, 'vi')).not.toBe(msg('attention.ready', undefined, 'vi'));
   });
 });
