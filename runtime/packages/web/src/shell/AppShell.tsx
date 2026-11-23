@@ -14,6 +14,7 @@ import { applyDisplayPrefs, resolveDisplay, usePrefs } from '../state/prefs-stor
 import { ShortcutRegistryProvider, useShortcut, useShortcutRegistry } from '../state/shortcuts-registry.tsx';
 import { useToasts } from '../state/toast-store.ts';
 import { AccessGate } from './AccessGate.tsx';
+import { AttentionHost } from './AttentionHost.tsx';
 import { InstanceChangedNotice } from './InstanceChangedNotice.tsx';
 import { OutdatedNotice } from './OutdatedNotice.tsx';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
@@ -51,7 +52,8 @@ function ToastRegion() {
  * The frame once the instance is known: top bar, sidebar, the routed page, dialogs and notices. A bleed route (the Workspace) is
  * marked on `<html data-layout>` and on `main` (no padding, the page does not scroll); only a page route is the scope of the stale
  * outline. A user instance also redeems its login link (`AccessGate`), shares the access flow with its pages and shows the
- * outdated notice under the instance-changed one.
+ * outdated notice under the instance-changed one. The attention host (ADR 0107) wraps the frame: the pages read its rows, and the
+ * tab title and the tab icon follow it.
  */
 function Frame({ instance }: { instance: InstanceInfo }) {
   const t = useT();
@@ -80,26 +82,28 @@ function Frame({ instance }: { instance: InstanceInfo }) {
   );
   return (
     <AccessFlowContext value={accessFlow}>
-      <div className="shell">
-        <SkipLinks />
-        <TopBar />
-        <InstanceChangedNotice />
-        {user ? <OutdatedNotice /> : null}
-        {user ? <AccessGate /> : null}
-        <div className="shell__body">
-          <Sidebar />
-          <main
-            id={MAIN_ID}
-            className={layout === 'bleed' ? 'main main--bleed' : 'main'}
-            tabIndex={-1}
-            data-stale-scope={layout === 'page' ? '' : undefined}
-          >
-            <Outlet />
-          </main>
+      <AttentionHost kind={instance.kind}>
+        <div className="shell">
+          <SkipLinks />
+          <TopBar />
+          <InstanceChangedNotice />
+          {user ? <OutdatedNotice /> : null}
+          {user ? <AccessGate /> : null}
+          <div className="shell__body">
+            <Sidebar />
+            <main
+              id={MAIN_ID}
+              className={layout === 'bleed' ? 'main main--bleed' : 'main'}
+              tabIndex={-1}
+              data-stale-scope={layout === 'page' ? '' : undefined}
+            >
+              <Outlet />
+            </main>
+          </div>
+          <ShortcutsDialog />
+          <ToastRegion />
         </div>
-        <ShortcutsDialog />
-        <ToastRegion />
-      </div>
+      </AttentionHost>
     </AccessFlowContext>
   );
 }

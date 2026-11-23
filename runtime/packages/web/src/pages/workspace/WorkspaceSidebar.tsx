@@ -3,7 +3,8 @@
 // Escape (the focus goes back to that button), on a click outside and after a selection. It reads its own data (folders, terminals
 // and the monitor rows of the linked sessions) and hands every action to the page: New session, Other folder and Resume open
 // dialogs that the page owns. It renders nothing when terminals are unavailable or the browser has no session (the pane then takes
-// the whole width and says why).
+// the whole width and says why). Above the filter stands the "Needs you" strip (ADR 0107) while the attention center has a row for
+// it; the folders below keep their order.
 import type { SessionSummary } from '@mcs/shared';
 import {
   useCallback,
@@ -26,12 +27,16 @@ import { useAuthSession } from '../../data/hooks/useAuth.ts';
 import { useFolders, useLinkedSessions, type FolderList } from '../../data/hooks/useFolders.ts';
 import { useTerminalState } from '../../data/hooks/useTerminalState.ts';
 import { useT } from '../../i18n/context.ts';
+import { attentionPrefsOf } from '../../lib/prefs.ts';
+import { rollupByFolder, stripOf } from '../../lib/workspace-attention.ts';
 import { buildWorkspaceView, folderPrefKey, type FolderModel, type LiveSession } from '../../lib/workspace-view.ts';
+import { useAttentionValue } from '../../state/attention-context.ts';
 import { usePrefs } from '../../state/prefs-store.ts';
 import { MQ_LIST_OVERLAY, useMediaQuery } from '../../state/use-media-query.ts';
 import { useShortcut } from '../../state/shortcuts-registry.tsx';
 import type { NewSessionTarget } from './ActionDialogs.tsx';
 import { FolderRow } from './FolderRow.tsx';
+import { NeedsYouStrip } from './NeedsYouStrip.tsx';
 import { useRovingFocus } from './useRovingFocus.ts';
 
 /** The id of the column: the target of the skip link "Skip to project list". */
@@ -129,6 +134,11 @@ export function WorkspaceSidebar({
     [foldersData, sessions, monitor, filter, prefs.workspaceOpen, selected],
   );
   const knownKeys = useMemo(() => new Set((foldersData?.folders ?? []).map((folder) => folder.key)), [foldersData]);
+  // The attention center of the shell: what the strip shows and what a closed folder says. Outside the shell it is empty.
+  const attention = useAttentionValue();
+  const strip = useMemo(() => stripOf(attention.items), [attention.items]);
+  const rollup = useMemo(() => rollupByFolder(attention.items), [attention.items]);
+  const titles = attentionPrefsOf(prefs).workspaceTitles;
 
   const roving = useRovingFocus<HTMLDivElement>({ preferredId: selected === '' ? null : `session:${selected}` });
   const { containerRef: rovingRef, focusTabStop } = roving;
@@ -278,6 +288,8 @@ export function WorkspaceSidebar({
             key={row.folder.key}
             model={row}
             liveAll={sessions}
+            attention={rollup.get(row.folder.key)}
+            titles={titles}
             onToggle={(next) => {
               toggleFolder(row.folder, next);
             }}
@@ -307,6 +319,10 @@ export function WorkspaceSidebar({
         tabIndex={-1}
       >
         <h2 className="workspace-sidebar__heading">{t('workspace.sidebar.heading')}</h2>
+        {/* nothing while the terminals are still loading: the strip never flashes in front of an unknown list */}
+        {terminal.data === undefined ? null : (
+          <NeedsYouStrip model={strip} titles={titles} onMarkSeen={attention.markSeen} onNavigate={onNavigate} />
+        )}
         <input
           ref={filterRef}
           type="search"

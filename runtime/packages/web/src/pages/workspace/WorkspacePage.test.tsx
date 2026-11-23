@@ -7,8 +7,10 @@ import { Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { qk } from '../../data/query-keys.ts';
+import type { AttentionItem } from '../../lib/attention-rows.ts';
 import { createPrefs } from '../../lib/prefs.ts';
 import { AnnouncerProvider } from '../../state/announcer.tsx';
+import { AttentionContext, EMPTY_ATTENTION } from '../../state/attention-context.ts';
 import { createPrefsStore, type PrefsStore } from '../../state/prefs-store.ts';
 import { ShortcutRegistryProvider } from '../../state/shortcuts-registry.tsx';
 import { createToastStore, ToastStoreContext, type ToastStore } from '../../state/toast-store.ts';
@@ -61,6 +63,8 @@ interface Options {
   locale?: 'en' | 'vi';
   prefsStore?: PrefsStore;
   monitor?: ReturnType<typeof makeSession>[];
+  /** The rows of the attention center (the host of the shell is not mounted here). Default: none. */
+  attention?: readonly AttentionItem[];
 }
 
 function Probe() {
@@ -125,7 +129,9 @@ function renderPage(options: Options = {}): Rig {
         <TerminalSeamsContext value={fake.seams}>
           <AnnouncerProvider>
             <ShortcutRegistryProvider>
-              <ToastStoreContext value={toasts}>{children}</ToastStoreContext>
+              <AttentionContext value={{ ...EMPTY_ATTENTION, items: options.attention ?? [] }}>
+                <ToastStoreContext value={toasts}>{children}</ToastStoreContext>
+              </AttentionContext>
             </ShortcutRegistryProvider>
           </AnnouncerProvider>
         </TerminalSeamsContext>
@@ -332,6 +338,52 @@ describe('TC-UI-12 focus', () => {
     await sidebar();
     fireEvent.keyDown(document.body, { key: 't' });
     expect(rig.fake.engine.instances).toHaveLength(0);
+  });
+
+  it('TC-ATT-23 "n" selects the next session that needs the person, wrapping, and asks for the focus', async () => {
+    const needing = (n: number): AttentionItem => ({
+      key: `t:fixture-term-${String(n)}`,
+      sessionId: null,
+      terminal: `fixture-term-${String(n)}`,
+      folderKey: `fixture-app-${String(n)}`,
+      cls: { posture: 'needs_you', reason: 'not_linked', family: 'link' },
+      since: null,
+      label: null,
+      labelSource: null,
+      level: 'needs_you',
+      unseen: true,
+    });
+    renderPage({ attention: [needing(1), needing(2)] });
+    const nav = await sidebar();
+    // the strip stands in the project column, above the filter
+    const strip = await within(nav).findByRole('region', { name: msg('workspace.attention.heading', { count: 2 }) });
+    const filter = within(nav).getByRole('searchbox');
+    expect(strip.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: 'n' });
+    await waitFor(() => {
+      expect(where()).toBe('/?session=fixture-term-1');
+    });
+    await regionOf('fixture-term-1');
+    fireEvent.keyDown(document.body, { key: 'n' });
+    await waitFor(() => {
+      expect(where()).toBe('/?session=fixture-term-2');
+    });
+    fireEvent.keyDown(document.body, { key: 'n' });
+    await waitFor(() => {
+      expect(where()).toBe('/?session=fixture-term-1');
+    });
+  });
+
+  it('TC-ATT-23 "n" says that no session needs the person when the strip is empty', async () => {
+    renderPage();
+    await sidebar();
+    expect(screen.queryByRole('region', { name: /Needs you/ })).toBeNull();
+    fireEvent.keyDown(document.body, { key: 'n' });
+    await waitFor(() => {
+      expect(document.getElementById('live-region')).toHaveTextContent(msg('workspace.attention.none'));
+    });
+    expect(where()).toBe('/');
   });
 });
 

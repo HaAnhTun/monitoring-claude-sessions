@@ -48,9 +48,17 @@ favicon, an optional OS notification, and the commands `events` and `wait`. Each
    bounds, and a signal is raised only after a short delay and a second look at the then-current class, so a posture that flips back at
    once signals nothing. The numbers and the storage format are set by the web packages that build them (design
    `attention-trust` sections 3.3 and 3.4) and are recorded with them.
+   The numbers as built (CAW-82, CAW-84): the seen map holds at most 64 session ids with the time of the state that was seen, the oldest
+   leave first; a row counts as seen after the person has looked at it for 1 s on a visible, focused page; a signal waits 5 s by default
+   (the preference `attentionDelaySeconds`, 0 to 60); the notifier remembers the last 256 `(row, kind, since)` triples it fired, so
+   nothing fires twice.
 7. **Notifications carry fixed text.** The words of a title change and of an OS notification come from the message catalogues. No
    transcript text, tool input, registry text or evidence text is ever part of a signal. Whether a workspace name may appear is one browser preference (`workspaceTitles`); the scope of all signals is one preference
    (`attentionScope`). There is no sound. The OS notification is off by default until its spike is recorded as passed.
+   As built (CAW-84): the title of an OS notification is the application title and its body one catalogue sentence with a count ("A
+   Claude session needs you", "3 Claude sessions need you"); every notification has the tag `caw-attention` with `renotify` and
+   `silent`, so a newer one replaces the older one without a sound of the system. The tab title gets a count in words in front of the
+   page name, never a name.
 8. **Two words for `waiting_input`, in one place.** The state badge, the tiles and the workspace strip show `waiting_input` with two
    words: "needs you" for the S-6 family and "ready" for S-8b, S-8c and S-8f. This amends the single word of ADR 0074. The sidebar groups
    of the session switcher, the state filter of the Sessions page and its view model keep the umbrella word "needs input" on purpose: they
@@ -75,6 +83,11 @@ favicon, an optional OS notification, and the commands `events` and `wait`. Each
 - **Split S-1 into two table rows (S-1a, S-1b).** The engine has one `S-1` literal; the drift guard compares the id sets exactly.
 - **Rename the session filter to the two words now.** It filters by the lifecycle state; see decision 8.
 - **A sound.** A third signal on top of title, favicon and strip, off by default and needing a user gesture; cut after review.
+
+## Bundle budget
+The attention center is in every build: All JS (gzip) grew from 429.1 kB to 441.4 kB. The limit of the budget check goes from
+432 kB (ADR 0135) to 446 kB, the measured value plus one percent. Initial JS is 191.2 kB against its unchanged limit of 200 kB. The sum of all JS and the optional GPU chunk that the owner accepts goes
+from 475 kB (ADR 0135, question 1) to 480 kB (owner, 2026-11-23).
 
 ## Evidence
 - `runtime/packages/shared/src/attention.ts`, `attention.test.ts`; `runtime/packages/engine/src/lifecycle/attention-rules.test.ts`.

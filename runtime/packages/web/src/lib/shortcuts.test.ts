@@ -112,6 +112,7 @@ describe('shouldHandleShortcut', () => {
       [{ cap: 'esc' }],
       [{ cap: 'up' }, { cap: 'down' }, { cap: 'home' }, { cap: 'end' }],
       ['t'],
+      ['n'],
       [RELEASE_CHORD],
       ['Ctrl+C'],
       ['Ctrl+V'],
@@ -150,6 +151,7 @@ describe('shouldHandleShortcut', () => {
     const terminalRows = SHORTCUT_HELP.filter((row) => row.group === 'terminal');
     expect(terminalRows.map((row) => row.descriptionKey)).toEqual([
       'workspace.shortcut.focusTerminal',
+      'workspace.shortcut.nextNeeding',
       'workspace.shortcut.release',
       'workspace.shortcut.copy',
       'workspace.shortcut.paste',
@@ -173,9 +175,9 @@ describe('shouldHandleShortcut', () => {
     expect(msg('shortcuts.group.terminal').length).toBeGreaterThan(0);
   });
 
-  it('registers only `t` through a component; the other terminal rows are the program and the browser', () => {
+  it('registers only `t` and `n` through a component; the other terminal rows are the program and the browser', () => {
     const terminalRows = SHORTCUT_HELP.filter((row) => row.group === 'terminal');
-    expect(terminalRows.filter((row) => !row.fixed).map((row) => row.keys)).toEqual([['t']]);
+    expect(terminalRows.filter((row) => !row.fixed).map((row) => row.keys)).toEqual([['t'], ['n']]);
     expect(terminalRows.filter((row) => row.fixed)).toHaveLength(5);
   });
 });

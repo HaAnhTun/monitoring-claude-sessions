@@ -398,14 +398,17 @@ describe('AppShell (04-ui.md 4.1, 4.4, 6.6)', () => {
       expect(await screen.findByText(msg('nav.count.alerts', { count: 2 }))).toBeInTheDocument();
     });
 
-    it('does not load the session list for the sidebar outside the session page', async () => {
+    it('does not show the session list in the sidebar outside the session page', async () => {
       const { api } = renderShell({ route: '/sessions' });
       await within(await screen.findByRole('navigation', { name: msg('nav.label') })).findByText(
         msg('nav.count.sessions', { count: 1 }),
       );
       expect(screen.queryByTestId('session-list')).toBeNull();
       expect(screen.queryByRole('searchbox')).toBeNull();
-      expect(api.callsTo('listSessions')).toHaveLength(0);
+      // The sidebar asks for nothing here. The one request is the attention center of a task instance (ADR 0107): it reads the
+      // current window of the list on every page, under the cache key the session switcher shares.
+      expect(api.callsTo('listSessions').length).toBeLessThanOrEqual(1);
+      expect(api.callsTo('listSessions').every((call) => call.query.get('window') === '1')).toBe(true);
     });
 
     it('shows the session switcher on the session page', async () => {

@@ -116,7 +116,8 @@ describe('SessionRow', () => {
     const registry: [string, TerminalSessionInfo['link']['registryStatus'], string][] = [
       ['busy', 'busy', msg('state.working.label')],
       ['idle', 'idle', msg('state.turn_ended.label')],
-      ['waiting', 'waiting', msg('state.waiting_input.label')],
+      // a registry-only row that waits is the case of rule S-6b: it reads "Needs you" (ADR 0107)
+      ['waiting', 'waiting', msg('state.waiting_input.needsYou.label')],
     ];
     for (const [title, registryStatus, word] of registry) {
       it(`TC-UI-04 registry ${title}: the lifecycle word of the process`, () => {
@@ -197,6 +198,37 @@ describe('SessionRow', () => {
       renderRow(modelOf(makeLinkedTerminalSession(1)));
       expect(within(link()).getByText(msg('workspace.session.notLinked'))).toBeInTheDocument();
     });
+  });
+
+  it('TC-ATT-22 shows the title of the session in the three modes: named by default of the list, every title, none', () => {
+    const named = makeSession({ id: sessionId(1), label: 'FIXTURE named title', labelSource: 'custom_title' });
+    const prompted = makeSession({ id: sessionId(1), label: 'FIXTURE first prompt', labelSource: 'first_prompt' });
+    const show = (summary: SessionSummary, titles?: 'all' | 'named' | 'off') =>
+      renderWithIntl(
+        <ul>
+          <SessionRow model={modelOf(makeLinkedTerminalSession(1), [summary])} titles={titles} />
+        </ul>,
+        { locale: 'vi' },
+      );
+
+    let view = show(named, 'named');
+    const title = within(link()).getByText('FIXTURE named title');
+    // the text of the server is English under another UI language, and the full text is in the tooltip
+    expect(title).toHaveAttribute('lang', 'en');
+    expect(title.parentElement).toHaveAttribute('title', 'FIXTURE named title');
+    view.unmount();
+    view = show(prompted, 'named');
+    expect(within(link()).queryByText('FIXTURE first prompt')).toBeNull();
+    view.unmount();
+    view = show(prompted, 'all');
+    expect(within(link()).getByText('FIXTURE first prompt')).toBeInTheDocument();
+    view.unmount();
+    view = show(named, 'off');
+    expect(within(link()).queryByText('FIXTURE named title')).toBeNull();
+    view.unmount();
+    // without the prop a row shows no title
+    show(named);
+    expect(within(link()).queryByText('FIXTURE named title')).toBeNull();
   });
 
   it('writes its words in Vietnamese through the catalogue', () => {

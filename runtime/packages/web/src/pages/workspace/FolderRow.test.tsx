@@ -149,6 +149,21 @@ describe('FolderRow', () => {
       renderRow(rowOf({ open: false }));
       expect(within(head()).queryByText(/live session/)).toBeNull();
     });
+
+    it('TC-ATT-21 a closed folder says what it hides in a word with a count; an open one keeps the live count', () => {
+      const live = [makeTerminalSession(1), makeTerminalSession(2, { name: 'fixture-term-9' })];
+      const closed = renderRow(rowOf({ live, open: false }), { attention: { level: 'needs_you', count: 1 } });
+      expect(within(head()).getByText(msg('workspace.folder.attention.needs_you', { count: 1 }))).toBeInTheDocument();
+      expect(within(head()).queryByText(msg('workspace.folder.live', { count: 2 }))).toBeNull();
+      closed.unmount();
+      // nothing to look at (a level at or below working): the live count as before
+      const working = renderRow(rowOf({ live, open: false }), { attention: { level: 'working', count: 2 } });
+      expect(within(head()).getByText(msg('workspace.folder.live', { count: 2 }))).toBeInTheDocument();
+      working.unmount();
+      renderRow(rowOf({ live, open: true }), { attention: { level: 'needs_you', count: 1 } });
+      expect(within(head()).getByText(msg('workspace.folder.live', { count: 2 }))).toBeInTheDocument();
+      expect(within(head()).queryByText(msg('workspace.folder.attention.needs_you', { count: 1 }))).toBeNull();
+    });
   });
 
   describe('the body', () => {

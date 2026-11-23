@@ -77,6 +77,76 @@
   width: calc(100% - 2 * var(--sp-4));
   margin: 0 var(--sp-4) var(--sp-3);
 }
+/* ---- the "Needs you" strip (ADR 0107): rendered only while a session needs the person, so an idle column keeps its measurements ---- */
+.workspace-strip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 var(--sp-2) var(--sp-3);
+  padding: var(--sp-2);
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+}
+.workspace-strip__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-inline-start: var(--sp-2);
+}
+.workspace-strip__heading {
+  margin: 0;
+  color: var(--strong);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-xs);
+}
+.workspace-strip__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.workspace-strip__link {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+  min-height: var(--row-h-list);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  text-decoration: none;
+}
+.workspace-strip__link:hover {
+  background: var(--surface);
+  text-decoration: none;
+}
+.workspace-strip__link:focus-visible {
+  outline-offset: -2px;
+}
+.workspace-strip__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-strip__reason {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.workspace-strip__more {
+  padding: 0 var(--sp-2);
+}
 .workspace-sidebar__status {
   display: flex;
   flex-direction: column;
@@ -199,6 +269,10 @@
   line-height: var(--lh-xs);
   white-space: nowrap;
 }
+/* a closed folder that hides a session to look at: the word chip stands where the live count stands */
+.workspace-folder__attention {
+  flex: none;
+}
 .workspace-folder__time {
   flex: none;
   font-size: var(--fs-xs);
@@ -283,6 +357,16 @@
 }
 .workspace-session__note {
   overflow-wrap: anywhere;
+}
+/* the title of the session: one muted line, the full text is in the tooltip */
+.workspace-session__title {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .workspace-session__errors {
   color: var(--failed-fg);
@@ -378,6 +462,22 @@
   font-size: var(--fs-lg);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+/* the name and, beside it, the title of the session: one line, so a title never makes the header taller */
+.workspace-header__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.workspace-header__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .workspace-header__name:focus {
   outline: none;

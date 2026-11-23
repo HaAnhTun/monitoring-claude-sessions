@@ -1,12 +1,15 @@
 // One project folder of the Workspace sidebar (design 04 6.2): a head button that opens and closes the body, and in the body the
 // summary of the DA memory, the live sessions, the recent sessions and "New session". The activity mark is a disc drawn by CSS from
-// `data-level`; its words are for assistive technology, so the mark is never colour alone.
+// `data-level`; its words are for assistive technology, so the mark is never colour alone. A closed folder that hides a session a
+// person should look at says so in its head (ADR 0107): a word with a count takes the place of the live count.
 import type { SessionSummary } from '@mcs/shared';
 import { useId } from 'react';
 
 import { RelativeTime } from '../../components/RelativeTime.tsx';
 import { useT } from '../../i18n/context.ts';
+import { isAttentionLevel, type FolderRollup, type TitleMode } from '../../lib/workspace-attention.ts';
 import type { FolderModel, FolderRowModel, LiveSession } from '../../lib/workspace-view.ts';
+import { AttentionBadge } from './NeedsYouStrip.tsx';
 import { RecentRows } from './RecentRows.tsx';
 import { SessionRow } from './SessionRow.tsx';
 
@@ -20,13 +23,27 @@ export interface FolderRowProps {
   onResume: (summary: SessionSummary) => void;
   /** Called after a click on a live session (the overlay of the list closes on a selection). */
   onNavigate?: () => void;
+  /** The highest attention level among the live terminals of the folder (`rollupByFolder`); shown only while the folder is closed. */
+  attention?: FolderRollup | undefined;
+  /** Which titles the live rows show (the preference `workspaceTitles`). Default: none. */
+  titles?: TitleMode | undefined;
 }
 
-export function FolderRow({ model, liveAll, onToggle, onNewSession, onResume, onNavigate }: FolderRowProps) {
+export function FolderRow({
+  model,
+  liveAll,
+  onToggle,
+  onNewSession,
+  onResume,
+  onNavigate,
+  attention,
+  titles,
+}: FolderRowProps) {
   const t = useT();
   const bodyId = useId();
   const { folder, live, liveCount, open } = model;
   const canStart = folder.canStart && folder.path !== null;
+  const hiddenLevel = !open && attention !== undefined && isAttentionLevel(attention.level) ? attention.level : null;
   return (
     <li className="workspace-folder" data-open={open ? 'true' : 'false'}>
       <button
@@ -45,7 +62,11 @@ export function FolderRow({ model, liveAll, onToggle, onNewSession, onResume, on
         <span className="workspace-folder__name" title={folder.path ?? undefined}>
           {folder.name}
         </span>
-        {liveCount > 0 ? (
+        {hiddenLevel !== null && attention !== undefined ? (
+          <AttentionBadge level={hiddenLevel} className="workspace-folder__attention">
+            {t(`workspace.folder.attention.${hiddenLevel}`, { count: attention.count })}
+          </AttentionBadge>
+        ) : liveCount > 0 ? (
           <span className="workspace-folder__live">{t('workspace.folder.live', { count: liveCount })}</span>
         ) : null}
         <span className="workspace-folder__time muted">
@@ -68,6 +89,7 @@ export function FolderRow({ model, liveAll, onToggle, onNewSession, onResume, on
                 <SessionRow
                   key={entry.session.name}
                   model={entry}
+                  titles={titles}
                   {...(onNavigate === undefined ? {} : { onNavigate })}
                 />
               ))}

@@ -2,7 +2,7 @@
 // transcript options the menu does not have, and the Terminal card (renderer, cursor, right click, copy on select, screen reader mode). Every choice is applied at once and kept in this browser (`mcs.ui.v3`); nothing is
 // sent anywhere. "Reset display preferences" forgets what this browser stored and touches nothing else.
 import { ENTRY_KINDS, type EntryKind } from '@mcs/shared';
-import { useId, type ReactNode } from 'react';
+import { lazy, Suspense, useId, type ReactNode } from 'react';
 
 import { Button } from '../../components/Button.tsx';
 import { useInstance } from '../../data/hooks/useInstance.ts';
@@ -13,6 +13,11 @@ import { languageName } from '../../shell/UserMenu.tsx';
 import { useAnnounce } from '../../state/announcer.tsx';
 import { resolveDisplay, usePrefs, usePrefsStore } from '../../state/prefs-store.ts';
 import { SettingsCard } from './SettingsParts.tsx';
+
+/** The Attention card (ADR 0107) is its own chunk: the first paint of the page does not carry it. */
+const AttentionSettings = lazy(() =>
+  import('./AttentionSettings.tsx').then((module) => ({ default: module.AttentionSettings })),
+);
 
 type Theme = PrefsData['theme'];
 type Density = PrefsData['density'];
@@ -293,6 +298,9 @@ export function PreferencesForm() {
             </div>
           </fieldset>
         </SettingsCard>
+        <Suspense fallback={null}>
+          <AttentionSettings />
+        </Suspense>
       </div>
       <div className="settings-reset">
         <Button

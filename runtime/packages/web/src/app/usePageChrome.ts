@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { useLocation } from 'react-router';
 
 import { useT } from '../i18n/context.ts';
+import { useAttentionChrome } from '../state/attention-chrome.ts';
 
 /** Initial history entry key of react-router: set before any navigation happened in this document. */
 const INITIAL_LOCATION_KEY = 'default';
@@ -11,9 +12,17 @@ export function documentTitleFor(title: string, appTitle: string): string {
   return title === '' ? appTitle : `${title} - ${appTitle}`;
 }
 
+/** The words in front of the title while sessions wait (ADR 0107): a count and a fixed phrase, never a name. */
+const ATTENTION_TITLE_KEYS = {
+  needs_you: 'attention.title.needs_you',
+  failed: 'attention.title.failed',
+  done: 'attention.title.done',
+} as const;
+
 /**
  * Page chrome of every route (04-ui.md 3.1 rule 5): sets `document.title` (the page name, already in the language that is shown,
- * before the application name from `shell.appTitle`), and on a pathname change scrolls `#main` to the top and moves focus to the
+ * before the application name from `shell.appTitle`; in front of both the count of the attention center, which this hook reads
+ * from its store so that it stays the only writer of the title), and on a pathname change scrolls `#main` to the top and moves focus to the
  * page heading. Search-only changes do nothing, and neither does the first load. When the page replaces its heading element while
  * the old one holds the focus (a loading frame gives way to the loaded page), the focus follows to the new heading: removing a
  * focused element would otherwise drop it on the document. Attach the returned ref to the page `<h1 tabIndex={-1}>`.
@@ -21,6 +30,8 @@ export function documentTitleFor(title: string, appTitle: string): string {
 export function usePageChrome(title: string): RefObject<HTMLHeadingElement | null> {
   const t = useT();
   const appTitle = t('shell.appTitle');
+  const attention = useAttentionChrome().title;
+  const prefix = attention === null ? '' : `${t(ATTENTION_TITLE_KEYS[attention.kind], { count: attention.count })} `;
   const { pathname, key } = useLocation();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const lastPathname = useRef<string | null>(null);
@@ -65,8 +76,8 @@ export function usePageChrome(title: string): RefObject<HTMLHeadingElement | nul
   });
 
   useEffect(() => {
-    document.title = documentTitleFor(title, appTitle);
-  }, [title, appTitle]);
+    document.title = `${prefix}${documentTitleFor(title, appTitle)}`;
+  }, [title, appTitle, prefix]);
 
   useEffect(() => {
     if (lastPathname.current === pathname) return;

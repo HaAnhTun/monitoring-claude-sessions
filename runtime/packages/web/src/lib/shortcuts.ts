@@ -12,6 +12,7 @@ export type ShortcutDescriptionKey =
   | 'shortcuts.fixed.escape'
   | 'shortcuts.fixed.sidebar'
   | 'workspace.shortcut.focusTerminal'
+  | 'workspace.shortcut.nextNeeding'
   | 'workspace.shortcut.release'
   | 'workspace.shortcut.copy'
   | 'workspace.shortcut.paste'
@@ -106,6 +107,8 @@ export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
   // terminal and the browser, so no component registers it. A chord is ONE key cap text (the dialog draws every string of `keys` as
   // its own cap, and several caps are alternatives).
   { keys: ['t'], descriptionKey: 'workspace.shortcut.focusTerminal', group: 'terminal', fixed: false },
+  // ADR 0107: registered by the Workspace page; it goes through the sessions of the "Needs you" strip
+  { keys: ['n'], descriptionKey: 'workspace.shortcut.nextNeeding', group: 'terminal', fixed: false },
   { keys: [RELEASE_CHORD], descriptionKey: 'workspace.shortcut.release', group: 'terminal', fixed: true },
   { keys: ['Ctrl+C'], descriptionKey: 'workspace.shortcut.copy', group: 'terminal', fixed: true },
   { keys: ['Ctrl+V'], descriptionKey: 'workspace.shortcut.paste', group: 'terminal', fixed: true },

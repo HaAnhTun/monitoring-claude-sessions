@@ -23,9 +23,12 @@ import { useInstance } from '../../data/hooks/useInstance.ts';
 import { usePickFolder, useStartInFolder } from '../../data/hooks/useTerminalActions.ts';
 import { useTerminalState } from '../../data/hooks/useTerminalState.ts';
 import { useT } from '../../i18n/context.ts';
+import { selectedKeyOf } from '../../lib/attention-rows.ts';
 import { parseUrlState, workspaceSpec } from '../../lib/url-state.ts';
+import { nextNeeding } from '../../lib/workspace-attention.ts';
 import { paneStateOf, type EndedInfo, type LiveSession, type PaneTerminalState } from '../../lib/workspace-view.ts';
 import { useAnnounce } from '../../state/announcer.tsx';
+import { useAttentionRows } from '../../state/attention-context.ts';
 import { usePrefs } from '../../state/prefs-store.ts';
 import { useShortcut } from '../../state/shortcuts-registry.tsx';
 import { useShowToast } from '../../state/toast-store.ts';
@@ -202,6 +205,25 @@ function WorkspaceScreen(): ReactNode {
       viewRef.current?.focus();
     },
     { description: t('workspace.shortcut.focusTerminal'), enabled: pane.kind === 'terminal' && pane.ended === null },
+  );
+
+  // `n` goes through the sessions of the "Needs you" strip in its order, wrapping; a terminal is selected with the focus, a session
+  // that is no terminal opens its page. A key pressed inside the terminal belongs to the program, so it never reaches this.
+  const attentionRows = useAttentionRows();
+  useShortcut(
+    'n',
+    () => {
+      const current = selectedKeyOf(attentionRows, { terminal: selected === '' ? null : selected, sessionId: null });
+      const next = nextNeeding(attentionRows, current);
+      if (next === null) {
+        announce(t('workspace.attention.none'), { force: true });
+      } else if (next.terminal !== null) {
+        void navigate({ pathname: '/', search: sessionSearch(next.terminal) }, { state: { focusTerminal: true } });
+      } else if (next.sessionId !== null) {
+        void navigate(`/sessions/${encodeURIComponent(next.sessionId)}`);
+      }
+    },
+    { description: t('workspace.shortcut.nextNeeding') },
   );
 
   // ---- the project column and its toggle ----------------------------------------------------------------------------------

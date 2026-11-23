@@ -180,9 +180,10 @@ describe('LIMITS', () => {
     expect(budget.LIMITS.allJs).toBe(ALL_JS_LIMIT_KB * KB);
   });
 
-  it('keeps all JS plus the GPU chunk within the sum the owner accepted (ADR 0135, question 1)', () => {
+  // 475 kB was the sum of ADR 0135, question 1; the owner raised it to 480 kB for the attention center (ADR 0107, 2026-11-23)
+  it('keeps all JS plus the GPU chunk within the sum the owner accepted (ADR 0107, bundle budget)', () => {
     expect(budget.LIMITS.allJs).toBeLessThan(450 * KB);
-    expect(budget.LIMITS.allJs + budget.LIMITS.terminalGpuJs).toBeLessThanOrEqual(475 * KB);
+    expect(budget.LIMITS.allJs + budget.LIMITS.terminalGpuJs).toBeLessThanOrEqual(480 * KB);
   });
 
   it('names the module path that marks the GPU chunk, and the text only its code carries', () => {
@@ -195,7 +196,7 @@ describe('LIMITS', () => {
   });
 });
 
-const ALL_JS_LIMIT_KB = 432;
+const ALL_JS_LIMIT_KB = 446;
 const TERMINAL_LIMIT_KB = 105;
 const GPU_LIMIT_KB = 34;
 

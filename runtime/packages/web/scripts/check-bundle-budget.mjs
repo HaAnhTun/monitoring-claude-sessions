@@ -14,8 +14,9 @@ export const LIMITS = {
   // ADR 0071 decision 12 set 340 kB for all chunks, both locales, seven pages and one hand-drawn chart; ADR 0097 raises it to 420 for
   // the Workspace page and the lazy terminal chunk (xterm 6.0.0 and its two addons are about 85 kB of it). ADR 0135 retunes it to
   // 432 kB (428.0 kB measured) and takes the optional GPU chunk out of the sum: that chunk has its own row below, so the total allowed is
-  // all JS plus the GPU cap.
-  allJs: 432 * KB,
+  // all JS plus the GPU cap. ADR 0107 raises it to 446 kB for the attention center (441.4 kB measured plus one percent): the rows, the
+  // notifier, the host, the Settings card and the Workspace strip are in every build, and two catalogue blocks in both locales.
+  allJs: 446 * KB,
   // The terminal chunk (every file the terminal page and its loader reach that is not in the initial set and is not the GPU chunk):
   // xterm 6.0.0, `@xterm/addon-fit`, `@xterm/addon-web-links`, `@xterm/addon-unicode11`, the loader and its shims, measured on a
   // fresh build (94.9 kB) plus 10 percent (ADR 0135; 94 kB was the limit before Unicode 11, ADR 0097)
