@@ -3,6 +3,8 @@
 // filters). This is the only module of the web package that touches web storage (ESLint no-restricted-globals).
 import { TERMINAL_NAME_RE, type EntryKind } from '@mcs/shared';
 
+import { isSeenMap } from './attention-seen.ts';
+
 /** The v3 key. The legacy key is read once for the migration and never written (the legacy UI may share the origin). */
 export const PREFS_KEY = 'mcs.ui.v3';
 export const LEGACY_PREFS_KEY = 'ccm.prefs.v1';
@@ -41,6 +43,58 @@ export interface PrefsData {
   terminalRightClick: 'smart' | 'menu';
   /** Selecting text copies it at once. */
   terminalCopyOnSelect: boolean;
+  /** Attention (ADR 0107): the count of waiting sessions in the tab title. */
+  attentionTitle: boolean;
+  /** Attention: the dot on the tab icon while a session needs the person or failed. */
+  attentionFavicon: boolean;
+  /** Attention: an OS notification while the person is away. Off until the person turns it on. */
+  attentionNotify: boolean;
+  /** Attention: one scope for title, icon and notification. `here` is the terminals of this app, `all` every monitored session. */
+  attentionScope: 'here' | 'all';
+  /** Attention: how long a state must hold before it is announced, in whole seconds from 0 to 60. */
+  attentionDelaySeconds: number;
+  /** Attention: session id to the time of the state the person has seen; at most 64 entries, ids and times only. */
+  attentionSeen: Record<string, string>;
+  /** Which session titles the Workspace rows show: every label, only the named ones, or none. */
+  workspaceTitles: 'all' | 'named' | 'off';
+}
+
+/** The seven attention preferences with their built-in values (design attention-trust 3.9). */
+export type AttentionPrefs = Pick<
+  PrefsData,
+  | 'attentionTitle'
+  | 'attentionFavicon'
+  | 'attentionNotify'
+  | 'attentionScope'
+  | 'attentionDelaySeconds'
+  | 'attentionSeen'
+  | 'workspaceTitles'
+>;
+
+export const ATTENTION_DELAY_MAX_SECONDS = 60;
+
+/** `workspaceTitles` is `named` because `all` would show a first prompt, which may hold a secret. */
+export const ATTENTION_PREF_DEFAULTS: AttentionPrefs = Object.freeze({
+  attentionTitle: true,
+  attentionFavicon: true,
+  attentionNotify: false,
+  attentionScope: 'here',
+  attentionDelaySeconds: 5,
+  attentionSeen: Object.freeze({}),
+  workspaceTitles: 'named',
+});
+
+/** The stored attention preferences over the built-in values. */
+export function attentionPrefsOf(stored: Partial<PrefsData>): AttentionPrefs {
+  return {
+    attentionTitle: stored.attentionTitle ?? ATTENTION_PREF_DEFAULTS.attentionTitle,
+    attentionFavicon: stored.attentionFavicon ?? ATTENTION_PREF_DEFAULTS.attentionFavicon,
+    attentionNotify: stored.attentionNotify ?? ATTENTION_PREF_DEFAULTS.attentionNotify,
+    attentionScope: stored.attentionScope ?? ATTENTION_PREF_DEFAULTS.attentionScope,
+    attentionDelaySeconds: stored.attentionDelaySeconds ?? ATTENTION_PREF_DEFAULTS.attentionDelaySeconds,
+    attentionSeen: stored.attentionSeen ?? ATTENTION_PREF_DEFAULTS.attentionSeen,
+    workspaceTitles: stored.workspaceTitles ?? ATTENTION_PREF_DEFAULTS.workspaceTitles,
+  };
 }
 
 export type PrefName = keyof PrefsData;
@@ -91,6 +145,9 @@ function isWorkspaceOpen(v: unknown): v is PrefsData['workspaceOpen'] {
 
 const isTerminalName = (v: unknown): v is string => typeof v === 'string' && (v === '' || TERMINAL_NAME_RE.test(v));
 
+const isDelaySeconds = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= ATTENTION_DELAY_MAX_SECONDS;
+
 const VALIDATORS: Validators = {
   theme: (v): v is PrefsData['theme'] => v === 'auto' || v === 'light' || v === 'dark',
   density: (v): v is PrefsData['density'] => v === 'comfortable' || v === 'compact',
@@ -113,6 +170,13 @@ const VALIDATORS: Validators = {
   terminalCursor: (v): v is PrefsData['terminalCursor'] => v === 'block' || v === 'bar' || v === 'underline',
   terminalRightClick: (v): v is PrefsData['terminalRightClick'] => v === 'smart' || v === 'menu',
   terminalCopyOnSelect: isBool,
+  attentionTitle: isBool,
+  attentionFavicon: isBool,
+  attentionNotify: isBool,
+  attentionScope: (v): v is PrefsData['attentionScope'] => v === 'here' || v === 'all',
+  attentionDelaySeconds: isDelaySeconds,
+  attentionSeen: (v): v is PrefsData['attentionSeen'] => isSeenMap(v),
+  workspaceTitles: (v): v is PrefsData['workspaceTitles'] => v === 'all' || v === 'named' || v === 'off',
 };
 
 const PREF_NAMES = Object.keys(VALIDATORS).filter((k): k is PrefName => Object.hasOwn(VALIDATORS, k));

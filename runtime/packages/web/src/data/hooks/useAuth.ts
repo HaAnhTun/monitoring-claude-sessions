@@ -73,8 +73,9 @@ function removeProtectedQueries(queryClient: QueryClient, iid: string): void {
 
 /**
  * Ends the session: `POST /auth/logout`, then the page is locked, what the session protected is dropped from the cache, the
- * last selected terminal is forgotten and the change is announced. A failed request changes nothing and rejects with its
- * `ApiError` (the server still holds the session); one that answers `access_required` finishes the lock (it was already over).
+ * last selected terminal and the seen marks of the attention center are forgotten and the change is announced. A failed
+ * request changes nothing and rejects with its `ApiError` (the server still holds the session); one that answers
+ * `access_required` finishes the lock (it was already over).
  */
 export function useLogout(): () => Promise<void> {
   const { api, iid } = useDataEnv();
@@ -91,6 +92,8 @@ export function useLogout(): () => Promise<void> {
     markLocked(queryClient, iid);
     removeProtectedQueries(queryClient, iid);
     prefsStore.setPref('lastTerminal', '');
+    // What the person has seen says which sessions ran here: it goes with the lock (ADR 0107).
+    prefsStore.setPref('attentionSeen', {});
     announce(t('access.lockedAnnounce'));
   }, [api, iid, queryClient, prefsStore, announce, t]);
 }

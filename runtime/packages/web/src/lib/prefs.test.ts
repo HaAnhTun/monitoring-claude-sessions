@@ -2,8 +2,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ATTENTION_PREF_DEFAULTS,
   LEGACY_PREFS_KEY,
   PREFS_KEY,
+  attentionPrefsOf,
   buildHash,
   createPrefs,
   parseHash,
@@ -403,5 +405,59 @@ describe('the Workspace preferences (design 04 sections 2.2, 2.4, 6.2 and 6.5)',
       }),
     });
     expect(createPrefs(st).all()).toEqual({ theme: 'light' });
+  });
+});
+
+describe('the attention preferences (ADR 0107, design attention-trust 3.9)', () => {
+  const TIME = '2026-01-01T00:00:00.000Z';
+
+  it('the built-in values: title and icon on, notification off, scope here, five seconds, titles named', () => {
+    expect(attentionPrefsOf({})).toEqual({
+      attentionTitle: true,
+      attentionFavicon: true,
+      attentionNotify: false,
+      attentionScope: 'here',
+      attentionDelaySeconds: 5,
+      attentionSeen: {},
+      workspaceTitles: 'named',
+    });
+    expect(attentionPrefsOf({})).toEqual(ATTENTION_PREF_DEFAULTS);
+    const stored = {
+      attentionNotify: true,
+      attentionScope: 'all',
+      attentionDelaySeconds: 0,
+      workspaceTitles: 'off',
+    } as const;
+    expect(attentionPrefsOf(stored)).toMatchObject(stored);
+  });
+
+  it.each([
+    ['attentionTitle', [true, false], ['true', 1, null, {}]],
+    ['attentionFavicon', [true, false], ['false', 0, null, []]],
+    ['attentionNotify', [true, false], ['granted', 1, null, {}]],
+    ['attentionScope', ['here', 'all'], ['HERE', 'task', '', 1, null, ['all']]],
+    ['attentionDelaySeconds', [0, 5, 60], [-1, 61, 2.5, '5', null, Number.NaN, Infinity]],
+    ['workspaceTitles', ['all', 'named', 'off'], ['none', 'ALL', '', true, null]],
+    [
+      'attentionSeen',
+      [{}, { 'fixture-session': TIME }],
+      [[TIME], 'x', null, { 'fixture session': TIME }, { 'fixture-session': 'FIXTURE label' }, { constructor: TIME }],
+    ],
+  ] as const)('%s takes only its own values', (name, good, bad) => {
+    for (const value of good) expect(sanitize({ [name]: value })[name], JSON.stringify(value)).toEqual(value);
+    for (const value of bad) expect(sanitize({ [name]: value })[name], JSON.stringify(value)).toBeUndefined();
+  });
+
+  it('are stored and read back through set, and a rejected value changes nothing', () => {
+    const st = new MemStorage();
+    const p = createPrefs(st);
+    expect(p.set('attentionDelaySeconds', 30)).toBe(true);
+    expect(p.set('attentionSeen', { 'fixture-session': TIME })).toBe(true);
+    // the type forbids these; callers may still pass anything at run time
+    expect(p.set('attentionDelaySeconds', 61)).toBe(false);
+    expect(p.set('attentionSeen', { 'fixture-session': 'FIXTURE label' })).toBe(false);
+    const again = createPrefs(st);
+    expect(again.get('attentionDelaySeconds')).toBe(30);
+    expect(again.get('attentionSeen')).toEqual({ 'fixture-session': TIME });
   });
 });

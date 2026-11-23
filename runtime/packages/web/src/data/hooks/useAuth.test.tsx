@@ -243,6 +243,23 @@ describe('useLogout', () => {
     });
   });
 
+  it('forgets what the person has seen in the attention center, and keeps it when the logout failed', async () => {
+    const seen = { 'fixture-session': '2026-01-01T00:00:00.000Z' };
+    for (const [answer, expected] of [
+      [() => makeLogoutResponse(), {}],
+      [() => errorResponse('internal_error'), seen],
+    ] as const) {
+      const prefsStore = prefsWith('fixture-term-1');
+      prefsStore.setPref('attentionSeen', seen);
+      const { result, unmount } = logoutHook(fakeApi({ authLogout: answer }), prefsStore);
+      await act(async () => {
+        await result.current().catch(() => undefined);
+      });
+      expect(prefsStore.getSnapshot().attentionSeen).toEqual(expected);
+      unmount();
+    }
+  });
+
   it('keeps everything when the server could not be reached, and says why', async () => {
     const api = fakeApi({ authLogout: () => errorResponse('internal_error') });
     const prefsStore = prefsWith('fixture-term-1');

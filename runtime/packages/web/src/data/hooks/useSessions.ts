@@ -45,8 +45,12 @@ export function useSessions(q: ApiQuery, options: UseSessionsOptions = {}): Infi
 
 /**
  * The sidebar list: not infinite, the current window (`window=1`) or, with `showAll`, every session, newest 200 rows.
+ * `enabled: false` asks nothing (the attention center reads the list only with scope `all`).
  */
-export function useSidebarSessions(showAll: boolean): UseQueryResult<Page<SessionSummary>> {
+export function useSidebarSessions(
+  showAll: boolean,
+  options: { enabled?: boolean } = {},
+): UseQueryResult<Page<SessionSummary>> {
   const { api, iid, live, poll } = useDataEnv();
   return useQuery({
     queryKey: qk.sidebarSessions(iid, showAll),
@@ -55,6 +59,7 @@ export function useSidebarSessions(showAll: boolean): UseQueryResult<Page<Sessio
         query: { limit: String(SIDEBAR_LIMIT), ...(showAll ? {} : { window: '1' }) },
         signal,
       }),
+    enabled: options.enabled ?? true,
     staleTime: 30_000,
     refetchInterval: live ? false : poll.sessionsMs,
   });
