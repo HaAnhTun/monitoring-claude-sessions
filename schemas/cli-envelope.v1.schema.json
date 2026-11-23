@@ -34,6 +34,18 @@
         {
           "type": "number",
           "const": 3
+        },
+        {
+          "type": "number",
+          "const": 4
+        },
+        {
+          "type": "number",
+          "const": 5
+        },
+        {
+          "type": "number",
+          "const": 6
         }
       ]
     },

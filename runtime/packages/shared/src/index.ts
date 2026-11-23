@@ -11,6 +11,9 @@ export * from './files/backup-manifest.ts';
 export * from './config/runtime/index.ts';
 export * from './cli/envelope.ts';
 export * from './cli/results.ts';
+export * from './cli/watch.ts';
+export * from './attention.ts';
+export * from './wait-machine.ts';
 
 export * from './folders/index.ts';
 

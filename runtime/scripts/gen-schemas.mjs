@@ -1,6 +1,6 @@
 // The one JSON Schema generator (01 section 2.9, 03 section 13 item 4, registry C45). Zero dependencies of its own: it reads
 // the Zod schemas of the built `@mcs/shared` and writes
-//   <skill>/schemas/{config,runtime,instance,state,backup-manifest,cli-envelope,diagnostics}.v1.schema.json   (01 2.9)
+//   <skill>/schemas/{config,runtime,instance,state,backup-manifest,cli-envelope,event,diagnostics}.v1.schema.json (01 2.9)
 //   <skill>/schemas/api/<routeId>.{params,query,body,response}.schema.json and schemas/api/stream.schema.json (03 13)
 //   <skill>/schemas/api/terminal-socket.schema.json and terminal-events.schema.json                            (CAW 02 2.4)
 //   <skill>/schemas/export/<type>.schema.json                                                                 (03 11.1)
@@ -68,6 +68,14 @@ export const CONFIG_SCHEMAS = [
     io: 'output',
     title: 'CLI JSON envelope (mcs.cli/1)',
     description: 'The document every command prints with --json; `data` depends on the command (see docs/cli.md).',
+  },
+  {
+    file: 'event.v1.schema.json',
+    source: 'CliEventSchema',
+    io: 'output',
+    title: 'CLI event line (caw.event/1)',
+    description:
+      'One NDJSON line of the `events` command: hello, change, reset or end. Ids, states and times only (see docs/cli.md).',
   },
   {
     file: 'diagnostics.v1.schema.json',

@@ -226,6 +226,19 @@ describe('CliEnvelope (01 6.2)', () => {
     expect(bad({ warnings: [1] })).toBe(false);
     expect(bad({ extra: 1 })).toBe(false);
   });
+
+  it('accepts the wait exit codes 4, 5 and 6 only on a failure with data and no error', () => {
+    const base: CliEnvelope<unknown> = { ...successEnvelope('wait', { outcome: 'timeout' }), ok: false };
+    const accepts = (patch: Record<string, unknown>) => CliEnvelopeSchema.safeParse({ ...base, ...patch }).success;
+    const internal = { code: 'INTERNAL', message: 'm', hint: null, details: null };
+    for (const exitCode of [4, 5, 6]) {
+      expect(accepts({ exitCode }), String(exitCode)).toBe(true);
+      expect(accepts({ exitCode, ok: true }), `${String(exitCode)} ok`).toBe(false);
+      expect(accepts({ exitCode, error: internal }), `${String(exitCode)} with an error`).toBe(false);
+    }
+    expect(accepts({ exitCode: 7 })).toBe(false);
+    expect(accepts({ exitCode: 130 })).toBe(false);
+  });
 });
 
 describe('toConfigInspection (01 6.4, I-20)', () => {

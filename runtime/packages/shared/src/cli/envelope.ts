@@ -17,7 +17,8 @@ export interface CliEnvelope<T> {
   schema: typeof CLI_SCHEMA;
   command: string;
   ok: boolean;
-  exitCode: 0 | 1 | 2 | 3;
+  /** 4, 5 and 6 are the outcomes of `wait` (`WAIT_EXIT_CODES` of `cli/watch.ts`): data and no error. */
+  exitCode: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   data: T | null;
   error: CliError | null;
   warnings: string[];
@@ -33,7 +34,8 @@ export const CliErrorSchema = z.strictObject({
 /**
  * Envelope schema for a given `data` schema. Beyond the shapes it checks what the contract says about the exit code:
  * `ok` means exit 0 and no error; a failure has a non-zero exit code, and an error fixes it (`USAGE` = 2, `TERMINALS_LIVE` = 3, others = 1).
- * A failure may carry `data` and no error (a check that found problems).
+ * A failure may carry `data` and no error (a check that found problems, a wait that was not met: exit codes 4, 5 and 6 are
+ * never the code of an error).
  */
 export function cliEnvelopeSchema<T extends z.ZodType>(data: T) {
   return z
@@ -41,7 +43,15 @@ export function cliEnvelopeSchema<T extends z.ZodType>(data: T) {
       schema: z.literal(CLI_SCHEMA),
       command: z.string().min(1),
       ok: z.boolean(),
-      exitCode: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+      exitCode: z.union([
+        z.literal(0),
+        z.literal(1),
+        z.literal(2),
+        z.literal(3),
+        z.literal(4),
+        z.literal(5),
+        z.literal(6),
+      ]),
       data: data.nullable(),
       error: CliErrorSchema.nullable(),
       warnings: z.array(z.string()),
@@ -53,7 +63,7 @@ export function cliEnvelopeSchema<T extends z.ZodType>(data: T) {
         return;
       }
       if (env.exitCode === 0)
-        ctx.addIssue({ code: 'custom', path: ['exitCode'], message: 'a failure needs exitCode 1, 2 or 3' });
+        ctx.addIssue({ code: 'custom', path: ['exitCode'], message: 'a failure needs a non-zero exitCode' });
       else if (env.error !== null && env.exitCode !== cliExitCode(env.error.code)) {
         ctx.addIssue({
           code: 'custom',
