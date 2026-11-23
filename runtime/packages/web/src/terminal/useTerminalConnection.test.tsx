@@ -697,6 +697,56 @@ describe('9 input (TC-UI-06, TC-UI-07)', () => {
   });
 });
 
+describe('Shift+Enter is a new line (TC-ERGO-02, ADR 0110)', () => {
+  const ESC_CR = Uint8Array.of(0x1b, 0x0d);
+  const shiftEnter = { key: 'Enter', code: 'Enter', shiftKey: true };
+
+  it('sends one ESC CR frame and no CR of its own, after taking the size back; Enter, Alt+Enter and a paste are untouched', async () => {
+    const rig = await mountLive();
+    const terminal = terminalOf(rig);
+    act(() => {
+      rig.socket.message({ type: 'size', cols: 80, rows: 40 });
+    });
+    const before = rig.socket.sent.length;
+    act(() => {
+      terminal.scrollTo(3, 10);
+      expect(terminal.pressKey(shiftEnter)).toBe(false);
+    });
+    // as typing does, it brings the prompt back into view
+    expect(rig.result.current.scrolledUp).toBe(false);
+    // preventing the default also stops the keypress that would make xterm send its own CR
+    expect(terminal.takenKeys.at(-1)?.defaultPrevented).toBe(true);
+    expect(rig.result.current.sizeOwner).toBe('self');
+    expect(rig.socket.sent.slice(before).map((frame) => frame.kind)).toEqual(['text', 'binary']);
+    expect(rig.socket.sentBinary).toEqual([ESC_CR]);
+
+    act(() => {
+      expect(terminal.pressKey({ key: 'Enter', code: 'Enter', altKey: true })).toBe(true);
+      expect(terminal.pressKey({ key: 'Enter', code: 'Enter' })).toBe(true);
+      terminal.paste('one\rtwo');
+    });
+    expect(rig.socket.sentBinary).toEqual([ESC_CR, ESC_CR, Uint8Array.of(0x0d), bytes('one\rtwo')]);
+  });
+
+  it('is lost like typing while the connection is down: the view says so and nothing is sent late', async () => {
+    const rig = await mountLive();
+    act(() => {
+      rig.socket.closeFromServer(1006);
+    });
+    act(() => {
+      terminalOf(rig).pressKey(shiftEnter);
+    });
+    expect(rig.result.current.typingPaused).toBe(true);
+    expect(rig.socket.sentBinary).toEqual([]);
+    await settle();
+    act(() => {
+      handshake(rig.fake.sockets.last(), { cols: 120, rows: 30 });
+    });
+    expect(rig.result.current.typingPaused).toBe(false);
+    expect(rig.fake.sockets.last().sentBinary).toEqual([]);
+  });
+});
+
 describe('11 reconnect and the oracle (TC-UI-06)', () => {
   it('shows reconnecting, asks for the session list once, and rebuilds the screen from the replay with no duplicated line', async () => {
     const rig = await mountLive({ server: { cols: 120, rows: 30, replay: ['line 1\r\n', 'line 2\r\n'] } });

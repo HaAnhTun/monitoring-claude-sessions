@@ -115,6 +115,7 @@ describe('shouldHandleShortcut', () => {
       [RELEASE_CHORD],
       ['Ctrl+C'],
       ['Ctrl+V'],
+      ['Shift+Enter'],
       ['Shift+PageUp', 'Shift+PageDown'],
     ]);
     for (const row of SHORTCUT_HELP) {
@@ -131,6 +132,7 @@ describe('shouldHandleShortcut', () => {
       'workspace.shortcut.release',
       'workspace.shortcut.copy',
       'workspace.shortcut.paste',
+      'workspace.shortcut.newline',
       'workspace.shortcut.scroll',
     ]);
   });
@@ -151,11 +153,16 @@ describe('shouldHandleShortcut', () => {
       'workspace.shortcut.release',
       'workspace.shortcut.copy',
       'workspace.shortcut.paste',
+      'workspace.shortcut.newline',
       'workspace.shortcut.scroll',
     ]);
     const release = terminalRows.find((row) => row.descriptionKey === 'workspace.shortcut.release');
     expect(release?.keys).toEqual([RELEASE_CHORD]);
     expect(RELEASE_CHORD).toBe('Ctrl+Shift+Space');
+    // ADR 0110: Shift+Enter inserts a new line, one chord in one cap
+    expect(terminalRows.find((row) => row.descriptionKey === 'workspace.shortcut.newline')?.keys).toEqual([
+      'Shift+Enter',
+    ]);
     for (const row of terminalRows) {
       for (const cap of row.keys) expect(typeof cap, row.descriptionKey).toBe('string');
     }
@@ -169,6 +176,6 @@ describe('shouldHandleShortcut', () => {
   it('registers only `t` through a component; the other terminal rows are the program and the browser', () => {
     const terminalRows = SHORTCUT_HELP.filter((row) => row.group === 'terminal');
     expect(terminalRows.filter((row) => !row.fixed).map((row) => row.keys)).toEqual([['t']]);
-    expect(terminalRows.filter((row) => row.fixed)).toHaveLength(4);
+    expect(terminalRows.filter((row) => row.fixed)).toHaveLength(5);
   });
 });

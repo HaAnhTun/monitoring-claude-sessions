@@ -15,6 +15,7 @@ export type ShortcutDescriptionKey =
   | 'workspace.shortcut.release'
   | 'workspace.shortcut.copy'
   | 'workspace.shortcut.paste'
+  | 'workspace.shortcut.newline'
   | 'workspace.shortcut.scroll';
 
 /** The parts of an event target the rules read; a DOM element satisfies it. */
@@ -108,6 +109,8 @@ export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
   { keys: [RELEASE_CHORD], descriptionKey: 'workspace.shortcut.release', group: 'terminal', fixed: true },
   { keys: ['Ctrl+C'], descriptionKey: 'workspace.shortcut.copy', group: 'terminal', fixed: true },
   { keys: ['Ctrl+V'], descriptionKey: 'workspace.shortcut.paste', group: 'terminal', fixed: true },
+  // ADR 0110: the terminal key table (`terminal/keys.ts`) turns this chord into a new line of the prompt
+  { keys: ['Shift+Enter'], descriptionKey: 'workspace.shortcut.newline', group: 'terminal', fixed: true },
   {
     keys: ['Shift+PageUp', 'Shift+PageDown'],
     descriptionKey: 'workspace.shortcut.scroll',

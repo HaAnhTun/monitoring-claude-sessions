@@ -238,8 +238,9 @@ export class FakeTerminal implements TerminalLike {
 
   /**
    * A key down on the terminal. The custom key handler decides first; when it returns false the event was taken (and is in
-   * `takenKeys`). When it returns true xterm encodes the key: Ctrl+C sends 0x03, Tab a tab, Enter a carriage return and a single
-   * printable character itself. Returns what the handler returned.
+   * `takenKeys`). When it returns true xterm encodes the key: Ctrl+C sends 0x03, Tab a tab, Enter a carriage return (with Shift
+   * too), Alt+Enter ESC and a carriage return (xterm 6.0.0 `Keyboard.ts`) and a single printable character itself. Returns what
+   * the handler returned.
    */
   pressKey(init: KeyboardEventInit & { key: string }): boolean {
     const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
@@ -250,7 +251,7 @@ export class FakeTerminal implements TerminalLike {
     }
     if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === 'c') this.data.emit('\x03');
     else if (event.key === 'Tab') this.data.emit(event.shiftKey ? '\x1b[Z' : '\t');
-    else if (event.key === 'Enter') this.data.emit('\r');
+    else if (event.key === 'Enter') this.data.emit(event.altKey ? '\x1b\r' : '\r');
     else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) this.data.emit(event.key);
     return true;
   }

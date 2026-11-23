@@ -1205,6 +1205,7 @@ export const viMessages: Record<MessageKey, string> = {
   'workspace.shortcut.release': 'Đưa tiêu điểm ra khỏi terminal',
   'workspace.shortcut.copy': 'Sao chép phần đã chọn (khi không chọn gì, thao tác này ngắt chương trình)',
   'workspace.shortcut.paste': 'Dán vào terminal',
+  'workspace.shortcut.newline': 'Xuống dòng mà không gửi',
   'workspace.shortcut.scroll': 'Cuộn lịch sử của terminal',
   'workspace.scope': 'dự án và phiên',
   'error.subject.workspace': 'dự án và phiên',

@@ -16,7 +16,7 @@
 // Beyond the twelve steps (CAW-144, ADR 0135): the GPU renderer is attached right after `open` and a lost GPU context only costs a
 // fit; plain Ctrl+V is left to the browser's paste event; a right click copies a selection or pastes (the next one opens the
 // browser menu when the clipboard cannot be read, and at once when the page policy forbids reading it); a selection can be copied
-// when the mouse goes up.
+// when the mouse goes up. Shift+Enter is a new line (ADR 0110): it goes to the socket as `NEWLINE_SEQUENCE`, by the path of step 9.
 //
 // What a person types and what the process prints are never logged and never kept: they pass from the terminal to the socket and
 // back. React state holds only the status, the sizes and two flags.
@@ -36,7 +36,7 @@ import { useTerminalTheme } from '../state/color-scheme.ts';
 import { usePrefs } from '../state/prefs-store.ts';
 import { useMediaQuery } from '../state/use-media-query.ts';
 import type { Disposable, TerminalEngine, TerminalInstance, TerminalOptions } from './engine.ts';
-import { decideKey, platformIsMac } from './keys.ts';
+import { decideKey, NEWLINE_SEQUENCE, platformIsMac } from './keys.ts';
 import { terminalOptionsFor } from './options.ts';
 import { FIT_DEBOUNCE_MS, terminalSocketUrl } from './protocol.ts';
 import { useTerminalSeams, type TerminalSeams } from './seams.ts';
@@ -417,6 +417,16 @@ function openSession(env: SessionEnv): Session {
     onStatus: onSocketStatus,
   });
 
+  /** What the person typed, and the new line of Shift+Enter, go to the process; while the connection is down they are lost, not queued. */
+  function typeInto(data: string): void {
+    // the process sees our size before the first key we type after another window took it
+    if (sizeOwner !== 'self') takeSize();
+    if (socket.sendInput(data)) return;
+    const status = socket.snapshot().status;
+    // not open for an outage's sake (ended, locked and stopped are not "paused")
+    if (status === 'connecting' || status === 'backoff') ui.setTypingPaused(true);
+  }
+
   // ---- the terminal --------------------------------------------------------------------------------------------------------
 
   terminal.open(host);
@@ -462,6 +472,13 @@ function openSession(env: SessionEnv): Session {
         return false;
       case 'swallow':
         event.preventDefault();
+        return false;
+      case 'newline':
+        // preventing the default also stops the keypress that would make xterm send its own CR
+        event.preventDefault();
+        // typed text passes through xterm, which shows the prompt again; these bytes do not, so the view does it
+        terminal.scrollToBottom();
+        typeInto(NEWLINE_SEQUENCE);
         return false;
     }
   });
@@ -527,14 +544,7 @@ function openSession(env: SessionEnv): Session {
     terminal.onSelectionChange(() => {
       selectionChanged = true;
     }),
-    terminal.onData((data) => {
-      // the process sees our size before the first key we type after another window took it
-      if (sizeOwner !== 'self') takeSize();
-      if (socket.sendInput(data)) return;
-      const status = socket.snapshot().status;
-      // not open for an outage's sake (ended, locked and stopped are not "paused")
-      if (status === 'connecting' || status === 'backoff') ui.setTypingPaused(true);
-    }),
+    terminal.onData(typeInto),
     terminal.onBinary((data) => {
       // one character per byte (xterm's legacy mouse reports), not UTF-8
       socket.sendBinary(Uint8Array.from(data, (char) => char.charCodeAt(0)));

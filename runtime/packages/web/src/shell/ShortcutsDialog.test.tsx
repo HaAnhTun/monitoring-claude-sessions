@@ -167,9 +167,10 @@ describe('ShortcutsDialog: content', () => {
       expect(keysOf(dialog, msg('workspace.shortcut.release'))).toEqual([RELEASE_CHORD]);
       expect(keysOf(dialog, msg('workspace.shortcut.copy'))).toEqual(['Ctrl+C']);
       expect(keysOf(dialog, msg('workspace.shortcut.paste'))).toEqual(['Ctrl+V']);
+      expect(keysOf(dialog, msg('workspace.shortcut.newline'))).toEqual(['Shift+Enter']);
       // two keys that both scroll are two caps: alternatives, not a chord
       expect(keysOf(dialog, msg('workspace.shortcut.scroll'))).toEqual(['Shift+PageUp', 'Shift+PageDown']);
-      expect(within(section(dialog)).getAllByRole('term')).toHaveLength(4);
+      expect(within(section(dialog)).getAllByRole('term')).toHaveLength(5);
     });
 
     it('lists the key `t` only while the page that registered it is mounted, in the same group', async () => {
@@ -178,7 +179,7 @@ describe('ShortcutsDialog: content', () => {
       without.unmount();
       const withIt = await openDialog({ workspace: true });
       expect(keysOf(withIt.dialog, msg('workspace.shortcut.focusTerminal'))).toEqual(['t']);
-      expect(within(section(withIt.dialog)).getAllByRole('term')).toHaveLength(5);
+      expect(within(section(withIt.dialog)).getAllByRole('term')).toHaveLength(6);
     });
 
     it('speaks Vietnamese: the heading and the descriptions of the rows', async () => {

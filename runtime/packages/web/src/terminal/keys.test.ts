@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { decideKey, platformIsMac, type KeyContext, type KeyDecision, type KeyEventLike } from './keys.ts';
+import {
+  decideKey,
+  NEWLINE_SEQUENCE,
+  platformIsMac,
+  type KeyContext,
+  type KeyDecision,
+  type KeyEventLike,
+} from './keys.ts';
 import { RELEASE_CHORD } from './protocol.ts';
 
 // Every row of the table in design 04 section 7.5 (keyboard ownership, copy and paste), with and without a selection and with the
@@ -161,6 +168,74 @@ describe('decideKey: paste (CAW-144: plain Ctrl+V does not paste in xterm 6.0.0,
   });
 });
 
+describe('decideKey: Shift+Enter is a new line (TC-ERGO-01, ADR 0110)', () => {
+  const enter = (over: Partial<KeyEventLike> = {}): KeyEventLike => key({ key: 'Enter', code: 'Enter', ...over });
+
+  it('sends the bytes xterm sends for Alt+Enter: ESC CR, the one constant to change', () => {
+    expect(Array.from(NEWLINE_SEQUENCE, (char) => char.charCodeAt(0))).toEqual([0x1b, 0x0d]);
+  });
+
+  it.each([
+    ['without a selection', NO_SELECTION],
+    ['with a selection', SELECTION],
+    ['on macOS', MAC_NO_SELECTION],
+  ])('answers newline for Shift+Enter %s, on the main and the numeric Enter key', (_name, ctx) => {
+    expect(decideKey(enter({ shiftKey: true }), ctx)).toBe('newline');
+    expect(decideKey(enter({ shiftKey: true, code: 'NumpadEnter' }), ctx)).toBe('newline');
+    expect(decideKey(enter({ shiftKey: true, code: '' }), ctx)).toBe('newline');
+  });
+
+  it.each([
+    ['Enter', {}],
+    ['Ctrl+Enter', { ctrlKey: true }],
+    ['Alt+Enter (xterm sends ESC CR itself)', { altKey: true }],
+    ['Meta+Enter', { metaKey: true }],
+    ['Ctrl+Shift+Enter', { ctrlKey: true, shiftKey: true }],
+    ['Alt+Shift+Enter', { altKey: true, shiftKey: true }],
+    ['Meta+Shift+Enter', { metaKey: true, shiftKey: true }],
+  ])('passes %s to xterm', (_name, over) => {
+    expect(decideKey(enter(over), NO_SELECTION)).toBe('pass');
+    expect(decideKey(enter(over), SELECTION)).toBe('pass');
+  });
+
+  it('passes Shift with another key, and Shift+Enter that an input method has taken (it commits the composition)', () => {
+    expect(decideKey(key({ key: 'A', shiftKey: true }), NO_SELECTION)).toBe('pass');
+    expect(decideKey(enter({ shiftKey: true, isComposing: true }), NO_SELECTION)).toBe('pass');
+    expect(decideKey(enter({ shiftKey: true, keyCode: 229 }), NO_SELECTION)).toBe('pass');
+    expect(decideKey(enter({ shiftKey: true, key: 'Process' }), NO_SELECTION)).toBe('pass');
+  });
+});
+
+describe('decideKey: letters on a layout that types no Latin letter (TC-ERGO-01, TC-ERGO-03)', () => {
+  // by code point, so that the letters cannot be mistaken for Latin ones here
+  const cyrillicC = { key: String.fromCodePoint(0x441), code: 'KeyC' };
+  const hebrewC = { key: String.fromCodePoint(0x5d1), code: 'KeyC' };
+  const cyrillicV = { key: String.fromCodePoint(0x43c), code: 'KeyV' };
+
+  it.each([
+    ['Cyrillic', cyrillicC],
+    ['Hebrew', hebrewC],
+  ])('reads the copy rows by the physical key on a %s layout', (_name, layout) => {
+    expect(decideKey(key({ ...layout, ctrlKey: true }), SELECTION)).toBe('copy');
+    expect(decideKey(key({ ...layout, ctrlKey: true }), NO_SELECTION)).toBe('pass');
+    expect(decideKey(key({ ...layout, ctrlKey: true, shiftKey: true }), SELECTION)).toBe('copy');
+    expect(decideKey(key({ ...layout, ctrlKey: true, shiftKey: true }), NO_SELECTION)).toBe('swallow');
+    expect(decideKey(key({ ...layout, metaKey: true }), SELECTION)).toBe('copy');
+  });
+
+  it('reads the paste row the same way', () => {
+    expect(decideKey(key({ ...cyrillicV, ctrlKey: true }), NO_SELECTION)).toBe('paste');
+    expect(decideKey(key({ ...cyrillicV, ctrlKey: true }), MAC_NO_SELECTION)).toBe('pass');
+  });
+
+  it('follows the letter, not the position, on a Latin layout (Dvorak)', () => {
+    // the physical C key types `j`: not a copy; `c` typed on the physical J key is one
+    expect(decideKey(ctrl('j', { code: 'KeyC' }), SELECTION)).toBe('pass');
+    expect(decideKey(ctrl('c', { code: 'KeyJ' }), SELECTION)).toBe('copy');
+    expect(decideKey(ctrl('k', { code: 'KeyV' }), NO_SELECTION)).toBe('pass');
+  });
+});
+
 describe('platformIsMac', () => {
   it('reads userAgentData.platform first', () => {
     expect(platformIsMac({ userAgentData: { platform: 'macOS' }, platform: 'Win32' })).toBe(true);
@@ -211,6 +286,7 @@ describe('decideKey: only keydown is decided', () => {
     ['Ctrl+C', ctrl('c')],
     ['Ctrl+Shift+C', ctrl('C', { shiftKey: true })],
     ['Meta+C', key({ key: 'c', metaKey: true })],
+    ['Shift+Enter', key({ key: 'Enter', code: 'Enter', shiftKey: true })],
   ];
 
   it.each(['keyup', 'keypress'])('passes %s of every chord, so xterm sees the whole sequence of the key', (type) => {
@@ -242,6 +318,10 @@ describe('decideKey: the table, as one list', () => {
     ['Ctrl+Shift+V', ctrl('V', { shiftKey: true }), NO_SELECTION, 'pass'],
     ['Shift+Insert', key({ key: 'Insert', shiftKey: true }), NO_SELECTION, 'pass'],
     ['Ctrl+Insert', key({ key: 'Insert', ctrlKey: true }), NO_SELECTION, 'pass'],
+    ['Shift+Enter', key({ key: 'Enter', shiftKey: true }), NO_SELECTION, 'newline'],
+    ['Shift+Enter with a selection', key({ key: 'Enter', shiftKey: true }), SELECTION, 'newline'],
+    ['Enter', key({ key: 'Enter' }), NO_SELECTION, 'pass'],
+    ['Alt+Enter', key({ key: 'Enter', altKey: true }), NO_SELECTION, 'pass'],
     ['everything else', key({ key: 'q' }), SELECTION, 'pass'],
   ];
 

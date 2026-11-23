@@ -1190,6 +1190,7 @@ export const enMessages = {
   'workspace.shortcut.release': 'Move focus out of the terminal',
   'workspace.shortcut.copy': 'Copy the selection (with no selection this interrupts the program)',
   'workspace.shortcut.paste': 'Paste into the terminal',
+  'workspace.shortcut.newline': 'Insert a new line without sending',
   'workspace.shortcut.scroll': 'Scroll the terminal history',
   'workspace.scope': 'projects and sessions',
   'error.subject.workspace': 'projects and sessions',

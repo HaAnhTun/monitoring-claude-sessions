@@ -15,12 +15,26 @@
 //   swallow  Ctrl+Shift+C without a selection: it is neither an interrupt nor the browser's inspect shortcut.
 //   release  Ctrl+Shift+Space: the way out of the terminal (the view moves the focus to the session list). The text shown next to the
 //            pane is `RELEASE_CHORD` of protocol.ts.
+//   newline  Shift+Enter alone, with or without a selection (ADR 0110). xterm 6.0.0 encodes it as a plain CR, which submits the
+//            prompt; the view sends `NEWLINE_SEQUENCE` instead, through the path of typed text. Every other Enter combination
+//            passes: Enter, Ctrl+Enter, Meta+Enter and Alt+Enter (xterm sends ESC CR for that one itself).
+//
+// The letter rows (C and V) read the letter by `key` and, on a layout that types no Latin letter there, by the physical key
+// (`lib/key-match.ts`): xterm takes its control byte from the key code, so on such a layout only these rows would miss.
 //
 // For every answer but `pass` and `paste` the handler returns false and prevents the default. Browser-reserved keys (Ctrl+W, Ctrl+T, Ctrl+N,
 // Alt+F4, F11) never reach a page, so no row can name them.
 
+import { isLetterKey } from '../lib/key-match.ts';
+
 /** What `decideKey` does with one key event. */
-export type KeyDecision = 'pass' | 'copy' | 'paste' | 'release' | 'swallow';
+export type KeyDecision = 'pass' | 'copy' | 'paste' | 'release' | 'swallow' | 'newline';
+
+/**
+ * What Shift+Enter sends: ESC CR, the bytes xterm itself sends for Alt+Enter. The one line to change if the real client wants
+ * another sequence (ADR 0110 names the fallbacks, in order).
+ */
+export const NEWLINE_SEQUENCE = '\x1b\r';
 
 /** The part of a `KeyboardEvent` that is read; a real event satisfies it. */
 export interface KeyEventLike {
@@ -68,10 +82,6 @@ function isSpace(event: KeyEventLike): boolean {
   return event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar';
 }
 
-function isLetter(event: KeyEventLike, letter: string): boolean {
-  return event.key.toLowerCase() === letter;
-}
-
 /**
  * The decision for one key event. Only `keydown` is decided: `keyup` and `keypress` pass, so xterm sees the rest of every sequence
  * it started. Nothing is decided during an input method composition, whatever keys the method reports.
@@ -83,7 +93,7 @@ export function decideKey(event: KeyEventLike, ctx: KeyContext): KeyDecision {
 
   if (ctrlKey && shiftKey && !altKey && !metaKey && isSpace(event)) return 'release';
 
-  if (isLetter(event, 'c') && !altKey) {
+  if (isLetterKey(event, 'c') && !altKey) {
     if (ctrlKey && !metaKey) {
       // Ctrl+C is the program's interrupt unless something is selected; Ctrl+Shift+C is only ever a copy
       if (shiftKey) return ctx.hasSelection ? 'copy' : 'swallow';
@@ -92,7 +102,10 @@ export function decideKey(event: KeyEventLike, ctx: KeyContext): KeyDecision {
     if (metaKey && !ctrlKey && !shiftKey && ctx.hasSelection) return 'copy';
   }
 
-  if (ctx.ctrlVPastes && ctrlKey && !shiftKey && !altKey && !metaKey && isLetter(event, 'v')) return 'paste';
+  if (ctx.ctrlVPastes && ctrlKey && !shiftKey && !altKey && !metaKey && isLetterKey(event, 'v')) return 'paste';
+
+  // the numeric Enter key reports the same `key`
+  if (event.key === 'Enter' && shiftKey && !ctrlKey && !altKey && !metaKey) return 'newline';
 
   return 'pass';
 }
